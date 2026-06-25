@@ -1,8 +1,9 @@
 import { z } from "zod";
-import puppeteer from "puppeteer";
+import puppeteer, { Browser } from "puppeteer";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { Tool } from "../registry.js";
+import { config } from "../config.js";
 
 export const tool: Tool = {
   name: "browser_control",
@@ -21,7 +22,7 @@ export const tool: Tool = {
   }),
   execute: async ({ action, url, selector, text, waitForSelector }) => {
     const wsPath = path.resolve(".sessions", "browser_ws.txt");
-    let browser: puppeteer.Browser | null = null;
+    let browser: Browser | null = null;
     let wsUrl = "";
 
     try {

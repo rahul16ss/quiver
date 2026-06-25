@@ -6,9 +6,12 @@
   "main": "src/cli.ts",
   "scripts": {
     "start": "npx tsx src/cli.ts",
+    "dashboard": "bun src/dashboard.ts",
+    "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
     "test": "npx tsx tests/run_tests.ts"
   },
   "dependencies": {
+    "@opentui/core": "^0.4.2",
     "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",
     "html-to-text": "^10.0.0",
