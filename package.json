@@ -4,6 +4,9 @@
   "description": "Quiver: A personal, self-evolving agent harness for research and coding, designed to run open weights models.",
   "type": "module",
   "main": "src/cli.ts",
+  "bin": {
+    "quiver": "./bin/quiver.js"
+  },
   "scripts": {
     "start": "npx tsx src/cli.ts",
     "dashboard": "bun src/dashboard.ts",
