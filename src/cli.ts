@@ -66,6 +66,29 @@ async function main() {
   console.log(picocolors.gray(`   Session Logs: .sessions/${agent.getSessionId()}.json`));
   console.log(picocolors.gray(`   Commands:     Type '/exit' to quit, '/tools' to list tools, '/approvals' for security config, '/session' for details.\n`));
 
+  // Argument parsing for single-turn script mode
+  const args = process.argv.slice(2);
+  const singleTurnIdx = args.indexOf("--single-turn");
+  if (singleTurnIdx !== -1) {
+    const promptText = args[singleTurnIdx + 1];
+    if (!promptText) {
+      console.error(picocolors.red("❌ Error: --single-turn requires a prompt string."));
+      process.exit(1);
+    }
+    console.log(picocolors.cyan(`🚀 Running single-turn prompt: "${promptText}"`));
+    process.stdout.write(picocolors.bold(picocolors.magenta("\nagent> ")));
+    try {
+      await agent.prompt(promptText, (token) => {
+        process.stdout.write(token);
+      });
+      console.log("\n");
+      process.exit(0);
+    } catch (err: any) {
+      console.error(picocolors.red(`\n❌ Error: ${err.message}`));
+      process.exit(1);
+    }
+  }
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
