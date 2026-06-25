@@ -32,6 +32,26 @@ interface SessionSummary {
 }
 
 /**
+ * Reads session events from a legacy JSON array file or NDJSON (.jsonl) log.
+ */
+async function readSessionEvents(filePath: string): Promise<SessionEvent[]> {
+  const content = await fs.readFile(filePath, "utf8");
+
+  if (filePath.endsWith(".jsonl")) {
+    return content
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as SessionEvent);
+  }
+
+  const parsed = JSON.parse(content);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Session log does not contain an array of events.");
+  }
+  return parsed;
+}
+
+/**
  * Estimates token count from a string using a rough heuristic:
  * ~4 characters per token for English text and code.
  */
@@ -40,11 +60,15 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+function estimateFromLength(charLength: number): number {
+  return Math.ceil(charLength / 4);
+}
+
 /**
  * Parses a session log JSON file and extracts statistics.
  */
 function parseSessionLog(events: SessionEvent[], filePath: string): SessionSummary {
-  const sessionId = path.basename(filePath, ".json");
+  const sessionId = path.basename(filePath).replace(/\.jsonl?$/, "");
 
   let startTime: string | null = null;
   let endTime: string | null = null;
@@ -66,8 +90,12 @@ function parseSessionLog(events: SessionEvent[], filePath: string): SessionSumma
     switch (event.type) {
       case "user_input": {
         userInputs++;
-        const content = event.data?.content || "";
-        estimatedInputTokens += estimateTokens(content);
+        const contentLength = event.data?.contentLength;
+        if (typeof contentLength === "number") {
+          estimatedInputTokens += estimateFromLength(contentLength);
+        } else {
+          estimatedInputTokens += estimateTokens(event.data?.content || "");
+        }
         break;
       }
       case "turn_start": {
@@ -79,8 +107,12 @@ function parseSessionLog(events: SessionEvent[], filePath: string): SessionSumma
       }
       case "assistant_response": {
         assistantResponses++;
-        const content = event.data?.content || "";
-        estimatedOutputTokens += estimateTokens(content);
+        const contentLength = event.data?.contentLength;
+        if (typeof contentLength === "number") {
+          estimatedOutputTokens += estimateFromLength(contentLength);
+        } else {
+          estimatedOutputTokens += estimateTokens(event.data?.content || "");
+        }
 
         // Count tool calls in the assistant response
         const toolCallsArr = event.data?.tool_calls;
@@ -89,9 +121,12 @@ function parseSessionLog(events: SessionEvent[], filePath: string): SessionSumma
           for (const tc of toolCallsArr) {
             const toolName = tc?.function?.name;
             if (toolName) toolsUsedSet.add(toolName);
-            // Tool call arguments also count as output tokens
-            const args = tc?.function?.arguments || "";
-            estimatedOutputTokens += estimateTokens(args);
+            const argsLength = tc?.function?.argumentsLength;
+            if (typeof argsLength === "number") {
+              estimatedOutputTokens += estimateFromLength(argsLength);
+            } else {
+              estimatedOutputTokens += estimateTokens(tc?.function?.arguments || "");
+            }
           }
         }
         break;
@@ -100,10 +135,14 @@ function parseSessionLog(events: SessionEvent[], filePath: string): SessionSumma
         toolResults++;
         const toolName = event.data?.tool;
         if (toolName) toolsUsedSet.add(toolName);
-        const result = event.data?.result;
-        const resultStr = typeof result === "string" ? result : JSON.stringify(result || "");
-        // Tool results are fed back as input tokens
-        estimatedInputTokens += estimateTokens(resultStr);
+        const resultLength = event.data?.resultLength;
+        if (typeof resultLength === "number") {
+          estimatedInputTokens += estimateFromLength(resultLength);
+        } else {
+          const result = event.data?.result;
+          const resultStr = typeof result === "string" ? result : JSON.stringify(result || "");
+          estimatedInputTokens += estimateTokens(resultStr);
+        }
         break;
       }
       case "api_error": {
@@ -148,14 +187,17 @@ function parseSessionLog(events: SessionEvent[], filePath: string): SessionSumma
 
 /**
  * Finds the latest session log file in the .sessions/ directory.
- * Session files are named session_<timestamp>.json.
+ * Supports legacy session_<timestamp>.json and append-only session_<timestamp>.jsonl.
  */
 async function findLatestSessionLog(sessionsDir: string): Promise<string | null> {
   try {
     const files = await fs.readdir(sessionsDir);
     const sessionFiles = files
-      .filter((f) => f.startsWith("session_") && f.endsWith(".json"))
-      .sort(); // Lexicographic sort works because timestamps are numeric
+      .filter(
+        (f) =>
+          f.startsWith("session_") && (f.endsWith(".jsonl") || f.endsWith(".json"))
+      )
+      .sort();
 
     if (sessionFiles.length === 0) return null;
     return path.join(sessionsDir, sessionFiles[sessionFiles.length - 1]);
@@ -213,26 +255,14 @@ export const tool: Tool = {
     console.log(picocolors.gray(`   ⚡ Parsing session log: ${path.basename(targetFile)}...`));
 
     // Read and parse the session log
-    const content = await fs.readFile(targetFile, "utf8");
     let events: SessionEvent[];
     try {
-      events = JSON.parse(content);
-    } catch {
+      events = await readSessionEvents(targetFile);
+    } catch (err: any) {
       return JSON.stringify(
         {
           success: false,
-          error: `Failed to parse JSON from ${targetFile}`,
-        },
-        null,
-        2
-      );
-    }
-
-    if (!Array.isArray(events)) {
-      return JSON.stringify(
-        {
-          success: false,
-          error: `Session log does not contain an array of events.`,
+          error: `Failed to parse session log ${targetFile}: ${err?.message || err}`,
         },
         null,
         2

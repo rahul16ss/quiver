@@ -1,6 +1,6 @@
-# Quiver: Your Personal AI Helper
+# Quiver: AI Agent Harness for the Terminal
 
-Quiver is a friendly, personal AI assistant designed to help you automate web research, browse websites, write content, and check code. Think of Quiver as a helpful digital companion that works through task checklists, keeps track of project details, and always asks for your permission before taking sensitive actions on your computer.
+Quiver is a self-evolving agent harness for autonomous coding and research in the terminal. It provides file operations, browser automation, shell command execution, web search, GitHub integration, and persistent memory — designed to work with any OpenAI-compatible LLM. Think of Quiver as a powerful digital companion that works through task checklists, keeps track of project details, and always asks for your permission before taking sensitive actions on your computer.
 
 ---
 
@@ -66,12 +66,89 @@ quiver
 ## 📦 Packaging & Public Distribution
 
 If you want to publish Quiver to the public registry so other users can run `npm install -g quiver-agent` or `brew install quiver`, please check out our detailed guide:
-*   [PACKAGING.md](file:///Users/rahul/quiver/PACKAGING.md)
+*   [PACKAGING.md](PACKAGING.md)
 
 ## 🔒 Security & Safety Controls
 
 Your safety is Quiver's top priority. By default, Quiver is configured to request manual approval before running any tool that could modify your system. 
 You can customize these checks in your `.env` file using the `REQUIRE_APPROVAL_FOR` variable.
+
+---
+
+## ⌨️ In-Session Commands
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/help` | `/h`, `/?` | Show available commands |
+| `/tools` | `/t` | List all available AI tools |
+| `/session` | `/s` | Show session details and token stats |
+| `/config` | `/c` | Show current configuration |
+| `/compact` | `/co` | Compact conversation history to save context |
+| `/reset` | `/r` | Reset conversation (keeps memory & skills) |
+| `/cost` | | Show token usage statistics |
+| `/model` | `/m` | Show or change the active model |
+| `/history` | `/hi` | Show conversation message summary |
+| `/approvals` | `/a` | Manage approval gates (add/remove/clear) |
+| `/export` | | Export session to .qf file |
+| `/resume` | `/rs` | Resume a previous session (picker) |
+| `/clear` | | Clear terminal screen |
+| `/exit` | `/quit`, `/q` | End session (auto-saves for resume) |
+| `/version` | `/v` | Show Quiver version |
+
+---
+
+## 🔄 Session Persistence & Resume
+
+Quiver automatically saves your conversation state to disk after every turn, so you never lose work to a crash, terminal close, or accidental exit. Modeled after Codex CLI's `codex resume` and Claude Code's `claude --continue`.
+
+### CLI Flags
+
+| Flag | Alias | Description |
+|------|-------|-------------|
+| `--continue` | `-c` | Resume the most recent session |
+| `--resume` | `-r` | Show interactive session picker |
+| `--list-sessions` | `-ls` | List all saved sessions |
+
+### Usage
+
+```bash
+quiver --continue       # Resume your last session
+quiver --resume         # Pick a session to resume
+quiver --list-sessions  # List all saved sessions
+```
+
+After exit, Quiver prints: `Session saved. Resume with: quiver --continue`
+
+---
+
+## 🛠️ Available Tools
+
+### 📁 Files
+- **view_file** — Read files with line numbers and range selection
+- **write_file** — Create or overwrite files
+- **replace_content** — Surgical find-and-replace in files
+- **list_dir** — List directory contents with file sizes
+- **format_code** — Format TypeScript/JavaScript files
+- **grep_search** — Search file contents with ripgrep/grep
+
+### ⚙️ System
+- **run_command** — Execute shell commands
+- **run_tests** — Run TypeScript compilation and unit tests
+- **create_tool** — Dynamically create new tools at runtime
+- **log_tokens** — Parse session logs for token statistics
+
+### 🌐 Web
+- **web_search** — Search the web via Ollama Pro or Parallel.ai
+- **scrape_url** — Scrape web pages to markdown
+- **search_docs** — Query Context7 for library documentation
+- **browser_control** — Control a headless browser session
+
+### 🧠 Memory
+- **memory_append** — Append facts to persistent memory
+- **memory_replace** — Replace persistent memory file contents
+
+### 🐙 GitHub
+- **github** — GitHub API operations (issues, PRs, contents)
 
 ---
 
@@ -111,10 +188,11 @@ graph TD
 ```
 
 1. **Goal Runner (`src/goal.ts`)**: Manages the stateful `goals.json` checklist. Spawns the CLI for the next pending goal, runs verification tests, and commits progress to Git.
-2. **Self-Evolving Agent (`src/agent.ts`)**: Prepares system instructions by blending memory with active skills. Handles the completions stream, prompts for human approvals, and executes tools.
+2. **Self-Evolving Agent (`src/agent.ts`)**: Prepares system instructions by blending memory with active skills. Handles the completions stream, prompts for human approvals, and executes tools. Includes context window management with auto-trimming and manual compaction.
 3. **Dynamic Registry (`src/registry.ts`)**: Scans `src/tools/` dynamically, enabling the agent to write and execute its own tools immediately in the same session.
 
 ### 🤖 Agent Guidance (LLM System Context)
-*   **Extending Capabilities:** Write a new TypeScript tool using the `create_tool` tool. Every tool file must export a `tool` object of type `Tool` defined in [src/registry.ts](file:///Users/rahul/quiver/src/registry.ts).
-*   **Reading & Writing Memory:** Load core memories using `loadCoreMemory()` from [src/state.ts](file:///Users/rahul/quiver/src/state.ts). Update them using `memory_append` and `memory_replace` tools.
-*   **Subprocesses & Approvals:** Check [src/config.ts](file:///Users/rahul/quiver/src/config.ts) (`config.requireApprovalFor`) to see which tools require approval.
+*   **Extending Capabilities:** Write a new TypeScript tool using the `create_tool` tool. Every tool file must export a `tool` object of type `Tool` defined in [src/registry.ts](src/registry.ts).
+*   **Reading & Writing Memory:** Load core memories using `loadCoreMemory()` from [src/state.ts](src/state.ts). Update them using `memory_append` and `memory_replace` tools.
+*   **Subprocesses & Approvals:** Check [src/config.ts](src/config.ts) (`config.requireApprovalFor`) to see which tools require approval.
+*   **Context Management:** Use `/compact` to manually trim conversation history, or configure `QUIVER_MAX_CONTEXT_TOKENS` for automatic trimming.

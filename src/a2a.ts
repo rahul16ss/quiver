@@ -27,12 +27,14 @@ export function generateAgentCard(registry: ToolRegistry): AgentCard {
   const capabilities = tools.map((t) => ({
     name: t.name,
     description: t.description,
-    parameters: ToolRegistry.getOpenAIToolDefinition(t).function.parameters || {},
+    parameters:
+      ToolRegistry.getOpenAIToolDefinition(t).function.parameters || {},
   }));
 
   return {
     name: "Quiver-Agent",
-    description: "Personal autonomous agent harness optimized for local open-weights execution.",
+    description:
+      "Self-evolving autonomous agent harness for coding and research in the terminal.",
     protocolVersion: "2026.06.25", // A2A standard representation
     schemaVersion: "draft-01",
     capabilities,

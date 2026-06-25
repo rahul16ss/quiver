@@ -5,20 +5,60 @@ import * as path from "path";
 import { Tool } from "../registry.js";
 import { config } from "../config.js";
 
+/**
+ * SSRF protection: blocks navigation to private/internal IP ranges.
+ * Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable (default: enabled).
+ */
+function isPrivateUrl(urlStr: string): boolean {
+  if (process.env.QUIVER_BLOCK_PRIVATE_IPS === "0") return false;
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname;
+    if (
+      hostname === "localhost" ||
+      hostname.startsWith("127.") ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("169.254.") ||
+      hostname === "::1" ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd") ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export const tool: Tool = {
   name: "browser_control",
-  description: "Controls a persistent headless browser session to navigate, click, type, screenshot, or extract content.",
+  description:
+    "Controls a persistent headless browser session to navigate, click, type, screenshot, or extract content.",
   parameters: z.object({
-    action: z.enum(["navigate", "click", "type", "screenshot", "get_content", "close"])
+    action: z
+      .enum(["navigate", "click", "type", "screenshot", "get_content", "close"])
       .describe("The action to perform in the browser."),
-    url: z.string().optional()
+    url: z
+      .string()
+      .optional()
       .describe("The target URL (required for 'navigate')."),
-    selector: z.string().optional()
+    selector: z
+      .string()
+      .optional()
       .describe("CSS selector for elements (required for 'click' or 'type')."),
-    text: z.string().optional()
+    text: z
+      .string()
+      .optional()
       .describe("The text content to input (required for 'type')."),
-    waitForSelector: z.string().optional()
-      .describe("Optional CSS selector to wait for after performing the action."),
+    waitForSelector: z
+      .string()
+      .optional()
+      .describe(
+        "Optional CSS selector to wait for after performing the action.",
+      ),
   }),
   execute: async ({ action, url, selector, text, waitForSelector }) => {
     const wsPath = path.resolve(".sessions", "browser_ws.txt");
@@ -48,7 +88,8 @@ export const tool: Tool = {
       });
       wsUrl = browser.wsEndpoint();
       await fs.mkdir(path.dirname(wsPath), { recursive: true });
-      await fs.writeFile(wsPath, wsUrl, "utf8");
+      // Write with restricted permissions (0600) to prevent other users from reading the WS endpoint
+      await fs.writeFile(wsPath, wsUrl, { encoding: "utf8", mode: 0o600 });
     }
 
     try {
@@ -60,7 +101,7 @@ export const tool: Tool = {
 
       const pages = await browser.pages();
       const page = pages.length > 0 ? pages[0] : await browser.newPage();
-      
+
       // Standard viewport
       await page.setViewport({ width: 1280, height: 800 });
 
@@ -69,12 +110,19 @@ export const tool: Tool = {
       switch (action) {
         case "navigate": {
           if (!url) throw new Error("URL is required for 'navigate' action.");
+          // SSRF protection
+          if (isPrivateUrl(url)) {
+            throw new Error(
+              `URL '${url}' points to a private/internal network address. Blocked for security. Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable.`,
+            );
+          }
           await page.goto(url, { waitUntil: "networkidle2" });
           resultText = `Successfully navigated to ${url}. Current URL: ${page.url()}`;
           break;
         }
         case "click": {
-          if (!selector) throw new Error("Selector is required for 'click' action.");
+          if (!selector)
+            throw new Error("Selector is required for 'click' action.");
           await page.waitForSelector(selector, { timeout: 5000 });
           await page.click(selector);
           resultText = `Successfully clicked element matching selector '${selector}'.`;
@@ -82,7 +130,9 @@ export const tool: Tool = {
         }
         case "type": {
           if (!selector || text === undefined) {
-            throw new Error("Selector and text are required for 'type' action.");
+            throw new Error(
+              "Selector and text are required for 'type' action.",
+            );
           }
           await page.waitForSelector(selector, { timeout: 5000 });
           await page.type(selector, text);
@@ -90,7 +140,10 @@ export const tool: Tool = {
           break;
         }
         case "screenshot": {
-          const screenshotPath = path.resolve(".sessions", "browser_screenshot.png");
+          const screenshotPath = path.resolve(
+            ".sessions",
+            "browser_screenshot.png",
+          );
           await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
           await page.screenshot({ path: screenshotPath });
           resultText = `Screenshot successfully saved to local file: file://${screenshotPath}`;

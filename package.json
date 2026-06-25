@@ -1,7 +1,7 @@
 {
   "name": "quiver",
   "version": "1.0.0",
-  "description": "Quiver: A personal, self-evolving agent harness for research and coding, designed to run open weights models.",
+  "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
   "type": "module",
   "main": "src/cli.ts",
   "bin": {
@@ -12,12 +12,14 @@
     "dashboard": "bun src/dashboard.ts",
     "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
     "goal": "npx tsx src/goal.ts",
-    "test": "npx tsx tests/run_tests.ts"
+    "test": "npx tsx tests/run_tests.ts",
+    "design:lint": "npx -p @google/design.md designmd lint DESIGN.md"
   },
   "dependencies": {
     "@opentui/core": "^0.4.2",
     "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",
+    "fastest-levenshtein": "^1.0.16",
     "html-to-text": "^10.0.0",
     "picocolors": "^1.1.1",
     "puppeteer": "^25.2.1",

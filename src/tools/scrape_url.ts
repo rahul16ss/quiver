@@ -2,18 +2,56 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { Tool } from "../registry.js";
 
+/**
+ * SSRF protection: blocks requests to private/internal IP ranges.
+ * Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable (default: enabled).
+ */
+function isPrivateUrl(urlStr: string): boolean {
+  if (process.env.QUIVER_BLOCK_PRIVATE_IPS === "0") return false;
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname;
+    // Block localhost, 127.x, 10.x, 172.16-31.x, 192.168.x, 169.254.x (link-local), ::1, fc00::/7
+    if (
+      hostname === "localhost" ||
+      hostname.startsWith("127.") ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("169.254.") ||
+      hostname === "::1" ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd") ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export const tool: Tool = {
   name: "scrape_url",
-  description: "Scrapes a web page URL using Ollama Pro or Parallel.ai Extract API and returns the full markdown content.",
+  description:
+    "Scrapes a web page URL using Ollama Pro or Parallel.ai Extract API and returns the full markdown content.",
   parameters: z.object({
     url: z.string().describe("The web page URL to scrape."),
     provider: z
       .enum(["ollama", "parallel"])
       .optional()
-      .describe("Optional extraction provider override. Prioritizes Ollama Pro if not specified and OLLAMA_API_KEY is set."),
+      .describe(
+        "Optional extraction provider override. Prioritizes Ollama Pro if not specified and OLLAMA_API_KEY is set.",
+      ),
   }),
   execute: async ({ url, provider }) => {
-    const selectedProvider = provider || (config.ollamaApiKey ? "ollama" : "parallel");
+    // SSRF protection
+    if (isPrivateUrl(url)) {
+      return `Error: URL '${url}' points to a private/internal network address. Blocked for security. Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable.`;
+    }
+
+    const selectedProvider =
+      provider || (config.ollamaApiKey ? "ollama" : "parallel");
 
     if (selectedProvider === "ollama") {
       if (!config.ollamaApiKey) {
@@ -25,7 +63,7 @@ export const tool: Tool = {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${config.ollamaApiKey}`,
+            Authorization: `Bearer ${config.ollamaApiKey}`,
           },
           body: JSON.stringify({ url }),
         });
@@ -38,7 +76,9 @@ export const tool: Tool = {
         const data: any = await response.json();
         const content = data.content || "";
         const title = data.title ? `# ${data.title}\n\n` : "";
-        return content ? `${title}${content}` : "Webpage loaded successfully but returned no content.";
+        return content
+          ? `${title}${content}`
+          : "Webpage loaded successfully but returned no content.";
       } catch (error: any) {
         return `Error performing Ollama web fetch: ${error.message}`;
       }
@@ -80,8 +120,11 @@ export const tool: Tool = {
           return "Error: Parallel extract did not return any results for the URL.";
         }
 
-        const content = result.full_content || (result.excerpts || []).join("\n\n");
-        return content || "Webpage loaded successfully but returned no content.";
+        const content =
+          result.full_content || (result.excerpts || []).join("\n\n");
+        return (
+          content || "Webpage loaded successfully but returned no content."
+        );
       } catch (error: any) {
         return `Error scraping URL: ${error.message}`;
       }

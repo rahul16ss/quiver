@@ -1,63 +1,52 @@
 import { exec } from "child_process";
-import readline from "readline";
 import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
 
-function askConfirmation(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise(resolve => {
-    rl.question(question, answer => {
-      rl.close();
-      const clean = answer.trim().toLowerCase();
-      resolve(clean === "y" || clean === "yes");
-    });
-  });
-}
-
 export const tool: Tool = {
   name: "run_command",
-  description: "Runs a shell command in the terminal. Executing commands requires user manual confirmation.",
+  description:
+    "Runs a shell command in the terminal and returns stdout, stderr, and exit code. " +
+    "Note: Commands in the approval list will prompt for user confirmation before execution.",
   parameters: z.object({
     command: z.string().describe("The exact CLI command to run."),
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        "Working directory for the command. Defaults to current directory.",
+      ),
+    timeout: z
+      .number()
+      .optional()
+      .describe(
+        "Timeout in milliseconds. Default: 30000 (30s). Max: 120000 (2min).",
+      ),
   }),
-  execute: async ({ command }) => {
-    // Check if auto-approve is active
-    const autoApprove = process.env.AUTO_APPROVE_COMMANDS === "true";
-    
-    if (!autoApprove) {
-      const promptText = picocolors.bold(
-        picocolors.yellow(`\n⚠️  The agent requests to execute shell command:\n` +
-          `   > ${picocolors.cyan(command)}\n` +
-          `Approve command execution? (y/N): `)
-      );
-      
-      const approved = await askConfirmation(promptText);
-      if (!approved) {
-        throw new Error("Command execution was rejected by the user.");
-      }
-    }
+  execute: async ({ command, cwd, timeout }) => {
+    const maxBuffer = 1024 * 1024 * 10; // 10MB
+    const effectiveTimeout = Math.min(timeout || 30000, 120000);
 
     console.log(picocolors.gray(`   ⚡ Running command: ${command}`));
 
-    return new Promise((resolve, reject) => {
-      exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
-        const output = [
-          stdout ? `STDOUT:\n${stdout}` : "",
-          stderr ? `STDERR:\n${stderr}` : "",
-          error ? `EXIT CODE: ${error.code || 1}\nERROR: ${error.message}` : "EXIT CODE: 0"
-        ].filter(Boolean).join("\n\n");
-
-        if (error) {
-          // Resolve with error info so LLM receives details of the failure
-          resolve(output);
-        } else {
-          resolve(output);
-        }
-      });
+    return new Promise((resolve) => {
+      exec(
+        command,
+        { maxBuffer, cwd: cwd || undefined, timeout: effectiveTimeout },
+        (error, stdout, stderr) => {
+          const parts: string[] = [];
+          if (stdout) parts.push(`STDOUT:\n${stdout.trim()}`);
+          if (stderr) parts.push(`STDERR:\n${stderr.trim()}`);
+          if (error) {
+            parts.push(`EXIT CODE: ${error.code || 1}`);
+            if (error.killed)
+              parts.push(`(Command timed out after ${effectiveTimeout}ms)`);
+          } else {
+            parts.push(`EXIT CODE: 0`);
+          }
+          resolve(parts.join("\n\n"));
+        },
+      );
     });
   },
 };

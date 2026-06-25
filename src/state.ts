@@ -39,9 +39,12 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
     return JSON.parse(content);
   } catch (err) {
     const defaults: CoreMemory = {
-      identity: "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
-      human_context: "The active user is rahul16ss (GitHub account). Prefer standard Node.js and Bun patterns.",
-      project_context: "This workspace is Quiver, containing TS tools, test runners, and configuration.",
+      identity:
+        "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
+      human_context:
+        "The active user is rahul16ss (GitHub account). Prefer standard Node.js and Bun patterns.",
+      project_context:
+        "This workspace is Quiver, an agent harness containing TS tools, test runners, and configuration.",
     };
     await saveCoreMemory(defaults);
     return defaults;
@@ -60,10 +63,14 @@ export async function saveCoreMemory(memory: CoreMemory): Promise<void> {
  * Serializes the agent's system prompt, current messages, core memory blocks,
  * and active model configuration into a portable '.af' (Agent File) JSON file.
  */
-export async function exportToAgentFile(agent: Agent, targetPath: string): Promise<void> {
+export async function exportToAgentFile(
+  agent: Agent,
+  targetPath: string,
+): Promise<void> {
   const coreMemory = await loadCoreMemory();
-  const systemPrompt = agent.getMessages().find((m) => m.role === "system")?.content || "";
-  
+  const systemPrompt =
+    agent.getMessages().find((m) => m.role === "system")?.content || "";
+
   const af: AgentFile = {
     format: "quiver-qf",
     version: "1.0.0",
@@ -87,7 +94,10 @@ export async function exportToAgentFile(agent: Agent, targetPath: string): Promi
 /**
  * Restores the agent's messages list and core memory from a '.af' agent file.
  */
-export async function importFromAgentFile(agent: Agent, sourcePath: string): Promise<void> {
+export async function importFromAgentFile(
+  agent: Agent,
+  sourcePath: string,
+): Promise<void> {
   const content = await fs.readFile(sourcePath, "utf8");
   const af: AgentFile = JSON.parse(content);
 

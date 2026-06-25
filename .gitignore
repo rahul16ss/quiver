@@ -3,3 +3,14 @@ dist/
 .env
 .sessions/
 .DS_Store
+
+# User-specific memory (contains personal context and learning logs)
+memory/persona.txt
+memory/human.txt
+
+# Generated artifacts
+competitor_*.json
+*_market_report.md
+
+# Security audit (contains vulnerability details)
+SECURITY_AUDIT.md

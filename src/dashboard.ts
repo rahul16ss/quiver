@@ -3,7 +3,7 @@ import {
   BoxRenderable,
   ScrollBoxRenderable,
   InputRenderable,
-  TextRenderable
+  TextRenderable,
 } from "@opentui/core";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
@@ -11,9 +11,12 @@ import { loadCoreMemory } from "./state.js";
 import { config } from "./config.js";
 import { promises as fs } from "fs";
 import * as path from "path";
+import { resolveTerminalPalette } from "./design_tokens.js";
 
 // Main dashboard handler
 async function run() {
+  const palette = resolveTerminalPalette();
+
   // Load dynamic registries
   await globalRegistry.loadAll();
   const agent = new Agent(globalRegistry);
@@ -21,7 +24,7 @@ async function run() {
   // Initialize the OpenTUI CLI renderer
   const renderer = await createCliRenderer({
     exitOnCtrlC: true,
-    clearOnShutdown: true
+    clearOnShutdown: true,
   });
 
   // Top level container to structure the full terminal screen
@@ -29,7 +32,7 @@ async function run() {
     width: "100%",
     height: "100%",
     flexDirection: "column",
-    backgroundColor: "#080a0f"
+    backgroundColor: palette.background,
   });
   renderer.root.add(container);
 
@@ -39,16 +42,16 @@ async function run() {
     height: 3,
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
+    borderColor: palette.border,
     title: "⚡ QUIVER AGENT HARNESS ⚡",
-    titleAlignment: "center"
+    titleAlignment: "center",
   });
-  
+
   const headerText = new TextRenderable(renderer, {
     width: "100%",
     height: 1,
     content: `Session: ${agent.getSessionId()} | Model: ${config.llmModelName} | Connected: YES`,
-    fg: "#94a3b8"
+    fg: "#94a3b8",
   });
   header.add(headerText);
   container.add(header);
@@ -57,7 +60,7 @@ async function run() {
   const middle = new BoxRenderable(renderer, {
     width: "100%",
     flexGrow: 1,
-    flexDirection: "row"
+    flexDirection: "row",
   });
   container.add(middle);
 
@@ -68,8 +71,8 @@ async function run() {
     flexDirection: "column",
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
-    title: "CONTEXT MANIFEST"
+    borderColor: palette.border,
+    title: "CONTEXT MANIFEST",
   });
   middle.add(sidebar);
 
@@ -79,15 +82,15 @@ async function run() {
     height: "33%",
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
-    title: "LOADED SKILLS"
+    borderColor: palette.border,
+    title: "LOADED SKILLS",
   });
   const skillsText = new TextRenderable(renderer, {
     width: "100%",
     height: "100%",
     wrapMode: "word",
-    fg: "#94a3b8",
-    content: "Loading skills..."
+    fg: palette.textSecondary,
+    content: "Loading skills...",
   });
   skillsPanel.add(skillsText);
   sidebar.add(skillsPanel);
@@ -98,15 +101,15 @@ async function run() {
     height: "33%",
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
-    title: "CORE MEMORY"
+    borderColor: palette.border,
+    title: "CORE MEMORY",
   });
   const memoryText = new TextRenderable(renderer, {
     width: "100%",
     height: "100%",
     wrapMode: "word",
-    fg: "#94a3b8",
-    content: "Loading core memory..."
+    fg: palette.textSecondary,
+    content: "Loading core memory...",
   });
   memoryPanel.add(memoryText);
   sidebar.add(memoryPanel);
@@ -117,15 +120,15 @@ async function run() {
     height: "34%",
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
-    title: "ACTIVE TOOLS"
+    borderColor: palette.border,
+    title: "ACTIVE TOOLS",
   });
   const toolsText = new TextRenderable(renderer, {
     width: "100%",
     height: "100%",
     wrapMode: "word",
-    fg: "#94a3b8",
-    content: "Loading registry..."
+    fg: palette.textSecondary,
+    content: "Loading registry...",
   });
   toolsPanel.add(toolsText);
   sidebar.add(toolsPanel);
@@ -136,13 +139,13 @@ async function run() {
     height: "100%",
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
+    borderColor: palette.border,
     title: "AGENT RESPONSE HISTORY & TOOL LOGS",
     stickyScroll: true,
     scrollY: true,
     contentOptions: {
-      flexDirection: "column"
-    }
+      flexDirection: "column",
+    },
   });
   middle.add(responseLog);
 
@@ -152,25 +155,28 @@ async function run() {
     height: 3,
     border: true,
     borderStyle: "single",
-    borderColor: "#1e293b",
-    title: "PROMPT INPUT"
+    borderColor: palette.border,
+    title: "PROMPT INPUT",
   });
-  
+
   const promptInput = new InputRenderable(renderer, {
     width: "100%",
-    placeholder: "Type message and press Enter (or /exit to quit)..."
+    placeholder: "Type message and press Enter (or /exit to quit)...",
   });
   footer.add(promptInput);
   container.add(footer);
 
   // Function to add structured logs/messages to the history box
-  function appendLogMessage(text: string, fgColor: string = "#e2e8f0") {
+  function appendLogMessage(
+    text: string,
+    fgColor: string = palette.textPrimary,
+  ) {
     const logItem = new TextRenderable(renderer, {
       width: "100%",
       wrapMode: "word",
       fg: fgColor,
       content: text,
-      marginBottom: 1
+      marginBottom: 1,
     });
     responseLog.add(logItem);
     // Trigger scroll update
@@ -185,16 +191,22 @@ async function run() {
   const origWarn = console.warn;
 
   console.log = (...args: any[]) => {
-    const text = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
-    appendLogMessage(`[LOG] ${text}`, "#3b82f6"); // blue color for console logs
+    const text = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
+    appendLogMessage(`[LOG] ${text}`, palette.info);
   };
   console.error = (...args: any[]) => {
-    const text = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
-    appendLogMessage(`[ERROR] ${text}`, "#ef4444"); // danger color for error logs
+    const text = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
+    appendLogMessage(`[ERROR] ${text}`, palette.danger);
   };
   console.warn = (...args: any[]) => {
-    const text = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
-    appendLogMessage(`[WARN] ${text}`, "#f59e0b"); // warning color for warnings
+    const text = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
+    appendLogMessage(`[WARN] ${text}`, palette.warning);
   };
 
   renderer.on("destroy", () => {
@@ -210,10 +222,11 @@ async function run() {
       const skillsDir = path.resolve(config.skillsDir);
       await fs.mkdir(skillsDir, { recursive: true });
       const dirs = await fs.readdir(skillsDir);
-      const skillNames = dirs.filter(d => !d.startsWith("."));
-      skillsText.content = skillNames.length > 0 
-        ? skillNames.map(s => `├─ ${s}`).join("\n")
-        : "No active skills loaded.";
+      const skillNames = dirs.filter((d) => !d.startsWith("."));
+      skillsText.content =
+        skillNames.length > 0
+          ? skillNames.map((s) => `├─ ${s}`).join("\n")
+          : "No active skills loaded.";
     } catch {
       skillsText.content = "Failed to load skills.";
     }
@@ -228,7 +241,7 @@ async function run() {
 
     // 3. Load active tools
     const tools = globalRegistry.getAllTools();
-    toolsText.content = tools.map(t => `├─ ${t.name}`).join("\n");
+    toolsText.content = tools.map((t) => `├─ ${t.name}`).join("\n");
   }
 
   // Initial populate
@@ -238,8 +251,11 @@ async function run() {
   promptInput.focus();
 
   // Welcome message
-  appendLogMessage("Welcome to Quiver Evolution Dashboard!", "#6366f1");
-  appendLogMessage("Ready for input. Type your prompt below.", "#94a3b8");
+  appendLogMessage("Welcome to Quiver Evolution Dashboard!", palette.primary);
+  appendLogMessage(
+    "Ready for input. Type your prompt below.",
+    palette.textSecondary,
+  );
 
   // Handle user submit
   let processing = false;
@@ -257,14 +273,14 @@ async function run() {
     }
 
     processing = true;
-    appendLogMessage(`user> ${value}`, "#10b981");
+    appendLogMessage(`user> ${value}`, palette.promptUser);
 
     // Pre-create streaming agent message
     const agentMsg = new TextRenderable(renderer, {
       width: "100%",
       wrapMode: "word",
-      fg: "#6366f1",
-      content: "agent> Thinking..."
+      fg: palette.promptAgent,
+      content: "agent> Thinking...",
     });
     responseLog.add(agentMsg);
 
@@ -280,11 +296,11 @@ async function run() {
         // Force immediate scroll position update during stream
         responseLog.scrollTop = responseLog.scrollHeight;
       });
-      
+
       // Update sidebar manifest in case skills or memory were modified by tools
       await updateManifest();
     } catch (err: any) {
-      appendLogMessage(`[SYSTEM ERROR] ${err.message}`, "#ef4444");
+      appendLogMessage(`[SYSTEM ERROR] ${err.message}`, palette.danger);
     } finally {
       processing = false;
     }
