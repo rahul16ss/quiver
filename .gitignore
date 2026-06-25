@@ -5,8 +5,10 @@ dist/
 .DS_Store
 
 # User-specific memory (contains personal context and learning logs)
-memory/persona.txt
-memory/human.txt
+memory/
+
+# Goal state (personal agent state, not for public repo)
+goals.json
 
 # Generated artifacts
 competitor_*.json
