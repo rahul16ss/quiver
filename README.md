@@ -27,10 +27,21 @@ Here is where different parts of Quiver live, explained simply:
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Getting Started & Installation
 
-To run Quiver and start talking to your assistant:
+You can run Quiver directly from the source code, or install it as a global terminal command.
 
+### Option A: Install Globally (Recommended)
+If you want to run Quiver from anywhere on your system:
+```bash
+npm install -g .
+```
+Now you can simply run:
+```bash
+quiver
+```
+
+### Option B: Run from Source
 1. **Configure your keys:**
    Copy the example configuration file:
    ```bash
@@ -51,6 +62,11 @@ To run Quiver and start talking to your assistant:
    ```
 
 ---
+
+## 📦 Packaging & Public Distribution
+
+If you want to publish Quiver to the public registry so other users can run `npm install -g quiver-agent` or `brew install quiver`, please check out our detailed guide:
+*   [PACKAGING.md](file:///Users/rahul/quiver/PACKAGING.md)
 
 ## 🔒 Security & Safety Controls
 
