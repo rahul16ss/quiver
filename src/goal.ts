@@ -1,7 +1,10 @@
 import { promises as fs } from "fs";
 import * as path from "path";
-import { spawnSync, execSync } from "child_process";
+import { execSync } from "child_process";
 import picocolors from "picocolors";
+import { globalRegistry } from "./registry.js";
+import { Agent } from "./agent.js";
+import { validateConfig } from "./config.js";
 
 export interface Goal {
   id: number;
@@ -82,75 +85,88 @@ async function main() {
     await loadRecipeAndInitGoals(recipeName);
   }
 
-  const goals = await ensureGoalsFile();
+  // Load and validate config once
+  validateConfig();
 
-  const nextGoal = goals.find((g) => g.status === "pending");
-  if (!nextGoal) {
-    console.log(picocolors.green("\n🎉 All goals are completed! No pending tasks remaining."));
-    process.exit(0);
-  }
+  // Load Registry once initially
+  console.log(picocolors.gray("📂 Loading available AI actions..."));
+  await globalRegistry.loadAll();
+  const tools = globalRegistry.getAllTools();
+  console.log(picocolors.green(`✅ Loaded ${tools.length} capabilities.\n`));
 
-  console.log(picocolors.yellow(`\n🚀 Next Task [ID: ${nextGoal.id}]:`));
-  console.log(picocolors.white(`   ${nextGoal.task}`));
+  // Instantiate the single continuous Agent session
+  const agent = new Agent(globalRegistry);
+  console.log(picocolors.blue(`💬 Continuous AI session started.`));
+  console.log(picocolors.gray(`   Session ID:   ${agent.getSessionId()}`));
+  console.log(picocolors.gray(`   Session Logs: .sessions/${agent.getSessionId()}.json\n`));
 
-  // 1. Execute Quiver in single-turn mode for this specific goal
-  console.log(picocolors.gray(`\n📂 Starting AI session for this task...`));
-  const prompt = `Your goal task is: "${nextGoal.task}"\n\nExecute all necessary steps and tools. When done, output a summary.`;
-  
-  const result = spawnSync("npx", ["tsx", "src/cli.ts", "--single-turn", prompt], {
-    stdio: "inherit"
-  });
+  // Loop through all goals continuously in-process
+  while (true) {
+    const goals = await ensureGoalsFile();
+    const nextGoal = goals.find((g) => g.status === "pending");
 
-  if (result.status !== 0) {
-    console.log(picocolors.red(`\n❌ AI session execution failed.`));
-    nextGoal.status = "failed";
-    await saveGoals(goals);
-    process.exit(1);
-  }
+    if (!nextGoal) {
+      console.log(picocolors.green("\n🎉 All goals are completed! Checklist executed successfully in a single session."));
+      break;
+    }
 
-  // 2. Run verification script if provided
-  if (nextGoal.verification) {
-    console.log(picocolors.gray(`\n🔍 Verifying completed task: `) + picocolors.green(nextGoal.verification));
+    console.log(picocolors.yellow(`\n🚀 Next Task [ID: ${nextGoal.id}]:`));
+    console.log(picocolors.white(`   ${nextGoal.task}`));
+    console.log(picocolors.gray(`\n📂 Running task inside continuous AI session...`));
+
+    // Refresh dynamic tool registry so any code-written tools are imported immediately
+    await globalRegistry.loadAll();
+
+    const prompt = `Your goal task is: "${nextGoal.task}"\n\nExecute all necessary steps and tools. When done, output a summary.`;
+
+    process.stdout.write(picocolors.bold(picocolors.magenta("\nagent> ")));
     try {
-      execSync(nextGoal.verification, { stdio: "inherit" });
-      console.log(picocolors.green("✅ Verification passed successfully."));
+      await agent.prompt(prompt, (token) => {
+        process.stdout.write(token);
+      });
+      console.log("\n");
     } catch (err: any) {
-      console.log(picocolors.red(`\n❌ Verification failed: ${err.message}`));
+      console.log(picocolors.red(`\n❌ AI session execution failed: ${err.message}`));
       nextGoal.status = "failed";
       await saveGoals(goals);
       process.exit(1);
     }
+
+    // Run verification check if provided
+    if (nextGoal.verification) {
+      console.log(picocolors.gray(`\n🔍 Verifying completed task: `) + picocolors.green(nextGoal.verification));
+      try {
+        execSync(nextGoal.verification, { stdio: "inherit" });
+        console.log(picocolors.green("✅ Verification passed successfully."));
+      } catch (err: any) {
+        console.log(picocolors.red(`\n❌ Verification failed: ${err.message}`));
+        nextGoal.status = "failed";
+        await saveGoals(goals);
+        process.exit(1);
+      }
+    }
+
+    // Update goals status
+    nextGoal.status = "completed";
+    await saveGoals(goals);
+
+    // Git commit modifications
+    console.log(picocolors.gray(`\n💾 Committing changes to Git...`));
+    try {
+      execSync("git add .", { stdio: "inherit" });
+      const commitMsg = `quiver-goal: completed goal ID ${nextGoal.id} - ${nextGoal.task.substring(0, 50)}...`;
+      execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: "inherit" });
+      console.log(picocolors.green("✅ State committed successfully."));
+    } catch (err) {
+      console.log(picocolors.yellow("ℹ️  No changes to commit."));
+    }
+
+    console.log(picocolors.green(`\n🎉 Task ID ${nextGoal.id} completed successfully!`));
   }
-
-  // 3. Update status
-  nextGoal.status = "completed";
-  await saveGoals(goals);
-
-  // 4. Git commit changes on success
-  console.log(picocolors.gray(`\n💾 Committing changes to Git...`));
-  try {
-    execSync("git add .", { stdio: "inherit" });
-    const commitMsg = `quiver-goal: completed goal ID ${nextGoal.id} - ${nextGoal.task.substring(0, 50)}...`;
-    execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: "inherit" });
-    console.log(picocolors.green("✅ State committed successfully."));
-  } catch (err) {
-    // If there is nothing to commit, continue
-    console.log(picocolors.yellow("ℹ️  No changes to commit."));
-  }
-
-  console.log(picocolors.green(`\n🎉 Task ID ${nextGoal.id} completed successfully!`));
-  
-  // Recursively loop to next pending goal
-  // Run this orchestrator process again to boot in fresh memory space
-  console.log(picocolors.cyan(`\n🔄 Starting next task in checklist...`));
-  const loopResult = spawnSync("npx", ["tsx", "src/goal.ts"], {
-    stdio: "inherit"
-  });
-  
-  process.exit(loopResult.status ?? 0);
 }
 
 main().catch((err) => {
   console.error("Quiver goal runner exception:", err);
   process.exit(1);
 });
+
