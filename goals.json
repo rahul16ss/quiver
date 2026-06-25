@@ -1,18 +1,12 @@
 [
   {
     "id": 1,
-    "task": "Create a new tool src/tools/market_research.ts that utilizes Parallel.ai web search to find competitor information for a target company and save it as JSON.",
-    "status": "failed",
-    "verification": "npx tsc --noEmit && npm test"
-  },
-  {
-    "id": 2,
-    "task": "Use the new market_research tool to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
-    "status": "completed",
+    "task": "Use the market_research tool to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
+    "status": "pending",
     "verification": "test -f competitor_supabase.json"
   },
   {
-    "id": 3,
+    "id": 2,
     "task": "Compile competitor_supabase.json data into a highly structured markdown report comparison table at supabase_market_report.md.",
     "status": "pending",
     "verification": "test -f supabase_market_report.md"

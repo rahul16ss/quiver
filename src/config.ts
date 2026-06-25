@@ -11,6 +11,7 @@ export interface Config {
   requireApprovalFor: string[];
   context7ApiKey: string;
   githubToken: string;
+  ollamaApiKey: string;
 }
 
 export const config: Config = {
@@ -27,6 +28,7 @@ export const config: Config = {
     .filter(Boolean),
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
+  ollamaApiKey: process.env.OLLAMA_API_KEY || "",
 };
 
 export function validateConfig(): void {
@@ -35,6 +37,7 @@ export function validateConfig(): void {
   console.log(`   - Target Model:     ${config.llmModelName}`);
   console.log(`   - API Key Set:      ${config.llmApiKey ? "Yes (length: " + config.llmApiKey.length + ")" : "No"}`);
   console.log(`   - Parallel Key:     ${config.parallelApiKey ? "Yes" : "No"}`);
+  console.log(`   - Ollama Pro Key:   ${config.ollamaApiKey ? "Yes" : "No"}`);
   console.log(`   - Skills Dir:       ${config.skillsDir}`);
   console.log(`   - Memory Dir:       ${config.memoryDir}`);
   console.log(`   - Browser Headless: ${config.browserHeadless}`);

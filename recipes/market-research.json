@@ -1,0 +1,14 @@
+{
+  "name": "market-research",
+  "description": "Performs competitor research and compiles structured reports using web search intelligence.",
+  "goals": [
+    {
+      "task": "Use the market_research tool to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
+      "verification": "test -f competitor_supabase.json"
+    },
+    {
+      "task": "Compile competitor_supabase.json data into a highly structured markdown report comparison table at supabase_market_report.md.",
+      "verification": "test -f supabase_market_report.md"
+    }
+  ]
+}

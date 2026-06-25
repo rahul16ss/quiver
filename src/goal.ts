@@ -45,6 +45,28 @@ async function ensureGoalsFile(): Promise<Goal[]> {
   }
 }
 
+async function loadRecipeAndInitGoals(recipeName: string): Promise<void> {
+  const recipePath = path.resolve("recipes", `${recipeName}.json`);
+  try {
+    const content = await fs.readFile(recipePath, "utf8");
+    const recipe = JSON.parse(content);
+    if (!recipe.goals || !Array.isArray(recipe.goals)) {
+      throw new Error("Invalid recipe format: 'goals' must be an array.");
+    }
+    const goals: Goal[] = recipe.goals.map((g: any, index: number) => ({
+      id: index + 1,
+      task: g.task,
+      status: "pending",
+      verification: g.verification
+    }));
+    await fs.writeFile(GOALS_FILE, JSON.stringify(goals, null, 2), "utf8");
+    console.log(picocolors.green(`\n📑 Loaded recipe "${recipeName}" and initialized goals.json.`));
+  } catch (err: any) {
+    console.error(picocolors.red(`\n❌ Failed to load recipe "${recipeName}": ${err.message}`));
+    process.exit(1);
+  }
+}
+
 async function saveGoals(goals: Goal[]): Promise<void> {
   await fs.writeFile(GOALS_FILE, JSON.stringify(goals, null, 2), "utf8");
 }
@@ -53,6 +75,12 @@ async function main() {
   console.log(picocolors.cyan(picocolors.bold(`\n================================================`)));
   console.log(picocolors.cyan(picocolors.bold(`🎯 QUIVER GOAL-SEEKING HARNESS 🎯`)));
   console.log(picocolors.cyan(picocolors.bold(`================================================`)));
+
+  const recipeIndex = process.argv.indexOf("--recipe");
+  if (recipeIndex !== -1 && recipeIndex + 1 < process.argv.length) {
+    const recipeName = process.argv[recipeIndex + 1];
+    await loadRecipeAndInitGoals(recipeName);
+  }
 
   const goals = await ensureGoalsFile();
 

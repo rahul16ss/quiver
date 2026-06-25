@@ -1,140 +1,147 @@
 {
   "product": "Supabase",
   "category": "backend-as-a-service",
-  "research_date": "2025-01-24",
-  "description": "Supabase is an open-source backend-as-a-service platform and Firebase alternative. It provides a PostgreSQL database, authentication, file storage, instant APIs, edge functions, and realtime capabilities in a unified platform.",
-  "pricing_plans": [
-    {
-      "plan_name": "Free",
-      "price": "$0/month",
-      "target": "Hobbyists, prototyping, MVPs",
-      "features": {
-        "projects": "2 active projects",
+  "description": "Open-source backend-as-a-service platform providing PostgreSQL database, authentication, file storage, instant APIs, edge functions, and realtime capabilities. Positioned as an open-source alternative to Firebase with SQL instead of NoSQL.",
+  "pricing_plans": {
+    "free": {
+      "cost": "$0/month",
+      "description": "Generous free tier for learning, prototyping, and launching MVPs.",
+      "limits": {
+        "projects": "2 active",
+        "organizations": "1 member",
         "database_size": "500 MB (shared CPU)",
         "database_egress": "5 GB/month",
         "cached_egress": "5 GB/month",
-        "auth_maus": "50,000 monthly active users",
+        "auth_maus": "50,000",
         "file_storage": "1 GB",
         "storage_egress": "5 GB/month",
         "edge_function_invocations": "500,000",
         "realtime_connections": "200 concurrent",
         "realtime_messages": "2,000,000/month",
         "max_message_size": "256 KB",
-        "api_requests": "Unlimited",
-        "support": "Community support"
+        "api_requests": "Unlimited"
       },
+      "features_included": [
+        "Auth, Realtime, APIs",
+        "Community support"
+      ],
       "limitations": [
-        "No automated backups or PITR",
+        "No long-term backups or PITR",
         "No SOC 2 / HIPAA compliance",
         "No SSO",
         "No SLAs or priority support",
-        "Projects pause after 1 week of inactivity",
-        "Limited to 1 organization member"
+        "Projects pause after 1 week of inactivity"
       ]
     },
-    {
-      "plan_name": "Pro",
-      "price": "$25/month per project (includes $10 in compute credits)",
-      "target": "Production applications, startups",
-      "features": {
+    "pro": {
+      "cost": "$25/month per project (includes $10 in compute credits)",
+      "description": "Most popular tier for production applications needing predictable performance and room to scale.",
+      "limits": {
         "database_size": "8 GB per project",
-        "database_egress": "250 GB included ($0.09/GB overage)",
-        "cached_egress": "250 GB included ($0.03/GB overage)",
-        "auth_maus": "100,000 included ($0.00325/additional MAU)",
-        "file_storage": "100 GB included ($0.021/GB/month overage)",
-        "storage_egress": "250 GB included ($0.09/GB overage)",
-        "edge_function_invocations": "2,000,000 ($2 per additional 1M)",
-        "realtime_messages": "5,000,000 ($2.50 per additional 1M)",
-        "realtime_peak_connections": "500 ($10 per additional 1,000)",
-        "backups": "Daily backups stored for 7 days",
-        "log_retention": "7-day log retention",
-        "support": "Email support",
-        "spend_cap": "Enabled by default to prevent runaway bills"
-      }
+        "database_egress": "250 GB (then $0.09/GB)",
+        "cached_egress": "250 GB (then $0.03/GB)",
+        "auth_maus": "100,000 (then $0.00325 per additional MAU)",
+        "file_storage": "100 GB (then $0.021/GB/month)",
+        "storage_egress": "250 GB (then $0.09/GB)",
+        "edge_function_invocations": "2,000,000 (then $2 per additional 1,000,000)",
+        "realtime_messages": "5,000,000 (then $2.50 per additional 1,000,000)",
+        "realtime_peak_connections": "500 (then $10 per additional 1,000)"
+      },
+      "features_included": [
+        "Everything in Free plan",
+        "Email support",
+        "Daily backups stored for 7 days",
+        "7-day log retention",
+        "No project pausing",
+        "Spend cap enabled by default to prevent runaway bills"
+      ]
     },
-    {
-      "plan_name": "Team",
-      "price": "$25/month per project (usage-based scaling)",
-      "target": "Small teams, growing startups",
-      "features": {
-        "auth_maus": "Higher MAU limits than Pro",
-        "sso": "Single Sign-On (SSO)",
-        "audit_logs": "Audit logs",
-        "support": "Stronger support compared to Pro",
-        "same_quota_and_overage": "Same 100 GB quota and overage pricing as Pro"
-      }
+    "team": {
+      "cost": "$25/month per project (usage-based scaling)",
+      "description": "Bridges the gap between hobby projects and production apps, accessible for startups and small teams.",
+      "features_included": [
+        "Higher MAU limits than Pro",
+        "SSO (Single Sign-On)",
+        "Audit logs",
+        "Stronger support compared to Pro",
+        "Same 100 GB quota and overage pricing as Pro"
+      ]
     },
-    {
-      "plan_name": "Enterprise",
-      "price": "Custom pricing",
-      "target": "Large-scale applications, enterprises",
-      "features": {
-        "compliance": "SOC 2 Type II, HIPAA",
-        "infrastructure": "Private VPC, Regional replication",
-        "sla": "Custom SLAs",
-        "pitr": "Point-in-Time Recovery (up to 28 days retention)",
-        "sso_custom_domains": "SSO and custom domains",
-        "support": "Priority support",
-        "custom_quotas": "Custom quotas and private cloud deployment"
-      }
+    "enterprise": {
+      "cost": "Custom pricing",
+      "description": "Custom plan tailored to large-scale applications with compliance and scalability features.",
+      "features_included": [
+        "SOC 2 Type II compliance",
+        "HIPAA compliance (with BAA)",
+        "Private VPC",
+        "Regional replication",
+        "Custom SLAs",
+        "Point-in-Time Recovery (up to 28-day retention)",
+        "SSO & custom domains",
+        "Custom quotas",
+        "Dedicated infrastructure"
+      ]
     }
-  ],
-  "compute_add_ons": [
-    { "tier": "Micro (default on Pro)", "specs": "2-core ARM, 1 GB RAM", "cost": "~$12/month (covered by $10 credit)" },
-    { "tier": "Small", "specs": "2-core ARM, 2 GB RAM", "cost": "$50/month add-on" },
-    { "tier": "Large", "specs": "Higher compute", "cost": "Varies (realistic production baseline ~$110-120/month)" },
-    { "tier": "12XL", "specs": "Maximum compute", "cost": "~$2,800/month" }
-  ],
-  "paid_add_ons": [
-    { "name": "Point-in-Time Recovery (PITR)", "cost": "$100/month for 7-day retention", "notes": "Enterprise plan supports up to 28-day retention" },
-    { "name": "Custom Domains", "cost": "$10/month" },
-    { "name": "Database Branching", "cost": "$0.01344/branch/hour" },
-    { "name": "Advanced MFA", "cost": "$75/month (first project)" },
-    { "name": "HIPAA Projects", "cost": "Custom pricing (Team or Enterprise only)" }
-  ],
-  "key_features": [
-    {
-      "feature": "PostgreSQL Database",
-      "description": "Full PostgreSQL database with extensions support, table-oriented relational data model"
+  },
+  "add_ons": {
+    "compute_instances": {
+      "micro_default_pro": "~$12/month (covered by $10 credit) — 2-core shared ARM, 1 GB RAM",
+      "small": "$50/month add-on — 2-core ARM, 2 GB RAM",
+      "range": "From ~$12/month (Micro) to ~$2,800/month (12XL)"
     },
-    {
-      "feature": "Authentication",
-      "description": "Prebuilt auth/user management system with social providers: Google, Facebook, Apple, Azure (Microsoft), Twitter, GitHub, GitLab, BitBucket, Discord, Keycloak, LinkedIn, Notion, Slack, Spotify, Twitch, WorkOS, and Zoom"
+    "point_in_time_recovery_pitr": {
+      "cost": "$100/month for 7-day retention; Enterprise unlocks up to 28-day retention"
     },
-    {
-      "feature": "Realtime",
-      "description": "Subscribe to Postgres changes in real-time, broadcast messages to multiple clients, track user presence and online status"
+    "custom_domains": "$10/month",
+    "database_branching": "$0.01344/branch/hour",
+    "advanced_mfa": "$75/month (first project)",
+    "hipaa_projects": "Available as paid add-on for Team or Enterprise plans; cost is custom"
+  },
+  "key_features": {
+    "database": {
+      "type": "PostgreSQL (relational, SQL, OLTP)",
+      "description": "Full Postgres database with extensions support, read replicas (in early preview)"
     },
-    {
-      "feature": "Storage",
-      "description": "Store and serve large files with storage buckets (S3-compatible object storage), eliminating need for separate S3 integration"
+    "authentication": {
+      "description": "Prebuilt authentication/user management system with no need for third-party tools",
+      "social_providers": [
+        "Google", "Facebook", "Apple", "Azure (Microsoft)", "Twitter", "GitHub",
+        "GitLab", "BitBucket", "Discord", "Keycloak", "LinkedIn", "Notion",
+        "Slack", "Spotify", "Twitch", "WorkOS", "Zoom"
+      ]
     },
-    {
-      "feature": "Edge Functions",
-      "description": "Serverless Deno-based functions running close to users for reduced latency. Best suited for lightweight serverless logic."
+    "storage": {
+      "description": "Store and serve large files directly from the platform using storage buckets (S3-compatible object storage)"
     },
-    {
-      "feature": "Instant APIs",
+    "edge_functions": {
+      "description": "Serverless Deno-based functions that run closer to the user, reducing latency. Best suited for lightweight serverless logic."
+    },
+    "realtime": {
+      "description": "Subscribe to Postgres changes for real-time updates on CRUD operations. Includes Broadcast and Presence features."
+    },
+    "instant_apis": {
       "description": "Auto-generated REST and GraphQL APIs from your database schema"
-    },
-    {
-      "feature": "CLI",
-      "description": "Supabase CLI for local development and project management"
-    },
-    {
-      "feature": "Monitoring",
-      "description": "Web dashboard with Prometheus-compatible metrics endpoints for health insights"
     }
-  ],
+  },
+  "overage_pricing_summary": {
+    "database_egress": "$0.09/GB after 250 GB (Pro)",
+    "cached_egress": "$0.03/GB after 250 GB (Pro)",
+    "storage_egress": "$0.09/GB after 250 GB (Pro)",
+    "storage_overage": "$0.021/GB/month after 100 GB (Pro)",
+    "auth_mau_overage": "$0.00325 per additional MAU after 100,000 (Pro)",
+    "edge_function_overage": "$2 per additional 1,000,000 invocations (Pro)",
+    "realtime_message_overage": "$2.50 per additional 1,000,000 messages (Pro)",
+    "realtime_connection_overage": "$10 per additional 1,000 peak connections (Pro)"
+  },
   "notable_details": [
-    "Open-source, community-maintained platform",
-    "Positioned as a Firebase alternative with SQL (PostgreSQL) instead of NoSQL",
-    "Spend cap enabled by default on Pro plan to prevent unexpected bills",
-    "Free tier is one of the most generous in the BaaS space",
-    "Typically 30-50% cheaper than Firebase at scale due to resource-based pricing vs per-operation pricing",
-    "More predictable pricing than AWS — equivalent AWS setup estimated at $80-120/month vs $25 Pro plan",
-    "Projects pause after 1 week of inactivity on Free plan",
-    "Realistic production Pro plan baseline is ~$110-120/month when including dedicated Large compute"
+    "Spend cap enabled by default on Pro plan to prevent runaway bills",
+    "Free projects pause after 1 week of inactivity",
+    "API requests are unlimited on all plans",
+    "Supabase is open-source and community-maintained",
+    "CLI available for managing projects via command line",
+    "Provides Prometheus-compatible metrics endpoints for monitoring",
+    "Realistic production Pro plan baseline is ~$110-120/month when including dedicated Large compute",
+    "Supabase is often 30-50% cheaper than Firebase at scale due to resource-based vs per-operation pricing"
   ],
   "sources": [
     "https://supabase.com/docs/guides/platform/billing-on-supabase",
@@ -143,5 +150,6 @@
     "https://cotera.co/articles/supabase-pricing-guide",
     "https://www.metacto.com/blogs/the-true-cost-of-supabase-a-comprehensive-guide-to-pricing-integration-and-maintenance",
     "https://bejamas.com/hub/serverless-database/supabase"
-  ]
+  ],
+  "researched_at": "2026-05-27"
 }
