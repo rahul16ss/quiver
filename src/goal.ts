@@ -122,7 +122,11 @@ async function main() {
     }
   }
 
-  // 3. Git commit changes on success
+  // 3. Update status
+  nextGoal.status = "completed";
+  await saveGoals(goals);
+
+  // 4. Git commit changes on success
   console.log(picocolors.gray(`\n💾 Committing changes to Git...`));
   try {
     execSync("git add .", { stdio: "inherit" });
@@ -133,10 +137,6 @@ async function main() {
     // If there is nothing to commit, continue
     console.log(picocolors.yellow("ℹ️  No changes to commit."));
   }
-
-  // 4. Update status and loop
-  nextGoal.status = "completed";
-  await saveGoals(goals);
 
   console.log(picocolors.green(`\n🎉 Goal ID ${nextGoal.id} completed successfully!`));
   

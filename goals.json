@@ -8,7 +8,7 @@
   {
     "id": 2,
     "task": "Compile competitor_supabase.json data into a highly structured markdown report comparison table at supabase_market_report.md.",
-    "status": "pending",
+    "status": "completed",
     "verification": "test -f supabase_market_report.md"
   }
 ]
