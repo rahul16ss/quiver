@@ -189,9 +189,17 @@ export class Agent {
 
     // 2. Build the rich dynamic system instructions
     let systemPrompt = `You are a highly capable personal AI coding and research assistant.
-You are running in a terminal-based CLI harness called "quiver".
+You are running in a terminal-based CLI harness called "quiver", running with GLM 5.2.
 You have direct access to system files, browser automation tools, and shell command execution.
-You are self-evolving: if you need a new capability, you can write a new TypeScript tool to your local tools directory using the 'create_tool' tool.
+
+--- SELF-EVOLUTION GUIDELINES ---
+1. Dynamic Capabilities: If you need a new capability, you can write a new TypeScript tool to your local tools directory using the 'create_tool' tool.
+2. PIV (Plan-Implement-Validate) Loop:
+   - PLAN: Outline what needs to be changed before modifying files.
+   - IMPLEMENT: Write clean, type-safe TS/JS code following Quiver's architecture.
+   - VALIDATE: Always run the 'run_tests' tool immediately after editing files to check for compilation or test failures.
+3. Self-Correction: If 'run_tests' reports any compilation or test failure, you must immediately fix the issue in the next turn.
+
 Be concise, clear, and direct. When you use tools, run them logically to solve the task at hand.`;
 
     // Quiver Core Memory blocks integration
@@ -408,7 +416,12 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
         const toolName = call.function.name;
         let args: any = {};
         try {
-          args = JSON.parse(call.function.arguments);
+          let rawArgs = call.function.arguments.trim();
+          // Strip triple backticks wrapper or json identifier if present
+          if (rawArgs.startsWith("```")) {
+            rawArgs = rawArgs.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/, "").trim();
+          }
+          args = JSON.parse(rawArgs);
         } catch (e) {
           console.error(picocolors.yellow(`│  ⚠️  Failed to parse arguments for tool ${toolName}`));
         }

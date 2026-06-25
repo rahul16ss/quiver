@@ -1,0 +1,18 @@
+{
+  "name": "self-evolve",
+  "description": "Bootstraps Quiver's self-evolution loop by running validation and coding new helper tools.",
+  "goals": [
+    {
+      "task": "Run the run_tests tool to verify codebase integrity and ensure no compilation or test failures exist.",
+      "verification": "npx tsx -e \"import { tool } from './src/tools/run_tests.ts'; tool.execute({}).then(res => { if(!JSON.parse(res).success) process.exit(1); });\""
+    },
+    {
+      "task": "Create a new tool src/tools/format_code.ts that formats TypeScript files using a format command or custom function to ensure pristine code style.",
+      "verification": "test -f src/tools/format_code.ts && npx tsc --noEmit"
+    },
+    {
+      "task": "Create a new tool src/tools/log_tokens.ts that parses the latest session log from .sessions/ and prints token/turn summary statistics to help optimize context bounds.",
+      "verification": "test -f src/tools/log_tokens.ts && npx tsc --noEmit"
+    }
+  ]
+}
