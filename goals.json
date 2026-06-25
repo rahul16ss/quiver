@@ -2,7 +2,7 @@
   {
     "id": 1,
     "task": "Use the market_research tool to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
-    "status": "pending",
+    "status": "completed",
     "verification": "test -f competitor_supabase.json"
   },
   {

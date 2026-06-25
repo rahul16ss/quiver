@@ -2,157 +2,162 @@
 
 > **Product:** Supabase  
 > **Category:** Backend-as-a-Service (BaaS)  
-> **Research Date:** 2025-01-24  
-> **Description:** Supabase is an open-source backend-as-a-service platform and Firebase alternative. It provides a PostgreSQL database, authentication, file storage, instant APIs, edge functions, and realtime capabilities in a unified platform.
+> **Research Date:** 2026-05-27  
+> **Description:** Open-source backend-as-a-service platform providing PostgreSQL database, authentication, file storage, instant APIs, edge functions, and realtime capabilities. Positioned as an open-source alternative to Firebase with SQL instead of NoSQL.
 
 ---
 
 ## Table of Contents
 
 1. [Pricing Plan Comparison](#1-pricing-plan-comparison)
-2. [Feature Comparison by Plan](#2-feature-comparison-by-plan)
-3. [Compute Add-Ons](#3-compute-add-ons)
-4. [Paid Add-Ons](#4-paid-add-ons)
-5. [Key Platform Features](#5-key-platform-features)
-6. [Notable Details & Competitive Positioning](#6-notable-details--competitive-positioning)
-7. [Sources](#7-sources)
+2. [Resource Limits by Plan](#2-resource-limits-by-plan)
+3. [Features by Plan](#3-features-by-plan)
+4. [Overage Pricing](#4-overage-pricing)
+5. [Add-Ons](#5-add-ons)
+6. [Key Platform Features](#6-key-platform-features)
+7. [Notable Details & Insights](#7-notable-details--insights)
+8. [Sources](#8-sources)
 
 ---
 
 ## 1. Pricing Plan Comparison
 
-| Attribute | Free | Pro | Team | Enterprise |
+| Feature | Free | Pro | Team | Enterprise |
 |---|---|---|---|---|
-| **Price** | $0/month | $25/month per project (includes $10 compute credit) | $25/month per project (usage-based scaling) | Custom pricing |
-| **Target Audience** | Hobbyists, prototyping, MVPs | Production applications, startups | Small teams, growing startups | Large-scale applications, enterprises |
-| **Active Projects** | 2 | 1+ (per-project billing) | 1+ (per-project billing) | Custom |
-| **Database Size** | 500 MB (shared CPU) | 8 GB per project | Same as Pro | Custom |
-| **Database Egress** | 5 GB/month | 250 GB included ($0.09/GB overage) | Same as Pro | Custom |
-| **Cached Egress** | 5 GB/month | 250 GB included ($0.03/GB overage) | Same as Pro | Custom |
-| **Auth MAUs** | 50,000 | 100,000 included ($0.00325/additional MAU) | Higher than Pro | Custom |
-| **File Storage** | 1 GB | 100 GB included ($0.021/GB/month overage) | Same as Pro | Custom |
-| **Storage Egress** | 5 GB/month | 250 GB included ($0.09/GB overage) | Same as Pro | Custom |
-| **Edge Function Invocations** | 500,000 | 2,000,000 ($2 per additional 1M) | Same as Pro | Custom |
-| **Realtime Connections** | 200 concurrent | 500 peak ($10 per additional 1,000) | Same as Pro | Custom |
-| **Realtime Messages** | 2,000,000/month | 5,000,000 ($2.50 per additional 1M) | Same as Pro | Custom |
-| **Max Message Size** | 256 KB | 256 KB | 256 KB | Custom |
-| **API Requests** | Unlimited | Unlimited | Unlimited | Unlimited |
-| **Backups** | ❌ None | ✅ Daily backups (7-day retention) | ✅ Daily backups (7-day retention) | ✅ PITR (up to 28-day retention) |
-| **Log Retention** | ❌ | 7 days | 7 days | Custom |
+| **Cost** | $0/month | $25/month per project (includes $10 compute credits) | $25/month per project (usage-based scaling) | Custom pricing |
+| **Target Audience** | Learning, prototyping, MVPs | Production apps needing predictable performance | Startups & small teams needing SSO/audit logs | Large-scale apps with compliance needs |
+| **Project Pausing** | Yes — after 1 week of inactivity | No | No | No |
+| **Spend Cap** | N/A | Enabled by default | Enabled by default | Custom |
+| **Support** | Community | Email | Stronger than Pro | Custom SLAs |
+| **Backups** | None | Daily, 7-day retention | Daily, 7-day retention | PITR up to 28-day retention |
+| **Log Retention** | None | 7 days | 7 days | Custom |
 | **SSO** | ❌ | ❌ | ✅ | ✅ |
 | **Audit Logs** | ❌ | ❌ | ✅ | ✅ |
-| **SOC 2 / HIPAA** | ❌ | ❌ | ❌ (HIPAA available as add-on) | ✅ SOC 2 Type II, HIPAA |
-| **Custom Domains** | ❌ | ❌ | ❌ (add-on available) | ✅ |
+| **SOC 2 Type II** | ❌ | ❌ | ❌ | ✅ |
+| **HIPAA (with BAA)** | ❌ | ❌ | ❌ | ✅ |
 | **Private VPC** | ❌ | ❌ | ❌ | ✅ |
 | **Regional Replication** | ❌ | ❌ | ❌ | ✅ |
-| **SLA** | ❌ | ❌ | ❌ | ✅ Custom SLAs |
-| **Spend Cap** | N/A | ✅ Enabled by default | ✅ | Custom |
-| **Support** | Community | Email | Stronger than Pro | Priority |
+| **Custom Domains** | ❌ | ❌ | ❌ | ✅ |
+| **Custom Quotas** | ❌ | ❌ | ❌ | ✅ |
+| **Dedicated Infrastructure** | ❌ | ❌ | ❌ | ✅ |
 
 ---
 
-## 2. Feature Comparison by Plan
+## 2. Resource Limits by Plan
 
-### 2.1 Free Plan Limitations
-
-| Limitation | Details |
-|---|---|
-| No automated backups or PITR | Manual exports only |
-| No SOC 2 / HIPAA compliance | Not suitable for regulated industries |
-| No SSO | Single sign-on not available |
-| No SLAs or priority support | Community support only |
-| Project pausing | Projects pause after 1 week of inactivity |
-| Organization members | Limited to 1 member |
-
-### 2.2 Pro Plan Highlights
-
-| Feature | Details |
-|---|---|
-| Spend cap | Enabled by default to prevent runaway bills |
-| Daily backups | Stored for 7 days |
-| Log retention | 7-day retention |
-| Compute credit | $10/month included (offsets Micro tier cost) |
-| Support | Email support |
-
-### 2.3 Team Plan Highlights
-
-| Feature | Details |
-|---|---|
-| SSO | Single Sign-On support |
-| Audit logs | Available |
-| Support | Stronger than Pro plan |
-| Quotas & overage | Same 100 GB quota and overage pricing as Pro |
-
-### 2.4 Enterprise Plan Highlights
-
-| Feature | Details |
-|---|---|
-| Compliance | SOC 2 Type II, HIPAA |
-| Infrastructure | Private VPC, Regional replication |
-| PITR | Point-in-Time Recovery (up to 28-day retention) |
-| SSO & Custom Domains | Full support |
-| SLA | Custom SLAs |
-| Deployment | Custom quotas and private cloud deployment |
-| Support | Priority support |
+| Resource | Free | Pro | Team | Enterprise |
+|---|---|---|---|---|
+| **Active Projects** | 2 | Unlimited | Unlimited | Custom |
+| **Organization Members** | 1 | Unlimited | Unlimited | Custom |
+| **Database Size** | 500 MB (shared CPU) | 8 GB per project | 8 GB per project | Custom |
+| **Database Egress** | 5 GB/month | 250 GB (then $0.09/GB) | 250 GB (then $0.09/GB) | Custom |
+| **Cached Egress** | 5 GB/month | 250 GB (then $0.03/GB) | 250 GB (then $0.03/GB) | Custom |
+| **Auth MAUs** | 50,000 | 100,000 (then $0.00325/MAU) | Higher than Pro | Custom |
+| **File Storage** | 1 GB | 100 GB (then $0.021/GB/month) | 100 GB (then $0.021/GB/month) | Custom |
+| **Storage Egress** | 5 GB/month | 250 GB (then $0.09/GB) | 250 GB (then $0.09/GB) | Custom |
+| **Edge Function Invocations** | 500,000 | 2,000,000 (then $2 per 1M) | 2,000,000 (then $2 per 1M) | Custom |
+| **Realtime Concurrent Connections** | 200 | 500 (then $10 per 1K peak) | 500 (then $10 per 1K peak) | Custom |
+| **Realtime Messages** | 2,000,000/month | 5,000,000 (then $2.50 per 1M) | 5,000,000 (then $2.50 per 1M) | Custom |
+| **Max Message Size** | 256 KB | 256 KB | 256 KB | Custom |
+| **API Requests** | Unlimited | Unlimited | Unlimited | Unlimited |
 
 ---
 
-## 3. Compute Add-Ons
+## 3. Features by Plan
 
-| Compute Tier | Specs | Cost |
+### Free Plan
+- Auth, Realtime, APIs
+- Community support
+
+### Pro Plan
+- Everything in Free plan
+- Email support
+- Daily backups stored for 7 days
+- 7-day log retention
+- No project pausing
+- Spend cap enabled by default to prevent runaway bills
+
+### Team Plan
+- Everything in Pro plan
+- Higher MAU limits than Pro
+- SSO (Single Sign-On)
+- Audit logs
+- Stronger support compared to Pro
+- Same 100 GB quota and overage pricing as Pro
+
+### Enterprise Plan
+- Everything in Team plan
+- SOC 2 Type II compliance
+- HIPAA compliance (with BAA)
+- Private VPC
+- Regional replication
+- Custom SLAs
+- Point-in-Time Recovery (up to 28-day retention)
+- SSO & custom domains
+- Custom quotas
+- Dedicated infrastructure
+
+---
+
+## 4. Overage Pricing
+
+| Resource | Overage Rate (Pro Plan) |
+|---|---|
+| Database Egress | $0.09/GB after 250 GB |
+| Cached Egress | $0.03/GB after 250 GB |
+| Storage Egress | $0.09/GB after 250 GB |
+| Storage Overage | $0.021/GB/month after 100 GB |
+| Auth MAU | $0.00325 per additional MAU after 100,000 |
+| Edge Function Invocations | $2.00 per additional 1,000,000 |
+| Realtime Messages | $2.50 per additional 1,000,000 |
+| Realtime Peak Connections | $10.00 per additional 1,000 |
+
+---
+
+## 5. Add-Ons
+
+| Add-On | Cost | Details |
 |---|---|---|
-| Micro (default on Pro) | 2-core ARM, 1 GB RAM | ~$12/month (covered by $10 credit) |
-| Small | 2-core ARM, 2 GB RAM | $50/month add-on |
-| Large | Higher compute | Varies (realistic production baseline ~$110–120/month) |
-| 12XL | Maximum compute | ~$2,800/month |
-
-> ⚠️ **Note:** The Pro plan's $25/month base price uses the Micro compute tier. For production workloads, upgrading to the Large tier brings the realistic monthly cost to ~$110–120/month.
-
----
-
-## 4. Paid Add-Ons
-
-| Add-On | Cost | Notes |
-|---|---|---|
-| Point-in-Time Recovery (PITR) | $100/month (7-day retention) | Enterprise plan supports up to 28-day retention |
-| Custom Domains | $10/month | Available on Team/Enterprise |
-| Database Branching | $0.01344/branch/hour | Pay-per-use for ephemeral branches |
-| Advanced MFA | $75/month (first project) | Enhanced multi-factor authentication |
-| HIPAA Projects | Custom pricing | Team or Enterprise plans only |
+| **Compute — Micro (default on Pro)** | ~$12/month (covered by $10 credit) | 2-core shared ARM, 1 GB RAM |
+| **Compute — Small** | $50/month | 2-core ARM, 2 GB RAM |
+| **Compute — Full Range** | ~$12 to ~$2,800/month | From Micro to 12XL |
+| **Point-in-Time Recovery (PITR)** | $100/month | 7-day retention; Enterprise unlocks up to 28-day |
+| **Custom Domains** | $10/month | Per domain |
+| **Database Branching** | $0.01344/branch/hour | Pay-per-use branching |
+| **Advanced MFA** | $75/month | First project |
+| **HIPAA Projects** | Custom | Available as paid add-on for Team or Enterprise |
 
 ---
 
-## 5. Key Platform Features
+## 6. Key Platform Features
 
 | Feature | Description |
 |---|---|
-| **PostgreSQL Database** | Full PostgreSQL database with extensions support, table-oriented relational data model |
-| **Authentication** | Prebuilt auth/user management with social providers: Google, Facebook, Apple, Azure (Microsoft), Twitter, GitHub, GitLab, BitBucket, Discord, Keycloak, LinkedIn, Notion, Slack, Spotify, Twitch, WorkOS, Zoom |
-| **Realtime** | Subscribe to Postgres changes in real-time, broadcast messages to multiple clients, track user presence and online status |
-| **Storage** | S3-compatible object storage with storage buckets — eliminates need for separate S3 integration |
-| **Edge Functions** | Serverless Deno-based functions running close to users for reduced latency; best suited for lightweight serverless logic |
+| **Database** | Full PostgreSQL (relational, SQL, OLTP) with extensions support and read replicas (early preview) |
+| **Authentication** | Prebuilt auth/user management with 17+ social providers (Google, Facebook, Apple, Azure, Twitter, GitHub, GitLab, BitBucket, Discord, Keycloak, LinkedIn, Notion, Slack, Spotify, Twitch, WorkOS, Zoom) |
+| **Storage** | S3-compatible object storage with bucket-based file management |
+| **Edge Functions** | Serverless Deno-based functions running close to the user for reduced latency |
+| **Realtime** | Subscribe to Postgres changes for real-time CRUD updates; includes Broadcast and Presence features |
 | **Instant APIs** | Auto-generated REST and GraphQL APIs from your database schema |
-| **CLI** | Supabase CLI for local development and project management |
-| **Monitoring** | Web dashboard with Prometheus-compatible metrics endpoints for health insights |
 
 ---
 
-## 6. Notable Details & Competitive Positioning
+## 7. Notable Details & Insights
 
-| Insight | Details |
+| # | Insight |
 |---|---|
-| Open-source | Community-maintained platform |
-| Firebase alternative | Uses SQL (PostgreSQL) instead of NoSQL |
-| Spend cap protection | Enabled by default on Pro plan to prevent unexpected bills |
-| Generous free tier | One of the most generous in the BaaS space |
-| Cost vs Firebase | Typically 30–50% cheaper than Firebase at scale (resource-based vs per-operation pricing) |
-| Cost vs AWS | Equivalent AWS setup estimated at $80–120/month vs $25 Pro plan |
-| Project pausing | Free plan projects pause after 1 week of inactivity |
-| Realistic production cost | Pro plan baseline is ~$110–120/month when including dedicated Large compute |
+| 1 | Spend cap enabled by default on Pro plan to prevent runaway bills |
+| 2 | Free projects pause after 1 week of inactivity |
+| 3 | API requests are unlimited on all plans |
+| 4 | Supabase is open-source and community-maintained |
+| 5 | CLI available for managing projects via command line |
+| 6 | Provides Prometheus-compatible metrics endpoints for monitoring |
+| 7 | Realistic production Pro plan baseline is ~$110–120/month when including dedicated Large compute |
+| 8 | Supabase is often 30–50% cheaper than Firebase at scale due to resource-based vs per-operation pricing |
 
 ---
 
-## 7. Sources
+## 8. Sources
 
 | # | URL |
 |---|---|
@@ -165,4 +170,4 @@
 
 ---
 
-*Report generated from `competitor_supabase.json` on 2025-01-24.*
+*Report generated from `competitor_supabase.json` — researched on 2026-05-27.*
