@@ -60,12 +60,14 @@ async function askUserApproval(toolName: string, args: any): Promise<boolean> {
   });
 
   return new Promise((resolve) => {
-    console.log(picocolors.yellow(`\n┌── ⚠️  [APPROVAL GATE] ${"─".repeat(25)}`));
-    console.log(picocolors.yellow(`│  Tool: `) + picocolors.green(toolName));
-    console.log(picocolors.yellow(`│  Args: `) + picocolors.white(JSON.stringify(args, null, 2).replace(/\n/g, "\n│           ")));
-    console.log(picocolors.yellow(`└──────────────────────────────────────────────`));
+    console.log(picocolors.yellow(`\n┌── 🔒 Security Permission Request ${"─".repeat(15)}`));
+    console.log(picocolors.yellow(`│  The AI is requesting permission to perform an action on your system:`));
+    console.log(picocolors.yellow(`│  `));
+    console.log(picocolors.yellow(`│  Action Name: `) + picocolors.green(toolName));
+    console.log(picocolors.yellow(`│  Details:     `) + picocolors.white(JSON.stringify(args, null, 2).replace(/\n/g, "\n│               ")));
+    console.log(picocolors.yellow(`└───────────────────────────────────────────────────────────`));
     
-    rl.question(picocolors.bold(picocolors.cyan("Approve execution? (y/N): ")), (answer) => {
+    rl.question(picocolors.bold(picocolors.cyan("Allow this action? (y/N): ")), (answer) => {
       rl.close();
       const cleanAnswer = answer.trim().toLowerCase();
       resolve(cleanAnswer === "y" || cleanAnswer === "yes");
@@ -267,12 +269,12 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
 
       // Show Context Manifest summary to user
       console.log(picocolors.cyan(`\n╭──────────────────────────────────────────────╮`));
-      console.log(picocolors.cyan(`│             📋 CONTEXT MANIFEST              │`));
+      console.log(picocolors.cyan(`│              📋 SESSION OVERVIEW             │`));
       console.log(picocolors.cyan(`├──────────────────────────────────────────────┤`));
-      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Model:   `) + picocolors.green(manifest.model));
-      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Skills:  `) + (skills.length > 0 ? picocolors.white(skills.map(s => `${s.id} (v${s.version})`).join(", ")) : picocolors.yellow("None")));
-      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Memory:  `) + (memories.length > 0 ? picocolors.white(`${memories.length} files (${memories.reduce((acc, m) => acc + m.sizeBytes, 0)} B)`) : picocolors.yellow("None")));
-      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Tools:   `) + picocolors.green(`${activeTools.length} active tools`));
+      console.log(picocolors.cyan(`│ `) + picocolors.gray(`AI Model:  `) + picocolors.green(manifest.model));
+      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Tutorials: `) + (skills.length > 0 ? picocolors.white(skills.map(s => `${s.id} (v${s.version})`).join(", ")) : picocolors.yellow("None Loaded")));
+      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Memory:    `) + (memories.length > 0 ? picocolors.white(`${memories.length} details remembered`) : picocolors.yellow("None Loaded")));
+      console.log(picocolors.cyan(`│ `) + picocolors.gray(`Actions:   `) + picocolors.green(`${activeTools.length} actions available`));
       console.log(picocolors.cyan(`╰──────────────────────────────────────────────╯`));
 
       const payload: any = {
@@ -410,7 +412,7 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
       }
 
       // Execute tool calls
-      console.log(picocolors.cyan(`\n╭─── 🛠️  Executing ${toolCalls.length} tool call(s) `) + picocolors.cyan("─".repeat(20)));
+      console.log(picocolors.cyan(`\n╭─── 🛠️  Performing ${toolCalls.length} action(s) `) + picocolors.cyan("─".repeat(22)));
       for (let i = 0; i < toolCalls.length; i++) {
         const call = toolCalls[i];
         const toolName = call.function.name;
@@ -423,7 +425,7 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
           }
           args = JSON.parse(rawArgs);
         } catch (e) {
-          console.error(picocolors.yellow(`│  ⚠️  Failed to parse arguments for tool ${toolName}`));
+          console.error(picocolors.yellow(`│  ⚠️  Failed to parse details for action ${toolName}`));
         }
 
         // 4. Human-Approval Gate Check
@@ -434,23 +436,23 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
 
         let result: any;
         if (!isApproved) {
-          result = `Error: Action for tool '${toolName}' was denied/rejected by the user.`;
-          console.log(picocolors.red(`│  🚫 Rejected: ${toolName} execution blocked by user.`));
+          result = `Error: Action '${toolName}' was denied by the user.`;
+          console.log(picocolors.red(`│  🚫 Declined: Action "${toolName}" was blocked by user.`));
         } else {
-          console.log(picocolors.cyan(`│  🚀 Calling: `) + picocolors.green(toolName));
-          console.log(picocolors.gray(`│  👉 Args:    ${JSON.stringify(args, null, 2).replace(/\n/g, "\n│              ")}`));
+          console.log(picocolors.cyan(`│  🚀 Action:  `) + picocolors.green(toolName));
+          console.log(picocolors.gray(`│  👉 Details: ${JSON.stringify(args, null, 2).replace(/\n/g, "\n│              ")}`));
           const tool = this.registry.getTool(toolName);
           if (!tool) {
-            result = `Error: Tool '${toolName}' not found in registry.`;
+            result = `Error: Action '${toolName}' is not available.`;
             console.error(picocolors.red(`│  ❌ Error: ${result}`));
           } else {
             try {
               result = await tool.execute(args);
               const displayResult = typeof result === "string" ? result : JSON.stringify(result);
               const preview = displayResult.length > 300 ? `${displayResult.substring(0, 300)}... (truncated)` : displayResult;
-              console.log(picocolors.cyan(`│  ✅ Output:  `) + picocolors.magenta(preview.replace(/\n/g, "\n│              ")));
+              console.log(picocolors.cyan(`│  ✅ Outcome: `) + picocolors.magenta(preview.replace(/\n/g, "\n│              ")));
             } catch (error: any) {
-              result = `Error executing tool: ${error.message}`;
+              result = `Error performing action: ${error.message}`;
               console.error(picocolors.red(`│  ❌ Failed:  ${error.message}`));
             }
           }
@@ -472,7 +474,7 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
       }
       console.log(picocolors.cyan(`╰──────────────────────────────────────────────╯`));
 
-      console.log(picocolors.cyan(`\n📥 Feeding tool results back to LLM...`));
+      console.log(picocolors.cyan(`\n📥 Processing action results...`));
     }
 
     if (loopCount >= maxLoops) {

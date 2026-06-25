@@ -73,7 +73,7 @@ async function saveGoals(goals: Goal[]): Promise<void> {
 
 async function main() {
   console.log(picocolors.cyan(picocolors.bold(`\n================================================`)));
-  console.log(picocolors.cyan(picocolors.bold(`🎯 QUIVER GOAL-SEEKING HARNESS 🎯`)));
+  console.log(picocolors.cyan(picocolors.bold(`🎯 Quiver Task Orchestrator 🎯`)));
   console.log(picocolors.cyan(picocolors.bold(`================================================`)));
 
   const recipeIndex = process.argv.indexOf("--recipe");
@@ -90,11 +90,11 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(picocolors.yellow(`\n🚀 Next Goal [ID: ${nextGoal.id}]:`));
+  console.log(picocolors.yellow(`\n🚀 Next Task [ID: ${nextGoal.id}]:`));
   console.log(picocolors.white(`   ${nextGoal.task}`));
 
   // 1. Execute Quiver in single-turn mode for this specific goal
-  console.log(picocolors.gray(`\n📂 Launching Quiver agent session...`));
+  console.log(picocolors.gray(`\n📂 Starting AI session for this task...`));
   const prompt = `Your goal task is: "${nextGoal.task}"\n\nExecute all necessary steps and tools. When done, output a summary.`;
   
   const result = spawnSync("npx", ["tsx", "src/cli.ts", "--single-turn", prompt], {
@@ -102,7 +102,7 @@ async function main() {
   });
 
   if (result.status !== 0) {
-    console.log(picocolors.red(`\n❌ Quiver agent execution failed with exit code ${result.status}.`));
+    console.log(picocolors.red(`\n❌ AI session execution failed.`));
     nextGoal.status = "failed";
     await saveGoals(goals);
     process.exit(1);
@@ -110,7 +110,7 @@ async function main() {
 
   // 2. Run verification script if provided
   if (nextGoal.verification) {
-    console.log(picocolors.gray(`\n🔍 Running Verification: `) + picocolors.green(nextGoal.verification));
+    console.log(picocolors.gray(`\n🔍 Verifying completed task: `) + picocolors.green(nextGoal.verification));
     try {
       execSync(nextGoal.verification, { stdio: "inherit" });
       console.log(picocolors.green("✅ Verification passed successfully."));
@@ -138,11 +138,11 @@ async function main() {
     console.log(picocolors.yellow("ℹ️  No changes to commit."));
   }
 
-  console.log(picocolors.green(`\n🎉 Goal ID ${nextGoal.id} completed successfully!`));
+  console.log(picocolors.green(`\n🎉 Task ID ${nextGoal.id} completed successfully!`));
   
   // Recursively loop to next pending goal
   // Run this orchestrator process again to boot in fresh memory space
-  console.log(picocolors.cyan(`\n🔄 Rebooting loop for next goal...`));
+  console.log(picocolors.cyan(`\n🔄 Starting next task in checklist...`));
   const loopResult = spawnSync("npx", ["tsx", "src/goal.ts"], {
     stdio: "inherit"
   });

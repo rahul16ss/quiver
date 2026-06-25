@@ -33,7 +33,7 @@ async function checkOllamaConnectivity(): Promise<boolean> {
 
 async function main() {
   console.log(picocolors.cyan(picocolors.bold(`\n================================================`)));
-  console.log(picocolors.cyan(picocolors.bold(`⚡ QUIVER: PERSONAL AGENT HARNESS (TypeScript CLI) ⚡`)));
+  console.log(picocolors.cyan(picocolors.bold(`⚡ Quiver: Your Personal AI Assistant ⚡`)));
   console.log(picocolors.cyan(picocolors.bold(`================================================`)));
 
   // Load and validate config
@@ -46,14 +46,14 @@ async function main() {
     console.log(picocolors.gray(`   Run 'ollama serve' in another terminal, or update LLM_API_BASE_URL in '.env'.`));
     console.log(picocolors.gray(`   Press Ctrl+C to exit, or proceed if the server is starting up.\n`));
   } else {
-    console.log(picocolors.green(`✅ Local model endpoint is accessible.`));
+    console.log(picocolors.green(`✅ AI connection established successfully.`));
   }
 
   // Load Registry
-  console.log(picocolors.gray("📂 Loading dynamic tool registry..."));
+  console.log(picocolors.gray("📂 Loading available AI actions..."));
   await globalRegistry.loadAll();
   const tools = globalRegistry.getAllTools();
-  console.log(picocolors.green(`✅ Loaded ${tools.length} active tools:`));
+  console.log(picocolors.green(`✅ Loaded ${tools.length} capabilities:`));
   tools.forEach(t => {
     console.log(picocolors.gray(`   ├─ `) + picocolors.green(t.name) + picocolors.gray(`: ${t.description.substring(0, 60)}...`));
   });
@@ -64,7 +64,7 @@ async function main() {
   console.log(picocolors.blue(`💬 Session started.`));
   console.log(picocolors.gray(`   Session ID:   ${agent.getSessionId()}`));
   console.log(picocolors.gray(`   Session Logs: .sessions/${agent.getSessionId()}.json`));
-  console.log(picocolors.gray(`   Commands:     Type '/exit' to quit, '/tools' to list tools, '/approvals' for security config, '/session' for details.\n`));
+  console.log(picocolors.gray(`   Commands:     Type '/exit' to quit, '/tools' to list actions, '/approvals' for security config, '/session' for details.\n`));
 
   // Argument parsing for single-turn script mode
   const args = process.argv.slice(2);
@@ -108,7 +108,7 @@ async function main() {
       }
 
       if (cleanInput === "/tools") {
-        console.log(picocolors.cyan(`\n🛠️  Active Registry Tools (${globalRegistry.getAllTools().length}):`));
+        console.log(picocolors.cyan(`\n🛠️  Available Actions (${globalRegistry.getAllTools().length}):`));
         globalRegistry.getAllTools().forEach(t => {
           console.log(`   - ${picocolors.green(t.name)}: ${t.description}`);
         });

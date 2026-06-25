@@ -8,7 +8,7 @@
   {
     "id": 2,
     "task": "Create a new tool src/tools/format_code.ts that formats TypeScript files using a format command or custom function to ensure pristine code style.",
-    "status": "pending",
+    "status": "failed",
     "verification": "test -f src/tools/format_code.ts && npx tsc --noEmit"
   },
   {
