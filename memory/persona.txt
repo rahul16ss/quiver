@@ -1,0 +1,2 @@
+- Created market_research tool (src/tools/market_research.ts) that uses Parallel.ai API to search and scrape pricing/feature data for any product.
+- Used market_research to research Supabase pricing and features, saved results to competitor_supabase.json.

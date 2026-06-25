@@ -2,7 +2,7 @@
   {
     "id": 1,
     "task": "Create a new tool src/tools/market_research.ts that utilizes Parallel.ai web search to find competitor information for a target company and save it as JSON.",
-    "status": "pending",
+    "status": "failed",
     "verification": "npx tsc --noEmit && npm test"
   },
   {
