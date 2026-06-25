@@ -52,6 +52,52 @@ export class SessionLogger {
   }
 }
 
+// Helper to format arguments/details beautifully, folding large text blocks (like raw code)
+function formatDetails(toolName: string, args: any, prefix: string): string {
+  if (typeof args !== "object" || args === null) {
+    return `${prefix}${JSON.stringify(args)}`;
+  }
+
+  const cloned = { ...args };
+  const foldFields = ["content", "replacementContent", "code", "text", "replacement"];
+  const foldedDetails: { fieldName: string; originalValue: string }[] = [];
+
+  for (const field of foldFields) {
+    if (typeof cloned[field] === "string") {
+      foldedDetails.push({ fieldName: field, originalValue: cloned[field] });
+      delete cloned[field];
+    }
+  }
+
+  let output = "";
+  const otherKeys = Object.keys(cloned);
+  if (otherKeys.length > 0) {
+    output += JSON.stringify(cloned, null, 2);
+  }
+
+  for (const item of foldedDetails) {
+    const rawVal = item.originalValue;
+    const lines = rawVal.split("\n");
+    let contentBlock = "";
+
+    if (lines.length <= 15) {
+      contentBlock = rawVal;
+    } else {
+      const startLines = lines.slice(0, 8).join("\n");
+      const endLines = lines.slice(-5).join("\n");
+      const foldedCount = lines.length - 13;
+      contentBlock = `${startLines}\n${picocolors.gray(`\n  ... [${foldedCount} lines of code folded to keep screen clean] ...\n`)}\n${endLines}`;
+    }
+
+    if (output) {
+      output += "\n";
+    }
+    output += `${picocolors.cyan(`${item.fieldName}:`)}\n${picocolors.white(contentBlock)}`;
+  }
+
+  return output.split("\n").map(line => `${prefix}${line}`).join("\n");
+}
+
 // Approval gate prompt using terminal readline
 async function askUserApproval(toolName: string, args: any): Promise<boolean> {
   const rl = readline.createInterface({
@@ -64,7 +110,8 @@ async function askUserApproval(toolName: string, args: any): Promise<boolean> {
     console.log(picocolors.yellow(`│  The AI is requesting permission to perform an action on your system:`));
     console.log(picocolors.yellow(`│  `));
     console.log(picocolors.yellow(`│  Action Name: `) + picocolors.green(toolName));
-    console.log(picocolors.yellow(`│  Details:     `) + picocolors.white(JSON.stringify(args, null, 2).replace(/\n/g, "\n│               ")));
+    console.log(picocolors.yellow(`│  Details:`));
+    console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
     console.log(picocolors.yellow(`└───────────────────────────────────────────────────────────`));
     
     rl.question(picocolors.bold(picocolors.cyan("Allow this action? (y/N): ")), (answer) => {
@@ -440,7 +487,8 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
           console.log(picocolors.red(`│  🚫 Declined: Action "${toolName}" was blocked by user.`));
         } else {
           console.log(picocolors.cyan(`│  🚀 Action:  `) + picocolors.green(toolName));
-          console.log(picocolors.gray(`│  👉 Details: ${JSON.stringify(args, null, 2).replace(/\n/g, "\n│              ")}`));
+          console.log(picocolors.cyan(`│  👉 Details: `));
+          console.log(formatDetails(toolName, args, picocolors.gray(`│    `)));
           const tool = this.registry.getTool(toolName);
           if (!tool) {
             result = `Error: Action '${toolName}' is not available.`;
