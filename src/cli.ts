@@ -1,7 +1,7 @@
 import readline from "readline";
 import picocolors from "picocolors";
 import { config, validateConfig } from "./config.js";
-import { globalRegistry } from "./global_registry.js";
+import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
 
 // Helper to ask user for terminal input in the loop

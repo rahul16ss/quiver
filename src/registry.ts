@@ -165,3 +165,5 @@ export class ToolRegistry {
     };
   }
 }
+
+export const globalRegistry = new ToolRegistry();

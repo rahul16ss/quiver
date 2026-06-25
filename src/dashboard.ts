@@ -5,7 +5,7 @@ import {
   InputRenderable,
   TextRenderable
 } from "@opentui/core";
-import { globalRegistry } from "./global_registry.js";
+import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
 import { loadCoreMemory } from "./state.js";
 import { config } from "./config.js";

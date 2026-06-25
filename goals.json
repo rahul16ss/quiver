@@ -1,14 +1,14 @@
 [
   {
     "id": 1,
-    "task": "Use the market_research tool to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
+    "task": "Use the web_search and scrape_url tools sequentially to retrieve pricing and feature details for 'Supabase' and save the results to competitor_supabase.json.",
     "status": "completed",
     "verification": "test -f competitor_supabase.json"
   },
   {
     "id": 2,
     "task": "Compile competitor_supabase.json data into a highly structured markdown report comparison table at supabase_market_report.md.",
-    "status": "completed",
+    "status": "pending",
     "verification": "test -f supabase_market_report.md"
   }
 ]

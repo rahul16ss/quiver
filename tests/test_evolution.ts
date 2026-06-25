@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import picocolors from "picocolors";
-import { globalRegistry } from "../src/global_registry.js";
+import { globalRegistry } from "../src/registry.js";
 import { Agent } from "../src/agent.js";
 
 async function runEvolutionTest() {

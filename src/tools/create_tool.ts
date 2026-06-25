@@ -2,8 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
-import { Tool } from "../registry.js";
-import { globalRegistry } from "../global_registry.js";
+import { Tool, globalRegistry } from "../registry.js";
 
 export const tool: Tool = {
   name: "create_tool",
