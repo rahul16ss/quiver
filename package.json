@@ -1,0 +1,25 @@
+{
+  "name": "quiver",
+  "version": "1.0.0",
+  "description": "Quiver: A personal, self-evolving agent harness for research and coding, designed to run open weights models.",
+  "type": "module",
+  "main": "src/cli.ts",
+  "scripts": {
+    "start": "npx tsx src/cli.ts",
+    "test": "npx tsx tests/run_tests.ts"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "dotenv": "^16.4.7",
+    "html-to-text": "^10.0.0",
+    "picocolors": "^1.1.1",
+    "puppeteer": "^25.2.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
