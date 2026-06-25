@@ -298,14 +298,15 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
       } catch (err: any) {
         console.error(picocolors.red(`\n❌ Failed to connect to LLM server: ${err.message}`));
         await this.logger.logEvent("api_error", { error: err.message });
-        return;
+        throw err;
       }
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(picocolors.red(`\n❌ LLM Server returned error (${response.status}): ${errorText}`));
+        const msg = `LLM Server returned error (${response.status}): ${errorText}`;
+        console.error(picocolors.red(`\n❌ ${msg}`));
         await this.logger.logEvent("api_error", { status: response.status, response: errorText });
-        return;
+        throw new Error(msg);
       }
 
       const reader = response.body?.getReader();
