@@ -283,7 +283,7 @@ Be concise, clear, and direct. When you use tools, run them logically to solve t
     await this.logger.logEvent("user_input", { content: userInput });
 
     let loopCount = 0;
-    const maxLoops = 10;
+    const maxLoops = config.maxLoops;
 
     while (loopCount < maxLoops) {
       loopCount++;

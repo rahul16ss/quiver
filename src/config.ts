@@ -12,6 +12,7 @@ export interface Config {
   context7ApiKey: string;
   githubToken: string;
   ollamaApiKey: string;
+  maxLoops: number;
 }
 
 export const config: Config = {
@@ -29,6 +30,7 @@ export const config: Config = {
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
+  maxLoops: parseInt(process.env.QUIVER_MAX_LOOPS || "100", 10),
 };
 
 export function validateConfig(): void {
@@ -41,6 +43,7 @@ export function validateConfig(): void {
   console.log(`   - Skills Dir:       ${config.skillsDir}`);
   console.log(`   - Memory Dir:       ${config.memoryDir}`);
   console.log(`   - Browser Headless: ${config.browserHeadless}`);
+  console.log(`   - Max Loop Turns:   ${config.maxLoops}`);
   console.log(`   - Approvals For:    ${config.requireApprovalFor.join(", ") || "None"}`);
   console.log(`   - Context7 Key:     ${config.context7ApiKey ? "Yes" : "No"}`);
   console.log(`   - GitHub Token:     ${config.githubToken ? "Yes" : "No"}\n`);

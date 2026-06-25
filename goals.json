@@ -8,13 +8,13 @@
   {
     "id": 2,
     "task": "Create a new tool src/tools/format_code.ts that formats TypeScript files using a format command or custom function to ensure pristine code style.",
-    "status": "failed",
+    "status": "completed",
     "verification": "test -f src/tools/format_code.ts && npx tsc --noEmit"
   },
   {
     "id": 3,
     "task": "Create a new tool src/tools/log_tokens.ts that parses the latest session log from .sessions/ and prints token/turn summary statistics to help optimize context bounds.",
-    "status": "pending",
+    "status": "completed",
     "verification": "test -f src/tools/log_tokens.ts && npx tsc --noEmit"
   }
 ]
