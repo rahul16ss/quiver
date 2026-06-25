@@ -70,8 +70,7 @@ async function main() {
   const prompt = `Your goal task is: "${nextGoal.task}"\n\nExecute all necessary steps and tools. When done, output a summary.`;
   
   const result = spawnSync("npx", ["tsx", "src/cli.ts", "--single-turn", prompt], {
-    stdio: "inherit",
-    shell: true
+    stdio: "inherit"
   });
 
   if (result.status !== 0) {
@@ -117,8 +116,7 @@ async function main() {
   // Run this orchestrator process again to boot in fresh memory space
   console.log(picocolors.cyan(`\n🔄 Rebooting loop for next goal...`));
   const loopResult = spawnSync("npx", ["tsx", "src/goal.ts"], {
-    stdio: "inherit",
-    shell: true
+    stdio: "inherit"
   });
   
   process.exit(loopResult.status ?? 0);
