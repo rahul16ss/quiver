@@ -7,7 +7,7 @@ import {
 } from "@opentui/core";
 import { globalRegistry } from "./global_registry.js";
 import { Agent } from "./agent.js";
-import { loadCoreMemory } from "./letta.js";
+import { loadCoreMemory } from "./state.js";
 import { config } from "./config.js";
 import { promises as fs } from "fs";
 import * as path from "path";

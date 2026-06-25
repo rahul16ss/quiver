@@ -51,7 +51,7 @@ async function saveGoals(goals: Goal[]): Promise<void> {
 
 async function main() {
   console.log(picocolors.cyan(picocolors.bold(`\n================================================`)));
-  console.log(picocolors.cyan(picocolors.bold(`🎯 QUIVER: RALPH GOAL-SEEKING HARNESS 🎯`)));
+  console.log(picocolors.cyan(picocolors.bold(`🎯 QUIVER GOAL-SEEKING HARNESS 🎯`)));
   console.log(picocolors.cyan(picocolors.bold(`================================================`)));
 
   const goals = await ensureGoalsFile();
@@ -99,7 +99,7 @@ async function main() {
   console.log(picocolors.gray(`\n💾 Committing changes to Git...`));
   try {
     execSync("git add .", { stdio: "inherit" });
-    const commitMsg = `ralph: completed goal ID ${nextGoal.id} - ${nextGoal.task.substring(0, 50)}...`;
+    const commitMsg = `quiver-goal: completed goal ID ${nextGoal.id} - ${nextGoal.task.substring(0, 50)}...`;
     execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: "inherit" });
     console.log(picocolors.green("✅ State committed successfully."));
   } catch (err) {
@@ -116,7 +116,7 @@ async function main() {
   // Recursively loop to next pending goal
   // Run this orchestrator process again to boot in fresh memory space
   console.log(picocolors.cyan(`\n🔄 Rebooting loop for next goal...`));
-  const loopResult = spawnSync("npx", ["tsx", "src/ralph.ts"], {
+  const loopResult = spawnSync("npx", ["tsx", "src/goal.ts"], {
     stdio: "inherit",
     shell: true
   });
@@ -125,6 +125,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Ralph runner exception:", err);
+  console.error("Quiver goal runner exception:", err);
   process.exit(1);
 });

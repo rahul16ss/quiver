@@ -8,7 +8,7 @@
     "start": "npx tsx src/cli.ts",
     "dashboard": "bun src/dashboard.ts",
     "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
-    "ralph": "npx tsx src/ralph.ts",
+    "goal": "npx tsx src/goal.ts",
     "test": "npx tsx tests/run_tests.ts"
   },
   "dependencies": {

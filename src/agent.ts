@@ -4,7 +4,7 @@ import picocolors from "picocolors";
 import readline from "readline";
 import { config } from "./config.js";
 import { ToolRegistry } from "./registry.js";
-import { loadCoreMemory } from "./letta.js";
+import { loadCoreMemory } from "./state.js";
 
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
@@ -194,7 +194,7 @@ You have direct access to system files, browser automation tools, and shell comm
 You are self-evolving: if you need a new capability, you can write a new TypeScript tool to your local tools directory using the 'create_tool' tool.
 Be concise, clear, and direct. When you use tools, run them logically to solve the task at hand.`;
 
-    // Letta Core Memory blocks integration
+    // Quiver Core Memory blocks integration
     systemPrompt += `\n\n--- CORE MEMORY BLOCKS ---
 [Identity]: ${coreMemory.identity}
 [Human Context]: ${coreMemory.human_context}

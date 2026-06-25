@@ -10,7 +10,7 @@ export interface CoreMemory {
 }
 
 export interface AgentFile {
-  format: "letta-af";
+  format: "quiver-qf";
   version: string;
   metadata: {
     name: string;
@@ -29,7 +29,7 @@ export interface AgentFile {
 const MEMORY_FILE = path.resolve("memory", "core.json");
 
 /**
- * Loads the structured Letta-inspired Core Memory.
+ * Loads the structured Quiver Core Memory.
  * If the file doesn't exist, returns default starting memory fields.
  */
 export async function loadCoreMemory(): Promise<CoreMemory> {
@@ -65,7 +65,7 @@ export async function exportToAgentFile(agent: Agent, targetPath: string): Promi
   const systemPrompt = agent.getMessages().find((m) => m.role === "system")?.content || "";
   
   const af: AgentFile = {
-    format: "letta-af",
+    format: "quiver-qf",
     version: "1.0.0",
     metadata: {
       name: "quiver-agent-state",
@@ -91,8 +91,8 @@ export async function importFromAgentFile(agent: Agent, sourcePath: string): Pro
   const content = await fs.readFile(sourcePath, "utf8");
   const af: AgentFile = JSON.parse(content);
 
-  if (af.format !== "letta-af") {
-    throw new Error("Invalid format: Not a Letta Agent File (.af)");
+  if (af.format !== "quiver-qf") {
+    throw new Error("Invalid format: Not a Quiver Agent File (.qf)");
   }
 
   // Restore core memory
