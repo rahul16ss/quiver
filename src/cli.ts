@@ -62,6 +62,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/compact", aliases: ["/co"], desc: "Compact conversation history" },
   { name: "/reset", aliases: ["/r"], desc: "Reset conversation (keep memory)" },
   { name: "/cost", aliases: [], desc: "Show token usage stats" },
+  { name: "/memory", aliases: ["/mem"], desc: "View loaded memory" },
   { name: "/model", aliases: ["/m"], desc: "Show or change model" },
   {
     name: "/history",
@@ -859,6 +860,35 @@ async function main() {
           console.log(
             `    Tokens:     ${(stats.inputTokens + stats.outputTokens).toLocaleString()} (est.)\n`,
           );
+          continue;
+        }
+
+        if (resolved === "/memory") {
+          const memDir = path.resolve(config.memoryDir);
+          console.log(picocolors.cyan(`\n  Memory (${memDir})\n`));
+          try {
+            const files = await import("fs/promises");
+            const entries = await files.readdir(memDir);
+            for (const f of entries) {
+              if (f.startsWith(".")) continue;
+              const fpath = path.join(memDir, f);
+              const stat = await files.stat(fpath);
+              if (stat.isFile()) {
+                const content = await files.readFile(fpath, "utf8");
+                const lines = content.split("\n").length;
+                const chars = content.length;
+                const preview =
+                  content.substring(0, 100).replace(/\n/g, " ") +
+                  (chars > 100 ? "…" : "");
+                console.log(
+                  `  ${picocolors.green(f.padEnd(20))} ${picocolors.gray(`${lines} lines · ${chars} chars`)}`,
+                );
+                console.log(picocolors.gray(`    ${preview}\n`));
+              }
+            }
+          } catch {
+            console.log(picocolors.yellow("  No memory directory found.\n"));
+          }
           continue;
         }
 

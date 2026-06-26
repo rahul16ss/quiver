@@ -145,30 +145,57 @@ function sanitizeLogData(type: string, data: any): any {
 export class SessionLogger {
   private sessionId: string;
   private logPath: string;
+  private logs: any[] = [];
   private dirEnsured = false;
 
   constructor() {
     this.sessionId = `session_${Date.now()}`;
-    this.logPath = path.resolve(".sessions", `${this.sessionId}.jsonl`);
+    this.logPath = path.resolve(".sessions", `${this.sessionId}.json`);
   }
 
-  public async logEvent(type: string, data: any): Promise<void> {
+  /** Accumulate event in memory — no disk I/O until flush(). */
+  public logEvent(type: string, data: any): void {
     if (!config.sessionLogEnabled) return;
 
-    const line = `${JSON.stringify({
+    this.logs.push({
       timestamp: new Date().toISOString(),
       type,
       data: sanitizeLogData(type, data),
-    })}\n`;
+    });
+  }
 
+  /** Write accumulated logs to disk once. Call at session end or on error. */
+  public async flush(): Promise<void> {
+    if (this.logs.length === 0) return;
     try {
       if (!this.dirEnsured) {
         await fs.mkdir(path.dirname(this.logPath), { recursive: true });
         this.dirEnsured = true;
       }
-      await fs.appendFile(this.logPath, line, "utf8");
+      await fs.writeFile(
+        this.logPath,
+        JSON.stringify(this.logs, null, 2),
+        "utf8",
+      );
     } catch {
-      // Fail silently for logger writes
+      // Fail silently — logging must never crash the agent
+    }
+  }
+
+  /** Synchronous flush for use in exit handlers and SIGINT/SIGTERM contexts. */
+  public flushSync(): void {
+    if (this.logs.length === 0) return;
+    try {
+      const fsSync = require("fs");
+      const pathSync = require("path");
+      fsSync.mkdirSync(pathSync.dirname(this.logPath), { recursive: true });
+      fsSync.writeFileSync(
+        this.logPath,
+        JSON.stringify(this.logs, null, 2),
+        "utf8",
+      );
+    } catch {
+      // Fail silently — logging must never crash the agent
     }
   }
 
@@ -247,19 +274,30 @@ async function askUserApproval(
   sessionRl?: readline.Interface,
 ): Promise<boolean> {
   const displayName = Agent.getToolDisplayName(toolName);
+
+  // Detect irreversible actions for stronger warning (Principle: Reversibility Awareness)
+  const irreversible = isIrreversibleAction(toolName, args);
+
   console.log(picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`));
   console.log(picocolors.yellow(`│  Quiver wants to:`));
   console.log(picocolors.yellow(`│  `));
   console.log(picocolors.yellow(`│  Action: `) + picocolors.green(displayName));
   console.log(picocolors.yellow(`│  Details:`));
   console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
+  if (irreversible) {
+    console.log(
+      picocolors.red(`│  ⚠ IRREVERSIBLE: This action cannot be undone.`),
+    );
+  }
   console.log(
     picocolors.yellow(
       `└───────────────────────────────────────────────────────────`,
     ),
   );
 
-  const prompt = picocolors.bold(picocolors.cyan("Allow this action? (y/N): "));
+  const prompt = irreversible
+    ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
+    : picocolors.bold(picocolors.cyan("Allow this action? (y/N): "));
 
   if (sessionRl) {
     return new Promise((resolve) => {
@@ -282,6 +320,24 @@ async function askUserApproval(
       resolve(cleanAnswer === "y" || cleanAnswer === "yes");
     });
   });
+}
+
+/** Detect irreversible actions that warrant a stronger warning. */
+function isIrreversibleAction(toolName: string, args: any): boolean {
+  if (toolName === "run_command" && args?.command) {
+    const cmd = args.command.toLowerCase();
+    // Check for rm -rf, force push, drop, delete, format, dd, mkfs
+    if (
+      /\brm\s+(-[a-z]*r[a-z]*f|f[a-z]*r[a-z]*)\b/.test(cmd) ||
+      /git\s+push.*--force/.test(cmd) ||
+      /git\s+push.*-f\b/.test(cmd) ||
+      /\b(drop|delete|truncate)\b/.test(cmd) ||
+      /\b(mkfs|dd\s+if=|format\s+)\b/.test(cmd)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Simple spinner for streaming UX
@@ -331,6 +387,8 @@ export class Agent {
     turns: 0,
   };
   private sessionReadline: readline.Interface | null = null;
+  // Track files read in the current session for read-before-write enforcement
+  private filesReadThisSession: Set<string> = new Set();
 
   constructor(registry: ToolRegistry) {
     this.registry = registry;
@@ -395,6 +453,8 @@ export class Agent {
     } catch {
       // Fail silently — session state saving is best-effort
     }
+    // Flush session logs to disk (buffered — no per-event I/O)
+    this.logger.flushSync();
   }
 
   /**
@@ -685,47 +745,50 @@ export class Agent {
     skills: any[],
   ): string {
     let systemPrompt = `You are Quiver, an elite autonomous coding and research assistant running in a terminal-based CLI.
-You are powered by model ${config.llmModelName} and have access to file operations, browser automation, shell command execution, web search, and more.
+    You are powered by model ${config.llmModelName} and have access to file operations, browser automation, shell command execution, web search, and more.
 
---- Core Principles ---
-1. READ BEFORE WRITE: Always use view_file to read a file before modifying it. Never guess at file contents.
-2. MINIMAL EDITS: Prefer replace_content for targeted edits over write_file for full rewrites. Only rewrite entire files when creating new files or when the file is small enough to rewrite safely.
-3. VERIFY AFTER CHANGES: After making code changes, run run_tests to validate. Fix any compilation or test failures before declaring success.
-4. EXPLORE FIRST: Use list_dir and view_file to understand project structure before making changes. Don't assume file layouts.
-5. NO HALLUCINATION: Never fabricate file paths, function names, or APIs. If unsure, read the file or search the codebase first.
-6. ERROR RECOVERY: When a tool fails, analyze the error, adjust your approach, and retry. Don't give up after a single failure.
-7. PROGRESSIVE DISCLOSURE: Work incrementally — make a change, verify it, then move to the next step. Don't batch risky operations.
+    --- Core Principles ---
+    1. READ BEFORE WRITE: Always use view_file to read a file before modifying it. Never guess at file contents. This is enforced at the code level — write_file and replace_content will be blocked if the target file was not read first.
+    2. MINIMAL EDITS: Prefer replace_content for targeted edits over write_file for full rewrites. Only rewrite entire files when creating new files or when the file is small enough to rewrite safely.
+    3. VERIFY AFTER CHANGES: After making code changes, run run_tests to validate. Fix any compilation or test failures before declaring success.
+    4. EXPLORE FIRST: Use list_dir and view_file to understand project structure before making changes. Don't assume file layouts.
+    5. NO HALLUCINATION: Never fabricate file paths, function names, or APIs. If unsure, read the file or search the codebase first.
+    6. ERROR RECOVERY: When a tool fails, analyze the error, adjust your approach, and retry. Don't give up after a single failure.
+    7. PROGRESSIVE DISCLOSURE: Work incrementally — make a change, verify it, then move to the next step. Don't batch risky operations.
+    8. NO SILENT ACTIONS: Every action you take is visible to the user. Never perform background operations or hidden tool calls. If you do something, the user sees it happen.
+    9. PROVENANCE: When you state a fact (file path, function name, API signature), it must come from a file you read, not from memory or inference. If you are citing something, you must have read it first.
+    10. REVERSIBILITY AWARENESS: Distinguish between reversible actions (editing a file in git) and irreversible actions (rm -rf, force push, dropping a database). For irreversible actions, state the risk clearly before proceeding.
 
---- Operational Style ---
-You operate as an autonomous coding agent, similar to Codex or Claude Code.
-- Prefer making reasonable assumptions over asking clarifying questions.
-- Continue using tools to make progress until the task is complete, then present a summary.
-- At decision points, choose the most sensible option and keep working.
-- If something fails, try an alternative approach before reporting the issue.
-- When the work is fully done, respond with a concise summary of what was accomplished.
-- Be concise in your text responses. Let tool calls do the work. Don't narrate every step.
+    --- Operational Style ---
+    You operate as an autonomous coding agent, similar to Codex or Claude Code.
+    - Prefer making reasonable assumptions over asking clarifying questions.
+    - Continue using tools to make progress until the task is complete, then present a summary.
+    - At decision points, choose the most sensible option and keep working.
+    - If something fails, try an alternative approach before reporting the issue.
+    - When the work is fully done, respond with a concise summary of what was accomplished.
+    - Be concise in your text responses. Let tool calls do the work. Don't narrate every step.
 
---- Workflow ---
-- You can create new tools at runtime using the 'create_tool' action when you need capabilities that don't exist yet.
-- Follow a Plan → Implement → Validate cycle: outline changes first, write clean TypeScript, then run 'run_tests' to verify.
-- If tests or compilation fail, fix the issues before proceeding.
-- Use grep_search to find usages, view_file to read code, replace_content for surgical edits.
-- Use format_code after writing new TypeScript files to maintain consistent style.
+    --- Workflow ---
+    - You can create new tools at runtime using the 'create_tool' action when you need capabilities that don't exist yet.
+    - Follow a Plan → Implement → Validate cycle: outline changes first, write clean TypeScript, then run 'run_tests' to verify.
+    - If tests or compilation fail, fix the issues before proceeding.
+    - Use grep_search to find usages, view_file to read code, replace_content for surgical edits.
+    - Use format_code after writing new TypeScript files to maintain consistent style.
 
---- Code Style ---
-- Use TypeScript with proper types (avoid 'any' where possible).
-- 2-space indentation, semicolons, trailing commas in multiline objects.
-- Descriptive variable names. Prefer clarity over brevity.
-- Handle errors gracefully with try/catch and meaningful error messages.
-- Keep functions focused and small. Single responsibility.
+    --- Code Style ---
+    - Use TypeScript with proper types (avoid 'any' where possible).
+    - 2-space indentation, semicolons, trailing commas in multiline objects.
+    - Descriptive variable names. Prefer clarity over brevity.
+    - Handle errors gracefully with try/catch and meaningful error messages.
+    - Keep functions focused and small. Single responsibility.
 
-Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
+    Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
     // Quiver Core Memory blocks integration
     systemPrompt += `\n\n--- CORE MEMORY BLOCKS ---
-[Identity]: ${coreMemory.identity}
-[Human Context]: ${coreMemory.human_context}
-[Project Context]: ${coreMemory.project_context}\n`;
+    [Identity]: ${coreMemory.identity}
+    [Human Context]: ${coreMemory.human_context}
+    [Project Context]: ${coreMemory.project_context}\n`;
 
     if (memories.length > 0) {
       systemPrompt += `\n--- ACTIVE PERSISTENT MEMORY ---\n`;
@@ -838,10 +901,24 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     return "";
   }
 
+  /** Generate a truncated preview of a tool result for user display. */
+  private summarizeResult(result: any): string {
+    if (!result) return "";
+    const str = typeof result === "string" ? result : JSON.stringify(result);
+    if (str.length <= 120) return str;
+    // Truncate to 120 chars, preserving word boundaries
+    const truncated = str.substring(0, 117);
+    const lastSpace = truncated.lastIndexOf(" ");
+    const clean =
+      lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated;
+    return `${clean}…`;
+  }
+
   // ── Context Manifest ───────────────────────────────────────────────
   // Shows the user exactly what context will enter the model call:
-  // memory, skills, tools, and model — before the call happens.
-  // This is the core transparency principle from the ValuClaw philosophy.
+  // memory, skills, tools, model, and context window usage — before the call.
+  // This is the core transparency principle: the user should never wonder
+  // "what did the AI see?" or "how much context is left?"
   private printContextManifest(
     memories: any[],
     skills: any[],
@@ -849,6 +926,15 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
   ): void {
     const dim = picocolors.gray;
     const accent = picocolors.cyan;
+
+    // Estimate total context tokens (messages + system prompt)
+    const allText = this.messages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .join(" ");
+    const estTokens = Math.ceil(allText.length / 4);
+    const maxTokens = config.maxContextTokens;
+    const pct = Math.round((estTokens / maxTokens) * 100);
+    const usageBar = this.usageBar(pct);
 
     // Compact one-line manifest
     const parts: string[] = [];
@@ -871,7 +957,30 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       console.log(dim(`  │ skills: ${skillNames}`));
     }
 
+    // Context window usage (Principle: Cost Awareness)
+    const tokColor =
+      pct < 60
+        ? picocolors.gray
+        : pct < 85
+          ? picocolors.yellow
+          : picocolors.red;
+    console.log(
+      dim(`  │ tokens: `) +
+        tokColor(
+          `${estTokens.toLocaleString()} / ${maxTokens.toLocaleString()} (${pct}%)`,
+        ) +
+        dim(` ${usageBar}`),
+    );
+
     console.log(dim(`  └`));
+  }
+
+  /** Generate a compact progress bar for context usage. */
+  private usageBar(pct: number): string {
+    const width = 20;
+    const filled = Math.round((pct / 100) * width);
+    const bar = "█".repeat(filled) + "░".repeat(width - filled);
+    return bar;
   }
 
   /**
@@ -1107,7 +1216,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
       const assistantMsg: Message = {
         role: "assistant",
-        content: assistantContent || null,
+        content: assistantContent || "",
       };
 
       if (toolCalls.length > 0) {
@@ -1166,42 +1275,68 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           result = `Error: Action '${toolName}' was denied by the user.`;
           console.log(picocolors.red(`  ✗ ${displayName} — declined by you`));
         } else {
-          if (config.outputMode === "interactive") {
-            // Clean, one-line action header with human-friendly name
-            // Show the key argument (file path, URL, command, etc.) inline
-            const keyArg = this.summarizeToolArgs(toolName, args);
-            const argHint = keyArg ? ` ${picocolors.gray(keyArg)}` : "";
-            console.log(picocolors.cyan(`  ▸ ${displayName}`) + argHint);
-          }
-          const tool = this.registry.getTool(toolName);
-          if (!tool) {
-            result = `Error: Action '${toolName}' is not available.`;
-            console.error(
-              picocolors.red(`  ✗ ${displayName} — tool not found`),
-            );
-          } else {
-            try {
-              result = await tool.execute(args);
-              this.tokenStats.toolCalls++;
-              if (config.outputMode === "interactive") {
-                // Show compact result preview — one line, not a wall of text
-                const displayResult =
-                  typeof result === "string" ? result : JSON.stringify(result);
-                const preview =
-                  displayResult.length > 200
-                    ? `${displayResult.substring(0, 200)}…`
-                    : displayResult;
-                // Fold preview to a single indented line
-                const folded = preview.replace(/\n/g, " ").trim();
-                console.log(picocolors.gray(`    → ${folded}`));
-              }
-            } catch (error: any) {
-              result = `Error performing action: ${error.message}`;
-              console.error(
-                picocolors.red(`  ✗ ${displayName} — ${error.message}`),
+          const keyArg = this.summarizeToolArgs(toolName, args);
+          const argHint = keyArg ? picocolors.gray(` ${keyArg}`) : "";
+
+          // ── Destructive Action Guard (Principle: Read Before Write) ──
+          // Enforce that write_file and replace_content cannot run on a file
+          // that was never read in the current session.
+          if (
+            (toolName === "write_file" || toolName === "replace_content") &&
+            args.filePath &&
+            !this.filesReadThisSession.has(args.filePath)
+          ) {
+            result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 this file was not read first. Always use view_file to read a file before modifying it. This is a safety guard to prevent blind edits.`;
+            if (config.outputMode === "interactive") {
+              process.stdout.write(
+                `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)}${argHint} \u2014 not read first\n`,
               );
             }
-          }
+          } else {
+            if (config.outputMode === "interactive") {
+              process.stdout.write(
+                `  ⟳ ${picocolors.cyan(displayName)}${argHint}…`,
+              );
+            }
+            const tool = this.registry.getTool(toolName);
+            if (!tool) {
+              result = `Error: Action '${toolName}' is not available.`;
+              if (config.outputMode === "interactive") {
+                process.stdout.write(
+                  `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — not found\n`,
+                );
+              }
+            } else {
+              try {
+                result = await tool.execute(args);
+                this.tokenStats.toolCalls++;
+
+                // Track files read for read-before-write enforcement
+                if (toolName === "view_file" && args.filePath) {
+                  this.filesReadThisSession.add(args.filePath);
+                }
+
+                if (config.outputMode === "interactive") {
+                  process.stdout.write(
+                    `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
+                  );
+                  // ── Result Preview (Principle: Result Visibility) ──
+                  // Show a truncated preview of what the tool returned
+                  const preview = this.summarizeResult(result);
+                  if (preview) {
+                    console.log(picocolors.gray(`    → ${preview}`));
+                  }
+                }
+              } catch (error: any) {
+                result = `Error performing action: ${error.message}`;
+                if (config.outputMode === "interactive") {
+                  process.stdout.write(
+                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(error.message.slice(0, 60))}\n`,
+                  );
+                }
+              }
+            }
+          } // end destructive action guard
         }
 
         const toolMsg: Message = {

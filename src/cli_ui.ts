@@ -128,7 +128,9 @@ export function theme(
     dry: pc.cyan,
     palette,
     promptUser: () => pc.bold(pc.green("user> ")),
-    promptAgent: () => pc.bold(pc.magenta("agent> ")),
+    promptAgent: () =>
+      pc.bold(pc.magenta("agent> ")) +
+      pc.gray(`[${process.env.LLM_MODEL_NAME || "model"}] `),
   };
 }
 
