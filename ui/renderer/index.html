@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiver</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">Quiver<span></span></div>
+      <nav>
+        <button onclick="window.quiver.loadSettings()">Settings</button>
+      </nav>
+      <div class="status">
+        <span class="dot idle" id="statusDot"></span>
+        <span id="statusText">Idle</span>
+      </div>
+    </header>
+
+    <!-- Chat area -->
+    <div class="chat-area" id="chatArea">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">⚡</div>
+        <div>Send a prompt to start working with Quiver.</div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="input-area">
+      <div class="input-row">
+        <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze..." rows="1"></textarea>
+        <button id="sendBtn" onclick="sendPrompt()">Send</button>
+      </div>
+      <div class="stats-bar" id="statsBar"></div>
+    </div>
+  </div>
+
+  <script>
+    const chatArea = document.getElementById("chatArea");
+    const promptInput = document.getElementById("promptInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const statsBar = document.getElementById("statsBar");
+    const emptyState = document.getElementById("emptyState");
+    let agentRunning = false;
+    let currentAgentMsg = null;
+
+    // Auto-resize textarea
+    promptInput.addEventListener("input", () => {
+      promptInput.style.height = "auto";
+      promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + "px";
+    });
+
+    // Enter to send, Shift+Enter for newline
+    promptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendPrompt();
+      }
+    });
+
+    async function sendPrompt() {
+      const text = promptInput.value.trim();
+      if (!text || agentRunning) return;
+
+      // Hide empty state
+      if (emptyState) emptyState.style.display = "none";
+
+      // Show user message
+      addMessage("user", text);
+
+      // Clear input
+      promptInput.value = "";
+      promptInput.style.height = "auto";
+
+      // Set status
+      agentRunning = true;
+      sendBtn.disabled = true;
+      statusDot.className = "dot live";
+      statusText.textContent = "Working...";
+
+      // Start agent if not running
+      const config = await window.quiver.loadConfig();
+      await window.quiver.startAgent(config);
+      await window.quiver.sendToAgent(text);
+
+      // Create a placeholder for the agent response
+      currentAgentMsg = addMessage("agent", "");
+    }
+
+    function addMessage(role, content) {
+      const div = document.createElement("div");
+      div.className = `msg msg-${role}`;
+      div.innerHTML = `<div class="role">${role}</div><div class="body"></div>`;
+      const body = div.querySelector(".body");
+      if (content) body.textContent = content;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    function appendToCurrentAgent(text) {
+      if (!currentAgentMsg) {
+        currentAgentMsg = addMessage("agent", "");
+      }
+      const body = currentAgentMsg.querySelector(".body");
+      body.textContent += text;
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    // Agent events
+    window.quiver.onAgentEvent((msg) => {
+      if (msg.status === "ok") {
+        // Full response received
+        if (currentAgentMsg) {
+          const body = currentAgentMsg.querySelector(".body");
+          body.textContent = msg.response || "";
+        }
+        if (msg.tokenStats) {
+          statsBar.innerHTML = [
+            `Turns: ${msg.tokenStats.turns || 0}`,
+            `Input: ${msg.tokenStats.inputTokens || 0}`,
+            `Output: ${msg.tokenStats.outputTokens || 0}`,
+            `Tools: ${msg.tokenStats.toolCalls || 0}`,
+          ].join(" · ");
+        }
+        agentRunning = false;
+        sendBtn.disabled = false;
+        statusDot.className = "dot idle";
+        statusText.textContent = "Idle";
+        currentAgentMsg = null;
+      } else if (msg.status === "error") {
+        addMessage("error", msg.error || "Unknown error");
+        agentRunning = false;
+        sendBtn.disabled = false;
+        statusDot.className = "dot error";
+        statusText.textContent = "Error";
+        currentAgentMsg = null;
+      }
+    });
+
+    window.quiver.onAgentRaw((line) => {
+      // Streaming tokens or raw output
+      appendToCurrentAgent(line);
+    });
+
+    window.quiver.onAgentStderr((data) => {
+      // Stderr — could be status lines or errors
+      if (data.includes("[ERROR]")) {
+        statusDot.className = "dot error";
+        statusText.textContent = "Error";
+      }
+    });
+
+    window.quiver.onAgentExit((info) => {
+      agentRunning = false;
+      sendBtn.disabled = false;
+      statusDot.className = "dot idle";
+      statusText.textContent = info.code === 0 ? "Idle" : "Exited";
+      currentAgentMsg = null;
+    });
+
+    window.quiver.onAgentError((err) => {
+      addMessage("error", err.message || "Agent error");
+      agentRunning = false;
+      sendBtn.disabled = false;
+      statusDot.className = "dot error";
+      statusText.textContent = "Error";
+    });
+
+    // Focus input on load
+    promptInput.focus();
+  </script>
+</body>
+</html>

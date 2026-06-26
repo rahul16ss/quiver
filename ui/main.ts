@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { spawn, ChildProcess } from "child_process";
+
+// ESM doesn't have __dirname — create it from import.meta.url
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -21,6 +26,7 @@ interface QuiverConfig {
   maxContextTokens: number;
   memoryDir: string;
   skillsDir: string;
+  cloudSyncPath: string;
 }
 
 // ─── Globals ─────────────────────────────────────────────────────────
@@ -53,6 +59,7 @@ const DEFAULT_CONFIG: QuiverConfig = {
   maxContextTokens: 120000,
   memoryDir: "./memory",
   skillsDir: "./skills",
+  cloudSyncPath: "",
 };
 
 async function loadConfig(): Promise<QuiverConfig> {
@@ -151,6 +158,7 @@ function startAgent(config: QuiverConfig): void {
     BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
     REQUIRE_APPROVAL_FOR: config.requireApprovalFor.join(","),
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
+    QUIVER_CLOUD_SYNC_PATH: config.cloudSyncPath || "",
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
   };
 
