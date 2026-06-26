@@ -2,6 +2,7 @@
   "name": "quiver",
   "version": "1.0.0",
   "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
+  "author": "rahul16ss",
   "type": "module",
   "main": "src/cli.ts",
   "bin": {
@@ -30,10 +31,76 @@
       "ui/**/*",
       "src/**/*",
       "bin/**/*",
+      "node_modules/tsx/**/*",
+      "node_modules/esbuild/**/*",
+      "node_modules/get-tsconfig/**/*",
+      "node_modules/resolve-pkg-maps/**/*",
       "package.json",
       "package-lock.json",
       "tsconfig.json",
       ".env.example"
+    ],
+    "extraResources": [
+      {
+        "from": "src",
+        "to": "src"
+      },
+      {
+        "from": "bin",
+        "to": "bin"
+      },
+      {
+        "from": "node_modules/tsx",
+        "to": "node_modules/tsx"
+      },
+      {
+        "from": "node_modules/esbuild",
+        "to": "node_modules/esbuild"
+      },
+      {
+        "from": "node_modules/get-tsconfig",
+        "to": "node_modules/get-tsconfig"
+      },
+      {
+        "from": "node_modules/resolve-pkg-maps",
+        "to": "node_modules/resolve-pkg-maps"
+      },
+      {
+        "from": "node_modules/picocolors",
+        "to": "node_modules/picocolors"
+      },
+      {
+        "from": "node_modules/zod",
+        "to": "node_modules/zod"
+      },
+      {
+        "from": "node_modules/dotenv",
+        "to": "node_modules/dotenv"
+      },
+      {
+        "from": "node_modules/fastest-levenshtein",
+        "to": "node_modules/fastest-levenshtein"
+      },
+      {
+        "from": "node_modules/html-to-text",
+        "to": "node_modules/html-to-text"
+      },
+      {
+        "from": "node_modules/cheerio",
+        "to": "node_modules/cheerio"
+      },
+      {
+        "from": "node_modules/puppeteer",
+        "to": "node_modules/puppeteer"
+      },
+      {
+        "from": "tsconfig.json",
+        "to": "tsconfig.json"
+      },
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

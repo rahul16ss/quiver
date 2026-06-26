@@ -139,6 +139,25 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
 
 // ─── Agent Process Management ─────────────────────────────────────────
 
+function getAgentCommand(cwd: string): { cmd: string; args: string[] } {
+  // In packaged app, use the bundled CLI script with Electron's Node.js
+  // In dev mode, use npx tsx
+  const isPackaged = app.isPackaged;
+
+  if (isPackaged) {
+    // Use system node with tsx loader to run the bundled CLI
+    return {
+      cmd: "node",
+      args: ["--import", "tsx", path.join(process.resourcesPath, "src", "cli.ts"), "--json"],
+    };
+  }
+
+  return {
+    cmd: "npx",
+    args: ["tsx", "src/cli.ts", "--json"],
+  };
+}
+
 function startAgent(config: QuiverConfig): void {
   if (agentProcess) {
     agentProcess.kill();
@@ -146,6 +165,7 @@ function startAgent(config: QuiverConfig): void {
   }
 
   const cwd = process.cwd();
+  const { cmd, args } = getAgentCommand(cwd);
   const env = {
     ...process.env,
     LLM_API_BASE_URL: config.provider.baseUrl,
@@ -162,8 +182,14 @@ function startAgent(config: QuiverConfig): void {
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
   };
 
-  agentProcess = spawn("npx", ["tsx", "src/cli.ts", "--json"], {
-    cwd,
+  // In packaged mode, set APP_ROOT to resourcesPath
+  if (app.isPackaged) {
+    (env as Record<string, string>).APP_ROOT = process.resourcesPath;
+    (env as Record<string, string>).ELECTRON_PACKAGED = "1";
+  }
+
+  agentProcess = spawn(cmd, args, {
+    cwd: app.isPackaged ? process.resourcesPath : cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
