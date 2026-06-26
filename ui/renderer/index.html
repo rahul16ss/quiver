@@ -12,6 +12,7 @@
     <header class="app-header">
       <div class="logo">Quiver<span></span></div>
       <nav>
+        <button onclick="toggleMemory()">Memory</button>
         <button onclick="window.quiver.loadSettings()">Settings</button>
       </nav>
       <div class="status">
@@ -19,6 +20,15 @@
         <span id="statusText">Idle</span>
       </div>
     </header>
+
+    <!-- Memory sidebar (toggle) -->
+    <aside class="memory-panel" id="memoryPanel" style="display:none;">
+      <div class="memory-header">
+        <span>Memory Files</span>
+        <button onclick="toggleMemory()">×</button>
+      </div>
+      <div class="memory-list" id="memoryList"></div>
+    </aside>
 
     <!-- Chat area -->
     <div class="chat-area" id="chatArea">
@@ -152,6 +162,40 @@
       currentAgentMsg = null;
     }
 
+    function addApproval(toolName, toolArgs) {
+      const div = document.createElement("div");
+      div.className = "approval";
+      const argsStr = Object.entries(toolArgs || {})
+        .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`)
+        .join("\n    ");
+      div.innerHTML = `
+        <div class="approval-title">⚠ Permission required</div>
+        <div class="approval-desc">
+          <strong>${toolName}</strong>
+          <pre>${argsStr}</pre>
+        </div>
+        <div class="approval-actions">
+          <button class="btn-yes" onclick="approveAction(true, this)">Allow</button>
+          <button class="btn-no" onclick="approveAction(false, this)">Deny</button>
+        </div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    async function approveAction(approve, btn) {
+      const approvalDiv = btn.closest(".approval");
+      if (approvalDiv) {
+        approvalDiv.style.opacity = "0.5";
+        approvalDiv.style.pointerEvents = "none";
+        const result = approve ? "✓ Approved" : "✗ Denied";
+        approvalDiv.querySelector(".approval-actions").innerHTML =
+          `<span style="color: ${approve ? "var(--success)" : "var(--danger)"}; font-size: 12px;">${result}</span>`;
+      }
+      await window.quiver.approveToolCall(approve);
+    }
+
     // Track tool call divs by a simple counter (tool calls arrive sequentially)
     let pendingToolDivs = [];
 
@@ -180,6 +224,10 @@
             const div = pendingToolDivs.shift();
             showToolResult(div, msg.data?.toolResult || "");
           }
+          break;
+
+        case "approval":
+          addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
           break;
 
         case "done":
@@ -240,6 +288,43 @@
     });
 
     promptInput.focus();
+
+    // Memory panel
+    let memoryVisible = false;
+    async function toggleMemory() {
+      memoryVisible = !memoryVisible;
+      const panel = document.getElementById("memoryPanel");
+      panel.style.display = memoryVisible ? "flex" : "none";
+      if (memoryVisible) {
+        await loadMemoryFiles();
+      }
+    }
+
+    async function loadMemoryFiles() {
+      const files = await window.quiver.listMemory();
+      const list = document.getElementById("memoryList");
+      if (!files || files.length === 0) {
+        list.innerHTML = '<div class="memory-empty">No memory files yet.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      for (const file of files) {
+        const item = document.createElement("div");
+        item.className = "memory-item";
+        item.innerHTML = `
+          <div class="memory-item-name">${file.name}</div>
+          <div class="memory-item-size">${file.size} bytes</div>
+          <pre class="memory-item-content">${escapeHtml(file.content).substring(0, 500)}</pre>
+        `;
+        list.appendChild(item);
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    window.toggleMemory = toggleMemory;
   </script>
 </body>
 </html>

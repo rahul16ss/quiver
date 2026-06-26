@@ -1338,6 +1338,13 @@ export class Agent {
         if (config.dryRun) {
           isApproved = true;
         } else if (config.requireApprovalFor.includes(toolName)) {
+          // Emit approval event for GUI
+          if (onEvent) {
+            onEvent({
+              type: "approval",
+              data: { toolName, toolArgs: args },
+            });
+          }
           isApproved = await askUserApproval(
             toolName,
             args,
