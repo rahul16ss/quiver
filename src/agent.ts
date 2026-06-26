@@ -246,18 +246,11 @@ async function askUserApproval(
   args: any,
   sessionRl?: readline.Interface,
 ): Promise<boolean> {
-  console.log(
-    picocolors.yellow(`\n┌── 🔒 Security Permission Request ${"─".repeat(15)}`),
-  );
-  console.log(
-    picocolors.yellow(
-      `│  The AI is requesting permission to perform an action on your system:`,
-    ),
-  );
+  const displayName = Agent.getToolDisplayName(toolName);
+  console.log(picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`));
+  console.log(picocolors.yellow(`│  Quiver wants to:`));
   console.log(picocolors.yellow(`│  `));
-  console.log(
-    picocolors.yellow(`│  Action Name: `) + picocolors.green(toolName),
-  );
+  console.log(picocolors.yellow(`│  Action: `) + picocolors.green(displayName));
   console.log(picocolors.yellow(`│  Details:`));
   console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
   console.log(
@@ -792,6 +785,95 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     return removedCount;
   }
 
+  // ── Human-friendly tool names ──────────────────────────────────────
+  // Maps internal tool IDs to plain-language names for display.
+  // Internal IDs stay unchanged for the LLM; only display changes.
+  private static readonly TOOL_DISPLAY_NAMES: Record<string, string> = {
+    view_file: "Read file",
+    write_file: "Write file",
+    replace_content: "Edit file",
+    list_dir: "List folder",
+    format_code: "Format code",
+    grep_search: "Search files",
+    run_command: "Run command",
+    run_tests: "Run tests",
+    create_tool: "Create tool",
+    log_tokens: "Log stats",
+    web_search: "Web search",
+    scrape_url: "Read webpage",
+    search_docs: "Search docs",
+    browser_control: "Browser",
+    memory_append: "Save memory",
+    memory_replace: "Update memory",
+    github: "GitHub",
+  };
+
+  /** Get human-friendly name for a tool, falling back to the raw ID. */
+  public static getToolDisplayName(toolName: string): string {
+    return Agent.TOOL_DISPLAY_NAMES[toolName] || toolName;
+  }
+
+  /** Extract the most relevant argument for inline display (file path, URL, etc.) */
+  private summarizeToolArgs(toolName: string, args: any): string {
+    if (!args || typeof args !== "object") return "";
+    // Priority fields by tool type
+    const fields = [
+      "filePath",
+      "url",
+      "command",
+      "pattern",
+      "directoryPath",
+      "repo",
+      "query",
+      "filename",
+      "action",
+    ];
+    for (const field of fields) {
+      if (args[field] && typeof args[field] === "string") {
+        // Truncate long values
+        const val = args[field];
+        return val.length > 60 ? `${val.substring(0, 57)}…` : val;
+      }
+    }
+    return "";
+  }
+
+  // ── Context Manifest ───────────────────────────────────────────────
+  // Shows the user exactly what context will enter the model call:
+  // memory, skills, tools, and model — before the call happens.
+  // This is the core transparency principle from the ValuClaw philosophy.
+  private printContextManifest(
+    memories: any[],
+    skills: any[],
+    coreMemory: any,
+  ): void {
+    const dim = picocolors.gray;
+    const accent = picocolors.cyan;
+
+    // Compact one-line manifest
+    const parts: string[] = [];
+    parts.push(`${memories.length} memory`);
+    if (skills.length > 0) parts.push(`${skills.length} skills`);
+    parts.push(`${this.registry.getAllTools().length} tools`);
+    parts.push(config.llmModelName);
+
+    console.log(dim(`  ┌ context: ${parts.join(" · ")}`));
+
+    // Show memory items (what the agent "remembers" about you)
+    if (memories.length > 0) {
+      const memNames = memories.map((m) => m.filename).join(", ");
+      console.log(dim(`  │ memory: ${memNames}`));
+    }
+
+    // Show active skills (versioned procedures)
+    if (skills.length > 0) {
+      const skillNames = skills.map((s) => `${s.id} v${s.version}`).join(", ");
+      console.log(dim(`  │ skills: ${skillNames}`));
+    }
+
+    console.log(dim(`  └`));
+  }
+
   /**
    * Run a single prompt turn. This function handles the LLM response,
    * streams text content, handles tool calls, executes them, feeds them back,
@@ -826,6 +908,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       );
     }
 
+    // ── Context Manifest: show what enters the model call ──
+    // Core building philosophy: transparency of context passed to the agent.
+    // Before each prompt, display a compact summary of what the agent will "see."
+    if (config.outputMode === "interactive") {
+      this.printContextManifest(memories, skills, coreMemory);
+    }
+
     // Append the user message
     this.messages.push({ role: "user", content: userInput });
     await this.logger.logEvent("user_input", { content: userInput });
@@ -845,14 +934,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       const activeTools = this.registry.getAllTools();
       const tools = activeTools.map(ToolRegistry.getOpenAIToolDefinition);
 
-      // Show compact loop indicator (after first loop)
-      if (config.outputMode === "interactive" && loopCount > 1) {
-        console.log(
-          picocolors.gray(
-            `   ↻ Loop ${loopCount} · ${activeTools.length} tools · ${config.llmModelName}`,
-          ),
-        );
-      }
+      // No loop indicator — internal plumbing, not useful to the user
 
       const payload: any = {
         model: config.llmModelName,
@@ -877,9 +959,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       payload.stream = true;
 
       // Spinner for better UX while waiting for API response
-      const spinner = new Spinner(
-        loopCount === 1 ? "Thinking..." : `Processing (loop ${loopCount})...`,
-      );
+      const spinner = new Spinner(loopCount === 1 ? "Thinking…" : "Working…");
       spinner.start();
 
       let response: Response;
@@ -1042,15 +1122,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       }
 
       // Execute tool calls
-      if (config.outputMode === "interactive")
-        console.log(
-          picocolors.cyan(
-            `\n╭─── 🛠️  Performing ${toolCalls.length} action(s) `,
-          ) + picocolors.cyan("─".repeat(22)),
-        );
+      if (config.outputMode === "interactive") console.log("");
+
       for (let i = 0; i < toolCalls.length; i++) {
         const call = toolCalls[i];
         const toolName = call.function.name;
+        const displayName = Agent.getToolDisplayName(toolName);
         let args: any = {};
         try {
           let rawArgs = call.function.arguments.trim();
@@ -1063,11 +1140,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           }
           args = JSON.parse(rawArgs);
         } catch (e) {
-          console.error(
-            picocolors.yellow(
-              `│  ⚠️  Failed to parse details for action ${toolName}`,
-            ),
-          );
+          // Args parsing failed — will show raw
         }
 
         // Human-Approval Gate Check (centralized in agent, not duplicated in tools)
@@ -1086,57 +1159,49 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         if (config.dryRun) {
           result = `[DRY RUN] Would execute '${toolName}' with: ${JSON.stringify(args)}`;
           if (config.outputMode === "interactive") {
-            statusLine("DRY", `Preview only — ${toolName}`);
+            statusLine("DRY", `Preview — ${displayName}`);
             console.log(formatDetails(toolName, args, theme().gray("  ")));
           }
         } else if (!isApproved) {
           result = `Error: Action '${toolName}' was denied by the user.`;
-          console.log(
-            picocolors.red(
-              `│  🚫 Declined: Action "${toolName}" was blocked by user.`,
-            ),
-          );
+          console.log(picocolors.red(`  ✗ ${displayName} — declined by you`));
         } else {
           if (config.outputMode === "interactive") {
-            console.log(
-              picocolors.cyan(`│  🚀 Action:  `) + picocolors.green(toolName),
-            );
-            console.log(picocolors.cyan(`│  👉 Details: `));
-            console.log(
-              formatDetails(toolName, args, picocolors.gray(`│    `)),
-            );
+            // Clean, one-line action header with human-friendly name
+            // Show the key argument (file path, URL, command, etc.) inline
+            const keyArg = this.summarizeToolArgs(toolName, args);
+            const argHint = keyArg ? ` ${picocolors.gray(keyArg)}` : "";
+            console.log(picocolors.cyan(`  ▸ ${displayName}`) + argHint);
           }
           const tool = this.registry.getTool(toolName);
           if (!tool) {
             result = `Error: Action '${toolName}' is not available.`;
-            console.error(picocolors.red(`│  ❌ Error: ${result}`));
+            console.error(
+              picocolors.red(`  ✗ ${displayName} — tool not found`),
+            );
           } else {
             try {
               result = await tool.execute(args);
               this.tokenStats.toolCalls++;
               if (config.outputMode === "interactive") {
+                // Show compact result preview — one line, not a wall of text
                 const displayResult =
                   typeof result === "string" ? result : JSON.stringify(result);
                 const preview =
-                  displayResult.length > 300
-                    ? `${displayResult.substring(0, 300)}... (truncated)`
+                  displayResult.length > 200
+                    ? `${displayResult.substring(0, 200)}…`
                     : displayResult;
-                console.log(
-                  picocolors.cyan(`│  ✅ Outcome: `) +
-                    picocolors.magenta(
-                      preview.replace(/\n/g, "\n│              "),
-                    ),
-                );
+                // Fold preview to a single indented line
+                const folded = preview.replace(/\n/g, " ").trim();
+                console.log(picocolors.gray(`    → ${folded}`));
               }
             } catch (error: any) {
               result = `Error performing action: ${error.message}`;
-              console.error(picocolors.red(`│  ❌ Failed:  ${error.message}`));
+              console.error(
+                picocolors.red(`  ✗ ${displayName} — ${error.message}`),
+              );
             }
           }
-        }
-
-        if (i < toolCalls.length - 1 && config.outputMode === "interactive") {
-          console.log(picocolors.cyan(`├${"─".repeat(46)}`));
         }
 
         const toolMsg: Message = {
@@ -1156,10 +1221,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           result,
         });
       }
+
       if (config.outputMode === "interactive") {
-        console.log(
-          picocolors.cyan(`╰──────────────────────────────────────────────╯`),
-        );
+        console.log("");
       }
     }
 

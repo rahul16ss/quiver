@@ -112,7 +112,7 @@ function suggestSlashCommand(input: string): string | null {
 
 // ─── Tool categorization ────────────────────────────────────────────
 const TOOL_CATEGORIES: Record<string, string[]> = {
-  "📁 FILES": [
+  "📁 Files": [
     "view_file",
     "write_file",
     "replace_content",
@@ -120,18 +120,20 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "format_code",
     "grep_search",
   ],
-  "⚙️  SYSTEM": ["run_command", "run_tests", "create_tool", "log_tokens"],
-  "🌐 WEB": ["web_search", "scrape_url", "search_docs", "browser_control"],
-  "🧠 MEMORY": ["memory_append", "memory_replace"],
-  "🐙 GITHUB": ["github"],
+  "⚙️ System": ["run_command", "run_tests", "create_tool", "log_tokens"],
+  "🌐 Web": ["web_search", "scrape_url", "search_docs", "browser_control"],
+  "🧠 Memory": ["memory_append", "memory_replace"],
+  "🐙 GitHub": ["github"],
 };
 
+type ToolDisplay = { name: string; displayName: string; description: string };
+
 function categorizeTools(
-  tools: { name: string; description: string }[],
-): { category: string; tools: { name: string; description: string }[] }[] {
+  tools: ToolDisplay[],
+): { category: string; tools: ToolDisplay[] }[] {
   const categorized: {
     category: string;
-    tools: { name: string; description: string }[];
+    tools: ToolDisplay[];
   }[] = [];
   const assigned = new Set<string>();
 
@@ -146,7 +148,7 @@ function categorizeTools(
   // Catch-all for uncategorized tools (e.g., user-created ones)
   const uncategorized = tools.filter((t) => !assigned.has(t.name));
   if (uncategorized.length > 0) {
-    categorized.push({ category: "🔧 OTHER", tools: uncategorized });
+    categorized.push({ category: "🔧 Other", tools: uncategorized });
   }
 
   return categorized;
@@ -235,27 +237,31 @@ function printInSessionHelp(): void {
 }
 
 function printEnhancedTools(): void {
-  const tools = globalRegistry
-    .getAllTools()
-    .map((t) => ({ name: t.name, description: t.description }));
-  console.log(picocolors.cyan(`\n  🛠️  Available Tools (${tools.length})\n`));
+  const tools = globalRegistry.getAllTools().map((t) => ({
+    name: t.name,
+    displayName: Agent.getToolDisplayName(t.name),
+    description: t.description,
+  }));
+  console.log(picocolors.cyan(`\n  Available tools (${tools.length})\n`));
 
   const categories = categorizeTools(tools);
   for (const group of categories) {
     console.log(`  ${picocolors.bold(group.category)}`);
-    const maxNameLen = Math.max(...group.tools.map((t) => t.name.length));
+    const maxNameLen = Math.max(
+      ...group.tools.map((t) => t.displayName.length),
+    );
     for (const tool of group.tools) {
       const dots =
         " " +
         picocolors.gray(
-          "·".repeat(Math.max(1, maxNameLen - tool.name.length + 2)),
+          "·".repeat(Math.max(1, maxNameLen - tool.displayName.length + 2)),
         ) +
         " ";
       const desc =
         tool.description.length > 55
           ? tool.description.substring(0, 55) + "…"
           : tool.description;
-      console.log(`    ${picocolors.green(tool.name)}${dots}${desc}`);
+      console.log(`    ${picocolors.green(tool.displayName)}${dots}${desc}`);
     }
     console.log("");
   }
@@ -585,9 +591,12 @@ async function main() {
 
   if (isInteractive && !resumedSession) {
     statusLine("INFO", "Session started");
-    console.log(t.gray(`   Session ID:   ${agent.getSessionId()}`));
-    console.log(t.gray(`   Session Logs: ${agent.getSessionLogRelPath()}`));
-    console.log(t.gray(`   Type '/help' for commands, '/exit' to quit.\n`));
+    console.log(t.gray(`   Type '/help' for commands, '/exit' to quit.`));
+    console.log(
+      t.gray(
+        `   End a line with \\ then Enter for multiline. Plain Enter submits.\n`,
+      ),
+    );
   }
 
   // ── Single-turn mode ──
@@ -765,22 +774,12 @@ async function main() {
 
         if (resolved === "/session") {
           const stats = agent.getTokenStats();
-          console.log(picocolors.cyan(`\n📊 Session Status:`));
-          console.log(`   - Session ID:     ${agent.getSessionId()}`);
-          console.log(`   - Log File:       ${agent.getSessionLogRelPath()}`);
+          console.log(picocolors.cyan(`\n  Session`));
+          console.log(`    Messages:    ${agent.getMessageCount()}`);
+          console.log(`    Tool calls:  ${stats.toolCalls}`);
+          console.log(`    Turns:       ${stats.turns}`);
           console.log(
-            `   - Messages:       ${agent.getMessageCount()} current turns`,
-          );
-          console.log(`   - Tool Calls:     ${stats.toolCalls}`);
-          console.log(`   - Turns:          ${stats.turns}`);
-          console.log(
-            `   - Est. In Tokens:  ${stats.inputTokens.toLocaleString()}`,
-          );
-          console.log(
-            `   - Est. Out Tokens: ${stats.outputTokens.toLocaleString()}`,
-          );
-          console.log(
-            `   - Est. Total:      ${(stats.inputTokens + stats.outputTokens).toLocaleString()}\n`,
+            `    Tokens:      ${(stats.inputTokens + stats.outputTokens).toLocaleString()} (est.)\n`,
           );
           continue;
         }
@@ -854,20 +853,11 @@ async function main() {
 
         if (resolved === "/cost") {
           const stats = agent.getTokenStats();
-          console.log(picocolors.cyan(`\n💰 Token Usage Statistics:`));
-          console.log(`   - Turns:           ${stats.turns}`);
-          console.log(`   - Tool Calls:      ${stats.toolCalls}`);
+          console.log(picocolors.cyan(`\n  Usage`));
+          console.log(`    Turns:      ${stats.turns}`);
+          console.log(`    Tool calls: ${stats.toolCalls}`);
           console.log(
-            `   - Est. Input:      ${stats.inputTokens.toLocaleString()} tokens`,
-          );
-          console.log(
-            `   - Est. Output:     ${stats.outputTokens.toLocaleString()} tokens`,
-          );
-          console.log(
-            `   - Est. Total:      ${(stats.inputTokens + stats.outputTokens).toLocaleString()} tokens`,
-          );
-          console.log(
-            picocolors.gray(`   (Estimates use ~4 chars/token heuristic)\n`),
+            `    Tokens:     ${(stats.inputTokens + stats.outputTokens).toLocaleString()} (est.)\n`,
           );
           continue;
         }
