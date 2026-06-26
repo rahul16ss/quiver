@@ -774,6 +774,7 @@ export class Agent {
     - If tests or compilation fail, fix the issues before proceeding.
     - Use grep_search to find usages, view_file to read code, replace_content for surgical edits.
     - Use format_code after writing new TypeScript files to maintain consistent style.
+    - For browser actions: use headless: true (default) for scraping/reading pages. Use headless: false when the task requires user interaction, authentication, or manual sign-in — the browser window will appear so the user can act.
 
     --- Code Style ---
     - Use TypeScript with proper types (avoid 'any' where possible).
@@ -1029,9 +1030,11 @@ export class Agent {
     await this.logger.logEvent("user_input", { content: userInput });
 
     let loopCount = 0;
-    const maxLoops = config.maxLoops;
+    // Hardcoded safety net — the model decides when to stop (no tool calls = done).
+    // This only catches pathological infinite loops, not normal work.
+    const maxLoops = 1000;
 
-    while (loopCount < maxLoops) {
+    while (true) {
       loopCount++;
       this.tokenStats.turns++;
       await this.logger.logEvent("turn_start", {
@@ -1366,7 +1369,7 @@ export class Agent {
       if (config.outputMode !== "json") {
         console.warn(
           picocolors.yellow(
-            `⚠️  Reached max loop iterations (${maxLoops}) to prevent runaways.`,
+            `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
           ),
         );
       }

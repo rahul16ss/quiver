@@ -17,7 +17,6 @@ export interface Config {
   context7ApiKey: string;
   githubToken: string;
   ollamaApiKey: string;
-  maxLoops: number;
   maxContextTokens: number;
   outputMode: OutputMode;
   sessionLogEnabled: boolean;
@@ -63,7 +62,6 @@ export const config: Config = {
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
-  maxLoops: parseInt(process.env.QUIVER_MAX_LOOPS || "200", 10),
   maxContextTokens: parseInt(
     process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
     10,
@@ -132,7 +130,6 @@ export function validateConfig(): void {
   console.log(`   - Skills Dir:        ${config.skillsDir}`);
   console.log(`   - Memory Dir:        ${config.memoryDir}`);
   console.log(`   - Browser Headless:  ${config.browserHeadless}`);
-  console.log(`   - Max Loop Turns:    ${config.maxLoops}`);
   console.log(
     `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
   );

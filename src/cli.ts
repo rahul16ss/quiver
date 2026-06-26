@@ -812,7 +812,6 @@ async function main() {
           console.log(`   - Skills Dir:        ${config.skillsDir}`);
           console.log(`   - Memory Dir:        ${config.memoryDir}`);
           console.log(`   - Browser Headless:  ${config.browserHeadless}`);
-          console.log(`   - Max Loop Turns:    ${config.maxLoops}`);
           console.log(
             `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
           );
