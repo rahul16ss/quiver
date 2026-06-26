@@ -63,7 +63,7 @@ export const config: Config = {
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
-  maxLoops: parseInt(process.env.QUIVER_MAX_LOOPS || "100", 10),
+  maxLoops: parseInt(process.env.QUIVER_MAX_LOOPS || "200", 10),
   maxContextTokens: parseInt(
     process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
     10,
