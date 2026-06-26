@@ -17,6 +17,9 @@ export interface Config {
   context7ApiKey: string;
   githubToken: string;
   ollamaApiKey: string;
+  gdriveClientId: string;
+  gdriveClientSecret: string;
+  gdriveFolderName: string;
   maxContextTokens: number;
   outputMode: OutputMode;
   sessionLogEnabled: boolean;
@@ -62,6 +65,9 @@ export const config: Config = {
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
+  gdriveClientId: process.env.GDRIVE_CLIENT_ID || "",
+  gdriveClientSecret: process.env.GDRIVE_CLIENT_SECRET || "",
+  gdriveFolderName: process.env.GDRIVE_FOLDER_NAME || "Quiver",
   maxContextTokens: parseInt(
     process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
     10,
@@ -129,6 +135,9 @@ export function validateConfig(): void {
   );
   console.log(`   - GitHub Token:      ${redactSecret(config.githubToken)}`);
   console.log(`   - Context7 Key:      ${redactSecret(config.context7ApiKey)}`);
+  console.log(
+    `   - GDrive Sync:       ${config.gdriveClientId ? "Configured" : "Not configured"}${config.gdriveClientId ? ` (folder: ${config.gdriveFolderName})` : ""}`,
+  );
   console.log(`   - Skills Dir:        ${config.skillsDir}`);
   console.log(`   - Memory Dir:        ${config.memoryDir}`);
   console.log(`   - Browser Headless:  ${config.browserHeadless}`);

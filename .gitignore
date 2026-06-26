@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 !.env.example
+.gdrive-token.json
 .sessions/
 .DS_Store
 
