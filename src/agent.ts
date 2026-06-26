@@ -21,6 +21,26 @@ export interface Message {
   tool_calls?: ToolCall[];
 }
 
+/** Events emitted during prompt execution for GUI consumption. */
+export interface AgentEvent {
+  type: "token" | "tool_call" | "tool_result" | "approval" | "done" | "error";
+  data: {
+    text?: string;
+    toolName?: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult?: string;
+    approved?: boolean;
+    response?: string;
+    error?: string;
+    tokenStats?: {
+      inputTokens: number;
+      outputTokens: number;
+      toolCalls: number;
+      turns: number;
+    };
+  };
+}
+
 export interface ToolCall {
   id: string;
   type: "function";
@@ -1028,6 +1048,7 @@ export class Agent {
   public async prompt(
     userInput: string,
     onToken: (token: string) => void,
+    onEvent?: (event: AgentEvent) => void,
   ): Promise<void> {
     // Cloud sync: show first-run notice + ensure folder exists (once per session)
     if (!this.cloudSyncInitialized) {
@@ -1075,6 +1096,7 @@ export class Agent {
     await this.logger.logEvent("user_input", { content: userInput });
 
     let loopCount = 0;
+    let lastAssistantContent = "";
     // Hardcoded safety net — the model decides when to stop (no tool calls = done).
     // This only catches pathological infinite loops, not normal work.
     const maxLoops = 1000;
@@ -1179,6 +1201,7 @@ export class Agent {
       }
 
       let assistantContent = "";
+      lastAssistantContent = "";
       let accumulatedToolCalls: Record<
         number,
         { id?: string; name?: string; arguments: string }
@@ -1217,6 +1240,9 @@ export class Agent {
                 delta.content,
               );
               onToken(delta.content);
+              if (onEvent) {
+                onEvent({ type: "token", data: { text: delta.content } });
+              }
             }
 
             if (delta.tool_calls) {
@@ -1274,6 +1300,8 @@ export class Agent {
       this.messages.push(assistantMsg);
       await this.logger.logEvent("assistant_response", assistantMsg);
 
+      lastAssistantContent = assistantContent;
+
       if (toolCalls.length === 0) {
         break;
       }
@@ -1298,6 +1326,11 @@ export class Agent {
           args = JSON.parse(rawArgs);
         } catch (e) {
           // Args parsing failed — will show raw
+        }
+
+        // Emit tool_call event for GUI
+        if (onEvent) {
+          onEvent({ type: "tool_call", data: { toolName, toolArgs: args } });
         }
 
         // Human-Approval Gate Check (centralized in agent, not duplicated in tools)
@@ -1403,6 +1436,18 @@ export class Agent {
           callId: call.id,
           result,
         });
+
+        // Emit tool_result event for GUI
+        if (onEvent) {
+          onEvent({
+            type: "tool_result",
+            data: {
+              toolName,
+              toolResult:
+                typeof result === "string" ? result : JSON.stringify(result),
+            },
+          });
+        }
       }
 
       if (config.outputMode === "interactive") {
@@ -1425,5 +1470,16 @@ export class Agent {
 
     // Auto-sync to cloud folder (silent, fire-and-forget)
     autoSyncToCloud();
+
+    // Emit done event for GUI
+    if (onEvent) {
+      onEvent({
+        type: "done",
+        data: {
+          response: lastAssistantContent || "",
+          tokenStats: this.tokenStats,
+        },
+      });
+    }
   }
 }

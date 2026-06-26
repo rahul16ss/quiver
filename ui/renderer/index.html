@@ -67,28 +67,21 @@
       const text = promptInput.value.trim();
       if (!text || agentRunning) return;
 
-      // Hide empty state
       if (emptyState) emptyState.style.display = "none";
 
-      // Show user message
       addMessage("user", text);
-
-      // Clear input
       promptInput.value = "";
       promptInput.style.height = "auto";
 
-      // Set status
       agentRunning = true;
       sendBtn.disabled = true;
       statusDot.className = "dot live";
       statusText.textContent = "Working...";
 
-      // Start agent if not running
       const config = await window.quiver.loadConfig();
       await window.quiver.startAgent(config);
       await window.quiver.sendToAgent(text);
 
-      // Create a placeholder for the agent response
       currentAgentMsg = addMessage("agent", "");
     }
 
@@ -103,7 +96,32 @@
       return div;
     }
 
-    function appendToCurrentAgent(text) {
+    function addToolCall(toolName, toolArgs) {
+      const div = document.createElement("div");
+      div.className = "tool-call";
+      const argsStr = Object.entries(toolArgs || {})
+        .map(([k, v]) => `${k}: ${truncate(String(v), 60)}`)
+        .join(", ");
+      div.innerHTML = `
+        <div class="tool-header">
+          <span class="tool-name">▸ ${toolName}</span>
+          <span class="tool-args">${argsStr}</span>
+        </div>
+        <div class="tool-result" style="display:none;"></div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    function showToolResult(toolDiv, result) {
+      const resultEl = toolDiv.querySelector(".tool-result");
+      resultEl.textContent = truncate(result, 500);
+      resultEl.style.display = "block";
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function appendToken(text) {
       if (!currentAgentMsg) {
         currentAgentMsg = addMessage("agent", "");
       }
@@ -112,67 +130,115 @@
       chatArea.scrollTop = chatArea.scrollHeight;
     }
 
-    // Agent events
+    function truncate(str, max) {
+      if (str.length <= max) return str;
+      return str.substring(0, max) + "...";
+    }
+
+    function setIdle() {
+      agentRunning = false;
+      sendBtn.disabled = false;
+      statusDot.className = "dot idle";
+      statusText.textContent = "Idle";
+      currentAgentMsg = null;
+    }
+
+    function setError(msg) {
+      addMessage("error", msg || "Unknown error");
+      agentRunning = false;
+      sendBtn.disabled = false;
+      statusDot.className = "dot error";
+      statusText.textContent = "Error";
+      currentAgentMsg = null;
+    }
+
+    // Track tool call divs by a simple counter (tool calls arrive sequentially)
+    let pendingToolDivs = [];
+
+    // Agent events — new event-based protocol
     window.quiver.onAgentEvent((msg) => {
-      if (msg.status === "ok") {
-        // Full response received
-        if (currentAgentMsg) {
-          const body = currentAgentMsg.querySelector(".body");
-          body.textContent = msg.response || "";
-        }
-        if (msg.tokenStats) {
-          statsBar.innerHTML = [
-            `Turns: ${msg.tokenStats.turns || 0}`,
-            `Input: ${msg.tokenStats.inputTokens || 0}`,
-            `Output: ${msg.tokenStats.outputTokens || 0}`,
-            `Tools: ${msg.tokenStats.toolCalls || 0}`,
-          ].join(" · ");
-        }
-        agentRunning = false;
-        sendBtn.disabled = false;
-        statusDot.className = "dot idle";
-        statusText.textContent = "Idle";
-        currentAgentMsg = null;
-      } else if (msg.status === "error") {
-        addMessage("error", msg.error || "Unknown error");
-        agentRunning = false;
-        sendBtn.disabled = false;
-        statusDot.className = "dot error";
-        statusText.textContent = "Error";
-        currentAgentMsg = null;
+      if (!msg.type) {
+        // Legacy format (status-based) — ignore
+        return;
+      }
+
+      switch (msg.type) {
+        case "token":
+          appendToken(msg.data?.text || "");
+          break;
+
+        case "tool_call":
+          const toolDiv = addToolCall(
+            msg.data?.toolName || "unknown",
+            msg.data?.toolArgs || {},
+          );
+          pendingToolDivs.push(toolDiv);
+          break;
+
+        case "tool_result":
+          if (pendingToolDivs.length > 0) {
+            const div = pendingToolDivs.shift();
+            showToolResult(div, msg.data?.toolResult || "");
+          }
+          break;
+
+        case "done":
+          if (msg.data?.tokenStats) {
+            const ts = msg.data.tokenStats;
+            statsBar.innerHTML = [
+              `Turns: ${ts.turns || 0}`,
+              `Input: ${ts.inputTokens || 0}`,
+              `Output: ${ts.outputTokens || 0}`,
+              `Tools: ${ts.toolCalls || 0}`,
+            ].join(" · ");
+          }
+          // If no tokens were streamed but there's a response, show it
+          if (currentAgentMsg) {
+            const body = currentAgentMsg.querySelector(".body");
+            if (!body.textContent && msg.data?.response) {
+              body.textContent = msg.data.response;
+            }
+          }
+          setIdle();
+          break;
+
+        case "error":
+          setError(msg.data?.error || "Unknown error");
+          break;
       }
     });
 
+    // Raw output (non-JSON lines) — append to current agent message
     window.quiver.onAgentRaw((line) => {
-      // Streaming tokens or raw output
-      appendToCurrentAgent(line);
+      try {
+        // Try to parse as JSON (might be an event)
+        const parsed = JSON.parse(line);
+        if (parsed.type) {
+          // Already handled by onAgentEvent — skip
+          return;
+        }
+      } catch {
+        // Not JSON — it's raw text output
+      }
+      appendToken(line);
     });
 
     window.quiver.onAgentStderr((data) => {
-      // Stderr — could be status lines or errors
-      if (data.includes("[ERROR]")) {
+      if (data.includes("[ERROR]") || data.includes('"type":"error"')) {
         statusDot.className = "dot error";
         statusText.textContent = "Error";
       }
     });
 
     window.quiver.onAgentExit((info) => {
-      agentRunning = false;
-      sendBtn.disabled = false;
-      statusDot.className = "dot idle";
+      setIdle();
       statusText.textContent = info.code === 0 ? "Idle" : "Exited";
-      currentAgentMsg = null;
     });
 
     window.quiver.onAgentError((err) => {
-      addMessage("error", err.message || "Agent error");
-      agentRunning = false;
-      sendBtn.disabled = false;
-      statusDot.className = "dot error";
-      statusText.textContent = "Error";
+      setError(err.message || "Agent error");
     });
 
-    // Focus input on load
     promptInput.focus();
   </script>
 </body>

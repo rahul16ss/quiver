@@ -304,7 +304,9 @@ export class UsageError extends Error {
 }
 
 export function emitJson(
-  payload: Record<string, unknown>,
+  payload:
+    | Record<string, unknown>
+    | { type: string; data?: Record<string, unknown> },
   stream: NodeJS.WriteStream = process.stdout,
 ): void {
   stream.write(`${JSON.stringify(payload)}\n`);
