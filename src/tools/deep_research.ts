@@ -94,6 +94,7 @@ export const tool: Tool = {
           "x-api-key": apiKey,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!createResponse.ok) {
@@ -122,6 +123,7 @@ export const tool: Tool = {
             headers: {
               "x-api-key": apiKey,
             },
+            signal: AbortSignal.timeout((timeoutPerRequest + 30) * 1000),
           },
         );
 

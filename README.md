@@ -142,6 +142,9 @@ After exit, Quiver prints: `Session saved. Resume with: quiver --continue`
 - **scrape_url** — Scrape web pages to markdown
 - **search_docs** — Query Context7 for library documentation
 - **browser_control** — Control a headless browser session
+- **deep_research** — Multi-hop web research with citations (Parallel Task API)
+- **find_all** — Discover and verify entities matching criteria (Parallel FindAll API)
+- **entity_search** — Fast synchronous people/company search (Parallel Entity Search)
 
 ### 🧠 Memory
 - **memory_append** — Append facts to persistent memory

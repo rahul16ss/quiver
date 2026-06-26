@@ -41,10 +41,9 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
     const defaults: CoreMemory = {
       identity:
         "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
-      human_context:
-        "The active user is rahul16ss (GitHub account). Prefer standard Node.js and Bun patterns.",
+      human_context: "",
       project_context:
-        "This workspace is Quiver, an agent harness containing TS tools, test runners, and configuration.",
+        "This workspace is an agent harness containing TS tools, test runners, and configuration.",
     };
     await saveCoreMemory(defaults);
     return defaults;

@@ -122,7 +122,15 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "grep_search",
   ],
   "⚙️ System": ["run_command", "run_tests", "create_tool", "log_tokens"],
-  "🌐 Web": ["web_search", "scrape_url", "search_docs", "browser_control"],
+  "🌐 Web": [
+    "web_search",
+    "scrape_url",
+    "search_docs",
+    "browser_control",
+    "deep_research",
+    "find_all",
+    "entity_search",
+  ],
   "🧠 Memory": ["memory_append", "memory_replace"],
   "🐙 GitHub": ["github"],
 };
@@ -801,7 +809,7 @@ async function main() {
             `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
           );
           console.log(
-            `   - Parallel Key:      ${redactSecret(config.parallelApiKey)}`,
+            `   - Parallel APIs:     ${redactSecret(config.parallelApiKey)}${config.parallelApiKey ? " (search, extract, research, findall, entity)" : ""}`,
           );
           console.log(
             `   - GitHub Token:      ${redactSecret(config.githubToken)}`,

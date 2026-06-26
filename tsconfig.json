@@ -11,5 +11,5 @@
     "rootDir": "./",
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*", "tests/**/*", "ui/**/*"]
 }

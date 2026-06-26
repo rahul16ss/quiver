@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { spawn, ChildProcess } from "child_process";
 
@@ -21,8 +21,6 @@ interface QuiverConfig {
   maxContextTokens: number;
   memoryDir: string;
   skillsDir: string;
-  googleDriveSync: boolean;
-  googleDrivePath: string;
 }
 
 // ─── Globals ─────────────────────────────────────────────────────────
@@ -55,8 +53,6 @@ const DEFAULT_CONFIG: QuiverConfig = {
   maxContextTokens: 120000,
   memoryDir: "./memory",
   skillsDir: "./skills",
-  googleDriveSync: false,
-  googleDrivePath: "",
 };
 
 async function loadConfig(): Promise<QuiverConfig> {
@@ -239,67 +235,6 @@ async function saveMemoryFile(name: string, content: string): Promise<boolean> {
   }
 }
 
-// ─── Google Drive Sync ───────────────────────────────────────────────
-
-async function syncGoogleDrive(
-  gdrivePath: string,
-): Promise<{ synced: number; errors: string[] }> {
-  try {
-    const fs = await import("fs/promises");
-    const memDir = path.resolve(process.cwd(), "memory");
-    const gdriveMemDir = path.join(gdrivePath, "Quiver", "memory");
-
-    // Ensure Google Drive memory dir exists
-    await fs.mkdir(gdriveMemDir, { recursive: true });
-
-    const localFiles = await fs.readdir(memDir);
-    const remoteFiles = await fs.readdir(gdriveMemDir);
-
-    let synced = 0;
-    const errors: string[] = [];
-
-    // Push local → Google Drive
-    for (const file of localFiles) {
-      if (file.startsWith(".")) continue;
-      try {
-        const src = path.join(memDir, file);
-        const dst = path.join(gdriveMemDir, file);
-        await fs.copyFile(src, dst);
-        synced++;
-      } catch (err: any) {
-        errors.push(`Upload ${file}: ${err.message}`);
-      }
-    }
-
-    // Pull Google Drive → local (if newer)
-    for (const file of remoteFiles) {
-      if (file.startsWith(".")) continue;
-      try {
-        const src = path.join(gdriveMemDir, file);
-        const dst = path.join(memDir, file);
-        const srcStat = await fs.stat(src);
-        let dstStat: any;
-        try {
-          dstStat = await fs.stat(dst);
-        } catch {
-          dstStat = null;
-        }
-        // Only pull if remote is newer or local doesn't exist
-        if (!dstStat || srcStat.mtimeMs > dstStat.mtimeMs) {
-          await fs.copyFile(src, dst);
-          synced++;
-        }
-      } catch (err: any) {
-        errors.push(`Download ${file}: ${err.message}`);
-      }
-    }
-
-    return { synced, errors };
-  } catch (err: any) {
-    return { synced: 0, errors: [err.message] };
-  }
-}
-
 // ─── Window Management ────────────────────────────────────────────────
 
 async function createWindow(): Promise<void> {
@@ -370,18 +305,6 @@ function registerIpcHandlers(): void {
   ipcMain.handle("memory:save", async (_evt, name: string, content: string) =>
     saveMemoryFile(name, content),
   );
-
-  // Google Drive sync
-  ipcMain.handle("gdrive:sync", async (_evt, gdrivePath: string) =>
-    syncGoogleDrive(gdrivePath),
-  );
-  ipcMain.handle("gdrive:pickFolder", async () => {
-    const result = await dialog.showOpenDialog(mainWindow!, {
-      properties: ["openDirectory"],
-      title: "Select Google Drive folder",
-    });
-    return result.canceled ? null : result.filePaths[0];
-  });
 
   // Navigation
   ipcMain.handle("nav:loadMain", async () => {

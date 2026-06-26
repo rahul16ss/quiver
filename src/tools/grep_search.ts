@@ -50,9 +50,10 @@ export const tool: Tool = {
       return `Error: Directory '${dir}' does not exist.`;
     }
 
-    // Check ripgrep availability
+    // Check ripgrep availability (cross-platform)
     const rgAvailable = await new Promise<boolean>((resolve) => {
-      exec("which rg", { timeout: 2000 }, (err, stdout) => {
+      const cmd = process.platform === "win32" ? "where rg" : "which rg";
+      exec(cmd, { timeout: 2000 }, (err, stdout) => {
         resolve(!err && stdout.trim().length > 0);
       });
     });

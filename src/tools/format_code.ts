@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import * as path from "path";
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
@@ -17,20 +17,23 @@ function hasPrettier(): Promise<boolean> {
 }
 
 /**
- * Runs prettier on a file path.
+ * Runs prettier on a file path using execFile (no shell interpolation).
  */
-function runPrettier(filePath: string): Promise<{ code: number; stdout: string; stderr: string }> {
+function runPrettier(
+  filePath: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    exec(
-      `npx prettier --write "${filePath}"`,
+    execFile(
+      "npx",
+      ["prettier", "--write", filePath],
       { maxBuffer: 1024 * 1024 * 10 },
       (error, stdout, stderr) => {
         resolve({
-          code: error?.code ?? 0,
+          code: typeof error?.code === "number" ? error.code : error ? 1 : 0,
           stdout: stdout.trim(),
           stderr: stderr.trim(),
         });
-      }
+      },
     );
   });
 }
@@ -162,7 +165,9 @@ export const tool: Tool = {
   parameters: z.object({
     filePath: z
       .string()
-      .describe("The absolute or relative path of the TypeScript/JavaScript file to format."),
+      .describe(
+        "The absolute or relative path of the TypeScript/JavaScript file to format.",
+      ),
   }),
   execute: async ({ filePath }) => {
     const resolvedPath = path.resolve(filePath);
@@ -189,12 +194,18 @@ export const tool: Tool = {
         formatted = await fs.readFile(resolvedPath, "utf8");
         method = "prettier";
       } else {
-        console.log(picocolors.yellow(`   ⚠️  Prettier failed, falling back to built-in formatter.`));
+        console.log(
+          picocolors.yellow(
+            `   ⚠️  Prettier failed, falling back to built-in formatter.`,
+          ),
+        );
         formatted = customFormat(original);
         method = "built-in (prettier fallback)";
       }
     } else {
-      console.log(picocolors.gray(`   ⚡ Formatting with built-in formatter...`));
+      console.log(
+        picocolors.gray(`   ⚡ Formatting with built-in formatter...`),
+      );
       formatted = customFormat(original);
       method = "built-in";
     }
@@ -203,7 +214,11 @@ export const tool: Tool = {
     if (formatted !== original) {
       await fs.writeFile(resolvedPath, formatted, "utf8");
       const linesChanged = formatted.split("\n").length;
-      console.log(picocolors.green(`   ✅ Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`));
+      console.log(
+        picocolors.green(
+          `   ✅ Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`,
+        ),
+      );
       return JSON.stringify(
         {
           success: true,
@@ -213,10 +228,12 @@ export const tool: Tool = {
           changed: true,
         },
         null,
-        2
+        2,
       );
     } else {
-      console.log(picocolors.green(`   ✅ File already well-formatted (${method}).`));
+      console.log(
+        picocolors.green(`   ✅ File already well-formatted (${method}).`),
+      );
       return JSON.stringify(
         {
           success: true,
@@ -225,7 +242,7 @@ export const tool: Tool = {
           changed: false,
         },
         null,
-        2
+        2,
       );
     }
   },

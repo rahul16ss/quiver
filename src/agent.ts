@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import * as fsSync from "fs";
 import * as path from "path";
 import picocolors from "picocolors";
 import readline from "readline";
@@ -88,21 +89,21 @@ function sanitizeLogData(type: string, data: any): any {
       const content = redactSecrets(String(data?.content ?? ""));
       const truncated = truncateForLog(content, maxChars);
       const tool_calls = Array.isArray(data?.tool_calls)
-        ? data.tool_calls.map((tc: any) => {
-            const args = redactSecrets(String(tc?.function?.arguments ?? ""));
-            const argsTruncated = truncateForLog(args, maxChars);
-            return {
-              id: tc?.id,
-              type: tc?.type,
-              function: {
-                name: tc?.function?.name,
-                arguments: argsTruncated.text,
-                argumentsLength: argsTruncated.length,
-                truncated: argsTruncated.truncated,
-              },
-            };
-          })
-        : undefined;
+      ? data.tool_calls.map((tc: any) => {
+          const args = redactSecrets(String(tc?.function?.arguments ?? ""));
+          const argsTruncated = truncateForLog(args, maxChars);
+          return {
+            id: tc?.id,
+            type: tc?.type,
+            function: {
+              name: tc?.function?.name,
+              arguments: argsTruncated.text,
+              argumentsLength: argsTruncated.length,
+              truncated: argsTruncated.truncated,
+            },
+          };
+      })
+      : undefined;
       return {
         role: data?.role,
         content: truncated.text,
@@ -114,7 +115,7 @@ function sanitizeLogData(type: string, data: any): any {
     case "tool_result": {
       const result = data?.result;
       const resultStr =
-        typeof result === "string" ? result : JSON.stringify(result ?? "");
+      typeof result === "string" ? result : JSON.stringify(result ?? "");
       const redacted = redactSecrets(resultStr);
       const truncated = truncateForLog(redacted, maxChars);
       return {
@@ -138,7 +139,7 @@ function sanitizeLogData(type: string, data: any): any {
       };
     }
     default:
-      return data;
+    return data;
   }
 }
 
@@ -158,9 +159,9 @@ export class SessionLogger {
     if (!config.sessionLogEnabled) return;
 
     this.logs.push({
-      timestamp: new Date().toISOString(),
-      type,
-      data: sanitizeLogData(type, data),
+        timestamp: new Date().toISOString(),
+        type,
+        data: sanitizeLogData(type, data),
     });
   }
 
@@ -186,9 +187,7 @@ export class SessionLogger {
   public flushSync(): void {
     if (this.logs.length === 0) return;
     try {
-      const fsSync = require("fs");
-      const pathSync = require("path");
-      fsSync.mkdirSync(pathSync.dirname(this.logPath), { recursive: true });
+      fsSync.mkdirSync(path.dirname(this.logPath), { recursive: true });
       fsSync.writeFileSync(
         this.logPath,
         JSON.stringify(this.logs, null, 2),
@@ -208,7 +207,7 @@ export class SessionLogger {
   }
 
   public getSessionLogRelPath(): string {
-    return `.sessions/${this.sessionId}.jsonl`;
+    return `.sessions/${this.sessionId}.json`;
   }
 }
 
@@ -262,9 +261,9 @@ function formatDetails(toolName: string, args: any, prefix: string): string {
   }
 
   return output
-    .split("\n")
-    .map((line) => `${prefix}${line}`)
-    .join("\n");
+  .split("\n")
+  .map((line) => `${prefix}${line}`)
+  .join("\n");
 }
 
 // Approval gate prompt — reuse the session readline when provided to avoid double-echo (yy)
@@ -296,29 +295,29 @@ async function askUserApproval(
   );
 
   const prompt = irreversible
-    ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
-    : picocolors.bold(picocolors.cyan("Allow this action? (y/N): "));
+  ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
+  : picocolors.bold(picocolors.cyan("Allow this action? (y/N): "));
 
   if (sessionRl) {
     return new Promise((resolve) => {
-      sessionRl.question(prompt, (answer) => {
-        const cleanAnswer = answer.trim().toLowerCase();
-        resolve(cleanAnswer === "y" || cleanAnswer === "yes");
-      });
+        sessionRl.question(prompt, (answer) => {
+            const cleanAnswer = answer.trim().toLowerCase();
+            resolve(cleanAnswer === "y" || cleanAnswer === "yes");
+        });
     });
   }
 
   const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
+      input: process.stdin,
+      output: process.stdout,
   });
 
   return new Promise((resolve) => {
-    rl.question(prompt, (answer) => {
-      rl.close();
-      const cleanAnswer = answer.trim().toLowerCase();
-      resolve(cleanAnswer === "y" || cleanAnswer === "yes");
-    });
+      rl.question(prompt, (answer) => {
+          rl.close();
+          const cleanAnswer = answer.trim().toLowerCase();
+          resolve(cleanAnswer === "y" || cleanAnswer === "yes");
+      });
   });
 }
 
@@ -358,11 +357,11 @@ class Spinner {
     let i = 0;
     process.stdout.write("\r");
     this.interval = setInterval(() => {
-      process.stdout.write(
-        `\r${picocolors.cyan(this.frames[i % this.frames.length])} ${picocolors.gray(this.message)}`,
-      );
-      i++;
-    }, 80);
+        process.stdout.write(
+          `\r${picocolors.cyan(this.frames[i % this.frames.length])} ${picocolors.gray(this.message)}`,
+        );
+        i++;
+      }, 80);
   }
 
   stop(): void {
@@ -396,8 +395,8 @@ export class Agent {
 
     // Add default system prompt structure (will be dynamically updated with skills and memory)
     this.messages.push({
-      role: "system",
-      content:
+        role: "system",
+        content:
         "You are Quiver, a self-evolving coding and research assistant running in a terminal-based CLI.",
     });
   }
@@ -437,9 +436,7 @@ export class Agent {
   public saveSessionStateSync(): void {
     try {
       const statePath = this.getSessionStatePath();
-      const fsSync = require("fs");
-      const pathSync = require("path");
-      fsSync.mkdirSync(pathSync.dirname(statePath), { recursive: true });
+      fsSync.mkdirSync(path.dirname(statePath), { recursive: true });
       const state = {
         format: "quiver-session-state",
         version: "1.0.0",
@@ -458,28 +455,28 @@ export class Agent {
   }
 
   /**
-   * Returns a deep copy of messages with secrets redacted from tool results
-   * and content. Used for safe persistence to disk.
-   */
+  * Returns a deep copy of messages with secrets redacted from tool results
+  * and content. Used for safe persistence to disk.
+  */
   private getRedactedMessages(): Message[] {
     return this.messages.map((msg) => {
-      const redacted: Message = {
-        role: msg.role,
-        content: msg.content ? redactSecrets(msg.content) : msg.content,
-        name: msg.name,
-        tool_call_id: msg.tool_call_id,
-      };
-      if (msg.tool_calls) {
-        redacted.tool_calls = msg.tool_calls.map((tc) => ({
-          id: tc.id,
-          type: tc.type,
-          function: {
-            name: tc.function.name,
-            arguments: redactSecrets(tc.function.arguments),
-          },
-        }));
-      }
-      return redacted;
+        const redacted: Message = {
+          role: msg.role,
+          content: msg.content ? redactSecrets(msg.content) : msg.content,
+          name: msg.name,
+          tool_call_id: msg.tool_call_id,
+        };
+        if (msg.tool_calls) {
+          redacted.tool_calls = msg.tool_calls.map((tc) => ({
+                id: tc.id,
+                type: tc.type,
+                function: {
+                  name: tc.function.name,
+                  arguments: redactSecrets(tc.function.arguments),
+                },
+          }));
+        }
+        return redacted;
     });
   }
 
@@ -511,12 +508,12 @@ export class Agent {
       const sessionsDir = path.resolve(".sessions");
       const files = await fs.readdir(sessionsDir);
       const stateFiles = files
-        .filter((f) => f.endsWith(".state.json"))
-        .map((f) => ({
-          name: f,
-          path: path.join(sessionsDir, f),
-        }))
-        .sort((a, b) => b.name.localeCompare(a.name)); // newest first (timestamp in name)
+      .filter((f) => f.endsWith(".state.json"))
+      .map((f) => ({
+            name: f,
+            path: path.join(sessionsDir, f),
+      }))
+      .sort((a, b) => b.name.localeCompare(a.name)); // newest first (timestamp in name)
 
       // Return the most recently modified file
       let latest: { path: string; mtime: number } | null = null;
@@ -534,13 +531,13 @@ export class Agent {
 
   /** List all saved session state files with metadata. */
   public static async listSessionStates(): Promise<
-    {
-      sessionId: string;
-      path: string;
-      savedAt: string;
-      messageCount: number;
-      model: string;
-    }[]
+  {
+    sessionId: string;
+    path: string;
+    savedAt: string;
+    messageCount: number;
+    model: string;
+  }[]
   > {
     try {
       const sessionsDir = path.resolve(".sessions");
@@ -561,11 +558,11 @@ export class Agent {
           const content = await fs.readFile(filePath, "utf8");
           const state = JSON.parse(content);
           results.push({
-            sessionId: state.sessionId || f,
-            path: filePath,
-            savedAt: state.savedAt || "unknown",
-            messageCount: state.messages?.length || 0,
-            model: state.model || "unknown",
+              sessionId: state.sessionId || f,
+              path: filePath,
+              savedAt: state.savedAt || "unknown",
+              messageCount: state.messages?.length || 0,
+              model: state.model || "unknown",
           });
         } catch {
           // Skip corrupt files
@@ -615,8 +612,24 @@ export class Agent {
     if (this.messages.length <= keepLast + 1) return 0;
 
     const systemMsg = this.messages.find((m) => m.role === "system");
-    const recentMessages = this.messages.slice(-keepLast);
+    let recentMessages = this.messages.slice(-keepLast);
     const removedCount = this.messages.length - keepLast - (systemMsg ? 1 : 0);
+
+    // Don't start with orphaned tool messages whose parent assistant
+    // tool_calls were compacted away — the API would reject them.
+    while (
+      recentMessages.length > 0 &&
+      recentMessages[0].role === "tool" &&
+      !recentMessages.some(
+        (m) =>
+        m.role === "assistant" &&
+        m.tool_calls?.some(
+          (tc) => tc.id === recentMessages[0].tool_call_id,
+        ),
+      )
+    ) {
+      recentMessages = recentMessages.slice(1);
+    }
 
     this.messages = [];
     if (systemMsg) {
@@ -624,8 +637,8 @@ export class Agent {
     }
     // Add a summary marker for compacted history
     this.messages.push({
-      role: "system",
-      content: `[Context Compacted] ${removedCount} earlier messages were summarized to save context window space. The conversation continues from the recent messages below.`,
+        role: "system",
+        content: `[Context Compacted] ${removedCount} earlier messages were summarized to save context window space. The conversation continues from the recent messages below.`,
     });
     this.messages.push(...recentMessages);
 
@@ -646,11 +659,11 @@ export class Agent {
 
   // Load persistent memory files
   private async loadMemory(): Promise<
-    { filename: string; sizeBytes: number; content: string }[]
+  { filename: string; sizeBytes: number; content: string }[]
   > {
     const memoryDir = path.resolve(config.memoryDir);
     const results: { filename: string; sizeBytes: number; content: string }[] =
-      [];
+    [];
 
     try {
       await fs.mkdir(memoryDir, { recursive: true });
@@ -662,9 +675,9 @@ export class Agent {
         if (stats.isFile() && !file.startsWith(".")) {
           const content = await fs.readFile(filePath, "utf8");
           results.push({
-            filename: file,
-            sizeBytes: stats.size,
-            content,
+              filename: file,
+              sizeBytes: stats.size,
+              content,
           });
         }
       }
@@ -676,7 +689,7 @@ export class Agent {
 
   // Load versioned skills
   private async loadSkills(): Promise<
-    { id: string; version: string; purpose: string; content: string }[]
+  { id: string; version: string; purpose: string; content: string }[]
   > {
     const skillsDir = path.resolve(config.skillsDir);
     const results: {
@@ -709,20 +722,20 @@ export class Agent {
             const name = nameMatch ? nameMatch[1].trim() : dir;
             const version = verMatch ? verMatch[1].trim() : "1.0.0";
             const purpose = purposeMatch
-              ? purposeMatch[1].trim()
-              : descMatch
-                ? descMatch[1].trim()
-                : "Custom task procedure";
+            ? purposeMatch[1].trim()
+            : descMatch
+            ? descMatch[1].trim()
+            : "Custom task procedure";
             const license = licenseMatch ? licenseMatch[1].trim() : "Unknown";
             const compatibility = compatMatch
-              ? compatMatch[1].trim()
-              : "Universal";
+            ? compatMatch[1].trim()
+            : "Universal";
 
             results.push({
-              id: name,
-              version,
-              purpose: `${purpose} [License: ${license}, Compatibility: ${compatibility}]`,
-              content,
+                id: name,
+                version,
+                purpose: `${purpose} [License: ${license}, Compatibility: ${compatibility}]`,
+                content,
             });
           }
         } catch (err) {
@@ -736,9 +749,9 @@ export class Agent {
   }
 
   /**
-   * Build the rich dynamic system instructions.
-   * Separated so it can be reused when model changes at runtime.
-   */
+  * Build the rich dynamic system instructions.
+  * Separated so it can be reused when model changes at runtime.
+  */
   private buildSystemPrompt(
     coreMemory: any,
     memories: any[],
@@ -809,16 +822,16 @@ export class Agent {
   }
 
   /**
-   * Estimate token count for a message (rough heuristic: ~4 chars per token).
-   */
+  * Estimate token count for a message (rough heuristic: ~4 chars per token).
+  */
   private estimateTokens(text: string): number {
     return Math.ceil((text || "").length / 4);
   }
 
   /**
-   * Trims conversation history if it exceeds the configured max context size.
-   * Keeps the system prompt and most recent messages, removing oldest tool/user exchanges.
-   */
+  * Trims conversation history if it exceeds the configured max context size.
+  * Keeps the system prompt and most recent messages, removing oldest tool/user exchanges.
+  */
   private trimContextIfNeeded(): number {
     const maxTokens = config.maxContextTokens;
     if (maxTokens <= 0) return 0;
@@ -842,9 +855,26 @@ export class Agent {
 
     const systemMessages = this.messages.filter((m) => m.role === "system");
     const nonSystemMessages = this.messages.filter((m) => m.role !== "system");
-    const keptNonSystem = nonSystemMessages.slice(-keepRecent);
-    const removedCount = nonSystemMessages.length - keptNonSystem.length;
+    let keptNonSystem = nonSystemMessages.slice(-keepRecent);
 
+    // Ensure we don't start with orphaned tool messages (whose parent
+    // assistant tool_calls were trimmed away). The API rejects requests
+    // where a tool message references a tool_call_id that doesn't exist.
+    while (
+      keptNonSystem.length > 0 &&
+      keptNonSystem[0].role === "tool" &&
+      !keptNonSystem.some(
+        (m) =>
+        m.role === "assistant" &&
+        m.tool_calls?.some(
+          (tc) => tc.id === keptNonSystem[0].tool_call_id,
+        ),
+      )
+    ) {
+      keptNonSystem = keptNonSystem.slice(1);
+    }
+
+    const removedCount = nonSystemMessages.length - keptNonSystem.length;
     this.messages = [...systemMessages, ...keptNonSystem];
     return removedCount;
   }
@@ -870,6 +900,9 @@ export class Agent {
     memory_append: "Save memory",
     memory_replace: "Update memory",
     github: "GitHub",
+    deep_research: "Deep research",
+    find_all: "Find entities",
+    entity_search: "Entity search",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -911,7 +944,7 @@ export class Agent {
     const truncated = str.substring(0, 117);
     const lastSpace = truncated.lastIndexOf(" ");
     const clean =
-      lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated;
+    lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated;
     return `${clean}…`;
   }
 
@@ -930,8 +963,8 @@ export class Agent {
 
     // Estimate total context tokens (messages + system prompt)
     const allText = this.messages
-      .map((m) => (typeof m.content === "string" ? m.content : ""))
-      .join(" ");
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .join(" ");
     const estTokens = Math.ceil(allText.length / 4);
     const maxTokens = config.maxContextTokens;
     const pct = Math.round((estTokens / maxTokens) * 100);
@@ -960,17 +993,17 @@ export class Agent {
 
     // Context window usage (Principle: Cost Awareness)
     const tokColor =
-      pct < 60
-        ? picocolors.gray
-        : pct < 85
-          ? picocolors.yellow
-          : picocolors.red;
+    pct < 60
+    ? picocolors.gray
+    : pct < 85
+    ? picocolors.yellow
+    : picocolors.red;
     console.log(
       dim(`  │ tokens: `) +
-        tokColor(
-          `${estTokens.toLocaleString()} / ${maxTokens.toLocaleString()} (${pct}%)`,
-        ) +
-        dim(` ${usageBar}`),
+      tokColor(
+        `${estTokens.toLocaleString()} / ${maxTokens.toLocaleString()} (${pct}%)`,
+      ) +
+      dim(` ${usageBar}`),
     );
 
     console.log(dim(`  └`));
@@ -985,10 +1018,10 @@ export class Agent {
   }
 
   /**
-   * Run a single prompt turn. This function handles the LLM response,
-   * streams text content, handles tool calls, executes them, feeds them back,
-   * and repeats until the model finishes calling tools.
-   */
+  * Run a single prompt turn. This function handles the LLM response,
+  * streams text content, handles tool calls, executes them, feeds them back,
+  * and repeats until the model finishes calling tools.
+  */
   public async prompt(
     userInput: string,
     onToken: (token: string) => void,
@@ -1038,8 +1071,8 @@ export class Agent {
       loopCount++;
       this.tokenStats.turns++;
       await this.logger.logEvent("turn_start", {
-        loop: loopCount,
-        historySize: this.messages.length,
+          loop: loopCount,
+          historySize: this.messages.length,
       });
 
       // Gather current tool definitions
@@ -1081,9 +1114,9 @@ export class Agent {
       while (retries <= maxRetries) {
         try {
           response = await fetch(`${config.llmBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(payload),
+              method: "POST",
+              headers,
+              body: JSON.stringify(payload),
           });
           break;
         } catch (err: any) {
@@ -1096,8 +1129,8 @@ export class Agent {
               ),
             );
             await this.logger.logEvent("api_error", {
-              error: err.message,
-              retries,
+                error: err.message,
+                retries,
             });
             throw err;
           }
@@ -1121,8 +1154,8 @@ export class Agent {
         const msg = `LLM Server returned error (${response!.status}): ${errorText}`;
         console.error(picocolors.red(`\n❌ ${msg}`));
         await this.logger.logEvent("api_error", {
-          status: response!.status,
-          response: errorText,
+            status: response!.status,
+            response: errorText,
         });
         throw new Error(msg);
       }
@@ -1135,8 +1168,8 @@ export class Agent {
 
       let assistantContent = "";
       let accumulatedToolCalls: Record<
-        number,
-        { id?: string; name?: string; arguments: string }
+      number,
+      { id?: string; name?: string; arguments: string }
       > = {};
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1191,7 +1224,7 @@ export class Agent {
                 }
                 if (tcDelta.function?.arguments) {
                   accumulatedToolCalls[index].arguments +=
-                    tcDelta.function.arguments;
+                  tcDelta.function.arguments;
                 }
               }
             }
@@ -1246,136 +1279,136 @@ export class Agent {
           // Strip triple backticks wrapper or json identifier if present
           if (rawArgs.startsWith("```")) {
             rawArgs = rawArgs
-              .replace(/^```(?:json)?\n?/i, "")
+            .replace(/^```(?:json)?\n?/i, "")
               .replace(/\n?```$/, "")
-              .trim();
-          }
-          args = JSON.parse(rawArgs);
-        } catch (e) {
-          // Args parsing failed — will show raw
-        }
-
-        // Human-Approval Gate Check (centralized in agent, not duplicated in tools)
-        let isApproved = true;
-        if (config.dryRun) {
-          isApproved = true;
-        } else if (config.requireApprovalFor.includes(toolName)) {
-          isApproved = await askUserApproval(
-            toolName,
-            args,
-            this.sessionReadline ?? undefined,
-          );
-        }
-
-        let result: any;
-        if (config.dryRun) {
-          result = `[DRY RUN] Would execute '${toolName}' with: ${JSON.stringify(args)}`;
-          if (config.outputMode === "interactive") {
-            statusLine("DRY", `Preview — ${displayName}`);
-            console.log(formatDetails(toolName, args, theme().gray("  ")));
-          }
-        } else if (!isApproved) {
-          result = `Error: Action '${toolName}' was denied by the user.`;
-          console.log(picocolors.red(`  ✗ ${displayName} — declined by you`));
-        } else {
-          const keyArg = this.summarizeToolArgs(toolName, args);
-          const argHint = keyArg ? picocolors.gray(` ${keyArg}`) : "";
-
-          // ── Destructive Action Guard (Principle: Read Before Write) ──
-          // Enforce that write_file and replace_content cannot run on a file
-          // that was never read in the current session.
-          if (
-            (toolName === "write_file" || toolName === "replace_content") &&
-            args.filePath &&
-            !this.filesReadThisSession.has(args.filePath)
-          ) {
-            result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 this file was not read first. Always use view_file to read a file before modifying it. This is a safety guard to prevent blind edits.`;
-            if (config.outputMode === "interactive") {
-              process.stdout.write(
-                `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)}${argHint} \u2014 not read first\n`,
-              );
-            }
-          } else {
-            if (config.outputMode === "interactive") {
-              process.stdout.write(
-                `  ⟳ ${picocolors.cyan(displayName)}${argHint}…`,
-              );
-            }
-            const tool = this.registry.getTool(toolName);
-            if (!tool) {
-              result = `Error: Action '${toolName}' is not available.`;
-              if (config.outputMode === "interactive") {
-                process.stdout.write(
-                  `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — not found\n`,
-                );
+                .trim();
               }
+              args = JSON.parse(rawArgs);
+            } catch (e) {
+              // Args parsing failed — will show raw
+            }
+
+            // Human-Approval Gate Check (centralized in agent, not duplicated in tools)
+            let isApproved = true;
+            if (config.dryRun) {
+              isApproved = true;
+            } else if (config.requireApprovalFor.includes(toolName)) {
+              isApproved = await askUserApproval(
+                toolName,
+                args,
+                this.sessionReadline ?? undefined,
+              );
+            }
+
+            let result: any;
+            if (config.dryRun) {
+              result = `[DRY RUN] Would execute '${toolName}' with: ${JSON.stringify(args)}`;
+              if (config.outputMode === "interactive") {
+                statusLine("DRY", `Preview — ${displayName}`);
+                console.log(formatDetails(toolName, args, theme().gray("  ")));
+              }
+            } else if (!isApproved) {
+              result = `Error: Action '${toolName}' was denied by the user.`;
+              console.log(picocolors.red(`  ✗ ${displayName} — declined by you`));
             } else {
-              try {
-                result = await tool.execute(args);
-                this.tokenStats.toolCalls++;
+              const keyArg = this.summarizeToolArgs(toolName, args);
+              const argHint = keyArg ? picocolors.gray(` ${keyArg}`) : "";
 
-                // Track files read for read-before-write enforcement
-                if (toolName === "view_file" && args.filePath) {
-                  this.filesReadThisSession.add(args.filePath);
-                }
-
+              // ── Destructive Action Guard (Principle: Read Before Write) ──
+              // Enforce that write_file and replace_content cannot run on a file
+              // that was never read in the current session.
+              if (
+                (toolName === "write_file" || toolName === "replace_content") &&
+                args.filePath &&
+                !this.filesReadThisSession.has(args.filePath)
+              ) {
+                result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 this file was not read first. Always use view_file to read a file before modifying it. This is a safety guard to prevent blind edits.`;
                 if (config.outputMode === "interactive") {
                   process.stdout.write(
-                    `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
+                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)}${argHint} \u2014 not read first\n`,
                   );
-                  // ── Result Preview (Principle: Result Visibility) ──
-                  // Show a truncated preview of what the tool returned
-                  const preview = this.summarizeResult(result);
-                  if (preview) {
-                    console.log(picocolors.gray(`    → ${preview}`));
+                }
+              } else {
+                if (config.outputMode === "interactive") {
+                  process.stdout.write(
+                    `  ⟳ ${picocolors.cyan(displayName)}${argHint}…`,
+                  );
+                }
+                const tool = this.registry.getTool(toolName);
+                if (!tool) {
+                  result = `Error: Action '${toolName}' is not available.`;
+                  if (config.outputMode === "interactive") {
+                    process.stdout.write(
+                      `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — not found\n`,
+                    );
+                  }
+                } else {
+                  try {
+                    result = await tool.execute(args);
+                    this.tokenStats.toolCalls++;
+
+                    // Track files read for read-before-write enforcement
+                    if (toolName === "view_file" && args.filePath) {
+                      this.filesReadThisSession.add(args.filePath);
+                    }
+
+                    if (config.outputMode === "interactive") {
+                      process.stdout.write(
+                        `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
+                      );
+                      // ── Result Preview (Principle: Result Visibility) ──
+                      // Show a truncated preview of what the tool returned
+                      const preview = this.summarizeResult(result);
+                      if (preview) {
+                        console.log(picocolors.gray(`    → ${preview}`));
+                      }
+                    }
+                  } catch (error: any) {
+                    result = `Error performing action: ${error.message}`;
+                    if (config.outputMode === "interactive") {
+                      process.stdout.write(
+                        `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(error.message.slice(0, 60))}\n`,
+                      );
+                    }
                   }
                 }
-              } catch (error: any) {
-                result = `Error performing action: ${error.message}`;
-                if (config.outputMode === "interactive") {
-                  process.stdout.write(
-                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(error.message.slice(0, 60))}\n`,
-                  );
-                }
-              }
+              } // end destructive action guard
             }
-          } // end destructive action guard
+
+            const toolMsg: Message = {
+              role: "tool",
+              content: typeof result === "string" ? result : JSON.stringify(result),
+              name: toolName,
+              tool_call_id: call.id,
+            };
+
+            this.messages.push(toolMsg);
+            this.tokenStats.inputTokens += this.estimateTokens(
+              toolMsg.content || "",
+            );
+            await this.logger.logEvent("tool_result", {
+                tool: toolName,
+                callId: call.id,
+                result,
+            });
+          }
+
+          if (config.outputMode === "interactive") {
+            console.log("");
+          }
         }
 
-        const toolMsg: Message = {
-          role: "tool",
-          content: typeof result === "string" ? result : JSON.stringify(result),
-          name: toolName,
-          tool_call_id: call.id,
-        };
+        if (loopCount >= maxLoops) {
+          if (config.outputMode !== "json") {
+            console.warn(
+              picocolors.yellow(
+                `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
+              ),
+            );
+          }
+        }
 
-        this.messages.push(toolMsg);
-        this.tokenStats.inputTokens += this.estimateTokens(
-          toolMsg.content || "",
-        );
-        await this.logger.logEvent("tool_result", {
-          tool: toolName,
-          callId: call.id,
-          result,
-        });
-      }
-
-      if (config.outputMode === "interactive") {
-        console.log("");
+        // Auto-save session state after each prompt completes (sync for reliability)
+        this.saveSessionStateSync();
       }
     }
-
-    if (loopCount >= maxLoops) {
-      if (config.outputMode !== "json") {
-        console.warn(
-          picocolors.yellow(
-            `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
-          ),
-        );
-      }
-    }
-
-    // Auto-save session state after each prompt completes (sync for reliability)
-    this.saveSessionStateSync();
-  }
-}

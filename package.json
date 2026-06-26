@@ -28,6 +28,8 @@
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
     "@types/node": "^20.11.0",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

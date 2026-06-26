@@ -93,6 +93,7 @@ export const tool: Tool = {
             generator: selectedGenerator,
             match_limit: selectedLimit,
           }),
+          signal: AbortSignal.timeout(30000),
         },
       );
 
@@ -111,9 +112,12 @@ export const tool: Tool = {
       // Step 2: Poll until the run is no longer active
       const maxPollAttempts = 120; // 10 min max at 5s intervals
       const pollIntervalMs = 5000;
+      let runCompleted = false;
 
       for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
-        await sleep(pollIntervalMs);
+        if (attempt > 0) {
+          await sleep(pollIntervalMs);
+        }
 
         const statusResponse = await fetch(
           `${PARALLEL_BASE}/v1beta/findall/runs/${findallId}`,
@@ -122,6 +126,7 @@ export const tool: Tool = {
             headers: {
               "x-api-key": apiKey,
             },
+            signal: AbortSignal.timeout(15000),
           },
         );
 
@@ -132,11 +137,20 @@ export const tool: Tool = {
 
         const statusData: any = await statusResponse.json();
         const isActive = statusData.status?.is_active;
+        const runStatus = statusData.status?.status;
 
         if (!isActive) {
-          // Run is complete (or failed), fetch results
+          if (runStatus === "failed") {
+            const errorMsg = statusData.status?.error?.message || "Run failed";
+            return `Error: Parallel FindAll run failed: ${errorMsg}`;
+          }
+          runCompleted = true;
           break;
         }
+      }
+
+      if (!runCompleted) {
+        return `Error: FindAll run ${findallId} did not complete within the polling budget (${(maxPollAttempts * pollIntervalMs) / 1000} seconds). The run may still be active on Parallel's servers. FindAll ID: ${findallId}`;
       }
 
       // Step 3: Fetch results
@@ -147,6 +161,7 @@ export const tool: Tool = {
           headers: {
             "x-api-key": apiKey,
           },
+          signal: AbortSignal.timeout(30000),
         },
       );
 

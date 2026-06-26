@@ -57,6 +57,7 @@ export const tool: Tool = {
             objective,
             match_limit: match_limit || 100,
           }),
+          signal: AbortSignal.timeout(30000),
         },
       );
 

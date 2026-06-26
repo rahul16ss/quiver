@@ -35,7 +35,7 @@ export function generateAgentCard(registry: ToolRegistry): AgentCard {
     name: "Quiver-Agent",
     description:
       "Self-evolving autonomous agent harness for coding and research in the terminal.",
-    protocolVersion: "2026.06.25", // A2A standard representation
+    protocolVersion: "1.0.0",
     schemaVersion: "draft-01",
     capabilities,
     endpoints: [
