@@ -29,8 +29,7 @@ const KNOWN_FLAGS = [
   "--recipe",
   "init",
   "signin",
-  "gdrive-auth",
-  "gdrive-sync",
+  "cloud-sync",
   "--continue",
   "-c",
   "--resume",
@@ -47,8 +46,7 @@ export interface CliOptions {
   dryRun: boolean;
   init: boolean;
   signin: boolean;
-  gdriveAuth: boolean;
-  gdriveSync: boolean;
+  cloudSync: boolean;
   singleTurn?: string;
   recipe?: string;
   continue?: boolean;
@@ -217,8 +215,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     dryRun: false,
     init: false,
     signin: false,
-    gdriveAuth: false,
-    gdriveSync: false,
+    cloudSync: false,
     continue: false,
     resume: false,
     listSessions: false,
@@ -256,12 +253,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
       opts.signin = true;
       continue;
     }
-    if (arg === "gdrive-auth") {
-      opts.gdriveAuth = true;
-      continue;
-    }
-    if (arg === "gdrive-sync") {
-      opts.gdriveSync = true;
+    if (arg === "cloud-sync") {
+      opts.cloudSync = true;
       continue;
     }
     if (arg === "--single-turn") {

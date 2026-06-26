@@ -29,12 +29,11 @@ import {
   type OllamaIdentity,
 } from "./ollama_identity.js";
 import {
-  runOAuthFlow,
-  syncToGdrive,
-  getGdriveStatus,
-  isGdriveConfigured,
-  hasStoredToken,
-} from "./gdrive_sync.js";
+  syncToCloud,
+  getCloudSyncStatus,
+  detectCloudFolder,
+  getQuiverDataDir,
+} from "./cloud_sync.js";
 import * as path from "path";
 import { readFileSync, existsSync } from "fs";
 import { promises as fs } from "fs";
@@ -99,9 +98,9 @@ const SLASH_COMMANDS: SlashCommand[] = [
     desc: "Sign in via Ollama (cloud models, web search)",
   },
   {
-    name: "/gdrive-sync",
-    aliases: ["/gs"],
-    desc: "Sync memory & sessions to Google Drive",
+    name: "/cloud-sync",
+    aliases: ["/cs"],
+    desc: "Sync memory & sessions to cloud folder",
   },
 ];
 
@@ -278,97 +277,48 @@ async function runSignin(): Promise<void> {
   }
 }
 
-// ─── Google Drive Auth & Sync ────────────────────────────────────────
-async function runGdriveAuth(): Promise<void> {
+// ─── Cloud Sync ───────────────────────────────────────────────────────
+async function runCloudSync(): Promise<void> {
   const t = theme();
+
+  const status = getCloudSyncStatus();
 
   console.log(
     t.cyan(`
   ┌────────────────────────────────────────────┐
-  │  ☁️  Google Drive Authentication           │
-  │                                            │
-  │  Connect Quiver to Google Drive to sync    │
-  │  memory and sessions across machines.      │
+  │  ☁️  Cloud Sync                             │
   └────────────────────────────────────────────┘`),
   );
 
-  if (!isGdriveConfigured()) {
-    console.log(
-      picocolors.yellow(`\n  ⚠️  Google Drive credentials not found in .env.`),
-    );
+  if (status.active) {
+    console.log(picocolors.green(`\n  ✅ Detected: ${status.provider}`));
+    console.log(picocolors.gray(`  Quiver folder: ${status.path}`));
+  } else {
+    console.log(picocolors.yellow(`\n  ⚠️  No cloud sync folder detected.`));
     console.log(
       picocolors.gray(`
-  Setup steps:
-  1. Go to https://console.cloud.google.com/apis/credentials
-  2. Create a new project (or use existing)
-  3. Enable the Google Drive API
-  4. Create OAuth 2.0 Client ID (type: Web application)
-  5. Add this redirect URI: http://localhost:30034/callback
-  6. Copy the Client ID and Client Secret
-  7. Add to .env:
-     GDRIVE_CLIENT_ID=your_client_id
-     GDRIVE_CLIENT_SECRET=your_client_secret
-  8. Run 'quiver gdrive-auth' again
+  Quiver will create a local folder at:
+    ${status.path}
 
-  📖 Full guide: https://developers.google.com/drive/api/quickstart/nodejs
-`),
+  To sync across machines, point any cloud sync app at that folder:
+  • Google Drive for Desktop  — move ~/Quiver into Google Drive
+  • OneDrive                   — move ~/Quiver into OneDrive
+  • Dropbox                    — move ~/Quiver into Dropbox
+  • iCloud                     — move ~/Quiver into iCloud Drive
+  • Syncthing                  — share ~/Quiver across machines
+  • Or set QUIVER_CLOUD_SYNC_PATH in .env to any synced folder
+
+  No OAuth, no API keys — just files in a folder your cloud app syncs.`),
     );
-    return;
-  }
-
-  if (hasStoredToken()) {
-    console.log(
-      picocolors.green(`\n  ✅ Already authenticated with Google Drive.`),
-    );
-    console.log(
-      picocolors.gray(
-        `  To re-authenticate, delete .gdrive-token.json and run again.\n`,
-      ),
-    );
-    return;
-  }
-
-  try {
-    await runOAuthFlow();
-  } catch (err: any) {
-    console.log(picocolors.red(`\n  ❌ ${err.message}\n`));
-  }
-}
-
-async function runGdriveSync(): Promise<void> {
-  const t = theme();
-
-  console.log(
-    t.cyan(`
-  ┌────────────────────────────────────────────┐
-  │  ☁️  Google Drive Sync                     │
-  └────────────────────────────────────────────┘`),
-  );
-
-  if (!isGdriveConfigured()) {
-    console.log(
-      picocolors.red(
-        `\n  ❌ Google Drive not configured. Run 'quiver gdrive-auth' first.\n`,
-      ),
-    );
-    return;
-  }
-
-  if (!hasStoredToken()) {
-    console.log(
-      picocolors.red(
-        `\n  ❌ Not authenticated. Run 'quiver gdrive-auth' first.\n`,
-      ),
-    );
-    return;
+    console.log(picocolors.gray(`\n  Proceeding with local folder for now…\n`));
   }
 
   console.log(
-    picocolors.gray(`\n  Syncing memory/ and .sessions/ to Drive…\n`),
+    picocolors.gray(`\n  Syncing memory/ and .sessions/ to cloud folder…\n`),
   );
 
   try {
-    const result = await syncToGdrive();
+    const result = await syncToCloud();
 
     if (result.uploaded.length > 0) {
       console.log(
@@ -410,7 +360,6 @@ async function runGdriveSync(): Promise<void> {
     console.log(picocolors.red(`\n  ❌ Sync failed: ${err.message}\n`));
   }
 }
-
 // ─── Help display ───────────────────────────────────────────────────
 function printHelp(): void {
   const t = theme();
@@ -432,10 +381,7 @@ function printHelp(): void {
     `    quiver signin                   Sign in via Ollama (cloud models, web search)`,
   );
   console.log(
-    `    quiver gdrive-auth              Authenticate with Google Drive (OAuth)`,
-  );
-  console.log(
-    `    quiver gdrive-sync              Sync memory & sessions to Google Drive`,
+    `    quiver cloud-sync              Sync memory & sessions to cloud folder`,
   );
   console.log(
     `    quiver --single-turn "prompt"    Run a single prompt and exit`,
@@ -685,13 +631,8 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
-  if (cliOpts.gdriveAuth) {
-    await runGdriveAuth();
-    process.exit(EXIT.OK);
-  }
-
-  if (cliOpts.gdriveSync) {
-    await runGdriveSync();
+  if (cliOpts.cloudSync) {
+    await runCloudSync();
     process.exit(EXIT.OK);
   }
 
@@ -734,14 +675,15 @@ async function main() {
       );
     }
 
-    // Show GDrive sync status
-    const gdriveStatus = getGdriveStatus();
-    if (gdriveStatus.configured) {
-      const authTag = gdriveStatus.authenticated ? "✓" : "✗";
+    // Show cloud sync status
+    const cloudStatus = getCloudSyncStatus();
+    if (cloudStatus.active) {
       console.log(
-        t.gray(
-          `   GDrive:   ${authTag} ${gdriveStatus.folderName} (run 'quiver gdrive-sync' to sync)`,
-        ),
+        t.gray(`   Cloud:    ✓ ${cloudStatus.provider} → ${cloudStatus.path}`),
+      );
+    } else {
+      console.log(
+        t.gray(`   Cloud:    Not detected (run 'quiver cloud-sync' to set up)`),
       );
     }
 
@@ -1110,7 +1052,7 @@ async function main() {
             `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
           );
           console.log(
-            `   - GDrive Sync:       ${config.gdriveClientId ? "Configured" : "Not configured"}${config.gdriveClientId ? ` (folder: ${config.gdriveFolderName})` : ""}`,
+            `   - Cloud Sync:        ${config.cloudSyncPath ? config.cloudSyncPath : "Auto-detect"}`,
           );
           console.log(
             `   - Parallel APIs:     ${redactSecret(config.parallelApiKey)}${config.parallelApiKey ? " (search, extract, research, findall, entity)" : ""}`,
@@ -1119,7 +1061,7 @@ async function main() {
             `   - GitHub Token:      ${redactSecret(config.githubToken)}`,
           );
           console.log(
-            `   - Context7 Key:      ${redactSecret(config.context7ApiKey)}`,
+            `   - Context7:          ${config.context7ApiKey ? redactSecret(config.context7ApiKey) : "No key needed (free)"}`,
           );
           console.log(`   - Skills Dir:        ${config.skillsDir}`);
           console.log(`   - Memory Dir:        ${config.memoryDir}`);
@@ -1360,8 +1302,8 @@ async function main() {
           continue;
         }
 
-        if (resolved === "/gdrive-sync") {
-          await runGdriveSync();
+        if (resolved === "/cloud-sync") {
+          await runCloudSync();
           continue;
         }
 
