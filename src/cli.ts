@@ -795,16 +795,23 @@ async function main() {
           console.log(`   - Endpoint Base:     ${config.llmBaseUrl}`);
           console.log(`   - Target Model:      ${config.llmModelName}`);
           console.log(
-            `   - API Key:           ${redactSecret(config.llmApiKey)}`,
+            `   - LLM API Key:       ${redactSecret(config.llmApiKey)}`,
+          );
+          console.log(
+            `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
           );
           console.log(
             `   - Parallel Key:      ${redactSecret(config.parallelApiKey)}`,
           );
           console.log(
-            `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
+            `   - GitHub Token:      ${redactSecret(config.githubToken)}`,
+          );
+          console.log(
+            `   - Context7 Key:      ${redactSecret(config.context7ApiKey)}`,
           );
           console.log(`   - Skills Dir:        ${config.skillsDir}`);
           console.log(`   - Memory Dir:        ${config.memoryDir}`);
+          console.log(`   - Browser Headless:  ${config.browserHeadless}`);
           console.log(`   - Max Loop Turns:    ${config.maxLoops}`);
           console.log(
             `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,

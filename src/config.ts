@@ -124,9 +124,11 @@ export function validateConfig(): void {
   console.log(`\n⚙️  Quiver Config Loaded:`);
   console.log(`   - Endpoint Base:    ${config.llmBaseUrl}`);
   console.log(`   - Target Model:      ${config.llmModelName}`);
-  console.log(`   - API Key Set:       ${redactSecret(config.llmApiKey)}`);
-  console.log(`   - Parallel Key:      ${redactSecret(config.parallelApiKey)}`);
+  console.log(`   - LLM API Key:       ${redactSecret(config.llmApiKey)}`);
   console.log(`   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`);
+  console.log(`   - Parallel Key:      ${redactSecret(config.parallelApiKey)}`);
+  console.log(`   - GitHub Token:      ${redactSecret(config.githubToken)}`);
+  console.log(`   - Context7 Key:      ${redactSecret(config.context7ApiKey)}`);
   console.log(`   - Skills Dir:        ${config.skillsDir}`);
   console.log(`   - Memory Dir:        ${config.memoryDir}`);
   console.log(`   - Browser Headless:  ${config.browserHeadless}`);
@@ -137,6 +139,5 @@ export function validateConfig(): void {
   console.log(
     `   - Approvals For:     ${config.requireApprovalFor.join(", ") || "None"}`,
   );
-  console.log(`   - Context7 Key:      ${redactSecret(config.context7ApiKey)}`);
-  console.log(`   - GitHub Token:      ${redactSecret(config.githubToken)}\n`);
+  console.log("");
 }
