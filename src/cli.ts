@@ -466,7 +466,7 @@ function printHelp(): void {
   console.log(
     `    quiver --single-turn "prompt"    Run a single prompt and exit`,
   );
-  console.log(`    quiver --recipe <name>           Run a goal recipe`);
+  console.log(`    quiver --single-turn "prompt"    Run a single prompt and exit`);
   console.log(
     `    quiver --continue, -c            Resume the most recent session`,
   );

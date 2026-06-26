@@ -1,10 +1,5 @@
 import picocolors from "picocolors";
 import { distance } from "fastest-levenshtein";
-import {
-  getDesignTokens,
-  resolveTerminalPalette,
-  type ResolvedTerminalPalette,
-} from "./design_tokens.js";
 
 export const EXIT = {
   OK: 0,
@@ -76,7 +71,6 @@ export interface QuiverTheme {
   danger: ColorFn;
   info: ColorFn;
   dry: ColorFn;
-  palette: ResolvedTerminalPalette;
   promptUser: () => string;
   promptAgent: () => string;
 }
@@ -112,11 +106,10 @@ export function supportsColor(
   return stream.isTTY === true;
 }
 
-/** Theme derived from DESIGN.md tokens; maps semantic roles to ANSI via picocolors. */
+/** Theme with semantic color aliases. */
 export function theme(
   stream: NodeJS.WriteStream = process.stdout,
 ): QuiverTheme {
-  const palette = resolveTerminalPalette(getDesignTokens());
   const useColor = supportsColor(stream);
   const pc = useColor ? picocolors : identity;
 
@@ -130,7 +123,6 @@ export function theme(
     danger: pc.red,
     info: pc.blue,
     dry: pc.cyan,
-    palette,
     promptUser: () => pc.bold(pc.green("Q> ")),
     promptAgent: () =>
       pc.bold(pc.cyan("Q> ")) +

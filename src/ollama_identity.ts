@@ -119,27 +119,6 @@ export function detectOllamaIdentity(): OllamaIdentity {
 }
 
 /**
- * Check if the local Ollama daemon is running and can serve models.
- * Returns the list of available models, or null if the daemon is unreachable.
- */
-export async function checkOllamaDaemon(): Promise<string[] | null> {
-  const baseUrl = config.llmBaseUrl.replace(/\/v1\/?$/, "");
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-    const response = await fetch(`${baseUrl}/api/tags`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok) return null;
-    const data = (await response.json()) as { models?: { name: string }[] };
-    return (data.models ?? []).map((m) => m.name);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Initiate `ollama signin` — opens a browser for the user to authenticate.
  * Returns true if the command was launched, false if ollama binary is missing.
  */

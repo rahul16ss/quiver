@@ -4,18 +4,15 @@
   "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
   "author": "rahul16ss",
   "type": "module",
-  "main": "ui/main.ts",
+  "main": "src/cli.ts",
   "bin": {
     "quiver": "./bin/quiver.js"
   },
   "scripts": {
     "start": "npx tsx src/cli.ts",
     "gui": "npx electron .",
-    "dashboard": "bun src/dashboard.ts",
-    "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
     "goal": "npx tsx src/goal.ts",
     "test": "npx tsx tests/run_tests.ts",
-    "design:lint": "npx -p @google/design.md designmd lint DESIGN.md",
     "dist": "electron-builder --mac --win --linux",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
@@ -132,21 +129,27 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "ui/renderer/icon.icns"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "ui/renderer/icon.png"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Development",
       "icon": "ui/renderer/icon.png"
     }
   },
   "dependencies": {
-    "@opentui/core": "^0.4.2",
     "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",
     "fastest-levenshtein": "^1.0.16",

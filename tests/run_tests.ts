@@ -3,12 +3,6 @@ import * as path from "path";
 import { z } from "zod";
 import picocolors from "picocolors";
 import { ToolRegistry, Tool } from "../src/registry.js";
-import {
-  parseDesignTokensFromMarkdown,
-  resolveTokenRef,
-  resetDesignTokenCache,
-  DEFAULT_TOKENS,
-} from "../src/design_tokens.js";
 
 async function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -106,22 +100,6 @@ export const tool: Tool = {
   
   await assert(evolvedRes === 400, `Evolved execution output should be 400 (got: ${evolvedRes})`);
   console.log(picocolors.green("   ✔ ESM cache-busting successfully loaded evolved code."));
-
-  // 4. DESIGN.md token loader
-  console.log("\n4. Testing DESIGN.md token loader...");
-  resetDesignTokenCache();
-  const designMd = await fs.readFile(path.resolve("DESIGN.md"), "utf8");
-  const tokens = parseDesignTokensFromMarkdown(designMd);
-  await assert(tokens.name === "Quiver-Terminal", "DESIGN.md name should parse");
-  await assert(tokens.colors.primary === "#6366f1", "Primary color token should parse");
-  await assert(
-    resolveTokenRef("{colors.success}", tokens) === "#10b981",
-    "Token references should resolve",
-  );
-  await assert(
-    resolveTokenRef("{colors.primary}", DEFAULT_TOKENS) === "#6366f1",
-    "Default token fallback should work",
-  );
 
   // Clean up
   await fs.rm(testToolsDir, { recursive: true, force: true });

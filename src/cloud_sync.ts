@@ -290,13 +290,21 @@ export async function syncToCloud(): Promise<{
 }
 
 /**
- * Auto-sync: silent, fire-and-forget. Called after each turn.
- * Does not print anything — just copies files in the background.
+ * Auto-sync: silent, debounced. Called after each turn.
+ * Waits 5 seconds after the last turn before syncing, so rapid
+ * consecutive turns don't trigger multiple syncs.
  */
-export async function autoSyncToCloud(): Promise<void> {
-  try {
-    await syncToCloud();
-  } catch {
-    // Silent failure — auto-sync should never interrupt the user
-  }
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+const SYNC_DEBOUNCE_MS = 5000;
+
+export function autoSyncToCloud(): void {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    syncTimer = null;
+    try {
+      await syncToCloud();
+    } catch {
+      // Silent failure — auto-sync should never interrupt the user
+    }
+  }, SYNC_DEBOUNCE_MS);
 }
