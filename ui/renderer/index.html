@@ -8,45 +8,217 @@
 </head>
 <body>
   <div class="app">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="logo">Quiver<span></span></div>
-      <nav>
-        <button onclick="toggleMemory()">Memory</button>
-        <button onclick="window.quiver.loadSettings()">Settings</button>
-      </nav>
-      <div class="status">
-        <span class="dot idle" id="statusDot"></span>
-        <span id="statusText">Idle</span>
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <img src="assets/logo.png" alt="QUIVER" class="logo-img">
+          <span>QUIVER</span>
+        </div>
       </div>
-    </header>
+      
+      <div class="sidebar-actions">
+        <button class="action-btn tab-btn active" id="btnChat" onclick="showView('chat')">
+          <span class="icon">💬</span> chat
+        </button>
+        <button class="action-btn tab-btn" id="btnContext" onclick="showView('context')">
+          <span class="icon">📂</span> context
+        </button>
+        <button class="action-btn tab-btn" id="btnVerification" onclick="showView('verification')">
+          <span class="icon">✔</span> verification
+        </button>
+      </div>
 
-    <!-- Memory sidebar (toggle) -->
-    <aside class="memory-panel" id="memoryPanel" style="display:none;">
-      <div class="memory-header">
-        <span>Memory Files</span>
-        <button onclick="toggleMemory()">×</button>
+      <div class="sidebar-divider"></div>
+      
+      <div class="sidebar-actions">
+        <button class="action-btn new-chat-btn" onclick="startNewChat()">
+          <span class="icon">＋</span> new chat
+        </button>
+        <button class="action-btn" onclick="window.quiver.loadSettings()">
+          <span class="icon">⚙</span> settings
+        </button>
       </div>
-      <div class="memory-list" id="memoryList"></div>
+
+      <div class="sidebar-divider"></div>
+      
+      <div class="sidebar-section-title">recent sessions</div>
+      <div class="sessions-list" id="sessionsList">
+        <div class="session-empty">Loading sessions...</div>
+      </div>
     </aside>
 
-    <!-- Chat area -->
-    <div class="chat-area" id="chatArea">
-      <div class="empty-state" id="emptyState">
-        <div class="icon">⚡</div>
-        <div>Send a prompt to start working with Quiver.</div>
-      </div>
-    </div>
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <!-- Top header -->
+      <header class="app-header">
+        <div class="active-session-title" id="activeSessionTitle">New Chat</div>
+        <div class="status">
+          <span class="dot idle" id="statusDot"></span>
+          <span id="statusText">idle</span>
+        </div>
+      </header>
 
-    <!-- Input area -->
-    <div class="input-area">
-      <div class="input-row">
-        <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze..." rows="1"></textarea>
-        <button id="sendBtn" onclick="sendPrompt()">Send</button>
-        <button id="stopBtn" onclick="stopAgent()" style="display:none; background:var(--danger);">Stop</button>
+      <!-- View 1: Chat Panel -->
+      <div class="view-panel" id="chatView">
+        <div class="chat-area" id="chatArea">
+          <div class="empty-state" id="emptyState">
+            <div class="landing-hero">
+              <img src="assets/logo.png" alt="QUIVER" class="logo-large">
+              <p>Self-evolving AI coding & research agent harness</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="input-area">
+          <div class="input-row">
+            <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze..." rows="1"></textarea>
+            <button id="sendBtn" onclick="sendPrompt()">Send</button>
+            <button id="stopBtn" onclick="stopAgent()" style="display:none; background:var(--danger);">Stop</button>
+          </div>
+          <div class="stats-bar" id="statsBar"></div>
+        </div>
       </div>
-      <div class="stats-bar" id="statsBar"></div>
-    </div>
+
+      <!-- View 2: Context Panel (Transparency of Context) -->
+      <div class="view-panel" id="contextView" style="display:none;">
+        <div class="ide-workspace">
+          <!-- IDE Left Sidebar -->
+          <aside class="ide-sidebar">
+            <div class="ide-section">
+              <h3>Memories</h3>
+              <div class="ide-file-list">
+                <div class="ide-file-item active" id="fileCoreJson" onclick="openCoreMemoryFile()">
+                  <img src="assets/icon-database.png" class="icon" alt="">
+                  <span>core.json</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="ide-section">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 style="margin:0;">Active Skills</h3>
+                <button onclick="createNewSkill()" style="background:none; border:none; color:var(--accent); font-size:11px; cursor:pointer; font-weight:600; padding:2px 4px; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='none'">＋ New Skill</button>
+              </div>
+              <div class="ide-file-list" id="skillsList">
+                <div class="ide-file-item">Loading skills...</div>
+              </div>
+            </div>
+            
+            <div class="ide-section">
+              <h3>Capabilities</h3>
+              <div class="tools-list" id="toolsList" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; padding:6px; background:rgba(0,0,0,0.2);">
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Read File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">view_file</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Reads codebase files.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Write File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">write_file</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Creates/overwrites codebase files.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Edit File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">replace_content</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Surgically modifies existing code.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Run Command <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">run_command</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Executes zsh shell commands.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Run Tests <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">run_tests</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Executes package test runners.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Search Web <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">web_search</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Searches online search engines.</div>
+                </div>
+                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
+                  <div style="font-weight:700; font-size:11px; color:var(--success);">Control Browser <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">browser_control</span></div>
+                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Spawns/automates browser interactions.</div>
+                </div>
+              </div>
+            </div>
+          </aside>
+          
+          <!-- IDE Right Editor -->
+          <main class="ide-editor-container">
+            <!-- IDE Editor Header (Tabs) -->
+            <div class="ide-editor-header">
+              <div class="editor-tabs" id="editorTabs">
+                <div class="editor-tab active" id="tabCoreIdentity" onclick="switchCoreTab('identity')">identity</div>
+                <div class="editor-tab" id="tabCoreHuman" onclick="switchCoreTab('human')">human_context</div>
+                <div class="editor-tab" id="tabCoreProject" onclick="switchCoreTab('project')">project_context</div>
+              </div>
+              <div class="editor-actions">
+                <span class="save-status" id="memorySaveStatus" style="font-size:11px;"></span>
+                <button class="save-editor-btn" id="saveEditorBtn" onclick="saveActiveEditor()">Save Changes</button>
+              </div>
+            </div>
+            
+            <!-- Context explanation banner -->
+            <div class="ide-editor-info-banner" id="editorInfoBanner">
+              <span>💡</span>
+              <span id="editorInfoText">Core Memory fields represent persistent parameters loaded into the agent's system prompt (saved in memory/core.json). Active across all agent sessions.</span>
+            </div>
+            
+            <!-- Editor Well -->
+            <div class="ide-editor-well">
+              <!-- Line Numbers Gutter -->
+              <div class="editor-gutter" id="editorGutter">
+                1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20<br>21<br>22<br>23<br>24<br>25
+              </div>
+              <!-- Text Area -->
+              <div class="editor-textarea-container">
+                <input type="hidden" id="memIdentity" value="">
+                <input type="hidden" id="memHuman" value="">
+                <input type="hidden" id="memProject" value="">
+                
+                <textarea class="editor-textarea" id="editorTextArea" oninput="onEditorInput()" placeholder="Write content..."></textarea>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+
+      <!-- View 3: Verification Panel (Balaji principles) -->
+      <div class="view-panel" id="verificationView" style="display:none;">
+        <div class="verification-workspace">
+          <div class="verify-header-row">
+            <h2>Candidate Verification</h2>
+            <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 14px; margin-bottom: 20px; font-size: 12.5px; line-height: 1.5; color: var(--text);">
+              <strong>💡 Polytheistic Prompting & Verification:</strong> AI models generate probabilistic candidate proposals (hypotheses) rather than absolute truths. Verification (via compilers, type-checkers, linters, and unit tests) acts as the deterministic filter that validates these candidates before integrating them.
+            </div>
+          </div>
+          
+          <div style="display:flex; gap:20px; margin-bottom:20px; flex-wrap:wrap;">
+            <!-- Left Side: Candidate Revisions -->
+            <div style="flex:1; min-width:300px; background:rgba(15,23,42,0.4); border:1px solid var(--border); border-radius:8px; padding:16px;">
+              <h3 style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">AI Code Candidates (This Session)</h3>
+              <div id="candidatesList" style="display:flex; flex-direction:column; gap:8px;">
+                <div style="font-size:12px; color:var(--text-muted); font-style:italic;">No files modified by agent in this session yet.</div>
+              </div>
+            </div>
+            
+            <!-- Right Side: Run Controls -->
+            <div style="width:300px; background:rgba(15,23,42,0.4); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+              <div>
+                <h3 style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">Verification Run</h3>
+                <div class="verify-status" id="verifyStatus" style="margin-bottom:16px;">
+                  <span class="status-pill idle">Idle (Awaiting Run)</span>
+                </div>
+              </div>
+              <button class="run-verify-btn" id="runTestsBtn" onclick="runVerification()" style="width:100%;">⚡ Run Verification Checks</button>
+            </div>
+          </div>
+
+          <div class="console-container">
+            <div class="console-header">Verification Compiler & Test Outputs</div>
+            <pre class="console-output" id="consoleOutput">Terminal output will appear here when verification is triggered...</pre>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script>
@@ -58,8 +230,330 @@
     const statusText = document.getElementById("statusText");
     const statsBar = document.getElementById("statsBar");
     const emptyState = document.getElementById("emptyState");
+    const activeSessionTitle = document.getElementById("activeSessionTitle");
+    
     let agentRunning = false;
     let currentAgentMsg = null;
+    let currentSessionPath = null;
+    let currentSessionId = null;
+
+    // View switcher (tabs)
+    async function showView(viewName) {
+      document.getElementById("chatView").style.display = viewName === "chat" ? "flex" : "none";
+      document.getElementById("contextView").style.display = viewName === "context" ? "flex" : "none";
+      document.getElementById("verificationView").style.display = viewName === "verification" ? "flex" : "none";
+      
+      // Active tab styling
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      if (viewName === "chat") document.getElementById("btnChat").classList.add("active");
+      if (viewName === "context") {
+        document.getElementById("btnContext").classList.add("active");
+        await loadContextData();
+      }
+      if (viewName === "verification") document.getElementById("btnVerification").classList.add("active");
+    }
+
+    let activeEditorType = 'core'; // 'core' or 'skill'
+    let activeCoreTab = 'identity'; // 'identity', 'human', or 'project'
+    let activeSkillName = null;
+
+    // Context workspace loading
+    async function loadContextData() {
+      // 1. Core memory
+      const core = await window.quiver.loadCoreMemory();
+      document.getElementById("memIdentity").value = core.identity || "";
+      document.getElementById("memHuman").value = core.human_context || "";
+      document.getElementById("memProject").value = core.project_context || "";
+      
+      // Update editor text area
+      if (activeEditorType === 'core') {
+        const val = document.getElementById("mem" + capitalize(activeCoreTab)).value;
+        document.getElementById("editorTextArea").value = val;
+      }
+      
+      updateEditorGutter();
+
+      // 2. Active skills list
+      const skills = await window.quiver.listSkills();
+      const skillsList = document.getElementById("skillsList");
+      if (!skills || skills.length === 0) {
+        skillsList.innerHTML = '<div class="ide-file-item empty">No active skills in workspace</div>';
+        return;
+      }
+      skillsList.innerHTML = "";
+      skills.forEach(s => {
+        const div = document.createElement("div");
+        div.className = "ide-file-item";
+        if (activeEditorType === 'skill' && activeSkillName === s) {
+          div.classList.add("active");
+        }
+        div.onclick = () => openSkillFile(s, div);
+        
+        div.innerHTML = `
+          <img src="assets/icon-edit.png" class="icon" alt="">
+          <span>${s}</span>
+        `;
+        skillsList.appendChild(div);
+      });
+    }
+
+    function capitalize(str) {
+      if (str === 'human') return 'Human';
+      if (str === 'project') return 'Project';
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // Gutter update
+    function updateEditorGutter() {
+      const textarea = document.getElementById("editorTextArea");
+      const gutter = document.getElementById("editorGutter");
+      const lines = textarea.value.split("\n").length;
+      let gutterHtml = "";
+      for (let i = 1; i <= Math.max(lines, 25); i++) {
+        gutterHtml += i + "<br>";
+      }
+      gutter.innerHTML = gutterHtml;
+    }
+
+    // Input monitoring
+    function onEditorInput() {
+      const val = document.getElementById("editorTextArea").value;
+      if (activeEditorType === 'core') {
+        const fieldName = activeCoreTab === 'human' ? 'memHuman' : (activeCoreTab === 'project' ? 'memProject' : 'memIdentity');
+        document.getElementById(fieldName).value = val;
+      }
+      updateEditorGutter();
+    }
+
+    // Switch Core Memories tab
+    function switchCoreTab(tabName) {
+      if (activeEditorType !== 'core') {
+        activeEditorType = 'core';
+        document.getElementById("fileCoreJson").classList.add("active");
+        document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      }
+      
+      activeCoreTab = tabName;
+      
+      document.querySelectorAll(".editor-tabs .editor-tab").forEach(tab => tab.classList.remove("active"));
+      const idMap = {
+        'identity': 'tabCoreIdentity',
+        'human': 'tabCoreHuman',
+        'project': 'tabCoreProject'
+      };
+      document.getElementById(idMap[tabName]).classList.add("active");
+      
+      let infoText = "";
+      if (tabName === 'identity') {
+        infoText = "👤 identity: Defines the AI agent's core persona, behavior rules, and constraints. Prepended as system instructions to EVERY chat prompt.";
+      } else if (tabName === 'human') {
+        infoText = "👨‍💻 human_context (User Context): Persistent preferences and instructions about you (the developer), your tech stack, and workflow. Prepended to EVERY chat prompt.";
+      } else if (tabName === 'project') {
+        infoText = "📁 project_context (Project Context): Persistent architecture summaries, coding standards, database schemas, and guides for this repository. Prepended to EVERY chat prompt.";
+      }
+      document.getElementById("editorInfoText").textContent = infoText;
+      
+      const fieldName = tabName === 'human' ? 'memHuman' : (tabName === 'project' ? 'memProject' : 'memIdentity');
+      const val = document.getElementById(fieldName).value;
+      document.getElementById("editorTextArea").value = val;
+      
+      updateEditorGutter();
+    }
+
+    // Open Core memory file from sidebar
+    function openCoreMemoryFile() {
+      document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      document.getElementById("fileCoreJson").classList.add("active");
+      
+      const tabsEl = document.getElementById("editorTabs");
+      tabsEl.innerHTML = `
+        <div class="editor-tab ${activeCoreTab === 'identity' ? 'active' : ''}" id="tabCoreIdentity" onclick="switchCoreTab('identity')">identity</div>
+        <div class="editor-tab ${activeCoreTab === 'human' ? 'active' : ''}" id="tabCoreHuman" onclick="switchCoreTab('human')">human_context</div>
+        <div class="editor-tab ${activeCoreTab === 'project' ? 'active' : ''}" id="tabCoreProject" onclick="switchCoreTab('project')">project_context</div>
+      `;
+      
+      switchCoreTab(activeCoreTab);
+    }
+
+    // Open skill instruction markdown from sidebar
+    async function openSkillFile(skillName, element) {
+      activeEditorType = 'skill';
+      activeSkillName = skillName;
+      
+      document.getElementById("fileCoreJson").classList.remove("active");
+      document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      element.classList.add("active");
+      
+      const tabsEl = document.getElementById("editorTabs");
+      tabsEl.innerHTML = `<div class="editor-tab active">SKILL.md (${skillName})</div>`;
+      
+      document.getElementById("editorInfoText").textContent = `Active Skill instruction guide stored in skills/${skillName}/SKILL.md. Exposes reusable code rules and behaviors to Quiver agent.`;
+      
+      const content = await window.quiver.readSkill(skillName);
+      document.getElementById("editorTextArea").value = content || "# " + skillName + "\n\n(Write skill guidelines here)";
+      
+      updateEditorGutter();
+    }
+
+    // Create a new active skill
+    async function createNewSkill() {
+      const name = prompt("Enter a name for the new skill (e.g. my-custom-skill):");
+      if (!name) return;
+      const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+      if (!cleanName) return;
+      
+      const defaultContent = `---
+name: ${cleanName}
+description: Description of what this skill does
+version: 1.0.0
+---
+
+# ${cleanName}
+
+## Guidelines
+- Step 1...
+`;
+      const success = await window.quiver.saveSkill(cleanName, defaultContent);
+      if (success) {
+        await loadContextData();
+        // Highlight and open the newly created skill
+        setTimeout(() => {
+          const items = document.querySelectorAll("#skillsList .ide-file-item");
+          for (const item of items) {
+            if (item.querySelector("span")?.textContent === cleanName) {
+              openSkillFile(cleanName, item);
+              break;
+            }
+          }
+        }, 100);
+      } else {
+        alert("Failed to create skill file.");
+      }
+    }
+
+    // Save active editor changes to disk
+    async function saveActiveEditor() {
+      const statusEl = document.getElementById("memorySaveStatus");
+      statusEl.textContent = "Saving...";
+      statusEl.className = "save-status saving";
+      
+      if (activeEditorType === 'core') {
+        const coreMemory = {
+          identity: document.getElementById("memIdentity").value.trim(),
+          human_context: document.getElementById("memHuman").value.trim(),
+          project_context: document.getElementById("memProject").value.trim()
+        };
+        const success = await window.quiver.saveCoreMemory(coreMemory);
+        if (success) {
+          statusEl.textContent = "Saved to core.json ✓";
+          statusEl.className = "save-status success";
+        } else {
+          statusEl.textContent = "Failed to save core.json ✗";
+          statusEl.className = "save-status error";
+        }
+      } else if (activeEditorType === 'skill') {
+        const text = document.getElementById("editorTextArea").value;
+        const success = await window.quiver.saveSkill(activeSkillName, text);
+        if (success) {
+          statusEl.textContent = "Saved SKILL.md ✓";
+          statusEl.className = "save-status success";
+        } else {
+          statusEl.textContent = "Failed to save skill ✗";
+          statusEl.className = "save-status error";
+        }
+      }
+      
+      setTimeout(() => {
+        statusEl.textContent = "";
+        statusEl.className = "save-status";
+      }, 4000);
+    }
+
+    let verificationCandidates = [];
+
+    function resetVerificationState() {
+      verificationCandidates = [];
+      updateCandidatesUI();
+      const statusEl = document.getElementById("verifyStatus");
+      if (statusEl) {
+        statusEl.innerHTML = '<span class="status-pill idle">Idle (Awaiting Run)</span>';
+      }
+      const consoleEl = document.getElementById("consoleOutput");
+      if (consoleEl) {
+        consoleEl.textContent = "Terminal output will appear here when verification is triggered...";
+      }
+    }
+
+    function registerVerificationCandidate(filePath, toolName) {
+      const filename = filePath.split("/").pop();
+      if (!verificationCandidates.some(c => c.path === filePath)) {
+        verificationCandidates.push({
+          path: filePath,
+          name: filename,
+          tool: toolName,
+          verified: false
+        });
+        updateCandidatesUI();
+      }
+    }
+
+    function updateCandidatesUI() {
+      const listEl = document.getElementById("candidatesList");
+      if (!listEl) return;
+      if (verificationCandidates.length === 0) {
+        listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); font-style:italic;">No files modified by agent in this session yet.</div>';
+        return;
+      }
+      listEl.innerHTML = "";
+      verificationCandidates.forEach(c => {
+        const item = document.createElement("div");
+        item.style.display = "flex";
+        item.style.alignItems = "center";
+        item.style.justifyContent = "space-between";
+        item.style.padding = "8px 12px";
+        item.style.background = "rgba(0,0,0,0.2)";
+        item.style.borderRadius = "4px";
+        item.style.border = "1px solid var(--border)";
+        
+        const actionLabel = c.tool === "write_file" ? "NEW" : "EDIT";
+        const labelColor = c.tool === "write_file" ? "var(--success)" : "var(--accent)";
+        
+        item.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:9.5px; font-weight:700; color:#fff; background:${labelColor}; padding:2px 6px; border-radius:3px; text-transform:uppercase;">${actionLabel}</span>
+            <span style="font-family:var(--font-mono); font-size:12px; color:var(--text); font-weight:500;">${c.name}</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted);">
+            <span>${c.verified ? "✓ Verified" : "⚡ Unverified"}</span>
+          </div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    // Run Workspace Verification Tests
+    async function runVerification() {
+      const btn = document.getElementById("runTestsBtn");
+      const statusEl = document.getElementById("verifyStatus");
+      const consoleEl = document.getElementById("consoleOutput");
+
+      btn.disabled = true;
+      statusEl.innerHTML = '<span class="status-pill running">Running Verification...</span>';
+      consoleEl.textContent = "Spawning candidate verification tests and checking workspace environment...\n\n";
+
+      const res = await window.quiver.runTests();
+      
+      btn.disabled = false;
+      consoleEl.textContent = res.output;
+      
+      if (res.success) {
+        statusEl.innerHTML = '<span class="status-pill passed">Verification Passed ✓</span>';
+        verificationCandidates.forEach(c => c.verified = true);
+        updateCandidatesUI();
+      } else {
+        statusEl.innerHTML = '<span class="status-pill failed">Verification Failed ✗</span>';
+      }
+    }
 
     // Auto-resize textarea
     promptInput.addEventListener("input", () => {
@@ -74,6 +568,127 @@
         sendPrompt();
       }
     });
+
+    async function initializeUI() {
+      await loadSessionsList();
+    }
+
+    // Load list of sessions
+    async function loadSessionsList() {
+      const list = document.getElementById("sessionsList");
+      const sessions = await window.quiver.listSessions();
+      if (!sessions || sessions.length === 0) {
+        list.innerHTML = '<div class="session-empty">No previous sessions.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      sessions.forEach(s => {
+        const item = document.createElement("div");
+        item.className = "session-item";
+        if (currentSessionPath === s.path) {
+          item.classList.add("active");
+        }
+        
+        const date = new Date(s.savedAt);
+        const timeStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute:'2-digit' });
+        
+        item.innerHTML = `
+          <div class="session-item-main" onclick="selectSession('${s.path}', '${s.sessionId}')">
+            <span class="icon">💬</span>
+            <div class="details">
+              <span class="name">${s.sessionId}</span>
+              <span class="meta">${s.messageCount} messages · ${timeStr}</span>
+            </div>
+          </div>
+          <button class="delete-btn" title="Delete Session" onclick="deleteSession(event, '${s.path}')">×</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    async function selectSession(path, sessionId) {
+      if (agentRunning) {
+        alert("Please wait for the agent to finish working before switching sessions.");
+        return;
+      }
+      currentSessionPath = path;
+      currentSessionId = sessionId;
+      activeSessionTitle.textContent = sessionId;
+      
+      resetVerificationState();
+      
+      const state = await window.quiver.loadSession(path);
+      renderHistory(state.messages || []);
+      
+      await loadSessionsList();
+      showView("chat"); // Auto switch back to chat view on selection
+    }
+
+    async function deleteSession(event, path) {
+      event.stopPropagation();
+      if (!confirm("Are you sure you want to delete this session?")) return;
+      const success = await window.quiver.deleteSession(path);
+      if (success) {
+        if (currentSessionPath === path) {
+          startNewChat();
+        }
+        await loadSessionsList();
+      }
+    }
+
+    function startNewChat() {
+      if (agentRunning) {
+        alert("Please wait for the agent to finish working before starting a new chat.");
+        return;
+      }
+      currentSessionPath = null;
+      currentSessionId = null;
+      activeSessionTitle.textContent = "new chat";
+      chatArea.innerHTML = "";
+      
+      resetVerificationState();
+      
+      if (emptyState) {
+        emptyState.style.display = "flex";
+        chatArea.appendChild(emptyState);
+      }
+      loadSessionsList();
+      showView("chat");
+    }
+
+    // Render session messages from file
+    function renderHistory(messages) {
+      chatArea.innerHTML = "";
+      if (emptyState) emptyState.style.display = "none";
+
+      let toolResults = {};
+      messages.forEach(m => {
+        if (m.role === "tool" && m.tool_call_id) {
+          toolResults[m.tool_call_id] = m.content;
+        }
+      });
+
+      messages.forEach((m) => {
+        if (m.role === "system") return;
+
+        if (m.role === "user") {
+          addMessage("user", m.content);
+        } else if (m.role === "assistant") {
+          if (m.content) {
+            addMessage("assistant", m.content);
+          }
+          if (m.tool_calls) {
+            m.tool_calls.forEach(tc => {
+              const toolDiv = addToolCall(tc.function.name, tc.function.arguments || {});
+              const result = toolResults[tc.id];
+              if (result !== undefined) {
+                showToolResult(toolDiv, result);
+              }
+            });
+          }
+        }
+      });
+    }
 
     async function sendPrompt() {
       const text = promptInput.value.trim();
@@ -90,10 +705,15 @@
       sendBtn.style.display = "none";
       stopBtn.style.display = "inline-block";
       statusDot.className = "dot live";
-      statusText.textContent = "Working...";
+      statusText.textContent = "working...";
 
       const config = await window.quiver.loadConfig();
-      await window.quiver.startAgent(config);
+      if (currentSessionPath) {
+        await window.quiver.touchSession(currentSessionPath);
+        await window.quiver.startAgent(config, true); // true = resume latest
+      } else {
+        await window.quiver.startAgent(config, false); // false = fresh
+      }
       await window.quiver.sendToAgent(text);
 
       currentAgentMsg = addMessage("agent", "");
@@ -102,26 +722,65 @@
     function addMessage(role, content) {
       const div = document.createElement("div");
       div.className = `msg msg-${role}`;
-      div.innerHTML = `<div class="role">${role}</div><div class="body"></div>`;
+      div.innerHTML = `<div class="role">${role === "agent" ? "Quiver" : role}</div><div class="body"></div>`;
       const body = div.querySelector(".body");
-      if (content) body.textContent = content;
+      if (content) {
+        body._rawText = content;
+        body.innerHTML = renderMarkdown(content);
+      }
       chatArea.appendChild(div);
       chatArea.scrollTop = chatArea.scrollHeight;
       return div;
     }
 
+    function formatToolName(name) {
+      const names = {
+        "view_file": "Read File",
+        "write_file": "Write File",
+        "replace_content": "Edit File",
+        "list_dir": "List Directory",
+        "format_code": "Format Code",
+        "grep_search": "Search Codebase",
+        "run_command": "Run Terminal Command",
+        "run_tests": "Run Test Suite",
+        "create_tool": "Generate Action Tool",
+        "log_tokens": "Analyze Context Tokens",
+        "web_search": "Search Web",
+        "scrape_url": "Extract Web Page",
+        "deep_research": "Deep Web Research",
+        "find_all": "Search Web Entities",
+        "entity_search": "Search Entity Database",
+        "browser_control": "Control Browser"
+      };
+      return names[name] || name;
+    }
+
+    function toggleToolCard(header) {
+      const card = header.parentElement;
+      card.classList.toggle("collapsed");
+    }
+
     function addToolCall(toolName, toolArgs) {
       const div = document.createElement("div");
-      div.className = "tool-call";
+      div.className = "tool-call collapsed"; // Start collapsed
       const argsStr = Object.entries(toolArgs || {})
-        .map(([k, v]) => `${k}: ${truncate(String(v), 60)}`)
+        .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`)
         .join(", ");
+      
       div.innerHTML = `
-        <div class="tool-header">
-          <span class="tool-name">▸ ${toolName}</span>
-          <span class="tool-args">${argsStr}</span>
+        <div class="tool-header" onclick="toggleToolCard(this)">
+          <span class="tool-status-icon">⏳</span>
+          <span class="tool-name">${formatToolName(toolName)}</span>
+          <span class="tool-args">${escapeHtml(truncate(argsStr, 80))}</span>
+          <span class="tool-chevron">▾</span>
         </div>
-        <div class="tool-result" style="display:none;"></div>
+        <div class="tool-content">
+          <div class="tool-args-full">
+            <strong>Arguments:</strong>
+            <pre>${escapeHtml(JSON.stringify(toolArgs, null, 2))}</pre>
+          </div>
+          <div class="tool-result" style="display:none;"></div>
+        </div>
       `;
       chatArea.appendChild(div);
       chatArea.scrollTop = chatArea.scrollHeight;
@@ -129,10 +788,26 @@
     }
 
     function showToolResult(toolDiv, result) {
+      const iconEl = toolDiv.querySelector(".tool-status-icon");
+      if (iconEl) iconEl.textContent = "✓";
+      
       const resultEl = toolDiv.querySelector(".tool-result");
-      resultEl.textContent = truncate(result, 500);
+      resultEl.innerHTML = `<strong>Result:</strong><pre>${escapeHtml(result)}</pre>`;
       resultEl.style.display = "block";
       chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function copyCode(btn) {
+      const codeEl = btn.nextElementSibling;
+      const text = codeEl.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 2000);
+      });
     }
 
     function appendToken(text) {
@@ -140,8 +815,6 @@
         currentAgentMsg = addMessage("agent", "");
       }
       const body = currentAgentMsg.querySelector(".body");
-      // Accumulate raw markdown, re-render on each token
-      // Store raw text on the element for re-rendering
       body._rawText = (body._rawText || "") + text;
       body.innerHTML = renderMarkdown(body._rawText);
       chatArea.scrollTop = chatArea.scrollHeight;
@@ -154,7 +827,7 @@
 
       // Code blocks (```lang\ncode```)
       html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-        return `<pre><code>${code.trim()}</code></pre>`;
+        return `<pre class="code-block-container"><button class="copy-btn" onclick="copyCode(this)">Copy</button><code>${code.trim()}</code></pre>`;
       });
 
       // Inline code
@@ -181,7 +854,7 @@
       html = html.replace(/\n/g, "<br>");
 
       // Clean up extra <br> around block elements
-      html = html.replace(/<br>(<pre>)/g, "$1");
+      html = html.replace(/<br>(<pre class="code-block-container">)/g, "$1");
       html = html.replace(/(<\/pre>)<br>/g, "$1");
       html = html.replace(/<br>(<div class="md-h)/g, "$1");
       html = html.replace(/(<\/div>)<br>/g, "$1");
@@ -190,6 +863,7 @@
     }
 
     function escapeHtml(str) {
+      if (!str) return "";
       return str
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -197,6 +871,7 @@
     }
 
     function truncate(str, max) {
+      if (!str) return "";
       if (str.length <= max) return str;
       return str.substring(0, max) + "...";
     }
@@ -207,7 +882,7 @@
       sendBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
       statusDot.className = "dot idle";
-      statusText.textContent = "Idle";
+      statusText.textContent = "idle";
       currentAgentMsg = null;
     }
 
@@ -218,7 +893,7 @@
       sendBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
       statusDot.className = "dot error";
-      statusText.textContent = "Error";
+      statusText.textContent = "error";
       currentAgentMsg = null;
     }
 
@@ -236,7 +911,7 @@
       div.innerHTML = `
         <div class="approval-title">⚠ Permission required</div>
         <div class="approval-desc">
-          <strong>${toolName}</strong>
+          Quiver wants to run: <strong>${formatToolName(toolName)}</strong>
           <pre>${argsStr}</pre>
         </div>
         <div class="approval-actions">
@@ -256,33 +931,36 @@
         approvalDiv.style.pointerEvents = "none";
         const result = approve ? "✓ Approved" : "✗ Denied";
         approvalDiv.querySelector(".approval-actions").innerHTML =
-          `<span style="color: ${approve ? "var(--success)" : "var(--danger)"}; font-size: 12px;">${result}</span>`;
+          `<span style="color: ${approve ? "var(--success)" : "var(--danger)"}; font-size: 12px; font-weight: 600;">${result}</span>`;
       }
       await window.quiver.approveToolCall(approve);
     }
 
-    // Track tool call divs by a simple counter (tool calls arrive sequentially)
     let pendingToolDivs = [];
 
-    // Agent events — new event-based protocol
+    // Agent events
     window.quiver.onAgentEvent((msg) => {
-      if (!msg.type) {
-        // Legacy format (status-based) — ignore
-        return;
-      }
+      if (!msg.type) return;
 
       switch (msg.type) {
         case "token":
           appendToken(msg.data?.text || "");
           break;
 
-        case "tool_call":
-          const toolDiv = addToolCall(
-            msg.data?.toolName || "unknown",
-            msg.data?.toolArgs || {},
-          );
+        case "tool_call": {
+          const toolName = msg.data?.toolName || "unknown";
+          const toolArgs = msg.data?.toolArgs || {};
+          const toolDiv = addToolCall(toolName, toolArgs);
           pendingToolDivs.push(toolDiv);
+          
+          if (["write_file", "replace_content", "write_to_file", "replace_file_content", "multi_replace_file_content"].includes(toolName)) {
+            const target = toolArgs.filePath || toolArgs.TargetFile || toolArgs.targetFile;
+            if (target) {
+              registerVerificationCandidate(target, toolName);
+            }
+          }
           break;
+        }
 
         case "tool_result":
           if (pendingToolDivs.length > 0) {
@@ -305,7 +983,6 @@
               `Tools: ${ts.toolCalls || 0}`,
             ].join(" · ");
           }
-          // If no tokens were streamed but there's a response, show it
           if (currentAgentMsg) {
             const body = currentAgentMsg.querySelector(".body");
             if (!body._rawText && msg.data?.response) {
@@ -314,6 +991,19 @@
             }
           }
           setIdle();
+          
+          const isFresh = (currentSessionPath === null);
+          loadSessionsList().then(async () => {
+            if (isFresh) {
+              const sessions = await window.quiver.listSessions();
+              if (sessions && sessions.length > 0) {
+                currentSessionPath = sessions[0].path;
+                currentSessionId = sessions[0].sessionId;
+                activeSessionTitle.textContent = currentSessionId;
+                await loadSessionsList();
+              }
+            }
+          });
           break;
 
         case "error":
@@ -322,31 +1012,25 @@
       }
     });
 
-    // Raw output (non-JSON lines) — append to current agent message
     window.quiver.onAgentRaw((line) => {
       try {
-        // Try to parse as JSON (might be an event)
         const parsed = JSON.parse(line);
-        if (parsed.type) {
-          // Already handled by onAgentEvent — skip
-          return;
-        }
-      } catch {
-        // Not JSON — it's raw text output
-      }
+        if (parsed.type) return;
+      } catch {}
       appendToken(line);
     });
 
     window.quiver.onAgentStderr((data) => {
       if (data.includes("[ERROR]") || data.includes('"type":"error"')) {
         statusDot.className = "dot error";
-        statusText.textContent = "Error";
+        statusText.textContent = "error";
       }
     });
 
     window.quiver.onAgentExit((info) => {
       setIdle();
-      statusText.textContent = info.code === 0 ? "Idle" : "Exited";
+      statusText.textContent = info.code === 0 ? "idle" : "exited";
+      loadSessionsList();
     });
 
     window.quiver.onAgentError((err) => {
@@ -387,6 +1071,9 @@
     }
 
     window.toggleMemory = toggleMemory;
+    
+    // Run initialization
+    initializeUI();
   </script>
 </body>
 </html>

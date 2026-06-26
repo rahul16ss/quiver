@@ -5,106 +5,367 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiver — Settings</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    :root {
+      --bg: #080a0f;
+      --panel: #0f172a;
+      --border: #1e293b;
+      --accent: #6366f1;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --radius: 8px;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .form-page {
+      width: 100% !important;
+      height: 100% !important;
+      padding: 32px !important;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 50%, #0c102b 0%, #05070c 100%);
+    }
+    
+    .settings-card {
+      max-width: 960px;
+      width: 100%;
+      height: 640px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      display: flex;
+    }
+    
+    .settings-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+    
+    .settings-sidebar {
+      width: 250px;
+      background: rgba(15, 23, 42, 0.4);
+      border-right: 1px solid var(--border);
+      padding: 28px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    
+    .settings-logo-area {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    
+    .settings-logo-img {
+      max-width: 48px;
+      height: auto;
+      margin-bottom: 8px;
+      filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.2));
+    }
+    
+    .settings-title {
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: 0.1em;
+      color: var(--text);
+    }
+    
+    .settings-subtitle {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+    
+    .settings-menu {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .menu-item {
+      padding: 10px 14px;
+      font-size: 13px;
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+      user-select: none;
+    }
+    
+    .menu-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+    
+    .menu-item.active {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      color: var(--text);
+    }
+    
+    .settings-sidebar-footer {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.4;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    
+    .settings-content {
+      flex: 1;
+      padding: 32px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-y: auto;
+      background: rgba(8, 10, 15, 0.2);
+    }
+    
+    .settings-tab-panel {
+      display: none;
+    }
+    
+    .settings-tab-panel.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .settings-tab-panel h2 {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 4px;
+      letter-spacing: -0.01em;
+    }
+    
+    .tab-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-top: 12px;
+      background: rgba(3, 7, 18, 0.4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+      user-select: none;
+      padding: 6px;
+      border-radius: 4px;
+      transition: background 0.15s ease;
+    }
+    
+    .checkbox-item:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    
+    .checkbox-item input {
+      width: 16px !important;
+      height: 16px !important;
+      cursor: pointer;
+      margin: 0;
+    }
+    
+    .dir-picker-row {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .dir-picker-row input {
+      flex: 1;
+    }
+    
+    .btn-browse {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12.5px;
+      padding: 0 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-browse:hover {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+    
+    .form-actions-sticky {
+      display: flex;
+      gap: 12px;
+      margin-top: auto;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+  </style>
 </head>
 <body>
   <div class="form-page">
-    <div class="form-card">
-      <h1>Settings</h1>
-      <div class="subtitle">Configuration is saved to .env and persists across CLI and GUI.</div>
+    <div class="settings-card">
+      <div class="settings-container">
+        <!-- Sidebar Navigation -->
+        <aside class="settings-sidebar">
+          <div class="settings-logo-area">
+            <img src="assets/logo.png" alt="QUIVER" class="settings-logo-img">
+            <div class="settings-title">QUIVER</div>
+            <div class="settings-subtitle">SETTINGS</div>
+          </div>
+          <ul class="settings-menu">
+            <li class="menu-item active" data-tab="tab-workspace">📁 Workspace Directory</li>
+            <li class="menu-item" data-tab="tab-keys">🔑 API Providers</li>
+            <li class="menu-item" data-tab="tab-prefs">⚙️ App Preferences</li>
+          </ul>
+        </aside>
+        
+        <!-- Setting Fields Container -->
+        <main class="settings-content">
+          <!-- Tab 1: Workspace Directory -->
+          <div class="settings-tab-panel active" id="tab-workspace">
+            <h2>Workspace Directory</h2>
+            <p class="tab-desc">Specify the target codebase path where Quiver performs code modifications and searches files.</p>
+            
+            <div class="form-group">
+              <label>Workspace Folder Path</label>
+              <div class="dir-picker-row">
+                <input id="workspacePath" type="text" placeholder="No workspace folder selected" readonly>
+                <button class="btn-browse" onclick="browseWorkspace()">Browse Folder</button>
+              </div>
+              <div class="hint">Your code files and context memory will load from this directory.</div>
+            </div>
+          </div>
+          
+          <!-- Tab 2: API Keys -->
+          <div class="settings-tab-panel" id="tab-keys">
+            <h2>API Providers</h2>
+            <p class="tab-desc">Configure your LLM completions provider API details and web crawl integrations.</p>
+            
+            <div class="form-group">
+              <label>Ollama API Key</label>
+              <input id="apiKey" type="password" placeholder="your Ollama API key">
+              <div class="hint">Powers model inference (default: glm-5.2:cloud) and Pro search indexing.</div>
+            </div>
+            
+            <div class="form-group" style="margin-top: 18px;">
+              <label>Parallel API Key (optional)</label>
+              <input id="parallelApiKey" type="password" placeholder="for Parallel.ai web scraping">
+              <div class="hint">Required for advanced web scraper APIs, deep search crawls, and entity searches.</div>
+            </div>
+          </div>
+          
+          <!-- Tab 3: App Preferences -->
+          <div class="settings-tab-panel" id="tab-prefs">
+            <h2>App Preferences</h2>
+            <p class="tab-desc">Configure preferences for running automated browser tools and sessions.</p>
+            
+            <div class="form-group">
+              <label>Browser Headless Mode</label>
+              <select id="browserHeadless">
+                <option value="true">Yes (headless - runs silently in the background)</option>
+                <option value="false">No (visible window - launches browser UI for debugging)</option>
+              </select>
+              <div class="hint">Headless execution is recommended. Disable only to debug browser sign-in issues.</div>
+            </div>
+          </div>
+          
 
-      <div class="form-group">
-        <label>LLM Endpoint</label>
-        <input id="baseUrl" placeholder="https://ollama.com/v1">
-      </div>
-
-      <div class="form-group">
-        <label>Model Name</label>
-        <input id="modelName" placeholder="model name">
-      </div>
-
-      <div class="form-group">
-        <label>API Key</label>
-        <input id="apiKey" type="password" placeholder="API key">
-      </div>
-
-      <div class="form-group">
-        <label>Parallel API Key</label>
-        <input id="parallelApiKey" type="password" placeholder="web search, research, entity search">
-      </div>
-
-      <div class="form-group">
-        <label>Ollama Pro Key</label>
-        <input id="ollamaApiKey" type="password" placeholder="Ollama web search & scrape">
-      </div>
-
-      <div class="form-group">
-        <label>GitHub Token</label>
-        <input id="githubToken" type="password" placeholder="ghp_...">
-      </div>
-
-      <div class="form-group">
-        <label>Context7 API Key (optional)</label>
-        <input id="context7ApiKey" type="password" placeholder="library docs search">
-        <div class="hint">Works without a key — free tier</div>
-      </div>
-
-      <div class="form-group">
-        <label>Browser Headless</label>
-        <select id="browserHeadless">
-          <option value="true">Yes (headless)</option>
-          <option value="false">No (visible window)</option>
-        </select>
-        <div class="hint">Show browser for manual sign-in or debugging</div>
-      </div>
-
-      <div class="form-group">
-        <label>Max Context Tokens</label>
-        <input id="maxContextTokens" type="number" value="120000">
-      </div>
-
-      <div class="form-group">
-        <label>Approval Required For</label>
-        <input id="requireApprovalFor" placeholder="run_command,write_file,replace_content,browser_control,create_tool">
-        <div class="hint">Comma-separated tool names. Empty = no approval prompts.</div>
-      </div>
-
-      <div class="form-actions">
-        <button class="btn-primary" onclick="saveSettings()">Save</button>
-        <button class="btn-secondary" onclick="window.quiver.loadMain()">Cancel</button>
+          
+          <div class="form-actions-sticky">
+            <button class="btn-primary" onclick="saveSettings()">Save Configuration</button>
+            <button class="btn-secondary" onclick="window.quiver.loadMain()">Cancel</button>
+          </div>
+        </main>
       </div>
     </div>
   </div>
 
   <script>
+    let currentConfig = null;
+
+    // Tab Switcher Logic
+    document.querySelectorAll(".menu-item").forEach(item => {
+      item.addEventListener("click", () => {
+        document.querySelectorAll(".menu-item").forEach(i => i.classList.remove("active"));
+        item.classList.add("active");
+        
+        document.querySelectorAll(".settings-tab-panel").forEach(p => p.classList.remove("active"));
+        const targetTab = item.getAttribute("data-tab");
+        document.getElementById(targetTab).classList.add("active");
+      });
+    });
+
     async function loadSettings() {
-      const config = await window.quiver.loadConfig();
-      document.getElementById("baseUrl").value = config.provider.baseUrl || "";
-      document.getElementById("modelName").value = config.provider.modelName || "";
-      document.getElementById("apiKey").value = config.provider.apiKey || "";
-      document.getElementById("parallelApiKey").value = config.parallelApiKey || "";
-      document.getElementById("ollamaApiKey").value = config.ollamaApiKey || "";
-      document.getElementById("githubToken").value = config.githubToken || "";
-      document.getElementById("context7ApiKey").value = config.context7ApiKey || "";
-      document.getElementById("browserHeadless").value = config.browserHeadless ? "true" : "false";
-      document.getElementById("maxContextTokens").value = config.maxContextTokens || 120000;
-      document.getElementById("requireApprovalFor").value = (config.requireApprovalFor || []).join(",");
+      currentConfig = await window.quiver.loadConfig();
+      document.getElementById("workspacePath").value = currentConfig.workspacePath || "";
+      document.getElementById("apiKey").value = currentConfig.provider.apiKey || "";
+      document.getElementById("parallelApiKey").value = currentConfig.parallelApiKey || "";
+      document.getElementById("browserHeadless").value = currentConfig.browserHeadless ? "true" : "false";
+    }
+
+    async function browseWorkspace() {
+      const selected = await window.quiver.selectWorkspaceDir();
+      if (selected) {
+        document.getElementById("workspacePath").value = selected;
+      }
     }
 
     async function saveSettings() {
       const config = {
+        ...currentConfig,
+        workspacePath: document.getElementById("workspacePath").value.trim(),
         provider: {
-          baseUrl: document.getElementById("baseUrl").value.trim(),
-          modelName: document.getElementById("modelName").value.trim(),
+          baseUrl: currentConfig?.provider?.baseUrl || "https://ollama.com/v1",
+          modelName: currentConfig?.provider?.modelName || "glm-5.2:cloud",
           apiKey: document.getElementById("apiKey").value.trim(),
         },
         parallelApiKey: document.getElementById("parallelApiKey").value.trim(),
-        ollamaApiKey: document.getElementById("ollamaApiKey").value.trim(),
-        githubToken: document.getElementById("githubToken").value.trim(),
-        context7ApiKey: document.getElementById("context7ApiKey").value.trim(),
+        ollamaApiKey: document.getElementById("apiKey").value.trim(),
         browserHeadless: document.getElementById("browserHeadless").value === "true",
-        requireApprovalFor: document.getElementById("requireApprovalFor").value
-          .split(",").map(s => s.trim()).filter(Boolean),
-        maxContextTokens: parseInt(document.getElementById("maxContextTokens").value) || 120000,
+        requireApprovalFor: [],
+        maxContextTokens: currentConfig?.maxContextTokens || 900000,
         memoryDir: "./memory",
         skillsDir: "./skills",
       };

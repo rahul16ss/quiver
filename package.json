@@ -4,13 +4,13 @@
   "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
   "author": "rahul16ss",
   "type": "module",
-  "main": "src/cli.ts",
+  "main": "ui/main.ts",
   "bin": {
     "quiver": "./bin/quiver.js"
   },
   "scripts": {
     "start": "npx tsx src/cli.ts",
-    "gui": "npx electron ui/main.ts",
+    "gui": "npx electron .",
     "dashboard": "bun src/dashboard.ts",
     "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
     "goal": "npx tsx src/goal.ts",
@@ -94,6 +94,34 @@
         "to": "node_modules/puppeteer"
       },
       {
+        "from": "node_modules/puppeteer-core",
+        "to": "node_modules/puppeteer-core"
+      },
+      {
+        "from": "node_modules/@puppeteer/browsers",
+        "to": "node_modules/@puppeteer/browsers"
+      },
+      {
+        "from": "node_modules/chromium-bidi",
+        "to": "node_modules/chromium-bidi"
+      },
+      {
+        "from": "node_modules/devtools-protocol",
+        "to": "node_modules/devtools-protocol"
+      },
+      {
+        "from": "node_modules/lilconfig",
+        "to": "node_modules/lilconfig"
+      },
+      {
+        "from": "node_modules/typed-query-selector",
+        "to": "node_modules/typed-query-selector"
+      },
+      {
+        "from": "node_modules/ws",
+        "to": "node_modules/ws"
+      },
+      {
         "from": "tsconfig.json",
         "to": "tsconfig.json"
       },
@@ -105,7 +133,7 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": ["dmg", "zip"],
-      "icon": "ui/renderer/icon.png"
+      "icon": "ui/renderer/icon.icns"
     },
     "win": {
       "target": ["nsis"],

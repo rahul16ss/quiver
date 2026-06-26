@@ -1369,10 +1369,14 @@ export class Agent {
           // ── Destructive Action Guard (Principle: Read Before Write) ──
           // Enforce that write_file and replace_content cannot run on a file
           // that was never read in the current session.
+          const resolvedPath = args.filePath ? path.resolve(args.filePath) : "";
+          const fileExists = resolvedPath ? fsSync.existsSync(resolvedPath) : false;
+
           if (
             (toolName === "write_file" || toolName === "replace_content") &&
-            args.filePath &&
-            !this.filesReadThisSession.has(args.filePath)
+            resolvedPath &&
+            fileExists &&
+            !this.filesReadThisSession.has(resolvedPath)
           ) {
             result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 this file was not read first. Always use view_file to read a file before modifying it. This is a safety guard to prevent blind edits.`;
             if (config.outputMode === "interactive") {
@@ -1401,7 +1405,7 @@ export class Agent {
 
                 // Track files read for read-before-write enforcement
                 if (toolName === "view_file" && args.filePath) {
-                  this.filesReadThisSession.add(args.filePath);
+                  this.filesReadThisSession.add(path.resolve(args.filePath));
                 }
 
                 if (config.outputMode === "interactive") {

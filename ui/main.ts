@@ -1,7 +1,10 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { spawn, ChildProcess } from "child_process";
+import { exec } from "child_process";
+import { promisify } from "util";
+const execAsync = promisify(exec);
 
 // ESM doesn't have __dirname — create it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +19,7 @@ interface ProviderConfig {
 }
 
 interface QuiverConfig {
+  workspacePath: string;
   provider: ProviderConfig;
   parallelApiKey: string;
   ollamaApiKey: string;
@@ -39,6 +43,7 @@ let agentProcess: ChildProcess | null = null;
 const CONFIG_FILE = path.join(app.getPath("userData"), "quiver-config.json");
 
 const DEFAULT_CONFIG: QuiverConfig = {
+  workspacePath: process.cwd(),
   provider: {
     baseUrl: "https://ollama.com/v1",
     modelName: "glm-5.2:cloud",
@@ -49,14 +54,8 @@ const DEFAULT_CONFIG: QuiverConfig = {
   githubToken: "",
   context7ApiKey: "",
   browserHeadless: true,
-  requireApprovalFor: [
-    "run_command",
-    "write_file",
-    "replace_content",
-    "browser_control",
-    "create_tool",
-  ],
-  maxContextTokens: 120000,
+  requireApprovalFor: [],
+  maxContextTokens: 900000,
   memoryDir: "./memory",
   skillsDir: "./skills",
   cloudSyncPath: "",
@@ -86,13 +85,41 @@ async function isConfigured(): Promise<boolean> {
   return !!config.provider.apiKey;
 }
 
+// ─── Working Directory ────────────────────────────────────────────────
+// In dev mode: use the project root (process.cwd())
+// In packaged mode: use ~/.quiver/ as the working directory with .env,
+// memory/, .sessions/, and skills/ subdirectories.
+
+function getWorkingDir(config: QuiverConfig): string {
+  if (config.workspacePath) return config.workspacePath;
+  if (!app.isPackaged) return process.cwd();
+
+  // Packaged mode — use ~/.quiver/
+  return path.join(app.getPath("home"), ".quiver");
+}
+
+async function ensureWorkingDir(dir: string): Promise<void> {
+  try {
+    const fs = await import("fs/promises");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.mkdir(path.join(dir, "memory"), { recursive: true });
+    await fs.mkdir(path.join(dir, ".sessions"), { recursive: true });
+    await fs.mkdir(path.join(dir, "skills"), { recursive: true });
+  } catch {
+    // Non-critical
+  }
+}
+
 // ─── .env Sync ───────────────────────────────────────────────────────
-// Writes config values back to the project .env so the CLI and GUI stay in sync.
+// Writes config values back to the working directory's .env so the CLI
+// and GUI stay in sync.
 
 async function syncToEnv(config: QuiverConfig): Promise<void> {
   try {
     const fs = await import("fs/promises");
-    const envPath = path.resolve(process.cwd(), ".env");
+    const workingDir = getWorkingDir(config);
+    await ensureWorkingDir(workingDir);
+    const envPath = path.resolve(workingDir, ".env");
     let envContent = "";
 
     try {
@@ -101,7 +128,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
       // No .env yet — start from example
       try {
         envContent = await fs.readFile(
-          path.resolve(process.cwd(), ".env.example"),
+          path.resolve(config.workspacePath || process.cwd(), ".env.example"),
           "utf8",
         );
       } catch {
@@ -114,7 +141,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
       LLM_MODEL_NAME: config.provider.modelName,
       LLM_API_KEY: config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
-      OLLAMA_API_KEY: config.ollamaApiKey,
+      OLLAMA_API_KEY: config.provider.apiKey,
       GITHUB_TOKEN: config.githubToken,
       CONTEXT7_API_KEY: config.context7ApiKey,
       BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
@@ -139,7 +166,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
 
 // ─── Agent Process Management ─────────────────────────────────────────
 
-function getAgentCommand(cwd: string): { cmd: string; args: string[] } {
+function getAgentCommand(): { cmd: string; args: string[] } {
   // In packaged app, use the bundled CLI script with Electron's Node.js
   // In dev mode, use npx tsx
   const isPackaged = app.isPackaged;
@@ -147,8 +174,8 @@ function getAgentCommand(cwd: string): { cmd: string; args: string[] } {
   if (isPackaged) {
     // Use system node with tsx loader to run the bundled CLI
     return {
-      cmd: "node",
-      args: ["--import", "tsx", path.join(process.resourcesPath, "src", "cli.ts"), "--json"],
+      cmd: process.execPath,
+      args: ["--import", "tsx", path.join(app.getAppPath(), "src", "cli.ts"), "--json"],
     };
   }
 
@@ -158,21 +185,26 @@ function getAgentCommand(cwd: string): { cmd: string; args: string[] } {
   };
 }
 
-function startAgent(config: QuiverConfig): void {
+async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): Promise<void> {
   if (agentProcess) {
     agentProcess.kill();
     agentProcess = null;
   }
 
   const cwd = process.cwd();
-  const { cmd, args } = getAgentCommand(cwd);
+  const { cmd, args } = getAgentCommand();
+  const finalArgs = [...args];
+  if (resumeLatest) {
+    finalArgs.push("--continue");
+  }
+
   const env = {
     ...process.env,
     LLM_API_BASE_URL: config.provider.baseUrl,
     LLM_MODEL_NAME: config.provider.modelName,
     LLM_API_KEY: config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
-    OLLAMA_API_KEY: config.ollamaApiKey,
+    OLLAMA_API_KEY: config.provider.apiKey,
     GITHUB_TOKEN: config.githubToken,
     CONTEXT7_API_KEY: config.context7ApiKey,
     BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
@@ -186,10 +218,18 @@ function startAgent(config: QuiverConfig): void {
   if (app.isPackaged) {
     (env as Record<string, string>).APP_ROOT = process.resourcesPath;
     (env as Record<string, string>).ELECTRON_PACKAGED = "1";
+    (env as Record<string, string>).ELECTRON_RUN_AS_NODE = "1";
   }
 
-  agentProcess = spawn(cmd, args, {
-    cwd: app.isPackaged ? process.resourcesPath : cwd,
+  // Ensure working directory exists (creates ~/.quiver/ in packaged mode)
+  const workingDir = getWorkingDir(config);
+  await ensureWorkingDir(workingDir);
+
+  // Write .env to the working directory so the CLI can read it
+  await syncToEnv(config);
+
+  agentProcess = spawn(cmd, finalArgs, {
+    cwd: workingDir,
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -238,8 +278,9 @@ async function listMemoryFiles(): Promise<
   { name: string; content: string; size: number }[]
 > {
   try {
+    const config = await loadConfig();
     const fs = await import("fs/promises");
-    const memDir = path.resolve(process.cwd(), "memory");
+    const memDir = path.resolve(config.workspacePath || process.cwd(), "memory");
     const files = await fs.readdir(memDir);
     const results: { name: string; content: string; size: number }[] = [];
     for (const file of files) {
@@ -259,8 +300,9 @@ async function listMemoryFiles(): Promise<
 
 async function saveMemoryFile(name: string, content: string): Promise<boolean> {
   try {
+    const config = await loadConfig();
     const fs = await import("fs/promises");
-    const memDir = path.resolve(process.cwd(), "memory");
+    const memDir = path.resolve(config.workspacePath || process.cwd(), "memory");
     await fs.mkdir(memDir, { recursive: true });
     await fs.writeFile(path.join(memDir, name), content, "utf8");
     return true;
@@ -300,6 +342,107 @@ async function createWindow(): Promise<void> {
   }
 }
 
+// ─── Sessions Management ──────────────────────────────────────────────
+
+async function listSessions(): Promise<any[]> {
+  try {
+    const config = await loadConfig();
+    const fs = await import("fs/promises");
+    const sessionsDir = path.resolve(config.workspacePath || process.cwd(), ".sessions");
+    const files = await fs.readdir(sessionsDir);
+    const stateFiles = files.filter((f) => f.endsWith(".state.json"));
+    const results: any[] = [];
+    for (const f of stateFiles) {
+      try {
+        const filePath = path.join(sessionsDir, f);
+        const content = await fs.readFile(filePath, "utf8");
+        const state = JSON.parse(content);
+        results.push({
+          sessionId: state.sessionId || f.replace(".state.json", ""),
+          path: filePath,
+          savedAt: state.savedAt || new Date().toISOString(),
+          messageCount: state.messages?.length || 0,
+          model: state.model || "glm-5.2:cloud",
+        });
+      } catch (e) {
+        // Skip corrupt files
+      }
+    }
+    // Sort by savedAt descending (newest first)
+    results.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+    return results;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function loadSessionFile(filePath: string): Promise<any> {
+  const fs = await import("fs/promises");
+  const content = await fs.readFile(filePath, "utf8");
+  return JSON.parse(content);
+}
+
+async function deleteSessionFile(filePath: string): Promise<boolean> {
+  try {
+    const fs = await import("fs/promises");
+    await fs.unlink(filePath);
+    // Also try to delete corresponding JSON log if exists
+    const logPath = filePath.replace(".state.json", ".json");
+    try { await fs.unlink(logPath); } catch {}
+    const loglPath = filePath.replace(".state.json", ".jsonl");
+    try { await fs.unlink(loglPath); } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function touchSessionFile(filePath: string): Promise<boolean> {
+  try {
+    const fs = await import("fs/promises");
+    const now = new Date();
+    await fs.utimes(filePath, now, now);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Additional Context/Verification Helpers ─────────────────────────
+
+async function runWorkspaceTests(): Promise<{ success: boolean; output: string }> {
+  const config = await loadConfig();
+  const workspaceDir = config.workspacePath || process.cwd();
+  try {
+    const { stdout, stderr } = await execAsync("npm test", { cwd: workspaceDir });
+    return { success: true, output: stdout || stderr };
+  } catch (err: any) {
+    return { success: false, output: err.stdout || err.stderr || err.message };
+  }
+}
+
+async function listSkills(workspacePath: string, skillsDirConfig: string): Promise<string[]> {
+  try {
+    const fs = await import("fs/promises");
+    const skillsDir = path.isAbsolute(skillsDirConfig) ? skillsDirConfig : path.resolve(workspacePath, skillsDirConfig);
+    const files = await fs.readdir(skillsDir);
+    const results: string[] = [];
+    for (const f of files) {
+      if (f.startsWith(".")) continue;
+      const fullPath = path.join(skillsDir, f);
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        results.push(f);
+      } else if (f.endsWith(".md")) {
+        results.push(f);
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 // ─── IPC Handlers ─────────────────────────────────────────────────────
 
 function registerIpcHandlers(): void {
@@ -313,9 +456,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle("config:isConfigured", async () => isConfigured());
 
   // Agent
-  ipcMain.handle("agent:start", async (_evt, config: QuiverConfig) => {
-    await syncToEnv(config);
-    startAgent(config);
+  ipcMain.handle("agent:start", async (_evt, config: QuiverConfig, resumeLatest: boolean = false) => {
+    await startAgent(config, resumeLatest);
     return true;
   });
   ipcMain.handle("agent:send", async (_evt, text: string) => {
@@ -334,11 +476,107 @@ function registerIpcHandlers(): void {
     return true;
   });
 
+  // Sessions
+  ipcMain.handle("sessions:list", async () => listSessions());
+  ipcMain.handle("sessions:load", async (_evt, filePath: string) => loadSessionFile(filePath));
+  ipcMain.handle("sessions:delete", async (_evt, filePath: string) => deleteSessionFile(filePath));
+  ipcMain.handle("sessions:touch", async (_evt, filePath: string) => touchSessionFile(filePath));
+
   // Memory
   ipcMain.handle("memory:list", async () => listMemoryFiles());
   ipcMain.handle("memory:save", async (_evt, name: string, content: string) =>
     saveMemoryFile(name, content),
   );
+  ipcMain.handle("memory:loadCore", async () => {
+    const config = await loadConfig();
+    const memoryFile = path.resolve(config.workspacePath || process.cwd(), "memory", "core.json");
+    try {
+      const fs = await import("fs/promises");
+      const content = await fs.readFile(memoryFile, "utf8");
+      return JSON.parse(content);
+    } catch {
+      return {
+        identity: "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
+        human_context: "",
+        project_context: "This workspace is an agent harness containing TS tools, test runners, and configuration."
+      };
+    }
+  });
+  ipcMain.handle("memory:saveCore", async (_evt, coreMemory: any) => {
+    const config = await loadConfig();
+    const memoryFile = path.resolve(config.workspacePath || process.cwd(), "memory", "core.json");
+    try {
+      const fs = await import("fs/promises");
+      await fs.mkdir(path.dirname(memoryFile), { recursive: true });
+      await fs.writeFile(memoryFile, JSON.stringify(coreMemory, null, 2), "utf8");
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // Skills
+  ipcMain.handle("skills:list", async () => {
+    const config = await loadConfig();
+    return listSkills(config.workspacePath || process.cwd(), config.skillsDir || "./skills");
+  });
+  ipcMain.handle("skills:read", async (_evt, skillName: string) => {
+    const config = await loadConfig();
+    const workspace = config.workspacePath || process.cwd();
+    const skillsDir = path.isAbsolute(config.skillsDir || "./skills")
+      ? (config.skillsDir || "./skills")
+      : path.resolve(workspace, config.skillsDir || "./skills");
+    const skillDir = path.join(skillsDir, skillName);
+    const skillFile = path.join(skillDir, "SKILL.md");
+    try {
+      const fs = await import("fs/promises");
+      return await fs.readFile(skillFile, "utf8");
+    } catch {
+      try {
+        const fs = await import("fs/promises");
+        const standalone = path.resolve(skillsDir, skillName);
+        return await fs.readFile(standalone, "utf8");
+      } catch {
+        return null;
+      }
+    }
+  });
+  ipcMain.handle("skills:save", async (_evt, skillName: string, content: string) => {
+    const config = await loadConfig();
+    const workspace = config.workspacePath || process.cwd();
+    const skillsDir = path.isAbsolute(config.skillsDir || "./skills")
+      ? (config.skillsDir || "./skills")
+      : path.resolve(workspace, config.skillsDir || "./skills");
+    const skillDir = path.join(skillsDir, skillName);
+    const skillFile = path.join(skillDir, "SKILL.md");
+    try {
+      const fs = await import("fs/promises");
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(skillFile, content, "utf8");
+      return true;
+    } catch {
+      try {
+        const fs = await import("fs/promises");
+        const standalone = path.resolve(skillsDir, skillName);
+        await fs.writeFile(standalone, content, "utf8");
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  });
+
+  // Workspace / Verification
+  ipcMain.handle("workspace:runTests", async () => runWorkspaceTests());
+  ipcMain.handle("workspace:selectDir", async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
 
   // Navigation
   ipcMain.handle("nav:loadMain", async () => {

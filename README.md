@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="branding/logo.png" alt="QUIVER" width="240" />
+</p>
+
 # Quiver: AI Agent Harness for the Terminal
 
 Quiver is a self-evolving agent harness for autonomous coding and research in the terminal. It provides file operations, browser automation, shell command execution, web search, GitHub integration, and persistent memory — designed to work with any OpenAI-compatible LLM. Think of Quiver as a powerful digital companion that works through task checklists, keeps track of project details, and always asks for your permission before taking sensitive actions on your computer.
@@ -24,6 +28,7 @@ Here is where different parts of Quiver live, explained simply:
 * **📂 memory/**: What Quiver remembers about you, your identity preferences, and your project context.
 * **📂 skills/**: Simple "how-to" instruction guides you give Quiver to teach it rules or procedures.
 * **📂 src/tools/**: The list of actions (capabilities) Quiver can perform—such as searching the web, scraping websites, reading files, or controlling a browser.
+* **📂 branding/**: Visual brand resources and logo assets. See [BRANDING.md](BRANDING.md) for styling and capitalization guidelines.
 
 ---
 

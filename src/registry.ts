@@ -38,7 +38,14 @@ export class ToolRegistry {
   public async loadAll(): Promise<void> {
     try {
       // Ensure directory exists
-      await fs.mkdir(this.toolsDir, { recursive: true });
+      try {
+        await fs.mkdir(this.toolsDir, { recursive: true });
+      } catch (err: any) {
+        // Ignore read-only / permission errors when loading default tools inside app.asar
+        if (err.code !== "EROFS" && err.code !== "EACCES" && err.code !== "ENOTDIR") {
+          throw err;
+        }
+      }
       const files = await fs.readdir(this.toolsDir);
       
       const loadPromises = files

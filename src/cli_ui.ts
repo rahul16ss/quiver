@@ -131,9 +131,9 @@ export function theme(
     info: pc.blue,
     dry: pc.cyan,
     palette,
-    promptUser: () => pc.bold(pc.green("› ")),
+    promptUser: () => pc.bold(pc.green("Q> ")),
     promptAgent: () =>
-      pc.bold(pc.magenta("◆ ")) +
+      pc.bold(pc.cyan("Q> ")) +
       pc.gray(`[${process.env.LLM_MODEL_NAME || "model"}] `),
   };
 }

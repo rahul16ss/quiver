@@ -7,14 +7,31 @@ contextBridge.exposeInMainWorld("quiver", {
   isConfigured: () => ipcRenderer.invoke("config:isConfigured"),
 
   // Agent
-  startAgent: (config) => ipcRenderer.invoke("agent:start", config),
+  startAgent: (config, resumeLatest) => ipcRenderer.invoke("agent:start", config, resumeLatest),
   sendToAgent: (text) => ipcRenderer.invoke("agent:send", text),
   approveToolCall: (approve) => ipcRenderer.invoke("agent:approve", approve),
   stopAgent: () => ipcRenderer.invoke("agent:stop"),
 
+  // Sessions
+  listSessions: () => ipcRenderer.invoke("sessions:list"),
+  loadSession: (filePath) => ipcRenderer.invoke("sessions:load", filePath),
+  deleteSession: (filePath) => ipcRenderer.invoke("sessions:delete", filePath),
+  touchSession: (filePath) => ipcRenderer.invoke("sessions:touch", filePath),
+
   // Memory
   listMemory: () => ipcRenderer.invoke("memory:list"),
   saveMemory: (name, content) => ipcRenderer.invoke("memory:save", name, content),
+  loadCoreMemory: () => ipcRenderer.invoke("memory:loadCore"),
+  saveCoreMemory: (core) => ipcRenderer.invoke("memory:saveCore"),
+
+  // Skills
+  listSkills: () => ipcRenderer.invoke("skills:list"),
+  readSkill: (skillName) => ipcRenderer.invoke("skills:read", skillName),
+  saveSkill: (skillName, content) => ipcRenderer.invoke("skills:save", skillName, content),
+
+  // Workspace / Verification
+  runTests: () => ipcRenderer.invoke("workspace:runTests"),
+  selectWorkspaceDir: () => ipcRenderer.invoke("workspace:selectDir"),
 
   // Navigation
   loadMain: () => ipcRenderer.invoke("nav:loadMain"),
