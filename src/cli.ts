@@ -103,6 +103,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ["/cs"],
     desc: "Show cloud sync status & install links",
   },
+  {
+    name: "/paste",
+    aliases: ["/p"],
+    desc: "Paste image from clipboard into prompt",
+  },
 ];
 
 function resolveSlashCommand(input: string): string | null {
@@ -276,6 +281,112 @@ async function runSignin(): Promise<void> {
   } else {
     console.log(picocolors.red(`\n  ❌ Sign-in failed or was cancelled.\n`));
   }
+}
+
+// ─── Clipboard Image Paste ────────────────────────────────────────────
+// Saves an image from the system clipboard to .sessions/ and returns the path.
+// On macOS: uses osascript to check for image data and save as PNG.
+// On Linux: uses xclip to check for image data.
+// On Windows: uses PowerShell to check and save.
+
+async function pasteClipboardImage(): Promise<string | null> {
+  const { execSync } = await import("child_process");
+  const { promises: fs } = await import("fs");
+  const path = await import("path");
+
+  const sessionsDir = path.resolve(".sessions");
+  await fs.mkdir(sessionsDir, { recursive: true });
+
+  const timestamp = Date.now();
+  const filename = `pasted-${timestamp}.png`;
+  const filepath = path.join(sessionsDir, filename);
+
+  try {
+    if (process.platform === "darwin") {
+      // macOS: use osascript to check if clipboard has an image
+      const check = execSync(
+        `osascript -e 'clipboard info' 2>/dev/null | grep -i "png\\|tiff\\|jpeg\\|image"`,
+        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+      ).trim();
+
+      if (!check) {
+        // Also check for PDF class (screenshots can be PDFs)
+        const pdfCheck = execSync(
+          `osascript -e 'clipboard info' 2>/dev/null | grep -i "pdf"`,
+          { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+        ).trim();
+        if (!pdfCheck) return null;
+      }
+
+      // Save clipboard image to file using osascript + sips
+      execSync(
+        `osascript -e 'set theClipboard to the clipboard as «class PNGf»' -e 'set theFile to open for POSIX file "${filepath}" with write permission' -e 'write theClipboard to theFile' -e 'close access theFile' 2>/dev/null`,
+        { stdio: ["pipe", "ignore", "ignore"] },
+      );
+
+      // Verify the file was created and has content
+      const stat = await fs.stat(filepath).catch(() => null);
+      if (!stat || stat.size < 100) {
+        // Try alternative method: use pngpaste if available, or screencapture
+        try {
+          execSync(`pngpaste "${filepath}" 2>/dev/null`, { stdio: ["pipe", "ignore", "ignore"] });
+        } catch {
+          // Try TIFF approach
+          try {
+            const tiffPath = filepath.replace(".png", ".tiff");
+            execSync(
+              `osascript -e 'set theClipboard to the clipboard as «class TIFF»' -e 'set theFile to open for POSIX file "${tiffPath}" with write permission' -e 'write theClipboard to theFile' -e 'close access theFile' 2>/dev/null`,
+              { stdio: ["pipe", "ignore", "ignore"] },
+            );
+            // Convert TIFF to PNG
+            execSync(`sips -s format png "${tiffPath}" --out "${filepath}" 2>/dev/null`, {
+              stdio: ["pipe", "ignore", "ignore"],
+            });
+            await fs.unlink(tiffPath).catch(() => {});
+          } catch {
+            return null;
+          }
+        }
+      }
+
+      const finalStat = await fs.stat(filepath).catch(() => null);
+      if (finalStat && finalStat.size > 100) {
+        return filepath;
+      }
+      return null;
+    }
+
+    if (process.platform === "linux") {
+      // Linux: use xclip to check for image
+      try {
+        execSync(`xclip -selection clipboard -t image/png -o > "${filepath}" 2>/dev/null`, {
+          stdio: ["pipe", "ignore", "ignore"],
+        });
+        const stat = await fs.stat(filepath).catch(() => null);
+        if (stat && stat.size > 100) return filepath;
+      } catch {
+        return null;
+      }
+    }
+
+    if (process.platform === "win32") {
+      // Windows: use PowerShell to save clipboard image
+      try {
+        execSync(
+          `powershell -command "Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${filepath.replace(/\\/g, "\\\\")}') }"`,
+          { stdio: ["pipe", "ignore", "ignore"] },
+        );
+        const stat = await fs.stat(filepath).catch(() => null);
+        if (stat && stat.size > 100) return filepath;
+      } catch {
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 // ─── Cloud Sync ───────────────────────────────────────────────────────
@@ -900,6 +1011,9 @@ async function main() {
     output: process.stdout,
   });
 
+  // Track pasted image reference for the next prompt
+  let pendingImageRef: string | null = null;
+
   // Note: No raw mode needed — multiline input uses readline's native
   // line-event handling with backslash continuation, which works in all
   // terminals including Warp.
@@ -986,10 +1100,16 @@ async function main() {
         break;
       }
 
-      const cleanInput = input.trim();
+      let cleanInput = input.trim();
       interruptCount = 0; // Reset on valid input
 
       if (!cleanInput) continue;
+
+      // Prepend pasted image reference if one is pending
+      if (pendingImageRef && !cleanInput.startsWith("/")) {
+        cleanInput = `[Image: ${pendingImageRef}]\n\n${cleanInput}`;
+        pendingImageRef = null;
+      }
 
       // ── Check if it's a slash command ──
       if (cleanInput.startsWith("/")) {
@@ -1303,6 +1423,29 @@ async function main() {
 
         if (resolved === "/cloud-sync") {
           await runCloudSync();
+          continue;
+        }
+
+        if (resolved === "/paste") {
+          const imagePath = await pasteClipboardImage();
+          if (imagePath) {
+            console.log(
+              picocolors.green(`\n  ✅ Image saved: ${imagePath}`),
+            );
+            console.log(
+              picocolors.gray(
+                `  The image has been added to your prompt. Type your message and press Enter.\n`,
+              ),
+            );
+            // Prepend the image reference to the next prompt
+            pendingImageRef = imagePath;
+          } else {
+            console.log(
+              picocolors.yellow(
+                `\n  ⚠️  No image found in clipboard. Copy a screenshot first (Cmd+Shift+Ctrl+4 to copy to clipboard).\n`,
+              ),
+            );
+          }
           continue;
         }
 

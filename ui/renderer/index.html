@@ -25,7 +25,7 @@
           <span class="icon">📂</span> context
         </button>
         <button class="action-btn tab-btn" id="btnVerification" onclick="showView('verification')">
-          <span class="icon">✔</span> verification
+          <span class="icon">📋</span> explainability
         </button>
       </div>
 
@@ -55,7 +55,6 @@
         <div class="active-session-title" id="activeSessionTitle">New Chat</div>
         <div class="status">
           <span class="dot idle" id="statusDot"></span>
-          <span id="statusText">idle</span>
         </div>
       </header>
 
@@ -106,39 +105,7 @@
               </div>
             </div>
             
-            <div class="ide-section">
-              <h3>Capabilities</h3>
-              <div class="tools-list" id="toolsList" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; padding:6px; background:rgba(0,0,0,0.2);">
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Read File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">view_file</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Reads codebase files.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Write File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">write_file</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Creates/overwrites codebase files.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Edit File <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">replace_content</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Surgically modifies existing code.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Run Command <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">run_command</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Executes zsh shell commands.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Run Tests <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">run_tests</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Executes package test runners.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Search Web <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">web_search</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Searches online search engines.</div>
-                </div>
-                <div class="tool-capsule" style="padding:6px; margin-bottom:4px; background:rgba(255,255,255,0.02); border-radius:4px; border:1px solid rgba(255,255,255,0.03);">
-                  <div style="font-weight:700; font-size:11px; color:var(--success);">Control Browser <span style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-muted);">browser_control</span></div>
-                  <div style="font-size:9.5px; color:var(--text-muted); margin-top:2px;">Spawns/automates browser interactions.</div>
-                </div>
-              </div>
-            </div>
+
           </aside>
           
           <!-- IDE Right Editor -->
@@ -181,40 +148,15 @@
         </div>
       </div>
 
-      <!-- View 3: Verification Panel (Balaji principles) -->
+      <!-- View 3: Explainability Log -->
       <div class="view-panel" id="verificationView" style="display:none;">
-        <div class="verification-workspace">
-          <div class="verify-header-row">
-            <h2>Candidate Verification</h2>
-            <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 14px; margin-bottom: 20px; font-size: 12.5px; line-height: 1.5; color: var(--text);">
-              <strong>💡 Polytheistic Prompting & Verification:</strong> AI models generate probabilistic candidate proposals (hypotheses) rather than absolute truths. Verification (via compilers, type-checkers, linters, and unit tests) acts as the deterministic filter that validates these candidates before integrating them.
-            </div>
+        <div class="explainability-workspace" style="display:flex; flex-direction:column; height:100%; padding:24px; gap:16px; overflow:hidden;">
+          <div style="flex-shrink:0;">
+            <h2 style="font-size:15px; font-weight:700; margin-bottom:4px;">Explainability Log</h2>
+            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">A step-by-step chronology of Quiver's thought process and operations during this session. See exactly what the AI reasoned, what actions it took, and what outcomes resulted — designed for full transparency.</p>
           </div>
-          
-          <div style="display:flex; gap:20px; margin-bottom:20px; flex-wrap:wrap;">
-            <!-- Left Side: Candidate Revisions -->
-            <div style="flex:1; min-width:300px; background:rgba(15,23,42,0.4); border:1px solid var(--border); border-radius:8px; padding:16px;">
-              <h3 style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">AI Code Candidates (This Session)</h3>
-              <div id="candidatesList" style="display:flex; flex-direction:column; gap:8px;">
-                <div style="font-size:12px; color:var(--text-muted); font-style:italic;">No files modified by agent in this session yet.</div>
-              </div>
-            </div>
-            
-            <!-- Right Side: Run Controls -->
-            <div style="width:300px; background:rgba(15,23,42,0.4); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
-              <div>
-                <h3 style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">Verification Run</h3>
-                <div class="verify-status" id="verifyStatus" style="margin-bottom:16px;">
-                  <span class="status-pill idle">Idle (Awaiting Run)</span>
-                </div>
-              </div>
-              <button class="run-verify-btn" id="runTestsBtn" onclick="runVerification()" style="width:100%;">⚡ Run Verification Checks</button>
-            </div>
-          </div>
-
-          <div class="console-container">
-            <div class="console-header">Verification Compiler & Test Outputs</div>
-            <pre class="console-output" id="consoleOutput">Terminal output will appear here when verification is triggered...</pre>
+          <div id="timelineContainer" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0; padding-right:8px;">
+            <div id="timelineEmpty" style="font-size:12.5px; color:var(--text-muted); font-style:italic; padding:20px 0;">No activity yet. Start a chat to see the AI's thought process and actions here.</div>
           </div>
         </div>
       </div>
@@ -227,7 +169,7 @@
     const sendBtn = document.getElementById("sendBtn");
     const stopBtn = document.getElementById("stopBtn");
     const statusDot = document.getElementById("statusDot");
-    const statusText = document.getElementById("statusText");
+    // statusText removed — only dot indicator remains
     const statsBar = document.getElementById("statsBar");
     const emptyState = document.getElementById("emptyState");
     const activeSessionTitle = document.getElementById("activeSessionTitle");
@@ -469,91 +411,127 @@ version: 1.0.0
       }, 4000);
     }
 
-    let verificationCandidates = [];
+    // ── Explainability Timeline ──────────────────────────────────────
+    const FRIENDLY_TOOL_NAMES = {
+      view_file: "Reading a file",
+      write_file: "Creating / writing a file",
+      replace_content: "Editing code in a file",
+      list_dir: "Listing directory contents",
+      format_code: "Formatting code",
+      grep_search: "Searching through files",
+      run_command: "Running a shell command",
+      run_tests: "Running tests",
+      create_tool: "Creating a new tool",
+      log_tokens: "Logging usage stats",
+      web_search: "Searching the web",
+      scrape_url: "Reading a webpage",
+      search_docs: "Searching documentation",
+      browser_control: "Controlling the browser",
+      memory_append: "Saving to memory",
+      memory_replace: "Updating memory",
+      github: "Interacting with GitHub",
+      deep_research: "Running deep research",
+      find_all: "Finding entities",
+      entity_search: "Searching entities",
+    };
 
-    function resetVerificationState() {
-      verificationCandidates = [];
-      updateCandidatesUI();
-      const statusEl = document.getElementById("verifyStatus");
+    let timelineEntries = [];
+    let accumulatedThought = "";
+    let timelineStepCounter = 0;
+
+    function resetExplainabilityState() {
+      timelineEntries = [];
+      accumulatedThought = "";
+      timelineStepCounter = 0;
+      const container = document.getElementById("timelineContainer");
+      if (container) {
+        container.innerHTML = '<div id="timelineEmpty" style="font-size:12.5px; color:var(--text-muted); font-style:italic; padding:20px 0;">No activity yet. Start a chat to see the AI\'s thought process and actions here.</div>';
+      }
+    }
+
+    function friendlyToolDetail(toolName, toolArgs) {
+      const filePath = toolArgs.filePath || toolArgs.targetFile || toolArgs.TargetFile || "";
+      const filename = filePath ? filePath.split("/").pop() : "";
+      switch (toolName) {
+        case "view_file": return filename ? `Reading ${filename}` : "Reading a file";
+        case "write_file": return filename ? `Writing to ${filename}` : "Creating a file";
+        case "replace_content": return filename ? `Editing ${filename}` : "Editing a file";
+        case "list_dir": return toolArgs.dirPath ? `Listing ${toolArgs.dirPath.split("/").pop()}/` : "Listing a directory";
+        case "grep_search": return toolArgs.query ? `Searching for \"${toolArgs.query.substring(0,40)}\"` : "Searching code";
+        case "run_command": return toolArgs.command ? `$ ${toolArgs.command.substring(0,60)}` : "Running a command";
+        case "run_tests": return "Running the test suite";
+        case "web_search": return toolArgs.query ? `Searching: \"${toolArgs.query.substring(0,50)}\"` : "Searching the web";
+        case "scrape_url": return toolArgs.url ? `Fetching ${new URL(toolArgs.url).hostname}` : "Fetching a webpage";
+        case "browser_control": return "Automating the browser";
+        case "deep_research": return toolArgs.query ? `Researching: \"${toolArgs.query.substring(0,50)}\"` : "Running deep research";
+        default: return FRIENDLY_TOOL_NAMES[toolName] || toolName;
+      }
+    }
+
+    function addTimelineEntry(type, content, detail) {
+      timelineStepCounter++;
+      const container = document.getElementById("timelineContainer");
+      const emptyEl = document.getElementById("timelineEmpty");
+      if (emptyEl) emptyEl.remove();
+
+      const entry = document.createElement("div");
+      entry.className = "timeline-entry";
+      entry.dataset.step = timelineStepCounter;
+      entry.dataset.status = "working";
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      let icon = "🔄";
+      let color = "var(--accent)";
+      if (type === "thought") { icon = "💭"; color = "var(--text-muted)"; }
+      else if (type === "action") { icon = "⚡"; color = "var(--accent)"; }
+
+      entry.innerHTML = `
+        <div style="display:flex; gap:12px; padding:12px 16px; border-left:2px solid ${color}; margin-left:8px; position:relative;">
+          <div style="position:absolute; left:-9px; top:14px; width:16px; height:16px; border-radius:50%; background:var(--bg); border:2px solid ${color}; display:flex; align-items:center; justify-content:center; font-size:9px;">${icon}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:${color};">${type === 'thought' ? 'Reasoning' : 'Action'}</span>
+              <span style="font-size:10px; color:var(--text-muted);">${timeStr}</span>
+              <span class="timeline-status" style="font-size:9px; font-weight:600; padding:1px 6px; border-radius:10px; background:rgba(245,158,11,0.12); color:var(--warning);">working</span>
+            </div>
+            <div style="font-size:12.5px; color:var(--text); line-height:1.5; font-weight:500;">${content}</div>
+            ${detail ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-family:var(--font-mono); word-break:break-all;">${detail}</div>` : ""}
+          </div>
+        </div>
+      `;
+
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+      timelineEntries.push(entry);
+      return entry;
+    }
+
+    function completeTimelineEntry(entry, success, resultPreview) {
+      if (!entry) return;
+      entry.dataset.status = success ? "done" : "error";
+      const statusEl = entry.querySelector(".timeline-status");
       if (statusEl) {
-        statusEl.innerHTML = '<span class="status-pill idle">Idle (Awaiting Run)</span>';
+        if (success) {
+          statusEl.textContent = "done";
+          statusEl.style.background = "rgba(16,185,129,0.12)";
+          statusEl.style.color = "var(--success)";
+        } else {
+          statusEl.textContent = "error";
+          statusEl.style.background = "rgba(239,68,68,0.12)";
+          statusEl.style.color = "var(--danger)";
+        }
       }
-      const consoleEl = document.getElementById("consoleOutput");
-      if (consoleEl) {
-        consoleEl.textContent = "Terminal output will appear here when verification is triggered...";
-      }
-    }
-
-    function registerVerificationCandidate(filePath, toolName) {
-      const filename = filePath.split("/").pop();
-      if (!verificationCandidates.some(c => c.path === filePath)) {
-        verificationCandidates.push({
-          path: filePath,
-          name: filename,
-          tool: toolName,
-          verified: false
-        });
-        updateCandidatesUI();
+      if (resultPreview) {
+        const detailDiv = document.createElement("div");
+        detailDiv.style.cssText = "font-size:11px; color:var(--text-muted); margin-top:4px; font-family:var(--font-mono); max-height:80px; overflow:hidden; text-overflow:ellipsis; word-break:break-all;";
+        detailDiv.textContent = resultPreview.substring(0, 200);
+        entry.querySelector("div[style*='flex:1']>").appendChild(detailDiv);
       }
     }
 
-    function updateCandidatesUI() {
-      const listEl = document.getElementById("candidatesList");
-      if (!listEl) return;
-      if (verificationCandidates.length === 0) {
-        listEl.innerHTML = '<div style="font-size:12px; color:var(--text-muted); font-style:italic;">No files modified by agent in this session yet.</div>';
-        return;
-      }
-      listEl.innerHTML = "";
-      verificationCandidates.forEach(c => {
-        const item = document.createElement("div");
-        item.style.display = "flex";
-        item.style.alignItems = "center";
-        item.style.justifyContent = "space-between";
-        item.style.padding = "8px 12px";
-        item.style.background = "rgba(0,0,0,0.2)";
-        item.style.borderRadius = "4px";
-        item.style.border = "1px solid var(--border)";
-        
-        const actionLabel = c.tool === "write_file" ? "NEW" : "EDIT";
-        const labelColor = c.tool === "write_file" ? "var(--success)" : "var(--accent)";
-        
-        item.innerHTML = `
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:9.5px; font-weight:700; color:#fff; background:${labelColor}; padding:2px 6px; border-radius:3px; text-transform:uppercase;">${actionLabel}</span>
-            <span style="font-family:var(--font-mono); font-size:12px; color:var(--text); font-weight:500;">${c.name}</span>
-          </div>
-          <div style="font-size:11px; color:var(--text-muted);">
-            <span>${c.verified ? "✓ Verified" : "⚡ Unverified"}</span>
-          </div>
-        `;
-        listEl.appendChild(item);
-      });
-    }
-
-    // Run Workspace Verification Tests
-    async function runVerification() {
-      const btn = document.getElementById("runTestsBtn");
-      const statusEl = document.getElementById("verifyStatus");
-      const consoleEl = document.getElementById("consoleOutput");
-
-      btn.disabled = true;
-      statusEl.innerHTML = '<span class="status-pill running">Running Verification...</span>';
-      consoleEl.textContent = "Spawning candidate verification tests and checking workspace environment...\n\n";
-
-      const res = await window.quiver.runTests();
-      
-      btn.disabled = false;
-      consoleEl.textContent = res.output;
-      
-      if (res.success) {
-        statusEl.innerHTML = '<span class="status-pill passed">Verification Passed ✓</span>';
-        verificationCandidates.forEach(c => c.verified = true);
-        updateCandidatesUI();
-      } else {
-        statusEl.innerHTML = '<span class="status-pill failed">Verification Failed ✗</span>';
-      }
-    }
+    let currentTimelineToolEntry = null;
 
     // Auto-resize textarea
     promptInput.addEventListener("input", () => {
@@ -615,7 +593,7 @@ version: 1.0.0
       currentSessionId = sessionId;
       activeSessionTitle.textContent = sessionId;
       
-      resetVerificationState();
+      resetExplainabilityState();
       
       const state = await window.quiver.loadSession(path);
       renderHistory(state.messages || []);
@@ -646,7 +624,7 @@ version: 1.0.0
       activeSessionTitle.textContent = "new chat";
       chatArea.innerHTML = "";
       
-      resetVerificationState();
+      resetExplainabilityState();
       
       if (emptyState) {
         emptyState.style.display = "flex";
@@ -705,7 +683,7 @@ version: 1.0.0
       sendBtn.style.display = "none";
       stopBtn.style.display = "inline-block";
       statusDot.className = "dot live";
-      statusText.textContent = "working...";
+      // statusText removed
 
       const config = await window.quiver.loadConfig();
       if (currentSessionPath) {
@@ -882,7 +860,7 @@ version: 1.0.0
       sendBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
       statusDot.className = "dot idle";
-      statusText.textContent = "idle";
+      // statusText removed
       currentAgentMsg = null;
     }
 
@@ -893,7 +871,7 @@ version: 1.0.0
       sendBtn.style.display = "inline-block";
       stopBtn.style.display = "none";
       statusDot.className = "dot error";
-      statusText.textContent = "error";
+      // statusText removed
       currentAgentMsg = null;
     }
 
@@ -943,9 +921,12 @@ version: 1.0.0
       if (!msg.type) return;
 
       switch (msg.type) {
-        case "token":
-          appendToken(msg.data?.text || "");
+        case "token": {
+          const tokenText = msg.data?.text || "";
+          appendToken(tokenText);
+          accumulatedThought += tokenText;
           break;
+        }
 
         case "tool_call": {
           const toolName = msg.data?.toolName || "unknown";
@@ -953,21 +934,32 @@ version: 1.0.0
           const toolDiv = addToolCall(toolName, toolArgs);
           pendingToolDivs.push(toolDiv);
           
-          if (["write_file", "replace_content", "write_to_file", "replace_file_content", "multi_replace_file_content"].includes(toolName)) {
-            const target = toolArgs.filePath || toolArgs.TargetFile || toolArgs.targetFile;
-            if (target) {
-              registerVerificationCandidate(target, toolName);
-            }
+          // Log accumulated reasoning to timeline before action
+          if (accumulatedThought.trim().length > 10) {
+            const thoughtSummary = accumulatedThought.trim().substring(0, 300);
+            const thoughtEntry = addTimelineEntry("thought", thoughtSummary, null);
+            completeTimelineEntry(thoughtEntry, true, null);
           }
+          accumulatedThought = "";
+          
+          // Log the action to timeline
+          const friendlyName = friendlyToolDetail(toolName, toolArgs);
+          currentTimelineToolEntry = addTimelineEntry("action", friendlyName, null);
           break;
         }
 
-        case "tool_result":
+        case "tool_result": {
           if (pendingToolDivs.length > 0) {
             const div = pendingToolDivs.shift();
             showToolResult(div, msg.data?.toolResult || "");
           }
+          // Update timeline entry
+          const resultText = msg.data?.toolResult || "";
+          const isError = resultText.startsWith("Error");
+          completeTimelineEntry(currentTimelineToolEntry, !isError, null);
+          currentTimelineToolEntry = null;
           break;
+        }
 
         case "approval":
           addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
@@ -1023,13 +1015,11 @@ version: 1.0.0
     window.quiver.onAgentStderr((data) => {
       if (data.includes("[ERROR]") || data.includes('"type":"error"')) {
         statusDot.className = "dot error";
-        statusText.textContent = "error";
       }
     });
 
     window.quiver.onAgentExit((info) => {
       setIdle();
-      statusText.textContent = info.code === 0 ? "idle" : "exited";
       loadSessionsList();
     });
 

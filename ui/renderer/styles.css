@@ -1249,112 +1249,23 @@ body {
   line-height: 1.4;
 }
 
-/* Verification Workspace Panel */
-.verification-workspace {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  height: 100%;
-  padding: 24px;
-  gap: 20px;
-  overflow: hidden;
+/* Explainability Timeline */
+.timeline-entry {
+  transition: opacity 0.2s ease;
+}
+.timeline-entry:last-child {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
 }
 
-.verify-header-row {
-  flex-shrink: 0;
+#timelineContainer::-webkit-scrollbar {
+  width: 4px;
 }
-.verify-header-row h2 {
-  font-size: 15px;
-  font-weight: 700;
-  margin-bottom: 4px;
+#timelineContainer::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
 }
-.verify-header-row .section-desc {
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.verify-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-shrink: 0;
-}
-
-.verify-status {
-  display: inline-block;
-}
-
-.status-pill {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 6px 14px;
-  border-radius: 20px;
-}
-
-.status-pill.idle {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.status-pill.running {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  color: var(--warning);
-  animation: pulsing 1.5s infinite ease-in-out;
-}
-
-.status-pill.passed {
-  background: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  color: var(--success);
-}
-
-.status-pill.failed {
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: var(--danger);
-}
-
-@keyframes pulsing {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
-}
-
-.console-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: #030509;
-}
-
-.console-header {
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 16px;
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.console-output {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: #a3b3c9;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
+#timelineContainer::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* IDE Workspace layout for Context view */
