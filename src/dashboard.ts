@@ -273,14 +273,14 @@ async function run() {
     }
 
     processing = true;
-    appendLogMessage(`user> ${value}`, palette.promptUser);
+    appendLogMessage(`› ${value}`, palette.promptUser);
 
     // Pre-create streaming agent message
     const agentMsg = new TextRenderable(renderer, {
       width: "100%",
       wrapMode: "word",
       fg: palette.promptAgent,
-      content: "agent> Thinking...",
+      content: "◆ Thinking...",
     });
     responseLog.add(agentMsg);
 

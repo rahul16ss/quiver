@@ -28,6 +28,7 @@ const KNOWN_FLAGS = [
   "--single-turn",
   "--recipe",
   "init",
+  "signin",
   "--continue",
   "-c",
   "--resume",
@@ -43,6 +44,7 @@ export interface CliOptions {
   quiet: boolean;
   dryRun: boolean;
   init: boolean;
+  signin: boolean;
   singleTurn?: string;
   recipe?: string;
   continue?: boolean;
@@ -127,9 +129,9 @@ export function theme(
     info: pc.blue,
     dry: pc.cyan,
     palette,
-    promptUser: () => pc.bold(pc.green("user> ")),
+    promptUser: () => pc.bold(pc.green("› ")),
     promptAgent: () =>
-      pc.bold(pc.magenta("agent> ")) +
+      pc.bold(pc.magenta("◆ ")) +
       pc.gray(`[${process.env.LLM_MODEL_NAME || "model"}] `),
   };
 }
@@ -210,6 +212,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     quiet: false,
     dryRun: false,
     init: false,
+    signin: false,
     continue: false,
     resume: false,
     listSessions: false,
@@ -241,6 +244,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg === "init") {
       opts.init = true;
+      continue;
+    }
+    if (arg === "signin") {
+      opts.signin = true;
       continue;
     }
     if (arg === "--single-turn") {

@@ -22,6 +22,12 @@ import { runInitWizard } from "./init.js";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
 import { exportToAgentFile } from "./state.js";
+import {
+  detectOllamaIdentity,
+  startOllamaSignin,
+  formatOllamaIdentity,
+  type OllamaIdentity,
+} from "./ollama_identity.js";
 import * as path from "path";
 import { readFileSync, existsSync } from "fs";
 import { promises as fs } from "fs";
@@ -79,6 +85,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     name: "/resume",
     aliases: ["/rs"],
     desc: "Resume a previous session",
+  },
+  {
+    name: "/signin",
+    aliases: ["/si"],
+    desc: "Sign in via Ollama (cloud models, web search)",
   },
 ];
 
@@ -163,6 +174,98 @@ function categorizeTools(
   return categorized;
 }
 
+// ─── Ollama Sign-in ─────────────────────────────────────────────────
+async function runSignin(): Promise<void> {
+  const t = theme();
+
+  console.log(
+    t.cyan(`
+  ┌────────────────────────────────────────────┐
+  │  🔑 Sign in via Ollama                     │
+  │                                            │
+  │  This links Quiver to your Ollama account  │
+  │  for cloud models, web search, and more.   │
+  └────────────────────────────────────────────┘`),
+  );
+
+  const id = detectOllamaIdentity();
+
+  if (id.hasSignedIn) {
+    console.log(
+      picocolors.green(
+        `\n  ✅ Already signed in via Ollama${id.publicKeyFingerprint ? ` (key: …${id.publicKeyFingerprint})` : ""}`,
+      ),
+    );
+    console.log(
+      picocolors.gray(
+        `  Your local Ollama daemon will auto-authenticate cloud requests.\n`,
+      ),
+    );
+
+    if (!id.hasApiKey) {
+      console.log(
+        picocolors.yellow(`  ⚠️  OLLAMA_API_KEY is not set in .env.`),
+      );
+      console.log(
+        picocolors.gray(
+          `  For direct API access (without local daemon), create a key at:\n  https://ollama.com/settings/keys\n  Then add it to .env as OLLAMA_API_KEY=...\n`,
+        ),
+      );
+    }
+    return;
+  }
+
+  if (!id.hasBinary) {
+    console.log(
+      picocolors.yellow(`\n  ⚠️  Ollama binary not found on this machine.`),
+    );
+    console.log(
+      picocolors.gray(
+        `  Install Ollama first: https://ollama.com/download\n  Then run: quiver signin\n`,
+      ),
+    );
+    console.log(
+      picocolors.gray(
+        `  Alternatively, create an API key at https://ollama.com/settings/keys\n  and add OLLAMA_API_KEY=your_key to .env\n`,
+      ),
+    );
+    return;
+  }
+
+  console.log(
+    picocolors.gray(
+      `\n  Opening browser for Ollama sign-in...\n  Complete the sign-in in your browser, then return here.\n`,
+    ),
+  );
+
+  const success = startOllamaSignin(id.binaryPath!);
+
+  if (success) {
+    // Re-check identity
+    const newId = detectOllamaIdentity();
+    if (newId.hasSignedIn) {
+      console.log(
+        picocolors.green(
+          `\n  ✅ Sign-in successful! Key: …${newId.publicKeyFingerprint}`,
+        ),
+      );
+      console.log(
+        picocolors.gray(
+          `  Your local Ollama daemon will now auto-authenticate cloud requests.\n`,
+        ),
+      );
+    } else {
+      console.log(
+        picocolors.green(
+          `\n  ✅ Sign-in flow completed. Run 'quiver signin' again to verify.\n`,
+        ),
+      );
+    }
+  } else {
+    console.log(picocolors.red(`\n  ❌ Sign-in failed or was cancelled.\n`));
+  }
+}
+
 // ─── Help display ───────────────────────────────────────────────────
 function printHelp(): void {
   const t = theme();
@@ -179,6 +282,9 @@ function printHelp(): void {
   );
   console.log(
     `    quiver init                     Set up .env (first-run wizard)`,
+  );
+  console.log(
+    `    quiver signin                   Sign in via Ollama (cloud models, web search)`,
   );
   console.log(
     `    quiver --single-turn "prompt"    Run a single prompt and exit`,
@@ -423,6 +529,11 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
+  if (cliOpts.signin) {
+    await runSignin();
+    process.exit(EXIT.OK);
+  }
+
   if (cliOpts.unknownFlags.length > 0) {
     printUnknownFlagHints(cliOpts.unknownFlags);
     process.exit(EXIT.USAGE);
@@ -448,6 +559,20 @@ async function main() {
     console.log(
       t.cyan(t.bold(`================================================`)),
     );
+
+    // Show Ollama identity status
+    const ollamaId = detectOllamaIdentity();
+    if (ollamaId.hasBinary || ollamaId.hasApiKey || ollamaId.hasSignedIn) {
+      const idStatus = formatOllamaIdentity(ollamaId);
+      console.log(t.gray(`   Identity: ${idStatus}`));
+    } else {
+      console.log(
+        t.gray(
+          `   Identity: Not configured — run 'quiver signin' to link Ollama`,
+        ),
+      );
+    }
+
     if (config.dryRun) {
       statusLine(
         "DRY",
@@ -799,11 +924,15 @@ async function main() {
         }
 
         if (resolved === "/config") {
+          const ollamaId = detectOllamaIdentity();
           console.log(`\n⚙️  Current Configuration:`);
           console.log(`   - Endpoint Base:     ${config.llmBaseUrl}`);
           console.log(`   - Target Model:      ${config.llmModelName}`);
           console.log(
             `   - LLM API Key:       ${redactSecret(config.llmApiKey)}`,
+          );
+          console.log(
+            `   - Ollama Identity:   ${formatOllamaIdentity(ollamaId)}`,
           );
           console.log(
             `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
@@ -1048,6 +1177,11 @@ async function main() {
             statusLine("ERROR", `Export failed: ${err.message}`);
             console.log("");
           }
+          continue;
+        }
+
+        if (resolved === "/signin") {
+          await runSignin();
           continue;
         }
 

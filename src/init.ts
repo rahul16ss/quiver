@@ -68,5 +68,8 @@ export async function runInitWizard(): Promise<void> {
 
   console.log("");
   statusLine("OK", "Setup complete. Run 'quiver' to start a session.");
+  console.log(
+    t.gray("  To use Ollama cloud models & web search: run 'quiver signin'\n"),
+  );
   console.log(t.gray("  Docs: README.md\n"));
 }
