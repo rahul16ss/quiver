@@ -207,7 +207,9 @@ function printHelp(): void {
     ),
   );
   console.log(
-    t.gray("  Press Shift+Enter (or Alt+Enter) for multiline input."),
+    t.gray(
+      "  End a line with \\ then Enter for multiline input. Plain Enter submits.",
+    ),
   );
   console.log("");
 }
@@ -227,7 +229,7 @@ function printInSessionHelp(): void {
   );
   console.log(
     picocolors.gray(
-      `  Press Shift+Enter (or Alt+Enter) for multiline input.\n`,
+      `  End a line with \\ then Enter for multiline input. Plain Enter submits.\n`,
     ),
   );
 }
@@ -260,18 +262,27 @@ function printEnhancedTools(): void {
 }
 
 // ─── Multiline prompt helper ─────────────────────────────────────────
-// Supports Shift+Enter (and Alt+Enter, Esc→Enter) for multiline input.
-// Enter alone submits the prompt. Ctrl+D / EOF resolves to null.
-// Falls back to plain readline.question if stdin is not a TTY.
+// Multiline input support using readline's native line handling.
+//
+// Usage:
+//   - Type a single-line prompt and press Enter to submit.
+//   - End a line with backslash (\) then press Enter to continue on a new line.
+//   - Press Enter on a line without a trailing backslash to submit.
+//   - Ctrl+D / EOF resolves to null.
+//
+// This approach works in ALL terminals (Warp, iTerm2, Terminal.app, kitty,
+// foot, etc.) because it relies on readline's own input processing rather
+// than intercepting raw keypress events, which are unreliable in modern
+// terminals like Warp that have their own input editors.
 
 function isMultilineSupported(): boolean {
   return process.stdin.isTTY === true && process.stdout.isTTY === true;
 }
 
 /**
- * Multiline-aware prompt. Intercepts keypress events to detect Shift+Enter
- * and Alt+Enter (terminal-dependent escape sequences) for newline insertion.
- * Plain Enter submits. Ctrl+D / EOF resolves to null.
+ * Multiline-aware prompt using readline's built-in line event.
+ * A trailing backslash (\) followed by Enter continues input on a new line.
+ * Plain Enter submits the accumulated input.
  */
 function promptUserMultiline(
   rl: readline.Interface,
@@ -279,107 +290,42 @@ function promptUserMultiline(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
-    let buffer = "";
-    let cursorPos = 0;
+    let accumulated = "";
     const continuationPrompt = picocolors.gray("… ");
 
     const finish = (value: string | null) => {
       if (settled) return;
       settled = true;
-      process.stdin.removeListener("keypress", onKeypress);
+      rl.removeListener("line", onLine);
       rl.removeListener("close", onClose);
+      // Restore the original prompt for next call
+      rl.setPrompt(promptText);
       resolve(value);
     };
 
     const onClose = () => finish(null);
 
-    // Render the current buffer state
-    const render = () => {
-      // Clear current line(s) and re-render
-      const lines = buffer.split("\n");
-      const totalLines = lines.length;
-      // Move cursor to start and clear from cursor down
-      process.stdout.write("\r\x1b[K"); // Clear current line
-      for (let i = 1; i < totalLines; i++) {
-        process.stdout.write("\x1b[A\x1b[K"); // Move up and clear
+    const onLine = (line: string) => {
+      // Check for trailing backslash for line continuation
+      if (line.endsWith("\\")) {
+        // Remove the backslash and add the line + newline
+        accumulated += line.slice(0, -1) + "\n";
+        // Set continuation prompt for the next line
+        rl.setPrompt(continuationPrompt);
+        rl.prompt();
+        return;
       }
-      // Write prompt + buffer
-      process.stdout.write(promptText + buffer);
+      // No trailing backslash — this is the final line
+      accumulated += line;
+      finish(accumulated);
     };
 
-    const onKeypress = (str: string | undefined, key: any) => {
-      if (!key) return;
-
-      // Ctrl+C — let the SIGINT handler deal with it
-      if (key.ctrl && key.name === "c") return;
-
-      // Ctrl+D — EOF
-      if (key.ctrl && key.name === "d") {
-        finish(null);
-        return;
-      }
-
-      // Enter / Return
-      if (key.name === "enter" || key.name === "return") {
-        // Shift+Enter, Alt+Enter: insert newline
-        // Different terminals send different sequences:
-        // - Some set key.shift or key.meta
-        // - Some send \x1b\r (Alt+Enter) or special escape codes
-        if (key.shift || key.meta) {
-          buffer += "\n";
-          process.stdout.write("\n" + continuationPrompt);
-          return;
-        }
-        // Plain Enter — submit
-        finish(buffer);
-        return;
-      }
-
-      // Escape sequences that might be Shift+Enter variants:
-      // \x1b\r (Alt+Enter in some terminals)
-      // \x1b[27;2~ (Shift+Enter in some terminals)
-      // \x1b[13;2u (Shift+Enter in kitty/foot)
-      if (str === "\x1b\r" || str === "\x1b\n") {
-        buffer += "\n";
-        process.stdout.write("\n" + continuationPrompt);
-        return;
-      }
-
-      // Backspace
-      if (key.name === "backspace") {
-        if (buffer.length > 0) {
-          // Handle removing a newline (cross-line backspace)
-          if (buffer.endsWith("\n")) {
-            buffer = buffer.slice(0, -1);
-            // Move up and to end of previous line
-            process.stdout.write("\x1b[A\r\x1b[K");
-            // Re-render the previous line content
-            const lines = buffer.split("\n");
-            const lastLine = lines[lines.length - 1] || "";
-            process.stdout.write(
-              (lines.length > 1 ? continuationPrompt : promptText) + lastLine,
-            );
-          } else {
-            buffer = buffer.slice(0, -1);
-            process.stdout.write("\b \b");
-          }
-        }
-        return;
-      }
-
-      // Regular character
-      if (str && !key.ctrl && !key.meta && str.length === 1 && str >= " ") {
-        buffer += str;
-        process.stdout.write(str);
-        return;
-      }
-    };
-
+    rl.on("line", onLine);
     rl.once("close", onClose);
-    process.stdin.on("keypress", onKeypress);
 
-    // Write the initial prompt
-    process.stdout.write(promptText);
+    // Set the initial prompt and start
+    rl.setPrompt(promptText);
+    rl.prompt();
   });
 }
 
@@ -411,7 +357,6 @@ function promptUser(
 
   return promptUserMultiline(rl, promptText);
 }
-
 // ─── Connectivity check ─────────────────────────────────────────────
 async function checkOllamaConnectivity(): Promise<boolean> {
   if (
@@ -699,11 +644,9 @@ async function main() {
     output: process.stdout,
   });
 
-  // Enable keypress events for multiline input (Shift+Enter support)
-  readline.emitKeypressEvents(process.stdin);
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-  }
+  // Note: No raw mode needed — multiline input uses readline's native
+  // line-event handling with backslash continuation, which works in all
+  // terminals including Warp.
 
   agent.setSessionReadline(rl);
 
