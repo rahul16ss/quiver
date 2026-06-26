@@ -61,6 +61,25 @@ quiver
    npx tsx src/goal.ts --recipe market-research
    ```
 
+### Option C: Graphical Interface (GUI)
+Quiver also includes an Electron-based GUI with streaming chat, tool call visualization, approval gates, and a memory panel:
+```bash
+npm run gui
+```
+The GUI shares the same `.env` config and memory/sessions as the CLI. On first run, it shows an onboarding screen to enter your API key.
+
+---
+
+## ☁️ Cloud Sync
+
+Quiver automatically syncs your `memory/` and `.sessions/` to a local folder that any cloud sync app can back up. No OAuth, no API keys — just files in a folder.
+
+**Auto-detected folders:** `~/Google Drive/`, `~/OneDrive/`, `~/Dropbox/`, `~/Library/CloudStorage/GoogleDrive` (macOS), `G:\My Drive\` (Windows)
+
+**Override:** Set `QUIVER_CLOUD_SYNC_PATH` in `.env` to any synced folder.
+
+If no cloud folder is detected, Quiver saves to `~/QuiverData/` and shows a one-time notice with install links for popular cloud sync apps.
+
 ---
 
 ## 📦 Packaging & Public Distribution
