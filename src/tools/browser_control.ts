@@ -36,7 +36,7 @@ function isPrivateUrl(urlStr: string): boolean {
 export const tool: Tool = {
   name: "browser_control",
   description:
-    "Controls a persistent headless browser session to navigate, click, type, screenshot, or extract content.",
+    "Controls a persistent browser session to navigate, click, type, screenshot, or extract content. Pass headless: false to show the browser window (e.g. for manual sign-in). Defaults to headless mode via BROWSER_HEADLESS env var.",
   parameters: z.object({
     action: z
       .enum(["navigate", "click", "type", "screenshot", "get_content", "close"])
@@ -59,8 +59,21 @@ export const tool: Tool = {
       .describe(
         "Optional CSS selector to wait for after performing the action.",
       ),
+    headless: z
+      .boolean()
+      .optional()
+      .describe(
+        "Override headless mode for this session. Set to false to show the browser window (e.g. for manual sign-in). If omitted, uses BROWSER_HEADLESS env var.",
+      ),
   }),
-  execute: async ({ action, url, selector, text, waitForSelector }) => {
+  execute: async ({
+    action,
+    url,
+    selector,
+    text,
+    waitForSelector,
+    headless,
+  }) => {
     const wsPath = path.resolve(".sessions", "browser_ws.txt");
     let browser: Browser | null = null;
     let wsUrl = "";
@@ -82,8 +95,9 @@ export const tool: Tool = {
 
     // Launch a new browser if none connected
     if (!browser) {
+      const useHeadless = headless ?? config.browserHeadless;
       browser = await puppeteer.launch({
-        headless: config.browserHeadless,
+        headless: useHeadless,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
       });
       wsUrl = browser.wsEndpoint();
