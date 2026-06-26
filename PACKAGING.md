@@ -1,82 +1,119 @@
 # Packaging Quiver for Distribution
 
-This guide outlines the steps to package and distribute Quiver to other users via **NPM/Yarn** and **Homebrew**.
+Quiver has two distribution paths: **CLI** (terminal) and **GUI** (desktop app).
 
 ---
 
-## 📦 Publishing to NPM / Yarn
+## 🖥️ CLI Distribution
 
-By publishing to the global NPM registry, anyone can install Quiver with a single command.
-
-### 1. Log In to NPM
-Run this in your terminal and follow the prompt to log in to your NPM developer account:
+### NPM
 ```bash
 npm login
-```
-
-### 2. Verify package.json Settings
-Ensure the `"bin"` mapping and configuration look correct:
-```json
-"bin": {
-  "quiver": "./bin/quiver.js"
-}
-```
-
-### 3. Publish the Package
-Publish the package to the public registry:
-```bash
 npm publish --access public
 ```
-
-Once published, anyone can install and run Quiver:
+Users install with:
 ```bash
 npm install -g quiver-agent
 quiver
 ```
 
----
+### Homebrew Formula (CLI)
+The CLI is distributed as a Homebrew Formula — it installs Node.js + the CLI globally.
 
-## 🍺 Distributing via Homebrew (for macOS/Linux)
-
-To distribute Quiver via the `brew install` installer, you can create a custom Homebrew Tap.
-
-### 1. Create a Tap Repository
-1. Log in to GitHub and create a new public repository named `homebrew-tap` (e.g. `github.com/yourusername/homebrew-tap`).
-2. Clone the repository locally.
-
-### 2. Add the Formula
-Copy the formula file from [Formula/quiver.rb](file:///Users/rahul/quiver/Formula/quiver.rb) into your tap repository under a `Formula/` directory:
+1. Create a tap repo: `github.com/rahul16ss/homebrew-tap`
+2. Copy `Formula/quiver.rb` to `homebrew-tap/Formula/quiver.rb`
+3. On each release, update the `url` and `sha256` in the formula
+4. Users install with:
 ```bash
-mkdir -p homebrew-tap/Formula
-cp Formula/quiver.rb homebrew-tap/Formula/quiver.rb
-```
-
-### 3. Update the Tarball Checksum
-When you release a new version of Quiver on GitHub (e.g. tag `v1.0.0`):
-1. Download the release source code tarball:
-   ```bash
-   curl -LO https://github.com/rahul16ss/quiver/archive/refs/tags/v1.0.0.tar.gz
-   ```
-2. Calculate its SHA256 checksum:
-   ```bash
-   shasum -a 256 v1.0.0.tar.gz
-   ```
-3. Open `homebrew-tap/Formula/quiver.rb` and update:
-   * `url` to point to the GitHub release archive.
-   * `sha256` to the calculated checksum.
-
-### 4. Push to GitHub
-Commit and push the formula changes to your tap repository:
-```bash
-git add .
-git commit -m "Add Quiver Formula v1.0.0"
-git push origin main
-```
-
-### 5. Install via Homebrew
-Anyone can now tap your repository and install Quiver natively:
-```bash
-brew tap yourusername/tap
+brew tap rahul16ss/tap
 brew install quiver
 quiver
+```
+
+---
+
+## 🖼️ GUI Distribution
+
+### Building the App
+```bash
+# Build for current platform
+npm run dist:mac    # produces dist-electron/Quiver-1.0.0.dmg
+npm run dist:win    # produces dist-electron/Quiver Setup 1.0.0.exe
+npm run dist:linux  # produces dist-electron/Quiver-1.0.0.AppImage
+```
+
+### Homebrew Cask (macOS GUI)
+The GUI is distributed as a Homebrew Cask — it installs the `.app` to `/Applications`.
+
+1. Build the DMG: `npm run dist:mac`
+2. Upload `dist-electron/Quiver-1.0.0.dmg` to a GitHub Release
+3. Calculate the SHA256:
+```bash
+shasum -a 256 dist-electron/Quiver-1.0.0.dmg
+```
+4. Copy `Formula/quiver-cask.rb` to `homebrew-tap/Casks/quiver.rb`
+5. Update `sha256` with the calculated checksum
+6. Users install with:
+```bash
+brew tap rahul16ss/tap
+brew install --cask quiver
+```
+The app appears in `/Applications/Quiver.app` and Launchpad.
+
+### Windows
+The NSIS installer (`Quiver Setup 1.0.0.exe`) can be distributed via:
+- GitHub Releases (direct download)
+- Winget: `winget install quiver` (requires manifest submission)
+- Chocolatey: `choco install quiver` (requires nuspec + package)
+
+### Linux
+The AppImage is a single-file portable app:
+```bash
+chmod +x Quiver-1.0.0.AppImage
+./Quiver-1.0.0.AppImage
+```
+Can also be distributed via:
+- Snap: `snap install quiver`
+- Flatpak: `flatpak install quiver`
+
+---
+
+## 🚀 Release Checklist
+
+1. **Bump version** in `package.json`
+2. **Build**: `npm run dist:mac` (and/or win/linux)
+3. **Create GitHub Release**: tag `v1.0.0`, upload DMG/EXE/AppImage
+4. **Calculate SHA256** for each artifact
+5. **Update Formula** (`Formula/quiver.rb`) with new tarball URL + checksum
+6. **Update Cask** (`Formula/quiver-cask.rb`) with new DMG URL + checksum
+7. **Push to tap repo**: `homebrew-tap/Formula/quiver.rb` + `homebrew-tap/Casks/quiver.rb`
+8. **Publish to NPM**: `npm publish`
+9. **Test**: `brew install quiver && quiver --version` + `brew install --cask quiver && open /Applications/Quiver.app`
+
+---
+
+## 🔏 Code Signing (macOS)
+
+Unsigned macOS apps trigger Gatekeeper warnings. To sign:
+
+1. Enroll in [Apple Developer Program](https://developer.apple.com/programs/) ($99/year)
+2. Get a Developer ID Application certificate
+3. Add to `package.json` build config:
+```json
+"mac": {
+  "identity": "Developer ID Application: Your Name (TEAMID)",
+  "notarize": true
+}
+```
+4. Set environment variables:
+```bash
+export APPLE_ID="you@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="TEAMID"
+```
+5. Build: `npm run dist:mac` — electron-builder signs + notarizes automatically
+
+Until signed, users can bypass Gatekeeper with:
+```bash
+xattr -cr /Applications/Quiver.app
 ```
