@@ -39,12 +39,18 @@ export function detectCloudFolder(): string | null {
   const home = os.homedir();
 
   // 2-5. macOS / Linux common locations
+  // Note: ~/Library/CloudStorage is a macOS container — check subfolders
+  // like ~/Library/CloudStorage/GoogleDrive, ~/Library/CloudStorage/iCloudDrive, etc.
   const candidates = [
     path.join(home, "Google Drive"),
     path.join(home, "GoogleDrive"),
     path.join(home, "OneDrive"),
     path.join(home, "Dropbox"),
-    path.join(home, "Library", "CloudStorage"), // macOS cloud providers
+    // macOS CloudStorage subfolders (more specific than the container itself)
+    path.join(home, "Library", "CloudStorage", "GoogleDrive"),
+    path.join(home, "Library", "CloudStorage", "OneDrive"),
+    path.join(home, "Library", "CloudStorage", "Dropbox"),
+    path.join(home, "Library", "CloudStorage", "iCloudDrive"),
   ];
 
   // Windows drive letter detection
@@ -71,8 +77,8 @@ export function getQuiverDataDir(): string {
     return path.join(cloudFolder, QUIVER_FOLDER);
   }
 
-  // No cloud folder — use ~/Quiver as a local fallback
-  return path.join(os.homedir(), QUIVER_FOLDER);
+  // No cloud folder — use ~/QuiverData as a local fallback
+  return path.join(os.homedir(), "QuiverData");
 }
 
 /**
@@ -96,7 +102,7 @@ export function getCloudSyncStatus(): {
     return {
       active: false,
       provider: "None detected",
-      path: path.join(os.homedir(), QUIVER_FOLDER),
+      path: path.join(os.homedir(), "QuiverData"),
     };
   }
 
