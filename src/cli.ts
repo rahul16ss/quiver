@@ -289,6 +289,79 @@ async function runSignin(): Promise<void> {
 // On Linux: uses xclip to check for image data.
 // On Windows: uses PowerShell to check and save.
 
+/**
+ * Detect image file paths in user input.
+ * When you drag a file from Finder/Explorer into a terminal, it inserts
+ * the file path as text. This function detects image file paths and
+ * wraps them in [Image: path] markers so the agent knows to look at them.
+ *
+ * Handles:
+ *   - Absolute paths: /Users/rahul/Desktop/screenshot.png
+ *   - Quoted paths: "/Users/rahul/Desktop/screenshot.png"
+ *   - Tilde paths: ~/Desktop/screenshot.png
+ *   - Relative paths: ./screenshot.png
+ *   - Multiple paths on one line
+ */
+function detectImagePaths(input: string): string {
+  const imageExtensions = [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".tiff",
+    ".svg",
+  ];
+
+  // Match file paths that end with an image extension
+  // Handles quoted paths, tilde paths, absolute paths, and relative paths
+  const pathRegex = /(?:"([^"]+\.(?:png|jpg|jpeg|gif|bmp|webp|tiff|svg))")|('([^']+\.(?:png|jpg|jpeg|gif|bmp|webp|tiff|svg))')|(~?\/[^\s]+\.(?:png|jpg|jpeg|gif|bmp|webp|tiff|svg))|(\.{0,2}\/[^\s]+\.(?:png|jpg|jpeg|gif|bmp|webp|tiff|svg))/gi;
+
+  const matches = [...input.matchAll(pathRegex)];
+  if (matches.length === 0) return input;
+
+  // Extract the actual path from each match group
+  const paths: string[] = [];
+  for (const match of matches) {
+    const p = match[1] || match[2] || match[3] || match[4] || match[5];
+    if (p) {
+      // Expand tilde
+      const expanded = p.startsWith("~/")
+        ? p.replace("~", process.env.HOME || "")
+        : p;
+      // Check if file exists
+      try {
+        const { existsSync } = require("fs");
+        if (existsSync(expanded)) {
+          paths.push(expanded);
+        }
+      } catch {
+        // Can't check — include it anyway
+        paths.push(expanded);
+      }
+    }
+  }
+
+  if (paths.length === 0) return input;
+
+  // Build image reference block
+  const imageBlock = paths.map((p) => `[Image: ${p}]`).join("\n");
+
+  // Remove the raw paths from the input and prepend the image block
+  let cleanedInput = input;
+  for (const match of matches) {
+    const fullMatch = match[0];
+    cleanedInput = cleanedInput.replace(fullMatch, "").trim();
+  }
+
+  if (!cleanedInput) {
+    return `${imageBlock}\n\nPlease look at the image(s) above.`;
+  }
+
+  return `${imageBlock}\n\n${cleanedInput}`;
+}
+
 async function pasteClipboardImage(): Promise<string | null> {
   const { execSync } = await import("child_process");
   const { promises: fs } = await import("fs");
@@ -1104,6 +1177,10 @@ async function main() {
       interruptCount = 0; // Reset on valid input
 
       if (!cleanInput) continue;
+
+      // Detect dragged-and-dropped image file paths
+      // When you drag a file from Finder into a terminal, it inserts the path
+      cleanInput = detectImagePaths(cleanInput);
 
       // Prepend pasted image reference if one is pending
       if (pendingImageRef && !cleanInput.startsWith("/")) {

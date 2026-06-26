@@ -60,7 +60,7 @@
 
       <!-- View 1: Chat Panel -->
       <div class="view-panel" id="chatView">
-        <div class="chat-area" id="chatArea">
+        <div class="chat-area" id="chatArea" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
           <div class="empty-state" id="emptyState">
             <div class="landing-hero">
               <img src="assets/logo.png" alt="QUIVER" class="logo-large">
@@ -70,13 +70,16 @@
         </div>
 
         <!-- Input area -->
-        <div class="input-area">
+        <div class="input-area" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
           <div class="input-row">
-            <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze..." rows="1"></textarea>
+            <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze... (drag images here)" rows="1"></textarea>
             <button id="sendBtn" onclick="sendPrompt()">Send</button>
             <button id="stopBtn" onclick="stopAgent()" style="display:none; background:var(--danger);">Stop</button>
           </div>
           <div class="stats-bar" id="statsBar"></div>
+          <div id="dropOverlay" class="drop-overlay" style="display:none;">
+            <div class="drop-overlay-text">📎 Drop images to attach</div>
+          </div>
         </div>
       </div>
 
@@ -670,11 +673,23 @@ version: 1.0.0
 
     async function sendPrompt() {
       const text = promptInput.value.trim();
-      if (!text || agentRunning) return;
+      if (!text && pendingImages.length === 0) return;
+      if (agentRunning) return;
 
       if (emptyState) emptyState.style.display = "none";
 
-      addMessage("user", text);
+      // Build the full prompt with image references
+      let fullPrompt = text;
+      if (pendingImages.length > 0) {
+        const imageBlock = pendingImages.map((img) => `[Image: ${img.path}]`).join("\n");
+        fullPrompt = text
+          ? `${imageBlock}\n\n${text}`
+          : `${imageBlock}\n\nPlease look at the image(s) above.`;
+        pendingImages = [];
+        promptInput.placeholder = "Ask Quiver to code, research, or analyze... (drag images here)";
+      }
+
+      addMessage("user", text || "(image only)");
       promptInput.value = "";
       promptInput.style.height = "auto";
 
@@ -683,16 +698,15 @@ version: 1.0.0
       sendBtn.style.display = "none";
       stopBtn.style.display = "inline-block";
       statusDot.className = "dot live";
-      // statusText removed
 
       const config = await window.quiver.loadConfig();
       if (currentSessionPath) {
         await window.quiver.touchSession(currentSessionPath);
-        await window.quiver.startAgent(config, true); // true = resume latest
+        await window.quiver.startAgent(config, true);
       } else {
-        await window.quiver.startAgent(config, false); // false = fresh
+        await window.quiver.startAgent(config, false);
       }
-      await window.quiver.sendToAgent(text);
+      await window.quiver.sendToAgent(fullPrompt);
 
       currentAgentMsg = addMessage("agent", "");
     }
@@ -1061,7 +1075,70 @@ version: 1.0.0
     }
 
     window.toggleMemory = toggleMemory;
-    
+
+    // ─── Drag and Drop Image Support ───────────────────────────────────
+    const dropOverlay = document.getElementById("dropOverlay");
+    let pendingImages = []; // Array of {path, name} for dropped files
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer.types.includes("Files")) {
+        dropOverlay.style.display = "flex";
+      }
+    }
+
+    function handleDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Only hide if leaving the container itself, not a child element
+      if (e.target === e.currentTarget) {
+        dropOverlay.style.display = "none";
+      }
+    }
+
+    async function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dropOverlay.style.display = "none";
+
+      const files = Array.from(e.dataTransfer.files);
+      const imageFiles = files.filter((f) =>
+        /\.(png|jpg|jpeg|gif|bmp|webp|tiff|svg)$/i.test(f.name),
+      );
+
+      if (imageFiles.length === 0) return;
+
+      for (const file of imageFiles) {
+        // Electron File objects have a `path` property with the real filesystem path
+        const filePath = file.path || file.name;
+        pendingImages.push({ path: filePath, name: file.name });
+      }
+
+      // Show image thumbnails in chat area
+      for (const img of pendingImages.slice(-imageFiles.length)) {
+        showImagePreview(img);
+      }
+
+      // Update placeholder
+      promptInput.placeholder = `${pendingImages.length} image(s) attached. Type your message...`;
+      promptInput.focus();
+    }
+
+    function showImagePreview(img) {
+      const div = document.createElement("div");
+      div.className = "msg msg-image-preview";
+      div.innerHTML = `
+        <div class="role">image attached</div>
+        <div class="body">
+          <img src="file://${img.path}" alt="${img.name}" class="dropped-image">
+          <div class="image-name">${img.name}</div>
+        </div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
     // Run initialization
     initializeUI();
   </script>
