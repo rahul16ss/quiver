@@ -43,6 +43,7 @@
       <div class="input-row">
         <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze..." rows="1"></textarea>
         <button id="sendBtn" onclick="sendPrompt()">Send</button>
+        <button id="stopBtn" onclick="stopAgent()" style="display:none; background:var(--danger);">Stop</button>
       </div>
       <div class="stats-bar" id="statsBar"></div>
     </div>
@@ -52,6 +53,7 @@
     const chatArea = document.getElementById("chatArea");
     const promptInput = document.getElementById("promptInput");
     const sendBtn = document.getElementById("sendBtn");
+    const stopBtn = document.getElementById("stopBtn");
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
     const statsBar = document.getElementById("statsBar");
@@ -85,6 +87,8 @@
 
       agentRunning = true;
       sendBtn.disabled = true;
+      sendBtn.style.display = "none";
+      stopBtn.style.display = "inline-block";
       statusDot.className = "dot live";
       statusText.textContent = "Working...";
 
@@ -136,8 +140,60 @@
         currentAgentMsg = addMessage("agent", "");
       }
       const body = currentAgentMsg.querySelector(".body");
-      body.textContent += text;
+      // Accumulate raw markdown, re-render on each token
+      // Store raw text on the element for re-rendering
+      body._rawText = (body._rawText || "") + text;
+      body.innerHTML = renderMarkdown(body._rawText);
       chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    // Lightweight markdown renderer — no dependencies
+    function renderMarkdown(text) {
+      if (!text) return "";
+      let html = escapeHtml(text);
+
+      // Code blocks (```lang\ncode```)
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        return `<pre><code>${code.trim()}</code></pre>`;
+      });
+
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+      // Bold
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+      // Italic
+      html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
+
+      // Links [text](url)
+      html = html.replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
+      );
+
+      // Headers
+      html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
+      html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
+      html = html.replace(/^# (.+)$/gm, '<div class="md-h1">$1</div>');
+
+      // Line breaks
+      html = html.replace(/\n/g, "<br>");
+
+      // Clean up extra <br> around block elements
+      html = html.replace(/<br>(<pre>)/g, "$1");
+      html = html.replace(/(<\/pre>)<br>/g, "$1");
+      html = html.replace(/<br>(<div class="md-h)/g, "$1");
+      html = html.replace(/(<\/div>)<br>/g, "$1");
+
+      return html;
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
     }
 
     function truncate(str, max) {
@@ -148,6 +204,8 @@
     function setIdle() {
       agentRunning = false;
       sendBtn.disabled = false;
+      sendBtn.style.display = "inline-block";
+      stopBtn.style.display = "none";
       statusDot.className = "dot idle";
       statusText.textContent = "Idle";
       currentAgentMsg = null;
@@ -157,9 +215,16 @@
       addMessage("error", msg || "Unknown error");
       agentRunning = false;
       sendBtn.disabled = false;
+      sendBtn.style.display = "inline-block";
+      stopBtn.style.display = "none";
       statusDot.className = "dot error";
       statusText.textContent = "Error";
       currentAgentMsg = null;
+    }
+
+    async function stopAgent() {
+      await window.quiver.stopAgent();
+      setIdle();
     }
 
     function addApproval(toolName, toolArgs) {
@@ -243,8 +308,9 @@
           // If no tokens were streamed but there's a response, show it
           if (currentAgentMsg) {
             const body = currentAgentMsg.querySelector(".body");
-            if (!body.textContent && msg.data?.response) {
-              body.textContent = msg.data.response;
+            if (!body._rawText && msg.data?.response) {
+              body._rawText = msg.data.response;
+              body.innerHTML = renderMarkdown(msg.data.response);
             }
           }
           setIdle();
@@ -318,10 +384,6 @@
         `;
         list.appendChild(item);
       }
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     window.toggleMemory = toggleMemory;

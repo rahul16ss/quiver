@@ -18,3 +18,9 @@ competitor_*.json
 
 # Security audit (contains vulnerability details)
 SECURITY_AUDIT.md
+
+# Electron build output
+dist-electron/
+
+# Cloud sync notice marker
+.quiver_cloud_notice_shown

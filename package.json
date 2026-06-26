@@ -9,11 +9,46 @@
   },
   "scripts": {
     "start": "npx tsx src/cli.ts",
+    "gui": "npx electron ui/main.ts",
     "dashboard": "bun src/dashboard.ts",
     "dashboard:node": "node --experimental-ffi --allow-ffi src/dashboard.ts",
     "goal": "npx tsx src/goal.ts",
     "test": "npx tsx tests/run_tests.ts",
-    "design:lint": "npx -p @google/design.md designmd lint DESIGN.md"
+    "design:lint": "npx -p @google/design.md designmd lint DESIGN.md",
+    "dist": "electron-builder --mac --win --linux",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.quiver.app",
+    "productName": "Quiver",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "ui/**/*",
+      "src/**/*",
+      "bin/**/*",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      ".env.example"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"],
+      "icon": "ui/renderer/icon.png"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "ui/renderer/icon.png"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Development",
+      "icon": "ui/renderer/icon.png"
+    }
   },
   "dependencies": {
     "@opentui/core": "^0.4.2",
