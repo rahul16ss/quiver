@@ -1,5 +1,5 @@
 /**
- * Cloud sync for Quiver — folder-based, provider-agnostic.
+ * Cloud sync for Quiver — folder-based, provider-agnostic, fully automatic.
  *
  * Quiver writes memory/ and .sessions/ to a local folder that any cloud
  * sync service (Google Drive, OneDrive, Dropbox, iCloud, pCloud, Box,
@@ -11,11 +11,15 @@
  *   2. ~/Google Drive/        (macOS, Windows)
  *   3. ~/OneDrive/             (macOS, Windows)
  *   4. ~/Dropbox/               (macOS, Windows, Linux)
- *   5. ~/Library/CloudStorage/  (macOS iCloud / Drive providers)
- *   6. G:\My Drive\             (Windows Google Drive)
+ *   5. ~/Library/CloudStorage/GoogleDrive  (macOS)
+ *   6. ~/Library/CloudStorage/OneDrive     (macOS)
+ *   7. ~/Library/CloudStorage/Dropbox      (macOS)
+ *   8. ~/Library/CloudStorage/iCloudDrive  (macOS)
+ *   9. G:\My Drive\             (Windows Google Drive)
  *
- * If no cloud folder is found, Quiver creates a local ~/Quiver/ folder
- * and tells the user to point any cloud sync app at it.
+ * If no cloud folder is found, Quiver creates ~/QuiverData/ and shows
+ * a one-time notice with install links for popular cloud sync apps.
+ * The user can also set QUIVER_CLOUD_SYNC_PATH to any synced folder.
  */
 
 import { promises as fs, existsSync } from "fs";
@@ -24,6 +28,29 @@ import * as os from "os";
 import { config } from "./config.js";
 
 const QUIVER_FOLDER = "Quiver";
+const NOTICE_FILE = path.join(os.homedir(), ".quiver_cloud_notice_shown");
+
+/** Install links for popular cloud sync apps. */
+export const CLOUD_APP_LINKS: { name: string; url: string }[] = [
+  {
+    name: "Google Drive for Desktop",
+    url: "https://www.google.com/drive/download/",
+  },
+  {
+    name: "OneDrive",
+    url: "https://www.microsoft.com/en-us/microsoft-365/onedrive/download",
+  },
+  { name: "Dropbox", url: "https://www.dropbox.com/install" },
+  {
+    name: "iCloud (built into macOS)",
+    url: "https://support.apple.com/en-us/HT201408",
+  },
+  { name: "pCloud", url: "https://www.pcloud.com/download.html" },
+  {
+    name: "Syncthing (self-hosted, free)",
+    url: "https://syncthing.net/downloads/",
+  },
+];
 
 /**
  * Detect the cloud sync folder by checking common locations.
@@ -38,15 +65,12 @@ export function detectCloudFolder(): string | null {
 
   const home = os.homedir();
 
-  // 2-5. macOS / Linux common locations
-  // Note: ~/Library/CloudStorage is a macOS container — check subfolders
-  // like ~/Library/CloudStorage/GoogleDrive, ~/Library/CloudStorage/iCloudDrive, etc.
   const candidates = [
     path.join(home, "Google Drive"),
     path.join(home, "GoogleDrive"),
     path.join(home, "OneDrive"),
     path.join(home, "Dropbox"),
-    // macOS CloudStorage subfolders (more specific than the container itself)
+    // macOS CloudStorage subfolders
     path.join(home, "Library", "CloudStorage", "GoogleDrive"),
     path.join(home, "Library", "CloudStorage", "OneDrive"),
     path.join(home, "Library", "CloudStorage", "Dropbox"),
@@ -68,7 +92,7 @@ export function detectCloudFolder(): string | null {
 
 /**
  * Get the Quiver data folder inside the cloud sync folder.
- * If no cloud folder is detected, creates ~/Quiver/ as a local fallback.
+ * If no cloud folder is detected, uses ~/QuiverData as a local fallback.
  */
 export function getQuiverDataDir(): string {
   const cloudFolder = detectCloudFolder();
@@ -77,7 +101,6 @@ export function getQuiverDataDir(): string {
     return path.join(cloudFolder, QUIVER_FOLDER);
   }
 
-  // No cloud folder — use ~/QuiverData as a local fallback
   return path.join(os.homedir(), "QuiverData");
 }
 
@@ -106,13 +129,12 @@ export function getCloudSyncStatus(): {
     };
   }
 
-  // Infer provider from folder name
   const name = path.basename(cloudFolder).toLowerCase();
   let provider = "Cloud folder";
   if (name.includes("google")) provider = "Google Drive";
   else if (name.includes("onedrive")) provider = "OneDrive";
   else if (name.includes("dropbox")) provider = "Dropbox";
-  else if (name.includes("cloudstorage")) provider = "iCloud / macOS";
+  else if (name.includes("icloud")) provider = "iCloud";
   else provider = path.basename(cloudFolder);
 
   return {
@@ -120,6 +142,61 @@ export function getCloudSyncStatus(): {
     provider,
     path: path.join(cloudFolder, QUIVER_FOLDER),
   };
+}
+
+/**
+ * Whether the first-run cloud notice has been shown.
+ */
+function hasShownNotice(): boolean {
+  return existsSync(NOTICE_FILE);
+}
+
+/**
+ * Mark the first-run notice as shown.
+ */
+async function markNoticeShown(): Promise<void> {
+  try {
+    await fs.writeFile(NOTICE_FILE, new Date().toISOString(), "utf8");
+  } catch {
+    // Non-critical
+  }
+}
+
+/**
+ * Show a one-time notice if no cloud folder is detected.
+ * Tells the user where their data is and how to enable cloud sync.
+ */
+export async function maybeShowCloudNotice(): Promise<void> {
+  if (detectCloudFolder()) return; // Cloud folder found, no notice needed
+  if (hasShownNotice()) return; // Already shown
+
+  const dataDir = getQuiverDataDir();
+
+  console.log("");
+  console.log("  \u2601\uFE0F  Cloud sync: No cloud folder detected.");
+  console.log(`     Quiver data will be saved locally at: ${dataDir}`);
+  console.log(
+    "     To sync across machines, install a cloud sync app and Quiver will auto-detect it:",
+  );
+  for (const app of CLOUD_APP_LINKS) {
+    console.log(`       \u2022 ${app.name}: ${app.url}`);
+  }
+  console.log(
+    "     Or set QUIVER_CLOUD_SYNC_PATH in .env to any synced folder.",
+  );
+  console.log("");
+
+  await markNoticeShown();
+}
+
+/**
+ * Ensure the Quiver data folder exists (create if needed).
+ */
+export async function ensureCloudDataDir(): Promise<void> {
+  const dataDir = getQuiverDataDir();
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.mkdir(path.join(dataDir, "memory"), { recursive: true });
+  await fs.mkdir(path.join(dataDir, "sessions"), { recursive: true });
 }
 
 /**
@@ -210,4 +287,16 @@ export async function syncToCloud(): Promise<{
   }
 
   return result;
+}
+
+/**
+ * Auto-sync: silent, fire-and-forget. Called after each turn.
+ * Does not print anything — just copies files in the background.
+ */
+export async function autoSyncToCloud(): Promise<void> {
+  try {
+    await syncToCloud();
+  } catch {
+    // Silent failure — auto-sync should never interrupt the user
+  }
 }
