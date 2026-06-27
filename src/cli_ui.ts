@@ -1,5 +1,6 @@
 import picocolors from "picocolors";
 import { distance } from "fastest-levenshtein";
+import { config } from "./config.js";
 
 export const EXIT = {
   OK: 0,
@@ -124,7 +125,7 @@ export function theme(
     promptUser: () => pc.bold(pc.green("Q> ")),
     promptAgent: () =>
       pc.bold(pc.cyan("Q> ")) +
-      pc.gray(`[${process.env.LLM_MODEL_NAME || "model"}] `),
+      pc.gray(`[${config.llmModelName}] `),
   };
 }
 

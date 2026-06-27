@@ -67,7 +67,6 @@ export const tool: Tool = {
       ];
       if (ignoreCase) rgArgs.push("-i");
       if (glob) rgArgs.push("-g", glob);
-      rgArgs.push("-m", String(limit));
       rgArgs.push("--", pattern, dir);
 
       return new Promise((resolve) => {
@@ -81,7 +80,9 @@ export const tool: Tool = {
               resolve(`No matches found for pattern '${pattern}' in ${dir}.`);
               return;
             }
-            resolve(formatSearchOutput(output, pattern, glob, limit, dir));
+            // Apply total limit across all files (rg -m limits per-file)
+            const lines = output.split("\n").slice(0, limit);
+            resolve(formatSearchOutput(lines.join("\n"), pattern, glob, limit, dir));
           },
         );
       });

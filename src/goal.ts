@@ -4,7 +4,7 @@ import { execSync } from "child_process";
 import { statusLine, theme, renderProgressBar } from "./cli_ui.js";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
-import { validateConfig, config } from "./config.js";
+import { printConfig, config } from "./config.js";
 
 export interface Goal {
   id: number;
@@ -41,7 +41,7 @@ async function ensureGoalsFile(): Promise<Goal[]> {
   try {
     const content = await fs.readFile(GOALS_FILE, "utf8");
     return JSON.parse(content);
-  } catch (err) {
+  } catch {
     statusLine("INFO", "Initializing new goals.json template...");
     await fs.writeFile(
       GOALS_FILE,
@@ -107,7 +107,7 @@ async function main() {
     await loadRecipeAndInitGoals(recipeName);
   }
 
-  validateConfig();
+  printConfig();
 
   statusLine("INFO", "Loading available AI actions…");
   await globalRegistry.loadAll();

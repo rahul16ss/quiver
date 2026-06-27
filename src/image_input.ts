@@ -20,7 +20,7 @@ export function detectImagePaths(input: string): string {
 
   const paths: string[] = [];
   for (const match of matches) {
-    const p = match[1] || match[2] || match[3] || match[4] || match[5];
+    const p = match[1] || match[2] || match[3] || match[4];
     if (p) {
       const expanded = p.startsWith("~/")
         ? p.replace("~", process.env.HOME || "")

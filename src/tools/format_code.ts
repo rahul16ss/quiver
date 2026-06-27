@@ -57,12 +57,10 @@ function customFormat(source: string): string {
   // Re-indent: calculate proper indentation based on brace/bracket/paren depth
   const formatted: string[] = [];
   let depth = 0;
-  let inString: string | null = null; // Track string literals
-  let inTemplateString = false;
   let inComment: "line" | "block" | null = null;
 
   for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
+    const line = lines[i];
     const trimmed = line.trim();
 
     // Handle comment state tracking
@@ -111,7 +109,6 @@ function customFormat(source: string): string {
 
     for (let j = 0; j < line.length; j++) {
       const ch = line[j];
-      const prevCh = j > 0 ? line[j - 1] : "";
 
       if (escaped) {
         escaped = false;

@@ -5,128 +5,78 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiver — Setup</title>
   <link rel="stylesheet" href="styles.css">
-  <style>
-    .dir-picker-row {
-      display: flex;
-      gap: 8px;
-    }
-    .dir-picker-row input {
-      flex: 1;
-    }
-    .btn-browse {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 12px;
-      padding: 0 16px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .btn-browse:hover {
-      background: rgba(99, 102, 241, 0.1);
-      border-color: rgba(99, 102, 241, 0.35);
-    }
-  </style>
 </head>
 <body>
   <div class="form-page">
     <div class="form-card">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <img src="assets/logo.png" alt="QUIVER" style="max-width: 140px; height: auto; margin-bottom: 8px; filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.2));">
-          <div class="subtitle" style="margin-bottom: 0;">Self-evolving AI coding & research agent</div>
-        </div>
+      <img src="assets/logo.png" class="form-logo" alt="Quiver">
+      <h1>Quiver</h1>
+      <p class="subtitle">Self-evolving AI coding & research agent</p>
 
       <div class="form-group">
-        <label>Workspace Directory</label>
+        <label>Workspace</label>
         <div class="dir-picker-row">
-          <input id="workspacePath" type="text" placeholder="No workspace folder selected" readonly>
+          <input id="workspacePath" type="text" placeholder="Select workspace folder" readonly>
           <button class="btn-browse" onclick="browseWorkspace()">Browse</button>
         </div>
-        <div class="hint">The target project folder where quiver runs code and searches files.</div>
       </div>
 
       <div class="form-group">
-        <label>Ollama API Key</label>
-        <input id="apiKey" type="password" placeholder="your Ollama API key" autofocus>
-        <div class="hint">Get your API key at <a href="https://ollama.com" target="_blank" style="color:var(--accent); text-decoration:none;">ollama.com</a>. The same key powers LLM completions and search.</div>
+        <label>API Key</label>
+        <input id="apiKey" type="password" placeholder="Your Ollama API key" autofocus>
+        <div class="hint">Get your key at <a href="https://ollama.com" target="_blank" style="color:var(--accent);text-decoration:none;">ollama.com</a></div>
       </div>
 
       <div class="form-group">
-        <label>Parallel API Key (optional)</label>
-        <input id="parallelApiKey" type="password" placeholder="for advanced web research APIs">
-        <div class="hint">Get your key at <a href="https://platform.parallel.ai" target="_blank" style="color:var(--accent); text-decoration:none;">parallel.ai</a>. Powers deep_research, find_all, scrape_url, and entity_search.</div>
+        <label>Parallel API Key <span style="font-weight:400;text-transform:none;color:var(--text-faint);">(optional)</span></label>
+        <input id="parallelApiKey" type="password" placeholder="For web search & deep research">
+        <div class="hint"><a href="https://platform.parallel.ai" target="_blank" style="color:var(--accent);text-decoration:none;">parallel.ai</a></div>
       </div>
 
       <div class="form-actions">
-        <button class="btn-primary" onclick="saveAndStart()">Start Quiver</button>
+        <button class="btn-primary" onclick="saveAndStart()">Start</button>
       </div>
     </div>
   </div>
 
   <script>
-    // Autofill current workspace path if running inside project root
     async function initOnboarding() {
       const config = await window.quiver.loadConfig();
-      if (config.workspacePath) {
-        document.getElementById("workspacePath").value = config.workspacePath;
-      }
+      if (config.workspacePath) document.getElementById("workspacePath").value = config.workspacePath;
     }
 
     async function browseWorkspace() {
       const selected = await window.quiver.selectWorkspaceDir();
-      if (selected) {
-        document.getElementById("workspacePath").value = selected;
-      }
+      if (selected) document.getElementById("workspacePath").value = selected;
     }
 
     async function saveAndStart() {
-      const workspacePathVal = document.getElementById("workspacePath").value.trim();
-      const apiKeyVal = document.getElementById("apiKey").value.trim();
-      const parallelApiKeyVal = document.getElementById("parallelApiKey").value.trim();
+      const workspacePath = document.getElementById("workspacePath").value.trim();
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const parallelApiKey = document.getElementById("parallelApiKey").value.trim();
 
-      if (!workspacePathVal) {
-        alert("Please select your workspace directory to continue.");
-        return;
-      }
+      if (!workspacePath) { alert("Please select your workspace folder."); return; }
+      if (!apiKey) { alert("Please enter your API key."); return; }
 
-      if (!apiKeyVal) {
-        alert("Please enter your Ollama API key to continue.");
-        return;
-      }
-
-      const config = {
-        workspacePath: workspacePathVal,
-        provider: {
-          baseUrl: "https://ollama.com/v1",
-          modelName: "glm-5.2:cloud",
-          apiKey: apiKeyVal,
-        },
-        parallelApiKey: parallelApiKeyVal,
-        ollamaApiKey: apiKeyVal,
+      await window.quiver.saveConfig({
+        workspacePath,
+        provider: { baseUrl: "https://ollama.com/v1", modelName: "glm-5.2:cloud", apiKey },
+        parallelApiKey,
+        ollamaApiKey: apiKey,
         githubToken: "",
         context7ApiKey: "",
         browserHeadless: true,
-        requireApprovalFor: [
-          "run_command", "write_file", "replace_content",
-          "browser_control", "create_tool",
-        ],
+        requireApprovalFor: ["run_command", "write_file", "replace_content", "browser_control", "create_tool"],
         maxContextTokens: 900000,
         memoryDir: "./memory",
         skillsDir: "./skills",
-      };
-
-      await window.quiver.saveConfig(config);
+        cloudSyncPath: "",
+      });
       await window.quiver.loadMain();
     }
 
-    // Enter to submit
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        saveAndStart();
-      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveAndStart(); }
     });
 
     initOnboarding();

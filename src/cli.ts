@@ -2,7 +2,7 @@ import readline from "readline";
 import picocolors from "picocolors";
 import {
   config,
-  validateConfig,
+  printConfig,
   isFirstRun,
   printFirstRunWizard,
   redactSecret,
@@ -40,6 +40,7 @@ import {
   getProjectName,
   getProjectMemoryDir,
   getCoreMemoryPath,
+  getSkillsDir,
 } from "./paths.js";
 import * as path from "path";
 import { readFileSync } from "fs";
@@ -115,77 +116,36 @@ async function main() {
   const isJson = config.outputMode === "json";
   const isInteractive = config.outputMode === "interactive";
 
-  // ── Banner ──
+  // ── Banner — one line, no noise ──
   if (isInteractive) {
-    console.log(
-      t.cyan(t.bold(`\n================================================`)),
-    );
-    console.log(t.cyan(t.bold(`⚡ Quiver v${VERSION} — AI Agent Harness ⚡`)));
-    console.log(
-      t.cyan(t.bold(`================================================`)),
-    );
-    console.log(t.gray(`   Project: ${getProjectName()}`));
-
-    // Show Ollama identity status
-    const ollamaId = detectOllamaIdentity();
-    if (ollamaId.hasBinary || ollamaId.hasApiKey || ollamaId.hasSignedIn) {
-      const idStatus = formatOllamaIdentity(ollamaId);
-      console.log(t.gray(`   Identity: ${idStatus}`));
-    } else {
-      console.log(
-        t.gray(
-          `   Identity: Not configured — run 'quiver signin' to link Ollama`,
-        ),
-      );
-    }
-
-    // Show cloud sync status
     const cloudStatus = getCloudSyncStatus();
-    if (cloudStatus.active) {
-      console.log(
-        t.gray(`   Cloud:    ✓ ${cloudStatus.provider} → ${cloudStatus.path}`),
-      );
-    } else {
-      console.log(
-        t.gray(`   Cloud:    Not detected (run 'quiver cloud-sync' to set up)`),
-      );
-    }
-
-    if (config.dryRun) {
-      statusLine(
-        "DRY",
-        "Dry-run mode — tool actions are previewed, not executed.",
-      );
-    }
+    console.log(
+      t.cyan(t.bold(`\n  Quiver v${VERSION}`)) +
+      t.gray(` · ${getProjectName()}`) +
+      (cloudStatus.active ? t.gray(` · ${cloudStatus.provider} ✓`) : "") +
+      (config.dryRun ? t.yellow(` · dry-run`) : ""),
+    );
   }
 
-  // Load and validate config
-  validateConfig();
+  // Config — one line
+  printConfig();
 
-  // Check Ollama daemon status if configured to localhost
+  // Connectivity check — only show on failure
   if (isInteractive) {
-    statusLine("INFO", "Checking AI connection…");
     const isOllamaConnected = await checkOllamaConnectivity();
     if (!isOllamaConnected) {
       statusBlock("WARN", "Ollama server appears offline", [
         `Endpoint: ${config.llmBaseUrl}`,
         "Run 'ollama serve' or update LLM_API_BASE_URL in .env",
-        "Press Ctrl+C to exit, or continue if the server is starting",
       ]);
-    } else {
-      statusLine("OK", "AI connection established");
     }
   }
 
-  // Load Registry
-  if (isInteractive) {
-    statusLine("INFO", "Loading available AI actions…");
-  }
+  // Load tools — silent
   await globalRegistry.loadAll();
   const tools = globalRegistry.getAllTools();
   if (isInteractive) {
-    statusLine("OK", `Loaded ${tools.length} capabilities`);
-    console.log(t.gray(`   Use /tools to see all available actions.\n`));
+    console.log(t.gray(`  ${tools.length} tools loaded · /help for commands\n`));
   }
 
   // ── List sessions mode ──
@@ -523,8 +483,8 @@ async function main() {
           console.log(
             `   - Context7:          ${config.context7ApiKey ? redactSecret(config.context7ApiKey) : "No key needed (free)"}`,
           );
-          console.log(`   - Skills Dir:        ${config.skillsDir}`);
-          console.log(`   - Memory Dir:        ${config.memoryDir}`);
+          console.log(`   - Skills Dir:        ${getSkillsDir()}`);
+          console.log(`   - Memory Dir:        ${getProjectMemoryDir()}`);
           console.log(`   - Browser Headless:  ${config.browserHeadless}`);
           console.log(
             `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
@@ -649,7 +609,7 @@ async function main() {
             const msg = msgs[i];
             const role = msg.role.toUpperCase();
             const previewRaw = msg.content;
-            const preview = (
+            const fullText = (
               typeof previewRaw === "string"
                 ? previewRaw
                 : Array.isArray(previewRaw)
@@ -658,11 +618,13 @@ async function main() {
                       .map((p: any) => p.text)
                       .join(" ")
                   : ""
-            ).substring(0, 80);
+            );
+            const preview = fullText.substring(0, 80);
+            const truncated = fullText.length > 80;
             const toolCount = msg.tool_calls?.length || 0;
             const toolInfo = toolCount > 0 ? ` [${toolCount} tool calls]` : "";
             console.log(
-              `   ${String(i).padStart(3, " ")}. ${role.padEnd(10)} ${preview}${preview.length === 80 ? "..." : ""}${toolInfo}`,
+              `   ${String(i).padStart(3, " ")}. ${role.padEnd(10)} ${preview}${truncated ? "…" : ""}${toolInfo}`,
             );
           }
           console.log("");

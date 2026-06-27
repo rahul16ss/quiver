@@ -9,7 +9,9 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "view_file",
     "write_file",
     "replace_content",
+    "apply_patch",
     "list_dir",
+    "glob",
     "format_code",
     "grep_search",
   ],
@@ -23,8 +25,11 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "find_all",
     "entity_search",
   ],
-  "🧠 Memory": ["memory_append", "memory_replace"],
+  "🧠 Memory": ["memory_append", "memory_replace", "continual_learning"],
   "🐙 GitHub": ["github"],
+  "📋 Planning": ["todo_write", "ask_question"],
+  "🔄 Self-Improvement": ["prompt_update"],
+  "🔁 Iteration": ["ralph_loop"],
 };
 
 type ToolDisplay = { name: string; displayName: string; description: string };

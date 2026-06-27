@@ -4,14 +4,13 @@
   "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
   "author": "rahul16ss",
   "type": "module",
-  "main": "src/cli.ts",
+  "main": "ui/main.ts",
   "bin": {
     "quiver": "./bin/quiver.js"
   },
   "scripts": {
     "start": "npx tsx src/cli.ts",
     "gui": "npx electron .",
-    "goal": "npx tsx src/goal.ts",
     "test": "npx tsx tests/run_tests.ts",
     "dist": "electron-builder --mac --win --linux",
     "dist:mac": "electron-builder --mac",
@@ -150,16 +149,13 @@
     }
   },
   "dependencies": {
-    "cheerio": "^1.2.0",
     "dotenv": "^16.4.7",
     "fastest-levenshtein": "^1.0.16",
-    "html-to-text": "^10.0.0",
     "picocolors": "^1.1.1",
     "puppeteer": "^25.2.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/html-to-text": "^9.0.4",
     "@types/node": "^20.11.0",
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3",

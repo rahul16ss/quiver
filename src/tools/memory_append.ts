@@ -32,7 +32,7 @@ export const tool: Tool = {
       try {
         const stats = await fs.stat(targetFile);
         currentSize = stats.size;
-      } catch (e) {
+      } catch {
         exists = false;
       }
 

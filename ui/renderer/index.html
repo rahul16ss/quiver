@@ -8,164 +8,49 @@
 </head>
 <body>
   <div class="app">
-    <!-- Left Sidebar -->
+    <!-- Sidebar -->
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <img src="assets/logo.png" alt="QUIVER" class="logo-img">
-          <span>QUIVER</span>
-        </div>
-      </div>
-      
-      <div class="sidebar-actions">
-        <button class="action-btn tab-btn active" id="btnChat" onclick="showView('chat')">
-          <span class="icon">💬</span> chat
-        </button>
-        <button class="action-btn tab-btn" id="btnContext" onclick="showView('context')">
-          <span class="icon">📂</span> context
-        </button>
-        <button class="action-btn tab-btn" id="btnVerification" onclick="showView('verification')">
-          <span class="icon">📋</span> explainability
-        </button>
+      <div class="sidebar-top">
+        <img src="assets/logo.png" class="sidebar-logo" alt="Quiver">
       </div>
 
-      <div class="sidebar-divider"></div>
-      
-      <div class="sidebar-actions">
-        <button class="action-btn new-chat-btn" onclick="startNewChat()">
-          <span class="icon">＋</span> new chat
-        </button>
-        <button class="action-btn" onclick="window.quiver.loadSettings()">
-          <span class="icon">⚙</span> settings
-        </button>
-      </div>
+      <button class="new-chat" onclick="startNewChat()">
+        <span>+</span> New Chat
+      </button>
 
-      <div class="sidebar-divider"></div>
-      
-      <div class="sidebar-section-title">recent sessions</div>
-      <div class="sessions-list" id="sessionsList">
-        <div class="session-empty">Loading sessions...</div>
-      </div>
+      <div class="sessions" id="sessionsList"></div>
+
+      <button class="settings-btn" onclick="window.quiver.loadSettings()">
+        <img src="assets/icon-settings.png" class="btn-icon" alt=""> Settings
+      </button>
     </aside>
 
-    <!-- Main Workspace -->
-    <main class="main-content">
-      <!-- Top header -->
-      <header class="app-header">
-        <div class="active-session-title" id="activeSessionTitle">New Chat</div>
-        <div class="status">
-          <span class="dot idle" id="statusDot"></span>
-        </div>
+    <!-- Main -->
+    <main class="main">
+      <header class="header">
+        <span class="session-title" id="activeSessionTitle">New Chat</span>
+        <span class="status-dot idle" id="statusDot"></span>
       </header>
 
-      <!-- View 1: Chat Panel -->
-      <div class="view-panel" id="chatView">
-        <div class="chat-area" id="chatArea" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-          <div class="empty-state" id="emptyState">
-            <div class="landing-hero">
-              <img src="assets/logo.png" alt="QUIVER" class="logo-large">
-              <p>Self-evolving AI coding & research agent harness</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Input area -->
-        <div class="input-area" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-          <div class="input-row">
-            <textarea id="promptInput" placeholder="Ask Quiver to code, research, or analyze... (drag images here)" rows="1"></textarea>
-            <button id="sendBtn" onclick="sendPrompt()">Send</button>
-            <button id="stopBtn" onclick="stopAgent()" style="display:none; background:var(--danger);">Stop</button>
-          </div>
-          <div class="stats-bar" id="statsBar"></div>
-          <div id="dropOverlay" class="drop-overlay" style="display:none;">
-            <div class="drop-overlay-text">📎 Drop images to attach</div>
-          </div>
+      <!-- Chat -->
+      <div class="chat" id="chatArea">
+        <div class="empty" id="emptyState">
+          <img src="assets/logo.png" class="empty-logo" alt="Quiver">
+          <p class="empty-subtitle">Ask me to code, research, or analyze.</p>
         </div>
       </div>
 
-      <!-- View 2: Context Panel (Transparency of Context) -->
-      <div class="view-panel" id="contextView" style="display:none;">
-        <div class="ide-workspace">
-          <!-- IDE Left Sidebar -->
-          <aside class="ide-sidebar">
-            <div class="ide-section">
-              <h3>Memories</h3>
-              <div class="ide-file-list">
-                <div class="ide-file-item active" id="fileCoreJson" onclick="openCoreMemoryFile()">
-                  <img src="assets/icon-database.png" class="icon" alt="">
-                  <span>core.json</span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="ide-section">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <h3 style="margin:0;">Active Skills</h3>
-                <button onclick="createNewSkill()" style="background:none; border:none; color:var(--accent); font-size:11px; cursor:pointer; font-weight:600; padding:2px 4px; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='none'">＋ New Skill</button>
-              </div>
-              <div class="ide-file-list" id="skillsList">
-                <div class="ide-file-item">Loading skills...</div>
-              </div>
-            </div>
-            
-
-          </aside>
-          
-          <!-- IDE Right Editor -->
-          <main class="ide-editor-container">
-            <!-- IDE Editor Header (Tabs) -->
-            <div class="ide-editor-header">
-              <div class="editor-tabs" id="editorTabs">
-                <div class="editor-tab active" id="tabCoreIdentity" onclick="switchCoreTab('identity')">identity</div>
-                <div class="editor-tab" id="tabCoreHuman" onclick="switchCoreTab('human')">human_context</div>
-                <div class="editor-tab" id="tabCoreProject" onclick="switchCoreTab('project')">project_context</div>
-              </div>
-              <div class="editor-actions">
-                <span class="save-status" id="memorySaveStatus" style="font-size:11px;"></span>
-                <button class="save-editor-btn" id="saveEditorBtn" onclick="saveActiveEditor()">Save Changes</button>
-              </div>
-            </div>
-            
-            <!-- Context explanation banner -->
-            <div class="ide-editor-info-banner" id="editorInfoBanner">
-              <span>💡</span>
-              <span id="editorInfoText">Core Memory fields represent persistent parameters loaded into the agent's system prompt (saved in memory/core.json). Active across all agent sessions.</span>
-            </div>
-            
-            <!-- Editor Well -->
-            <div class="ide-editor-well">
-              <!-- Line Numbers Gutter -->
-              <div class="editor-gutter" id="editorGutter">
-                1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20<br>21<br>22<br>23<br>24<br>25
-              </div>
-              <!-- Text Area -->
-              <div class="editor-textarea-container">
-                <input type="hidden" id="memIdentity" value="">
-                <input type="hidden" id="memHuman" value="">
-                <input type="hidden" id="memProject" value="">
-                
-                <textarea class="editor-textarea" id="editorTextArea" oninput="onEditorInput()" placeholder="Write content..."></textarea>
-              </div>
-            </div>
-          </main>
-        </div>
-      </div>
-
-      <!-- View 3: Explainability Log -->
-      <div class="view-panel" id="verificationView" style="display:none;">
-        <div class="explainability-workspace" style="display:flex; flex-direction:column; height:100%; padding:24px; gap:16px; overflow:hidden;">
-          <div style="flex-shrink:0;">
-            <h2 style="font-size:15px; font-weight:700; margin-bottom:4px;">Explainability Log</h2>
-            <p style="font-size:12px; color:var(--text-muted); line-height:1.5; margin:0;">A step-by-step chronology of Quiver's thought process and operations during this session. See exactly what the AI reasoned, what actions it took, and what outcomes resulted — designed for full transparency.</p>
-          </div>
-          <div id="timelineContainer" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:0; padding-right:8px;">
-            <div id="timelineEmpty" style="font-size:12.5px; color:var(--text-muted); font-style:italic; padding:20px 0;">No activity yet. Start a chat to see the AI's thought process and actions here.</div>
-          </div>
+      <!-- Input -->
+      <div class="input-bar" id="inputBar" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+        <textarea id="promptInput" placeholder="Ask Quiver…" rows="1"></textarea>
+        <button id="sendBtn" onclick="sendPrompt()">Send</button>
+        <button id="stopBtn" onclick="stopAgent()" style="display:none;">Stop</button>
+        <div id="dropOverlay" class="drop-overlay" style="display:none;">
+          <span>Drop images to attach</span>
         </div>
       </div>
     </main>
   </div>
-
   <script src="app.js"></script>
 </body>
 </html>

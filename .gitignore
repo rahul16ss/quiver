@@ -1,25 +1,8 @@
 node_modules/
 dist/
+dist-electron/
 .env
 !.env.example
 .sessions/
 .DS_Store
-
-# User-specific memory (contains personal context and learning logs)
-memory/
-
-# Goal state (personal agent state, not for public repo)
-goals.json
-
-# Generated artifacts
-competitor_*.json
-*_market_report.md
-
-# Security audit (contains vulnerability details)
-SECURITY_AUDIT.md
-
-# Electron build output
-dist-electron/
-
-# Cloud sync notice marker
 .quiver_cloud_notice_shown

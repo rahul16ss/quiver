@@ -39,10 +39,16 @@ async function readSessionEvents(filePath: string): Promise<SessionEvent[]> {
   const content = await fs.readFile(filePath, "utf8");
 
   if (filePath.endsWith(".jsonl")) {
-    return content
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line) as SessionEvent);
+    const events: SessionEvent[] = [];
+    for (const line of content.split("\n")) {
+      if (line.trim().length === 0) continue;
+      try {
+        events.push(JSON.parse(line) as SessionEvent);
+      } catch {
+        // Skip corrupt lines
+      }
+    }
+    return events;
   }
 
   const parsed = JSON.parse(content);

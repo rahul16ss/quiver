@@ -22,7 +22,7 @@
  * The user can also set QUIVER_CLOUD_SYNC_PATH to any synced folder.
  */
 
-import { promises as fs, existsSync } from "fs";
+import { promises as fs, existsSync, mkdirSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { config } from "./config.js";
@@ -71,26 +71,44 @@ export function detectCloudFolder(): string | null {
 
   const home = os.homedir();
 
-  const candidates = [
-    path.join(home, "Google Drive"),
-    path.join(home, "GoogleDrive"),
-    path.join(home, "OneDrive"),
-    path.join(home, "Dropbox"),
-    // macOS CloudStorage subfolders
-    path.join(home, "Library", "CloudStorage", "GoogleDrive"),
-    path.join(home, "Library", "CloudStorage", "OneDrive"),
-    path.join(home, "Library", "CloudStorage", "Dropbox"),
-    path.join(home, "Library", "CloudStorage", "iCloudDrive"),
+  // Each provider has a root folder, but the actual writable sync folder
+  // may be a subfolder (e.g., Google Drive's "My Drive"). We check both
+  // the root and known subfolders, preferring the subfolder if it exists.
+  const candidates: { path: string; subfolder?: string }[] = [
+    // Google Drive: root is read-only on macOS, "My Drive" is writable
+    { path: path.join(home, "Google Drive"), subfolder: "My Drive" },
+    { path: path.join(home, "GoogleDrive"), subfolder: "My Drive" },
+    // macOS CloudStorage Google Drive
+    { path: path.join(home, "Library", "CloudStorage", "GoogleDrive"), subfolder: "My Drive" },
+    // OneDrive
+    { path: path.join(home, "OneDrive") },
+    { path: path.join(home, "Library", "CloudStorage", "OneDrive") },
+    // Dropbox
+    { path: path.join(home, "Dropbox") },
+    { path: path.join(home, "Library", "CloudStorage", "Dropbox") },
+    // iCloud Drive
+    { path: path.join(home, "Library", "CloudStorage", "iCloudDrive") },
   ];
 
   // Windows drive letter detection
   if (process.platform === "win32") {
-    candidates.push("G:\\My Drive");
-    candidates.push("D:\\My Drive");
+    candidates.push({ path: "G:\\My Drive" });
+    candidates.push({ path: "D:\\My Drive" });
   }
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (!existsSync(candidate.path)) continue;
+
+    // If there's a subfolder, prefer it (it's the writable sync location)
+    if (candidate.subfolder) {
+      const subfolderPath = path.join(candidate.path, candidate.subfolder);
+      if (existsSync(subfolderPath)) {
+        return subfolderPath;
+      }
+    }
+
+    // Fall back to the root if no subfolder or subfolder doesn't exist
+    return candidate.path;
   }
 
   return null;
@@ -104,10 +122,23 @@ export function getQuiverDataDir(): string {
   const cloudFolder = detectCloudFolder();
 
   if (cloudFolder) {
-    return path.join(cloudFolder, QUIVER_FOLDER);
+    const cloudQuiverPath = path.join(cloudFolder, QUIVER_FOLDER);
+    // Check if we can actually write to the cloud folder
+    try {
+      mkdirSync(cloudQuiverPath, { recursive: true });
+      return cloudQuiverPath;
+    } catch {
+      // Cloud folder not writable — fall back to local
+    }
   }
 
-  return path.join(os.homedir(), "QuiverData");
+  const localFallback = path.join(os.homedir(), "QuiverData");
+  try {
+    mkdirSync(localFallback, { recursive: true });
+  } catch {
+    // Even local fallback failed — nothing we can do
+  }
+  return localFallback;
 }
 
 /**
@@ -135,18 +166,37 @@ export function getCloudSyncStatus(): {
     };
   }
 
-  const name = path.basename(cloudFolder).toLowerCase();
+  // Detect provider from the full path (not just basename, since we may
+  // have descended into a subfolder like "My Drive")
+  const fullPath = cloudFolder.toLowerCase();
   let provider = "Cloud folder";
-  if (name.includes("google")) provider = "Google Drive";
-  else if (name.includes("onedrive")) provider = "OneDrive";
-  else if (name.includes("dropbox")) provider = "Dropbox";
-  else if (name.includes("icloud")) provider = "iCloud";
+  if (fullPath.includes("google")) provider = "Google Drive";
+  else if (fullPath.includes("onedrive")) provider = "OneDrive";
+  else if (fullPath.includes("dropbox")) provider = "Dropbox";
+  else if (fullPath.includes("icloud")) provider = "iCloud";
   else provider = path.basename(cloudFolder);
+
+  // Check if the cloud folder is actually writable
+  const cloudQuiverPath = path.join(cloudFolder, QUIVER_FOLDER);
+  let writable = true;
+  try {
+    mkdirSync(cloudQuiverPath, { recursive: true });
+  } catch {
+    writable = false;
+  }
+
+  if (!writable) {
+    return {
+      active: false,
+      provider: `${provider} (not writable)`,
+      path: path.join(os.homedir(), "QuiverData"),
+    };
+  }
 
   return {
     active: true,
     provider,
-    path: path.join(cloudFolder, QUIVER_FOLDER),
+    path: cloudQuiverPath,
   };
 }
 
@@ -197,12 +247,16 @@ export async function maybeShowCloudNotice(): Promise<void> {
 
 /**
  * Ensure the Quiver data folder exists (create if needed).
+ * Creates the directory structure that syncToCloud expects.
  */
 export async function ensureCloudDataDir(): Promise<void> {
   const dataDir = getQuiverDataDir();
   await fs.mkdir(dataDir, { recursive: true });
-  await fs.mkdir(path.join(dataDir, "memory"), { recursive: true });
-  await fs.mkdir(path.join(dataDir, "sessions"), { recursive: true });
+  // Create the subdirectory structure that syncToCloud uses
+  const projectName = getProjectName();
+  await fs.mkdir(path.join(dataDir, "global"), { recursive: true });
+  await fs.mkdir(path.join(dataDir, "projects", projectName, "memory"), { recursive: true });
+  await fs.mkdir(path.join(dataDir, "projects", projectName, "sessions"), { recursive: true });
 }
 
 /**
@@ -223,16 +277,16 @@ export async function syncToCloud(): Promise<{
   };
 
   // Ensure the cloud data dir exists
-  await fs.mkdir(dataDir, { recursive: true });
+  await ensureCloudDataDir();
 
   // Directories to sync — global core + per-project data
   const projectName = getProjectName();
-  const dirs = [
-    // Global core memory (identity, human context)
-    { local: path.join(getGlobalRoot()), prefix: "global", filter: "core.json" },
-    // Per-project memory
+  const dirs: { local: string; prefix: string; filter?: string }[] = [
+    // Global core memory (identity, human context) — only sync core.json
+    { local: getGlobalRoot(), prefix: "global", filter: "core.json" },
+    // Per-project memory (persona.txt, human.txt, user-preferences.md, workspace-facts.md, project.json)
     { local: getProjectMemoryDir(), prefix: `projects/${projectName}/memory` },
-    // Per-project sessions
+    // Per-project sessions (logs, state files)
     { local: getProjectSessionsDir(), prefix: `projects/${projectName}/sessions` },
   ];
 
@@ -250,7 +304,10 @@ export async function syncToCloud(): Promise<{
       // Local dir doesn't exist yet — skip
     }
 
-    for (const fileName of localFiles) {
+    // Apply filter if set (e.g., only sync core.json from global root)
+    const filesToSync = dir.filter ? localFiles.filter((f) => f === dir.filter) : localFiles;
+
+    for (const fileName of filesToSync) {
       const localPath = path.join(dir.local, fileName);
       const cloudDir = path.join(dataDir, dir.prefix);
       const cloudPath = path.join(cloudDir, fileName);

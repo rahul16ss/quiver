@@ -245,11 +245,29 @@ const SECRET_PATTERNS: RegExp[] = [
   /[a-f0-9]{32}\.[A-Za-z0-9_\-]+/gi,
   // Parallel.ai API keys
   /[A-Za-z0-9]{8}-[A-Za-z0-9_\-]{20,}/gi,
-  // Generic long hex/base64 strings that look like API keys (40+ chars)
-  /[A-Za-z0-9_\-]{40,}/g,
+  // Generic long hex/base64 strings that look like API keys (40+ chars, must contain both letters and digits)
+  /(?=[A-Za-z0-9_\-]{40,})(?=.*[a-zA-Z])(?=.*\d)[A-Za-z0-9_\-]{40,}/g,
 ];
 
 const REDACTED = "[REDACTED]";
+
+/** Safe JSON.stringify that handles circular references without throwing. */
+function safeStringify(obj: any): string {
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    try {
+      return JSON.stringify(obj, (_key, value) => {
+        if (typeof value === "object" && value !== null) {
+          return "[object]";
+        }
+        return value;
+      });
+    } catch {
+      return String(obj);
+    }
+  }
+}
 
 function redactSecrets(text: string): string {
   let result = text;
@@ -302,7 +320,7 @@ function sanitizeLogData(type: string, data: any): any {
     case "tool_result": {
       const result = data?.result;
       const resultStr =
-        typeof result === "string" ? result : JSON.stringify(result ?? "");
+        typeof result === "string" ? result : safeStringify(result ?? "");
       const redacted = redactSecrets(resultStr);
       const truncated = truncateForLog(redacted, maxChars);
       return {
@@ -649,12 +667,21 @@ export class Agent {
    */
   private getRedactedMessages(): Message[] {
     return this.messages.map((msg) => {
+      let redactedContent = msg.content;
+      if (typeof redactedContent === "string") {
+        redactedContent = redactSecrets(redactedContent);
+      } else if (Array.isArray(redactedContent)) {
+        redactedContent = redactedContent.map((part) => {
+          if (part.type === "text" && part.text) {
+            return { ...part, text: redactSecrets(part.text) };
+          }
+          return part;
+        });
+      }
+
       const redacted: Message = {
         role: msg.role,
-        content:
-          typeof msg.content === "string"
-            ? redactSecrets(msg.content)
-            : msg.content,
+        content: redactedContent,
         name: msg.name,
         tool_call_id: msg.tool_call_id,
       };
@@ -681,7 +708,7 @@ export class Agent {
         return false;
       }
       // Restore messages (the system prompt will be rebuilt on next prompt())
-      this.messages = state.messages || [];
+      this.messages = Array.isArray(state.messages) ? state.messages : [];
       this.tokenStats = state.tokenStats || {
         inputTokens: 0,
         outputTokens: 0,
@@ -805,7 +832,6 @@ export class Agent {
 
     const systemMsg = this.messages.find((m) => m.role === "system");
     let recentMessages = this.messages.slice(-keepLast);
-    const removedCount = this.messages.length - keepLast - (systemMsg ? 1 : 0);
 
     // Don't start with orphaned tool messages whose parent assistant
     // tool_calls were compacted away — the API would reject them.
@@ -820,6 +846,8 @@ export class Agent {
     ) {
       recentMessages = recentMessages.slice(1);
     }
+
+    const removedCount = this.messages.length - recentMessages.length - (systemMsg ? 1 : 0);
 
     this.messages = [];
     if (systemMsg) {
@@ -871,7 +899,7 @@ export class Agent {
           });
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore directory read errors
     }
     return results;
@@ -928,11 +956,11 @@ export class Agent {
               content,
             });
           }
-        } catch (err) {
+        } catch {
           // No SKILL.md found in this directory
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore skills loader errors
     }
     return results;
@@ -947,7 +975,7 @@ export class Agent {
    * Transparency of Context: the system prompt is a visible, editable file.
    * Users can see exactly what instructions the agent receives via /memory.
    */
-   private buildSystemPrompt(
+  private buildSystemPrompt(
     coreMemory: any,
     memories: any[],
     skills: any[],
@@ -956,7 +984,7 @@ export class Agent {
     let systemPrompt: string;
     try {
       const promptPath = path.resolve(
-        config.skillsDir,
+        getSkillsDir(),
         "system-prompt",
         "SKILL.md",
       );
@@ -991,9 +1019,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
     // Append core memory blocks
     systemPrompt += `\n\n--- CORE MEMORY BLOCKS ---
-[Identity]: ${coreMemory.identity}
-[Human Context]: ${coreMemory.human_context}
-[Project Context]: ${coreMemory.project_context}\n`;
+[Identity]: ${coreMemory.identity || ""}
+[Human Context]: ${coreMemory.human_context || ""}
+[Project Context]: ${coreMemory.project_context || ""}\n`;
 
     // Append persistent memories
     if (memories.length > 0) {
@@ -1108,6 +1136,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     deep_research: "Deep research",
     find_all: "Find entities",
     entity_search: "Entity search",
+    glob: "Find files",
+    apply_patch: "Apply patch",
+    todo_write: "Task list",
+    ask_question: "Ask user",
+    prompt_update: "Update prompt",
+    continual_learning: "Learn from sessions",
+    ralph_loop: "Ralph loop",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -1143,7 +1178,16 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
   /** Generate a truncated preview of a tool result for user display. */
   private summarizeResult(result: any): string {
     if (!result) return "";
-    const str = typeof result === "string" ? result : JSON.stringify(result);
+    let str: string;
+    if (typeof result === "string") {
+      str = result;
+    } else {
+      try {
+        str = JSON.stringify(result);
+      } catch {
+        str = String(result);
+      }
+    }
     if (str.length <= 120) return str;
     // Truncate to 120 chars, preserving word boundaries
     const truncated = str.substring(0, 117);
@@ -1304,6 +1348,16 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     const maxLoops = 1000;
 
     while (true) {
+      if (loopCount >= maxLoops) {
+        if (config.outputMode !== "json") {
+          console.warn(
+            picocolors.yellow(
+              `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
+            ),
+          );
+        }
+        break;
+      }
       loopCount++;
       this.tokenStats.turns++;
       await this.logger.logEvent("turn_start", {
@@ -1343,7 +1397,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       const spinner = new Spinner(loopCount === 1 ? "Thinking…" : "Working…");
       spinner.start();
 
-      let response: Response;
+      let response: Response | null = null;
       let retries = 0;
       const maxRetries = 3;
 
@@ -1385,25 +1439,28 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
       spinner.stop();
 
-      if (!response!.ok) {
-        const errorText = await response!.text();
-        const msg = `LLM Server returned error (${response!.status}): ${errorText}`;
+      // response is guaranteed to be set here — if all retries failed, we threw above
+      if (!response) {
+        throw new Error("Failed to get response from LLM server.");
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const msg = `LLM Server returned error (${response.status}): ${errorText}`;
         console.error(picocolors.red(`\n❌ ${msg}`));
         await this.logger.logEvent("api_error", {
-          status: response!.status,
+          status: response.status,
           response: errorText,
         });
         throw new Error(msg);
       }
 
-      const reader = response!.body?.getReader();
+      const reader = response.body?.getReader();
       if (!reader) {
-        console.error(picocolors.red("\n❌ Response body is not readable."));
-        return;
+        throw new Error("LLM response body is not readable.");
       }
 
       let assistantContent = "";
-      lastAssistantContent = "";
       let accumulatedToolCalls: Record<
         number,
         { id?: string; name?: string; arguments: string }
@@ -1468,7 +1525,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 }
               }
             }
-          } catch (e) {
+          } catch {
             // Ignore incomplete line parse failures
           }
         }
@@ -1526,7 +1583,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               .trim();
           }
           args = JSON.parse(rawArgs);
-        } catch (e) {
+        } catch {
           // Args parsing failed — will show raw
         }
 
@@ -1633,9 +1690,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           } // end destructive action guard
         }
 
+        const resultStr = typeof result === "string" ? result : safeStringify(result);
         const toolMsg: Message = {
           role: "tool",
-          content: typeof result === "string" ? result : JSON.stringify(result),
+          content: resultStr,
           name: toolName,
           tool_call_id: call.id,
         };
@@ -1656,8 +1714,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             type: "tool_result",
             data: {
               toolName,
-              toolResult:
-                typeof result === "string" ? result : JSON.stringify(result),
+              toolResult: resultStr,
             },
           });
         }
@@ -1665,16 +1722,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
       if (config.outputMode === "interactive") {
         console.log("");
-      }
-    }
-
-    if (loopCount >= maxLoops) {
-      if (config.outputMode !== "json") {
-        console.warn(
-          picocolors.yellow(
-            `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
-          ),
-        );
       }
     }
 

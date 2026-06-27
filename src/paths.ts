@@ -95,7 +95,6 @@ export function getProjectSessionsDir(): string {
  */
 export async function ensureDirectories(): Promise<void> {
   const { promises: fs } = await import("fs");
-  const { existsSync, copyFileSync } = await import("fs");
   await fs.mkdir(GLOBAL_ROOT, { recursive: true });
   await fs.mkdir(path.join(GLOBAL_ROOT, "skills"), { recursive: true });
   await fs.mkdir(getProjectMemoryDir(), { recursive: true });

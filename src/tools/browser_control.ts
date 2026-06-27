@@ -81,7 +81,7 @@ export const tool: Tool = {
 
     try {
       wsUrl = await fs.readFile(wsPath, "utf8");
-    } catch (e) {
+    } catch {
       // File does not exist yet
     }
 
@@ -89,7 +89,7 @@ export const tool: Tool = {
     if (wsUrl) {
       try {
         browser = await puppeteer.connect({ browserWSEndpoint: wsUrl });
-      } catch (e) {
+      } catch {
         // Failed to connect, will launch a new one below
       }
     }
@@ -175,7 +175,7 @@ export const tool: Tool = {
         try {
           await page.waitForSelector(waitForSelector, { timeout: 5000 });
           resultText += ` (Completed waiting for selector '${waitForSelector}')`;
-        } catch (e) {
+        } catch {
           resultText += ` (Warning: Timeout waiting for selector '${waitForSelector}')`;
         }
       }
@@ -187,7 +187,9 @@ export const tool: Tool = {
       if (browser) {
         try {
           browser.disconnect();
-        } catch (e) {}
+        } catch {
+          // Browser may already be disconnected
+        }
       }
       return `Error in browser control: ${error.message}`;
     }

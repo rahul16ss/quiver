@@ -54,8 +54,8 @@ const DEFAULT_CONFIG: QuiverConfig = {
   githubToken: "",
   context7ApiKey: "",
   browserHeadless: true,
-  requireApprovalFor: [],
-  maxContextTokens: 900000,
+  requireApprovalFor: ["run_command", "write_file", "replace_content", "browser_control", "create_tool"],
+  maxContextTokens: 120000,
   memoryDir: "./memory",
   skillsDir: "./skills",
   cloudSyncPath: "",
@@ -101,10 +101,15 @@ function getWorkingDir(config: QuiverConfig): string {
 async function ensureWorkingDir(dir: string): Promise<void> {
   try {
     const fs = await import("fs/promises");
+    // Ensure the workspace directory exists
     await fs.mkdir(dir, { recursive: true });
-    await fs.mkdir(path.join(dir, "memory"), { recursive: true });
-    await fs.mkdir(path.join(dir, ".sessions"), { recursive: true });
-    await fs.mkdir(path.join(dir, "skills"), { recursive: true });
+    // Ensure the global ~/.quiver/ directory structure exists
+    const quiverRoot = path.join(app.getPath("home"), ".quiver");
+    await fs.mkdir(quiverRoot, { recursive: true });
+    await fs.mkdir(path.join(quiverRoot, "skills"), { recursive: true });
+    const projectName = path.basename(dir) || "default";
+    await fs.mkdir(path.join(quiverRoot, "projects", projectName, "memory"), { recursive: true });
+    await fs.mkdir(path.join(quiverRoot, "projects", projectName, ".sessions"), { recursive: true });
   } catch {
     // Non-critical
   }
@@ -141,7 +146,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
       LLM_MODEL_NAME: config.provider.modelName,
       LLM_API_KEY: config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
-      OLLAMA_API_KEY: config.provider.apiKey,
+      OLLAMA_API_KEY: config.ollamaApiKey,
       GITHUB_TOKEN: config.githubToken,
       CONTEXT7_API_KEY: config.context7ApiKey,
       BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
@@ -182,10 +187,13 @@ function getAgentCommand(): { cmd: string; args: string[] } {
     };
   }
 
-  // Dev mode: use npx tsx
+  // Dev mode: use local tsx binary with absolute path to cli.ts
+  const projectRoot = path.resolve(__dirname, "..");
+  const cliPath = path.join(projectRoot, "src", "cli.ts");
+  const tsxBin = path.join(projectRoot, "node_modules", ".bin", "tsx");
   return {
-    cmd: "npx",
-    args: ["tsx", "src/cli.ts", "--json"],
+    cmd: tsxBin,
+    args: [cliPath, "--json"],
   };
 }
 
@@ -195,7 +203,6 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     agentProcess = null;
   }
 
-  const cwd = process.cwd();
   const { cmd, args } = getAgentCommand();
   const finalArgs = [...args];
   if (resumeLatest) {
@@ -208,7 +215,7 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     LLM_MODEL_NAME: config.provider.modelName,
     LLM_API_KEY: config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
-    OLLAMA_API_KEY: config.provider.apiKey,
+    OLLAMA_API_KEY: config.ollamaApiKey,
     GITHUB_TOKEN: config.githubToken,
     CONTEXT7_API_KEY: config.context7ApiKey,
     BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
@@ -276,13 +283,18 @@ function approveToolCall(approve: boolean): void {
 
 // ─── Memory File Management ──────────────────────────────────────────
 
+function getProjectMemoryDir(workspacePath: string): string {
+  const projectName = path.basename(workspacePath || process.cwd()) || "default";
+  return path.join(app.getPath("home"), ".quiver", "projects", projectName, "memory");
+}
+
 async function listMemoryFiles(): Promise<
   { name: string; content: string; size: number }[]
 > {
   try {
     const config = await loadConfig();
     const fs = await import("fs/promises");
-    const memDir = path.resolve(config.workspacePath || process.cwd(), "memory");
+    const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
     const files = await fs.readdir(memDir);
     const results: { name: string; content: string; size: number }[] = [];
     for (const file of files) {
@@ -304,7 +316,7 @@ async function saveMemoryFile(name: string, content: string): Promise<boolean> {
   try {
     const config = await loadConfig();
     const fs = await import("fs/promises");
-    const memDir = path.resolve(config.workspacePath || process.cwd(), "memory");
+    const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
     await fs.mkdir(memDir, { recursive: true });
     await fs.writeFile(path.join(memDir, name), content, "utf8");
     return true;
@@ -325,6 +337,7 @@ async function createWindow(): Promise<void> {
     minHeight: 600,
     title: "Quiver",
     show: false,
+    icon: path.join(__dirname, "renderer", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -346,11 +359,16 @@ async function createWindow(): Promise<void> {
 
 // ─── Sessions Management ──────────────────────────────────────────────
 
+function getProjectSessionsDir(workspacePath: string): string {
+  const projectName = path.basename(workspacePath || process.cwd()) || "default";
+  return path.join(app.getPath("home"), ".quiver", "projects", projectName, ".sessions");
+}
+
 async function listSessions(): Promise<any[]> {
   try {
     const config = await loadConfig();
     const fs = await import("fs/promises");
-    const sessionsDir = path.resolve(config.workspacePath || process.cwd(), ".sessions");
+    const sessionsDir = getProjectSessionsDir(config.workspacePath || process.cwd());
     const files = await fs.readdir(sessionsDir);
     const stateFiles = files.filter((f) => f.endsWith(".state.json"));
     const results: any[] = [];
@@ -366,14 +384,14 @@ async function listSessions(): Promise<any[]> {
           messageCount: state.messages?.length || 0,
           model: state.model || "glm-5.2:cloud",
         });
-      } catch (e) {
+      } catch {
         // Skip corrupt files
       }
     }
     // Sort by savedAt descending (newest first)
     results.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
     return results;
-  } catch (e) {
+  } catch {
     return [];
   }
 }
@@ -426,7 +444,15 @@ async function runWorkspaceTests(): Promise<{ success: boolean; output: string }
 async function listSkills(workspacePath: string, skillsDirConfig: string): Promise<string[]> {
   try {
     const fs = await import("fs/promises");
-    const skillsDir = path.isAbsolute(skillsDirConfig) ? skillsDirConfig : path.resolve(workspacePath, skillsDirConfig);
+    // Prefer global skills dir (~/.quiver/skills/), fall back to configured path
+    const globalSkillsDir = path.join(app.getPath("home"), ".quiver", "skills");
+    let skillsDir: string;
+    try {
+      await fs.access(globalSkillsDir);
+      skillsDir = globalSkillsDir;
+    } catch {
+      skillsDir = path.isAbsolute(skillsDirConfig) ? skillsDirConfig : path.resolve(workspacePath, skillsDirConfig);
+    }
     const files = await fs.readdir(skillsDir);
     const results: string[] = [];
     for (const f of files) {
@@ -491,7 +517,7 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("memory:loadCore", async () => {
     const config = await loadConfig();
-    const memoryFile = path.resolve(config.workspacePath || process.cwd(), "memory", "core.json");
+    const memoryFile = path.join(app.getPath("home"), ".quiver", "core.json");
     try {
       const fs = await import("fs/promises");
       const content = await fs.readFile(memoryFile, "utf8");
@@ -506,7 +532,7 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("memory:saveCore", async (_evt, coreMemory: any) => {
     const config = await loadConfig();
-    const memoryFile = path.resolve(config.workspacePath || process.cwd(), "memory", "core.json");
+    const memoryFile = path.join(app.getPath("home"), ".quiver", "core.json");
     try {
       const fs = await import("fs/promises");
       await fs.mkdir(path.dirname(memoryFile), { recursive: true });
@@ -523,20 +549,16 @@ function registerIpcHandlers(): void {
     return listSkills(config.workspacePath || process.cwd(), config.skillsDir || "./skills");
   });
   ipcMain.handle("skills:read", async (_evt, skillName: string) => {
-    const config = await loadConfig();
-    const workspace = config.workspacePath || process.cwd();
-    const skillsDir = path.isAbsolute(config.skillsDir || "./skills")
-      ? (config.skillsDir || "./skills")
-      : path.resolve(workspace, config.skillsDir || "./skills");
-    const skillDir = path.join(skillsDir, skillName);
+    const fs = await import("fs/promises");
+    // Prefer global skills dir (~/.quiver/skills/)
+    const globalSkillsDir = path.join(app.getPath("home"), ".quiver", "skills");
+    const skillDir = path.join(globalSkillsDir, skillName);
     const skillFile = path.join(skillDir, "SKILL.md");
     try {
-      const fs = await import("fs/promises");
       return await fs.readFile(skillFile, "utf8");
     } catch {
       try {
-        const fs = await import("fs/promises");
-        const standalone = path.resolve(skillsDir, skillName);
+        const standalone = path.resolve(globalSkillsDir, skillName);
         return await fs.readFile(standalone, "utf8");
       } catch {
         return null;
@@ -544,12 +566,10 @@ function registerIpcHandlers(): void {
     }
   });
   ipcMain.handle("skills:save", async (_evt, skillName: string, content: string) => {
-    const config = await loadConfig();
-    const workspace = config.workspacePath || process.cwd();
-    const skillsDir = path.isAbsolute(config.skillsDir || "./skills")
-      ? (config.skillsDir || "./skills")
-      : path.resolve(workspace, config.skillsDir || "./skills");
-    const skillDir = path.join(skillsDir, skillName);
+    const fs = await import("fs/promises");
+    // Save to global skills dir (~/.quiver/skills/)
+    const globalSkillsDir = path.join(app.getPath("home"), ".quiver", "skills");
+    const skillDir = path.join(globalSkillsDir, skillName);
     const skillFile = path.join(skillDir, "SKILL.md");
     try {
       const fs = await import("fs/promises");
@@ -557,14 +577,7 @@ function registerIpcHandlers(): void {
       await fs.writeFile(skillFile, content, "utf8");
       return true;
     } catch {
-      try {
-        const fs = await import("fs/promises");
-        const standalone = path.resolve(skillsDir, skillName);
-        await fs.writeFile(standalone, content, "utf8");
-        return true;
-      } catch {
-        return false;
-      }
+      return false;
     }
   });
 
@@ -595,6 +608,28 @@ function registerIpcHandlers(): void {
 // ─── App Lifecycle ────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Set app identity for macOS (dock name, menu bar name)
+  app.setName("Quiver");
+
+  // Replace default Electron menu with Quiver menu
+  const { Menu } = await import("electron");
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: "Quiver", submenu: [
+      { role: "about", label: "About Quiver" },
+      { type: "separator" },
+      { role: "quit", label: "Quit Quiver" },
+    ]},
+    { label: "Edit", submenu: [
+      { role: "undo" }, { role: "redo" }, { type: "separator" },
+      { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
+    ]},
+    { label: "View", submenu: [
+      { role: "reload" }, { role: "toggleDevTools" }, { type: "separator" },
+      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" },
+      { role: "togglefullscreen" },
+    ]},
+  ]));
+
   registerIpcHandlers();
   await createWindow();
 

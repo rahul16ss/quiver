@@ -10,8 +10,6 @@ export interface Config {
   llmModelName: string;
   llmApiKey: string;
   parallelApiKey: string;
-  skillsDir: string;
-  memoryDir: string;
   browserHeadless: boolean;
   requireApprovalFor: string[];
   context7ApiKey: string;
@@ -25,7 +23,6 @@ export interface Config {
   dryRun: boolean;
 }
 
-// Parse output mode from CLI args (called before config object is frozen)
 function parseOutputMode(): OutputMode {
   const args = process.argv.slice(2);
   if (args.includes("--json")) return "json";
@@ -34,21 +31,15 @@ function parseOutputMode(): OutputMode {
 }
 
 function parseDryRun(): boolean {
-  const args = process.argv.slice(2);
-  return args.includes("--dry-run") || args.includes("-n");
+  return process.argv.slice(2).includes("--dry-run") || process.argv.slice(2).includes("-n");
 }
 
-const DEFAULT_APPROVAL_TOOLS =
-  "run_command,write_file,replace_content,browser_control,create_tool";
+const DEFAULT_APPROVALS = "run_command,write_file,replace_content,browser_control,create_tool";
 
-/** Parse REQUIRE_APPROVAL_FOR; empty string explicitly disables all gates. */
-function parseApprovalList(): string[] {
+function parseApprovals(): string[] {
   const raw = process.env.REQUIRE_APPROVAL_FOR;
-  const source = raw === undefined ? DEFAULT_APPROVAL_TOOLS : raw;
-  return source
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const source = raw === undefined ? DEFAULT_APPROVALS : raw;
+  return source.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 export const config: Config = {
@@ -56,94 +47,51 @@ export const config: Config = {
   llmModelName: process.env.LLM_MODEL_NAME || "glm-5.2:cloud",
   llmApiKey: process.env.LLM_API_KEY || "",
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
-  skillsDir: process.env.QUIVER_SKILLS_DIR || "./skills",
-  memoryDir: process.env.QUIVER_MEMORY_DIR || "./memory",
   browserHeadless: process.env.BROWSER_HEADLESS !== "false",
-  requireApprovalFor: parseApprovalList(),
+  requireApprovalFor: parseApprovals(),
   context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
   cloudSyncPath: process.env.QUIVER_CLOUD_SYNC_PATH || "",
-  maxContextTokens: parseInt(
-    process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
-    10,
-  ),
+  maxContextTokens: parseInt(process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000", 10),
   outputMode: parseOutputMode(),
   sessionLogEnabled: process.env.QUIVER_SESSION_LOG !== "0",
-  sessionLogMaxChars: parseInt(
-    process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512",
-    10,
-  ),
+  sessionLogMaxChars: parseInt(process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512", 10),
   dryRun: parseDryRun(),
 };
 
-/**
- * Redact a secret for safe display: shows first 3 and last 3 chars.
- * Returns "No" for empty strings and "Yes (sk-...xyz)" for set keys.
- */
-export function redactSecret(value: string, label?: string): string {
-  if (!value) return "No";
-  if (value.length <= 8) return `Yes (${value.length} chars)`;
-  const prefix = value.substring(0, 3);
-  const suffix = value.substring(value.length - 3);
-  return `Yes (${prefix}...${suffix})`;
+export function redactSecret(value: string): string {
+  if (!value) return "—";
+  if (value.length <= 8) return "✓";
+  return `✓ ${value.substring(0, 3)}…${value.substring(value.length - 3)}`;
 }
 
-/**
- * Check if this is a first run (no .env file and no API key set).
- */
 export function isFirstRun(): boolean {
-  const envPath = path.resolve(".env");
-  return !existsSync(envPath) && !config.llmApiKey;
+  return !existsSync(path.resolve(".env")) && !config.llmApiKey;
 }
 
-/**
- * Print a friendly first-run onboarding wizard.
- */
 export function printFirstRunWizard(): void {
   console.log(
     picocolors.cyan(`
-  ┌────────────────────────────────────────────┐
-  │  👋 Welcome to Quiver!                      │
-  │                                            │
-  │  It looks like this is your first run.     │
-  │  Let's get you set up:                     │
-  │                                            │
-  │  1. Run: quiver init                       │
-  │  2. Add your API key to LLM_API_KEY        │
-  │  3. Run 'quiver' again                     │
-  │                                            │
-  │  📖 Full guide: README.md                  │
-  └────────────────────────────────────────────┘`),
+  Quiver — first run
+
+  1. quiver init
+  2. Add LLM_API_KEY to .env
+  3. quiver
+`),
   );
 }
 
-export function validateConfig(): void {
-  if (config.outputMode !== "interactive") return; // Skip in json/quiet mode
-
-  console.log(`\n⚙️  Quiver Config Loaded:`);
-  console.log(`   - Endpoint Base:    ${config.llmBaseUrl}`);
-  console.log(`   - Target Model:      ${config.llmModelName}`);
-  console.log(`   - LLM API Key:       ${redactSecret(config.llmApiKey)}`);
-  console.log(`   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`);
+/** One-line status — no verbose dump. */
+export function printConfig(): void {
+  if (config.outputMode !== "interactive") return;
+  const c = picocolors.gray;
+  const v = picocolors.white;
   console.log(
-    `   - Parallel APIs:     ${redactSecret(config.parallelApiKey)}${config.parallelApiKey ? " (search, extract, research, findall, entity)" : ""}`,
+    c("  ") + v(config.llmModelName) + c(" · ") +
+    v(redactSecret(config.llmApiKey)) + c(" · ") +
+    (config.parallelApiKey ? v("web ✓") : c("web —")) + c(" · ") +
+    (config.githubToken ? v("github ✓") : c("github —")) + c(" · ") +
+    v(config.maxContextTokens.toLocaleString()) + c(" ctx"),
   );
-  console.log(`   - GitHub Token:      ${redactSecret(config.githubToken)}`);
-  console.log(
-    `   - Context7:          ${config.context7ApiKey ? redactSecret(config.context7ApiKey) : "No key needed (free)"}`,
-  );
-  console.log(
-    `   - Cloud Sync:        ${config.cloudSyncPath ? config.cloudSyncPath : "Auto-detect"}`,
-  );
-  console.log(`   - Skills Dir:        ${config.skillsDir}`);
-  console.log(`   - Memory Dir:        ${config.memoryDir}`);
-  console.log(`   - Browser Headless:  ${config.browserHeadless}`);
-  console.log(
-    `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
-  );
-  console.log(
-    `   - Approvals For:     ${config.requireApprovalFor.join(", ") || "None"}`,
-  );
-  console.log("");
 }

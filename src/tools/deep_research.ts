@@ -30,7 +30,8 @@ export const tool: Tool = {
   description:
     "Runs deep multi-hop web research via the Parallel Task API. Takes a natural-language research question and returns a comprehensive, cited answer. " +
     "Use when a single web_search isn't enough — questions requiring synthesis across many sources, multi-step reasoning, or structured data enrichment. " +
-    "Processors: 'lite' (fastest, ~2 fields), 'base' (~5 fields), 'core' (~10 fields), 'pro' (~20 fields, exploratory, ~10 min), 'ultra' (deep research, up to 2hr). " +
+    "Processors: 'lite' (fastest, ~2 fields), 'base' (~5 fields), 'core' (~10 fields), 'pro' (default, ~20 fields, exploratory, ~10 min), 'ultra' (deep research, up to 2hr). " +
+    "Scaled variants: 'core2x', 'pro-fast', 'ultra-fast', 'ultra2x', 'ultra4x', 'ultra8x'. " +
     "Defaults to 'pro' for best quality within a reasonable timeframe. Use 'core' or 'base' for faster results.",
   parameters: z.object({
     input: z
