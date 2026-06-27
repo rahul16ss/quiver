@@ -26,6 +26,12 @@ import { promises as fs, existsSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { config } from "./config.js";
+import {
+  getProjectName,
+  getProjectMemoryDir,
+  getProjectSessionsDir,
+  getGlobalRoot,
+} from "./paths.js";
 
 const QUIVER_FOLDER = "Quiver";
 const NOTICE_FILE = path.join(os.homedir(), ".quiver_cloud_notice_shown");
@@ -219,10 +225,15 @@ export async function syncToCloud(): Promise<{
   // Ensure the cloud data dir exists
   await fs.mkdir(dataDir, { recursive: true });
 
-  // Directories to sync
+  // Directories to sync — global core + per-project data
+  const projectName = getProjectName();
   const dirs = [
-    { local: path.resolve(config.memoryDir), prefix: "memory" },
-    { local: path.resolve(".sessions"), prefix: "sessions" },
+    // Global core memory (identity, human context)
+    { local: path.join(getGlobalRoot()), prefix: "global", filter: "core.json" },
+    // Per-project memory
+    { local: getProjectMemoryDir(), prefix: `projects/${projectName}/memory` },
+    // Per-project sessions
+    { local: getProjectSessionsDir(), prefix: `projects/${projectName}/sessions` },
   ];
 
   // Upload: copy local files to cloud

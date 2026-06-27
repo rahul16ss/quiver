@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { Tool } from "../registry.js";
 import { config } from "../config.js";
+import { getProjectSessionsDir } from "../paths.js";
 
 /**
  * SSRF protection: blocks navigation to private/internal IP ranges.
@@ -74,7 +75,7 @@ export const tool: Tool = {
     waitForSelector,
     headless,
   }) => {
-    const wsPath = path.resolve(".sessions", "browser_ws.txt");
+    const wsPath = path.join(getProjectSessionsDir(), "browser_ws.txt");
     let browser: Browser | null = null;
     let wsUrl = "";
 
@@ -154,8 +155,8 @@ export const tool: Tool = {
           break;
         }
         case "screenshot": {
-          const screenshotPath = path.resolve(
-            ".sessions",
+          const screenshotPath = path.join(
+            getProjectSessionsDir(),
             "browser_screenshot.png",
           );
           await fs.mkdir(path.dirname(screenshotPath), { recursive: true });

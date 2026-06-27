@@ -36,6 +36,11 @@ import { printHelp, printInSessionHelp, printEnhancedTools } from "./help.js";
 import { promptUser } from "./multiline.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { runCloudSync } from "./cloud_sync_ui.js";
+import {
+  getProjectName,
+  getProjectMemoryDir,
+  getCoreMemoryPath,
+} from "./paths.js";
 import * as path from "path";
 import { readFileSync } from "fs";
 
@@ -119,6 +124,7 @@ async function main() {
     console.log(
       t.cyan(t.bold(`================================================`)),
     );
+    console.log(t.gray(`   Project: ${getProjectName()}`));
 
     // Show Ollama identity status
     const ollamaId = detectOllamaIdentity();
@@ -578,8 +584,14 @@ async function main() {
         }
 
         if (resolved === "/memory") {
-          const memDir = path.resolve(config.memoryDir);
-          console.log(picocolors.cyan(`\n  Memory (${memDir})\n`));
+          const projectName = getProjectName();
+          const memDir = getProjectMemoryDir();
+          const corePath = getCoreMemoryPath();
+          console.log(
+            picocolors.cyan(`\n  Memory — Project: ${projectName}`),
+          );
+          console.log(picocolors.gray(`  Project memory: ${memDir}`));
+          console.log(picocolors.gray(`  Global core:    ${corePath}\n`));
           try {
             const files = await import("fs/promises");
             const entries = await files.readdir(memDir);

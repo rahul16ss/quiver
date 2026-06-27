@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { Agent, Message } from "./agent.js";
 import { config } from "./config.js";
+import { getCoreMemoryPath, getProjectMemoryDir } from "./paths.js";
 
 export interface CoreMemory {
   identity: string;
@@ -26,36 +27,88 @@ export interface AgentFile {
   messages: Message[];
 }
 
-const MEMORY_FILE = path.resolve("memory", "core.json");
-
 /**
  * Loads the structured Quiver Core Memory.
- * If the file doesn't exist, returns default starting memory fields.
+ * Identity and human_context are global (shared across projects).
+ * project_context is per-project (loaded from the project's memory dir).
+ * If files don't exist, returns default starting memory fields.
  */
 export async function loadCoreMemory(): Promise<CoreMemory> {
+  const corePath = getCoreMemoryPath();
+  let globalMemory: { identity: string; human_context: string } = {
+    identity:
+      "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
+    human_context: "",
+  };
+
+  // Load global identity + human context
   try {
-    await fs.mkdir(path.dirname(MEMORY_FILE), { recursive: true });
-    const content = await fs.readFile(MEMORY_FILE, "utf8");
-    return JSON.parse(content);
-  } catch (err) {
-    const defaults: CoreMemory = {
-      identity:
-        "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
-      human_context: "",
-      project_context:
-        "This workspace is an agent harness containing TS tools, test runners, and configuration.",
-    };
-    await saveCoreMemory(defaults);
-    return defaults;
+    const content = await fs.readFile(corePath, "utf8");
+    globalMemory = JSON.parse(content);
+  } catch {
+    // First run — create with defaults
+    await fs.mkdir(path.dirname(corePath), { recursive: true });
+    await fs.writeFile(
+      corePath,
+      JSON.stringify(globalMemory, null, 2),
+      "utf8",
+    );
   }
+
+  // Load per-project context
+  const projectContextPath = path.join(getProjectMemoryDir(), "project.json");
+  let projectContext = "";
+  try {
+    const content = await fs.readFile(projectContextPath, "utf8");
+    const parsed = JSON.parse(content);
+    projectContext = parsed.project_context || "";
+  } catch {
+    // First run for this project — create default
+    const defaults = {
+      project_context: `This workspace is ${path.basename(process.cwd())}.`,
+    };
+    await fs.mkdir(path.dirname(projectContextPath), { recursive: true });
+    await fs.writeFile(
+      projectContextPath,
+      JSON.stringify(defaults, null, 2),
+      "utf8",
+    );
+    projectContext = defaults.project_context;
+  }
+
+  return {
+    identity: globalMemory.identity,
+    human_context: globalMemory.human_context,
+    project_context: projectContext,
+  };
 }
 
 /**
- * Persists the core memory sections back to memory/core.json.
+ * Persists core memory — splits global (identity, human_context) from
+ * per-project (project_context) into separate files.
  */
 export async function saveCoreMemory(memory: CoreMemory): Promise<void> {
-  await fs.mkdir(path.dirname(MEMORY_FILE), { recursive: true });
-  await fs.writeFile(MEMORY_FILE, JSON.stringify(memory, null, 2), "utf8");
+  // Save global part
+  const corePath = getCoreMemoryPath();
+  await fs.mkdir(path.dirname(corePath), { recursive: true });
+  await fs.writeFile(
+    corePath,
+    JSON.stringify(
+      { identity: memory.identity, human_context: memory.human_context },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  // Save project-specific part
+  const projectContextPath = path.join(getProjectMemoryDir(), "project.json");
+  await fs.mkdir(path.dirname(projectContextPath), { recursive: true });
+  await fs.writeFile(
+    projectContextPath,
+    JSON.stringify({ project_context: memory.project_context }, null, 2),
+    "utf8",
+  );
 }
 
 /**

@@ -12,6 +12,13 @@ import {
   ensureCloudDataDir,
   autoSyncToCloud,
 } from "./cloud_sync.js";
+import {
+  getProjectMemoryDir,
+  getSkillsDir,
+  getProjectSessionsDir,
+  getProjectName,
+  ensureDirectories,
+} from "./paths.js";
 
 // ─── Vision: Image encoding ───────────────────────────────────────────
 // Detects [Image: path] markers in user input, validates the file is a
@@ -331,7 +338,7 @@ export class SessionLogger {
 
   constructor() {
     this.sessionId = `session_${Date.now()}`;
-    this.logPath = path.resolve(".sessions", `${this.sessionId}.json`);
+    this.logPath = path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
   }
 
   /** Accumulate event in memory — no disk I/O until flush(). */
@@ -387,7 +394,7 @@ export class SessionLogger {
   }
 
   public getSessionLogRelPath(): string {
-    return `.sessions/${this.sessionId}.json`;
+    return path.join(getProjectName(), ".sessions", `${this.sessionId}.json`);
   }
 }
 
@@ -588,8 +595,8 @@ export class Agent {
   // Modeled after Codex CLI and Claude Code session persistence.
 
   private getSessionStatePath(): string {
-    return path.resolve(
-      ".sessions",
+    return path.join(
+      getProjectSessionsDir(),
       `${this.logger.getSessionId()}.state.json`,
     );
   }
@@ -687,10 +694,10 @@ export class Agent {
     }
   }
 
-  /** Find the most recent session state file in .sessions/ */
+  /** Find the most recent session state file in the project's .sessions/ */
   public static async findLatestSessionState(): Promise<string | null> {
     try {
-      const sessionsDir = path.resolve(".sessions");
+      const sessionsDir = getProjectSessionsDir();
       const files = await fs.readdir(sessionsDir);
       const stateFiles = files
         .filter((f) => f.endsWith(".state.json"))
@@ -714,7 +721,7 @@ export class Agent {
     }
   }
 
-  /** List all saved session state files with metadata. */
+  /** List all saved session state files for the current project. */
   public static async listSessionStates(): Promise<
     {
       sessionId: string;
@@ -725,7 +732,7 @@ export class Agent {
     }[]
   > {
     try {
-      const sessionsDir = path.resolve(".sessions");
+      const sessionsDir = getProjectSessionsDir();
       const files = await fs.readdir(sessionsDir);
       const stateFiles = files.filter((f) => f.endsWith(".state.json"));
 
@@ -844,7 +851,7 @@ export class Agent {
   private async loadMemory(): Promise<
     { filename: string; sizeBytes: number; content: string }[]
   > {
-    const memoryDir = path.resolve(config.memoryDir);
+    const memoryDir = getProjectMemoryDir();
     const results: { filename: string; sizeBytes: number; content: string }[] =
       [];
 
@@ -855,7 +862,7 @@ export class Agent {
       for (const file of files) {
         const filePath = path.join(memoryDir, file);
         const stats = await fs.stat(filePath);
-        if (stats.isFile() && !file.startsWith(".")) {
+        if (stats.isFile() && !file.startsWith(".") && file !== "project.json") {
           const content = await fs.readFile(filePath, "utf8");
           results.push({
             filename: file,
@@ -874,7 +881,7 @@ export class Agent {
   private async loadSkills(): Promise<
     { id: string; version: string; purpose: string; content: string }[]
   > {
-    const skillsDir = path.resolve(config.skillsDir);
+    const skillsDir = getSkillsDir();
     const results: {
       id: string;
       version: string;
@@ -1247,7 +1254,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // Cloud sync: show first-run notice + ensure folder exists (once per session)
     if (!this.cloudSyncInitialized) {
       this.cloudSyncInitialized = true;
-      await ensureCloudDataDir();
+      await ensureDirectories();
       if (config.outputMode === "interactive") {
         await maybeShowCloudNotice();
       }

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { promises as fs } from "fs";
 import * as path from "path";
-import { config } from "../config.js";
 import { Tool } from "../registry.js";
+import { getProjectMemoryDir } from "../paths.js";
 
 export const tool: Tool = {
   name: "memory_replace",
@@ -12,7 +12,7 @@ export const tool: Tool = {
     content: z.string().describe("The new content to write to the memory file."),
   }),
   execute: async ({ filename, content }) => {
-    const memoryDir = path.resolve(config.memoryDir);
+    const memoryDir = getProjectMemoryDir();
     const cleanFilename = path.basename(filename);
     const targetFile = path.join(memoryDir, cleanFilename);
 

@@ -3,6 +3,7 @@ import * as path from "path";
 import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
+import { getProjectSessionsDir } from "../paths.js";
 
 interface SessionEvent {
   timestamp: string;
@@ -217,7 +218,7 @@ export const tool: Tool = {
       .describe("Optional: specific session log file path to parse. Defaults to the latest session in .sessions/."),
   }),
   execute: async ({ sessionFile }) => {
-    const sessionsDir = path.resolve(".sessions");
+    const sessionsDir = getProjectSessionsDir();
 
     // Determine which file to parse
     let targetFile: string | null;
