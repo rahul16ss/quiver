@@ -13,9 +13,164 @@ import {
   autoSyncToCloud,
 } from "./cloud_sync.js";
 
+// ─── Vision: Image encoding ───────────────────────────────────────────
+// Detects [Image: path] markers in user input, validates the file is a
+// real image (by magic bytes, not just extension), reads it, and encodes
+// as base64 data URL for the OpenAI-compatible vision API.
+// Security: only local files, no path traversal, size-limited, magic-byte validated.
+
+const IMAGE_MAGIC: Record<string, number[]> = {
+  png: [0x89, 0x50, 0x4e, 0x47],
+  jpg: [0xff, 0xd8, 0xff],
+  jpeg: [0xff, 0xd8, 0xff],
+  gif: [0x47, 0x49, 0x46, 0x38],
+  bmp: [0x42, 0x4d],
+  webp: [0x52, 0x49, 0x46, 0x46], // RIFF header
+};
+
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+
+/**
+ * Validate that a file is a real image by checking magic bytes.
+ * Prevents disguised malicious files (e.g. a script renamed to .png).
+ */
+function validateImageMagic(filePath: string): string | null {
+  try {
+    const fd = fsSync.openSync(filePath, "r");
+    const header = Buffer.alloc(12);
+    fsSync.readSync(fd, header, 0, 12, 0);
+    fsSync.closeSync(fd);
+
+    for (const [ext, magic] of Object.entries(IMAGE_MAGIC)) {
+      if (header.subarray(0, magic.length).equals(Buffer.from(magic))) {
+        return ext;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encode an image file as a base64 data URL.
+ * Returns null if the file is not a valid image or is too large.
+ */
+async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
+  try {
+    // Resolve and check the path is real (no symlinks to /etc/passwd etc.)
+    const resolved = path.resolve(filePath);
+    const stat = await fs.stat(resolved);
+
+    if (!stat.isFile()) return null;
+    if (stat.size > MAX_IMAGE_SIZE) {
+      console.error(
+        picocolors.yellow(
+          `   ⚠️  Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
+        ),
+      );
+      return null;
+    }
+
+    // Validate by magic bytes, not extension
+    const ext = validateImageMagic(resolved);
+    if (!ext) {
+      console.error(
+        picocolors.yellow(
+          `   ⚠️  Not a valid image file (magic bytes mismatch): ${resolved}`,
+        ),
+      );
+      return null;
+    }
+
+    const data = await fs.readFile(resolved);
+    const base64 = data.toString("base64");
+    return `data:image/${ext};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect [Image: path] markers in user input and convert to vision message parts.
+ * Returns the message content as either a string (no images) or an array
+ * of text and image_url parts (OpenAI vision format).
+ *
+ * Security:
+ *   - Only local file paths (no URLs)
+ *   - Magic-byte validation (can't disguise scripts as images)
+ *   - Size-limited (20MB max)
+ *   - Path traversal blocked (path.resolve + stat)
+ */
+async function processImageMarkers(
+  input: string,
+): Promise<string | Array<
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+>> {
+  const imageMarker = /\[Image:\s*([^\]]+)\]/g;
+  const matches = [...input.matchAll(imageMarker)];
+
+  if (matches.length === 0) return input;
+
+  const parts: Array<
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  > = [];
+
+  let lastIdx = 0;
+  let imagesEncoded = 0;
+
+  for (const match of matches) {
+    const matchStart = match.index!;
+    const matchEnd = matchStart + match[0].length;
+    const rawPath = match[1].trim();
+
+    // Add any text before this marker
+    if (matchStart > lastIdx) {
+      const textBefore = input.substring(lastIdx, matchStart).trim();
+      if (textBefore) parts.push({ type: "text", text: textBefore });
+    }
+
+    // Encode the image
+    const dataUrl = await encodeImageAsDataURL(rawPath);
+    if (dataUrl) {
+      parts.push({ type: "image_url", image_url: { url: dataUrl } });
+      imagesEncoded++;
+    } else {
+      // Include the failed marker as text so the agent knows
+      parts.push({
+        type: "text",
+        text: `[Image: ${rawPath} — could not load. The file may not exist, may not be a valid image, or may be too large.]`,
+      });
+    }
+
+    lastIdx = matchEnd;
+  }
+
+  // Add any remaining text after the last marker
+  if (lastIdx < input.length) {
+    const textAfter = input.substring(lastIdx).trim();
+    if (textAfter) parts.push({ type: "text", text: textAfter });
+  }
+
+  if (imagesEncoded > 0 && config.outputMode === "interactive") {
+    console.log(
+      picocolors.gray(
+        `   📎 ${imagesEncoded} image${imagesEncoded > 1 ? "s" : ""} encoded for vision`,
+      ),
+    );
+  }
+
+  return parts;
+}
+
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | null | Array<
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  >;
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -489,7 +644,10 @@ export class Agent {
     return this.messages.map((msg) => {
       const redacted: Message = {
         role: msg.role,
-        content: msg.content ? redactSecrets(msg.content) : msg.content,
+        content:
+          typeof msg.content === "string"
+            ? redactSecrets(msg.content)
+            : msg.content,
         name: msg.name,
         tool_call_id: msg.tool_call_id,
       };
@@ -775,60 +933,62 @@ export class Agent {
 
   /**
    * Build the rich dynamic system instructions.
-   * Separated so it can be reused when model changes at runtime.
+   * Loads the base prompt from skills/system-prompt/SKILL.md (editable by users),
+   * then appends core memory, persistent memories, and active skills.
+   * The ${MODEL} placeholder is replaced with the actual model name.
+   *
+   * Transparency of Context: the system prompt is a visible, editable file.
+   * Users can see exactly what instructions the agent receives via /memory.
    */
-  private buildSystemPrompt(
+   private buildSystemPrompt(
     coreMemory: any,
     memories: any[],
     skills: any[],
   ): string {
-    let systemPrompt = `You are Quiver, an elite autonomous coding and research assistant running in a terminal-based CLI.
-    You are powered by model ${config.llmModelName} and have access to file operations, browser automation, shell command execution, web search, and more.
+    // Load base system prompt from skill file (falls back to hardcoded if missing)
+    let systemPrompt: string;
+    try {
+      const promptPath = path.resolve(
+        config.skillsDir,
+        "system-prompt",
+        "SKILL.md",
+      );
+      const rawContent = fsSync.readFileSync(promptPath, "utf8");
+      // Strip YAML frontmatter
+      systemPrompt = rawContent.replace(/^---[\s\S]*?---\s*/, "");
+      // Replace ${MODEL} placeholder
+      systemPrompt = systemPrompt.replace(/\$\{MODEL\}/g, config.llmModelName);
+    } catch {
+      // Fallback if skill file doesn't exist
+      systemPrompt = `You are Quiver, an elite autonomous coding and research assistant running in a terminal-based CLI.
+You are powered by model ${config.llmModelName} and have access to file operations, browser automation, shell command execution, web search, and more.
 
-    --- Core Principles ---
-    1. READ BEFORE WRITE: Always use view_file to read a file before modifying it. Never guess at file contents. This is enforced at the code level — write_file and replace_content will be blocked if the target file was not read first.
-    2. MINIMAL EDITS: Prefer replace_content for targeted edits over write_file for full rewrites. Only rewrite entire files when creating new files or when the file is small enough to rewrite safely.
-    3. VERIFY AFTER CHANGES: After making code changes, run run_tests to validate. Fix any compilation or test failures before declaring success.
-    4. EXPLORE FIRST: Use list_dir and view_file to understand project structure before making changes. Don't assume file layouts.
-    5. NO HALLUCINATION: Never fabricate file paths, function names, or APIs. If unsure, read the file or search the codebase first.
-    6. ERROR RECOVERY: When a tool fails, analyze the error, adjust your approach, and retry. Don't give up after a single failure.
-    7. PROGRESSIVE DISCLOSURE: Work incrementally — make a change, verify it, then move to the next step. Don't batch risky operations.
-    8. NO SILENT ACTIONS: Every action you take is visible to the user. Never perform background operations or hidden tool calls. If you do something, the user sees it happen.
-    9. PROVENANCE: When you state a fact (file path, function name, API signature), it must come from a file you read, not from memory or inference. If you are citing something, you must have read it first.
-    10. REVERSIBILITY AWARENESS: Distinguish between reversible actions (editing a file in git) and irreversible actions (rm -rf, force push, dropping a database). For irreversible actions, state the risk clearly before proceeding.
+--- Core Principles ---
+1. READ BEFORE WRITE: Always use view_file to read a file before modifying it.
+2. MINIMAL EDITS: Prefer replace_content for targeted edits over write_file for full rewrites.
+3. VERIFY AFTER CHANGES: After making code changes, run run_tests to validate.
+4. EXPLORE FIRST: Use list_dir and view_file to understand project structure before making changes.
+5. NO HALLUCINATION: Never fabricate file paths, function names, or APIs.
+6. ERROR RECOVERY: When a tool fails, analyze the error, adjust your approach, and retry.
+7. PROGRESSIVE DISCLOSURE: Work incrementally — make a change, verify it, then move to the next step.
+8. NO SILENT ACTIONS: Every action you take is visible to the user.
+9. PROVENANCE: When you state a fact, it must come from a file you read, not from memory or inference.
+10. REVERSIBILITY AWARENESS: Distinguish between reversible and irreversible actions.
 
-    --- Operational Style ---
-    You operate as an autonomous coding agent, similar to Codex or Claude Code.
-    - Prefer making reasonable assumptions over asking clarifying questions.
-    - Continue using tools to make progress until the task is complete, then present a summary.
-    - At decision points, choose the most sensible option and keep working.
-    - If something fails, try an alternative approach before reporting the issue.
-    - When the work is fully done, respond with a concise summary of what was accomplished.
-    - Be concise in your text responses. Let tool calls do the work. Don't narrate every step.
+--- Vision ---
+- When the user attaches images via [Image: path] markers, the image is encoded and sent to you as vision content.
+- You can see and analyze the image directly — describe what you see, read text from screenshots, analyze diagrams.
 
-    --- Workflow ---
-    - You can create new tools at runtime using the 'create_tool' action when you need capabilities that don't exist yet.
-    - Follow a Plan → Implement → Validate cycle: outline changes first, write clean TypeScript, then run 'run_tests' to verify.
-    - If tests or compilation fail, fix the issues before proceeding.
-    - Use grep_search to find usages, view_file to read code, replace_content for surgical edits.
-    - Use format_code after writing new TypeScript files to maintain consistent style.
-    - For browser actions: use headless: true (default) for scraping/reading pages. Use headless: false when the task requires user interaction, authentication, or manual sign-in — the browser window will appear so the user can act.
+Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
+    }
 
-    --- Code Style ---
-    - Use TypeScript with proper types (avoid 'any' where possible).
-    - 2-space indentation, semicolons, trailing commas in multiline objects.
-    - Descriptive variable names. Prefer clarity over brevity.
-    - Handle errors gracefully with try/catch and meaningful error messages.
-    - Keep functions focused and small. Single responsibility.
-
-    Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
-
-    // Quiver Core Memory blocks integration
+    // Append core memory blocks
     systemPrompt += `\n\n--- CORE MEMORY BLOCKS ---
-    [Identity]: ${coreMemory.identity}
-    [Human Context]: ${coreMemory.human_context}
-    [Project Context]: ${coreMemory.project_context}\n`;
+[Identity]: ${coreMemory.identity}
+[Human Context]: ${coreMemory.human_context}
+[Project Context]: ${coreMemory.project_context}\n`;
 
+    // Append persistent memories
     if (memories.length > 0) {
       systemPrompt += `\n--- ACTIVE PERSISTENT MEMORY ---\n`;
       for (const m of memories) {
@@ -836,9 +996,13 @@ export class Agent {
       }
     }
 
-    if (skills.length > 0) {
+    // Append active skills (excluding the system-prompt skill itself)
+    const activeSkills = skills.filter(
+      (s) => s.id !== "quiver-system-prompt",
+    );
+    if (activeSkills.length > 0) {
       systemPrompt += `\n--- ACTIVE TASK PROCEDURES (SKILLS) ---\n`;
-      for (const s of skills) {
+      for (const s of activeSkills) {
         systemPrompt += `[Skill: ${s.id} (v${s.version})]\nPurpose: ${s.purpose}\nInstructions:\n${s.content}\n\n`;
       }
     }
@@ -864,7 +1028,18 @@ export class Agent {
     // Estimate total tokens in conversation
     let totalTokens = 0;
     for (const msg of this.messages) {
-      if (msg.content) totalTokens += this.estimateTokens(msg.content);
+      if (msg.content) {
+        const text =
+          typeof msg.content === "string"
+            ? msg.content
+            : Array.isArray(msg.content)
+              ? msg.content
+                  .filter((p: any) => p.type === "text")
+                  .map((p: any) => p.text)
+                  .join(" ")
+              : "";
+        totalTokens += this.estimateTokens(text);
+      }
       if (msg.tool_calls) {
         for (const tc of msg.tool_calls) {
           totalTokens += this.estimateTokens(tc.function.arguments);
@@ -982,22 +1157,38 @@ export class Agent {
     coreMemory: any,
   ): void {
     const dim = picocolors.gray;
-    const accent = picocolors.cyan;
 
     // Estimate total context tokens (messages + system prompt)
+    // Handle both string and array (vision) content
     const allText = this.messages
-      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .map((m) => {
+        if (typeof m.content === "string") return m.content;
+        if (Array.isArray(m.content)) {
+          return m.content
+            .filter((p: any) => p.type === "text")
+            .map((p: any) => p.text)
+            .join(" ");
+        }
+        return "";
+      })
       .join(" ");
     const estTokens = Math.ceil(allText.length / 4);
     const maxTokens = config.maxContextTokens;
     const pct = Math.round((estTokens / maxTokens) * 100);
     const usageBar = this.usageBar(pct);
 
+    // Count vision images in the latest user message
+    const lastMsg = this.messages[this.messages.length - 1];
+    const imageCount = Array.isArray(lastMsg?.content)
+      ? lastMsg.content.filter((p: any) => p.type === "image_url").length
+      : 0;
+
     // Compact one-line manifest
     const parts: string[] = [];
     parts.push(`${memories.length} memory`);
     if (skills.length > 0) parts.push(`${skills.length} skills`);
     parts.push(`${this.registry.getAllTools().length} tools`);
+    if (imageCount > 0) parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
     parts.push(config.llmModelName);
 
     console.log(dim(`  ┌ context: ${parts.join(" · ")}`));
@@ -1013,6 +1204,9 @@ export class Agent {
       const skillNames = skills.map((s) => `${s.id} v${s.version}`).join(", ");
       console.log(dim(`  │ skills: ${skillNames}`));
     }
+
+    // Show system prompt source (transparency)
+    console.log(dim(`  │ prompt: skills/system-prompt/SKILL.md`));
 
     // Context window usage (Principle: Cost Awareness)
     const tokColor =
@@ -1091,8 +1285,9 @@ export class Agent {
       this.printContextManifest(memories, skills, coreMemory);
     }
 
-    // Append the user message
-    this.messages.push({ role: "user", content: userInput });
+    // Append the user message — process [Image: path] markers for vision
+    const processedContent = await processImageMarkers(userInput);
+    this.messages.push({ role: "user", content: processedContent });
     await this.logger.logEvent("user_input", { content: userInput });
 
     let loopCount = 0;
@@ -1440,7 +1635,7 @@ export class Agent {
 
         this.messages.push(toolMsg);
         this.tokenStats.inputTokens += this.estimateTokens(
-          toolMsg.content || "",
+          (toolMsg.content as string) || "",
         );
         await this.logger.logEvent("tool_result", {
           tool: toolName,

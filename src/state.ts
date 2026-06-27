@@ -67,8 +67,10 @@ export async function exportToAgentFile(
   targetPath: string,
 ): Promise<void> {
   const coreMemory = await loadCoreMemory();
-  const systemPrompt =
+  const systemPromptRaw =
     agent.getMessages().find((m) => m.role === "system")?.content || "";
+  const systemPrompt =
+    typeof systemPromptRaw === "string" ? systemPromptRaw : "";
 
   const af: AgentFile = {
     format: "quiver-qf",
@@ -84,7 +86,18 @@ export async function exportToAgentFile(
       model: config.llmModelName,
       baseUrl: config.llmBaseUrl,
     },
-    messages: agent.getMessages(),
+    messages: agent.getMessages().map((m) => ({
+      ...m,
+      content:
+        typeof m.content === "string"
+          ? m.content
+          : Array.isArray(m.content)
+            ? m.content
+                .filter((p: any) => p.type === "text")
+                .map((p: any) => p.text)
+                .join("\n")
+            : "",
+    })),
   };
 
   await fs.writeFile(targetPath, JSON.stringify(af, null, 2), "utf8");

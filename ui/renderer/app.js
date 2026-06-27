@@ -1,0 +1,974 @@
+    const chatArea = document.getElementById("chatArea");
+    const promptInput = document.getElementById("promptInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusDot = document.getElementById("statusDot");
+    // statusText removed — only dot indicator remains
+    const statsBar = document.getElementById("statsBar");
+    const emptyState = document.getElementById("emptyState");
+    const activeSessionTitle = document.getElementById("activeSessionTitle");
+    
+    let agentRunning = false;
+    let currentAgentMsg = null;
+    let currentSessionPath = null;
+    let currentSessionId = null;
+
+    // View switcher (tabs)
+    async function showView(viewName) {
+      document.getElementById("chatView").style.display = viewName === "chat" ? "flex" : "none";
+      document.getElementById("contextView").style.display = viewName === "context" ? "flex" : "none";
+      document.getElementById("verificationView").style.display = viewName === "verification" ? "flex" : "none";
+      
+      // Active tab styling
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      if (viewName === "chat") document.getElementById("btnChat").classList.add("active");
+      if (viewName === "context") {
+        document.getElementById("btnContext").classList.add("active");
+        await loadContextData();
+      }
+      if (viewName === "verification") document.getElementById("btnVerification").classList.add("active");
+    }
+
+    let activeEditorType = 'core'; // 'core' or 'skill'
+    let activeCoreTab = 'identity'; // 'identity', 'human', or 'project'
+    let activeSkillName = null;
+
+    // Context workspace loading
+    async function loadContextData() {
+      // 1. Core memory
+      const core = await window.quiver.loadCoreMemory();
+      document.getElementById("memIdentity").value = core.identity || "";
+      document.getElementById("memHuman").value = core.human_context || "";
+      document.getElementById("memProject").value = core.project_context || "";
+      
+      // Update editor text area
+      if (activeEditorType === 'core') {
+        const val = document.getElementById("mem" + capitalize(activeCoreTab)).value;
+        document.getElementById("editorTextArea").value = val;
+      }
+      
+      updateEditorGutter();
+
+      // 2. Active skills list
+      const skills = await window.quiver.listSkills();
+      const skillsList = document.getElementById("skillsList");
+      if (!skills || skills.length === 0) {
+        skillsList.innerHTML = '<div class="ide-file-item empty">No active skills in workspace</div>';
+        return;
+      }
+      skillsList.innerHTML = "";
+      skills.forEach(s => {
+        const div = document.createElement("div");
+        div.className = "ide-file-item";
+        if (activeEditorType === 'skill' && activeSkillName === s) {
+          div.classList.add("active");
+        }
+        div.onclick = () => openSkillFile(s, div);
+        
+        div.innerHTML = `
+          <img src="assets/icon-edit.png" class="icon" alt="">
+          <span>${s}</span>
+        `;
+        skillsList.appendChild(div);
+      });
+    }
+
+    function capitalize(str) {
+      if (str === 'human') return 'Human';
+      if (str === 'project') return 'Project';
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // Gutter update
+    function updateEditorGutter() {
+      const textarea = document.getElementById("editorTextArea");
+      const gutter = document.getElementById("editorGutter");
+      const lines = textarea.value.split("\n").length;
+      let gutterHtml = "";
+      for (let i = 1; i <= Math.max(lines, 25); i++) {
+        gutterHtml += i + "<br>";
+      }
+      gutter.innerHTML = gutterHtml;
+    }
+
+    // Input monitoring
+    function onEditorInput() {
+      const val = document.getElementById("editorTextArea").value;
+      if (activeEditorType === 'core') {
+        const fieldName = activeCoreTab === 'human' ? 'memHuman' : (activeCoreTab === 'project' ? 'memProject' : 'memIdentity');
+        document.getElementById(fieldName).value = val;
+      }
+      updateEditorGutter();
+    }
+
+    // Switch Core Memories tab
+    function switchCoreTab(tabName) {
+      if (activeEditorType !== 'core') {
+        activeEditorType = 'core';
+        document.getElementById("fileCoreJson").classList.add("active");
+        document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      }
+      
+      activeCoreTab = tabName;
+      
+      document.querySelectorAll(".editor-tabs .editor-tab").forEach(tab => tab.classList.remove("active"));
+      const idMap = {
+        'identity': 'tabCoreIdentity',
+        'human': 'tabCoreHuman',
+        'project': 'tabCoreProject'
+      };
+      document.getElementById(idMap[tabName]).classList.add("active");
+      
+      let infoText = "";
+      if (tabName === 'identity') {
+        infoText = "👤 identity: Defines the AI agent's core persona, behavior rules, and constraints. Prepended as system instructions to EVERY chat prompt.";
+      } else if (tabName === 'human') {
+        infoText = "👨‍💻 human_context (User Context): Persistent preferences and instructions about you (the developer), your tech stack, and workflow. Prepended to EVERY chat prompt.";
+      } else if (tabName === 'project') {
+        infoText = "📁 project_context (Project Context): Persistent architecture summaries, coding standards, database schemas, and guides for this repository. Prepended to EVERY chat prompt.";
+      }
+      document.getElementById("editorInfoText").textContent = infoText;
+      
+      const fieldName = tabName === 'human' ? 'memHuman' : (tabName === 'project' ? 'memProject' : 'memIdentity');
+      const val = document.getElementById(fieldName).value;
+      document.getElementById("editorTextArea").value = val;
+      
+      updateEditorGutter();
+    }
+
+    // Open Core memory file from sidebar
+    function openCoreMemoryFile() {
+      document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      document.getElementById("fileCoreJson").classList.add("active");
+      
+      const tabsEl = document.getElementById("editorTabs");
+      tabsEl.innerHTML = `
+        <div class="editor-tab ${activeCoreTab === 'identity' ? 'active' : ''}" id="tabCoreIdentity" onclick="switchCoreTab('identity')">identity</div>
+        <div class="editor-tab ${activeCoreTab === 'human' ? 'active' : ''}" id="tabCoreHuman" onclick="switchCoreTab('human')">human_context</div>
+        <div class="editor-tab ${activeCoreTab === 'project' ? 'active' : ''}" id="tabCoreProject" onclick="switchCoreTab('project')">project_context</div>
+      `;
+      
+      switchCoreTab(activeCoreTab);
+    }
+
+    // Open skill instruction markdown from sidebar
+    async function openSkillFile(skillName, element) {
+      activeEditorType = 'skill';
+      activeSkillName = skillName;
+      
+      document.getElementById("fileCoreJson").classList.remove("active");
+      document.querySelectorAll("#skillsList .ide-file-item").forEach(item => item.classList.remove("active"));
+      element.classList.add("active");
+      
+      const tabsEl = document.getElementById("editorTabs");
+      tabsEl.innerHTML = `<div class="editor-tab active">SKILL.md (${skillName})</div>`;
+      
+      document.getElementById("editorInfoText").textContent = `Active Skill instruction guide stored in skills/${skillName}/SKILL.md. Exposes reusable code rules and behaviors to Quiver agent.`;
+      
+      const content = await window.quiver.readSkill(skillName);
+      document.getElementById("editorTextArea").value = content || "# " + skillName + "\n\n(Write skill guidelines here)";
+      
+      updateEditorGutter();
+    }
+
+    // Create a new active skill
+    async function createNewSkill() {
+      const name = prompt("Enter a name for the new skill (e.g. my-custom-skill):");
+      if (!name) return;
+      const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+      if (!cleanName) return;
+      
+      const defaultContent = `---
+name: ${cleanName}
+description: Description of what this skill does
+version: 1.0.0
+---
+
+# ${cleanName}
+
+## Guidelines
+- Step 1...
+`;
+      const success = await window.quiver.saveSkill(cleanName, defaultContent);
+      if (success) {
+        await loadContextData();
+        // Highlight and open the newly created skill
+        setTimeout(() => {
+          const items = document.querySelectorAll("#skillsList .ide-file-item");
+          for (const item of items) {
+            if (item.querySelector("span")?.textContent === cleanName) {
+              openSkillFile(cleanName, item);
+              break;
+            }
+          }
+        }, 100);
+      } else {
+        alert("Failed to create skill file.");
+      }
+    }
+
+    // Save active editor changes to disk
+    async function saveActiveEditor() {
+      const statusEl = document.getElementById("memorySaveStatus");
+      statusEl.textContent = "Saving...";
+      statusEl.className = "save-status saving";
+      
+      if (activeEditorType === 'core') {
+        const coreMemory = {
+          identity: document.getElementById("memIdentity").value.trim(),
+          human_context: document.getElementById("memHuman").value.trim(),
+          project_context: document.getElementById("memProject").value.trim()
+        };
+        const success = await window.quiver.saveCoreMemory(coreMemory);
+        if (success) {
+          statusEl.textContent = "Saved to core.json ✓";
+          statusEl.className = "save-status success";
+        } else {
+          statusEl.textContent = "Failed to save core.json ✗";
+          statusEl.className = "save-status error";
+        }
+      } else if (activeEditorType === 'skill') {
+        const text = document.getElementById("editorTextArea").value;
+        const success = await window.quiver.saveSkill(activeSkillName, text);
+        if (success) {
+          statusEl.textContent = "Saved SKILL.md ✓";
+          statusEl.className = "save-status success";
+        } else {
+          statusEl.textContent = "Failed to save skill ✗";
+          statusEl.className = "save-status error";
+        }
+      }
+      
+      setTimeout(() => {
+        statusEl.textContent = "";
+        statusEl.className = "save-status";
+      }, 4000);
+    }
+
+    // ── Explainability Timeline ──────────────────────────────────────
+    const FRIENDLY_TOOL_NAMES = {
+      view_file: "Reading a file",
+      write_file: "Creating / writing a file",
+      replace_content: "Editing code in a file",
+      list_dir: "Listing directory contents",
+      format_code: "Formatting code",
+      grep_search: "Searching through files",
+      run_command: "Running a shell command",
+      run_tests: "Running tests",
+      create_tool: "Creating a new tool",
+      log_tokens: "Logging usage stats",
+      web_search: "Searching the web",
+      scrape_url: "Reading a webpage",
+      search_docs: "Searching documentation",
+      browser_control: "Controlling the browser",
+      memory_append: "Saving to memory",
+      memory_replace: "Updating memory",
+      github: "Interacting with GitHub",
+      deep_research: "Running deep research",
+      find_all: "Finding entities",
+      entity_search: "Searching entities",
+    };
+
+    let timelineEntries = [];
+    let accumulatedThought = "";
+    let timelineStepCounter = 0;
+
+    function resetExplainabilityState() {
+      timelineEntries = [];
+      accumulatedThought = "";
+      timelineStepCounter = 0;
+      const container = document.getElementById("timelineContainer");
+      if (container) {
+        container.innerHTML = '<div id="timelineEmpty" style="font-size:12.5px; color:var(--text-muted); font-style:italic; padding:20px 0;">No activity yet. Start a chat to see the AI\'s thought process and actions here.</div>';
+      }
+    }
+
+    function friendlyToolDetail(toolName, toolArgs) {
+      const filePath = toolArgs.filePath || toolArgs.targetFile || toolArgs.TargetFile || "";
+      const filename = filePath ? filePath.split("/").pop() : "";
+      switch (toolName) {
+        case "view_file": return filename ? `Reading ${filename}` : "Reading a file";
+        case "write_file": return filename ? `Writing to ${filename}` : "Creating a file";
+        case "replace_content": return filename ? `Editing ${filename}` : "Editing a file";
+        case "list_dir": return toolArgs.dirPath ? `Listing ${toolArgs.dirPath.split("/").pop()}/` : "Listing a directory";
+        case "grep_search": return toolArgs.query ? `Searching for \"${toolArgs.query.substring(0,40)}\"` : "Searching code";
+        case "run_command": return toolArgs.command ? `$ ${toolArgs.command.substring(0,60)}` : "Running a command";
+        case "run_tests": return "Running the test suite";
+        case "web_search": return toolArgs.query ? `Searching: \"${toolArgs.query.substring(0,50)}\"` : "Searching the web";
+        case "scrape_url": return toolArgs.url ? `Fetching ${new URL(toolArgs.url).hostname}` : "Fetching a webpage";
+        case "browser_control": return "Automating the browser";
+        case "deep_research": return toolArgs.query ? `Researching: \"${toolArgs.query.substring(0,50)}\"` : "Running deep research";
+        default: return FRIENDLY_TOOL_NAMES[toolName] || toolName;
+      }
+    }
+
+    function addTimelineEntry(type, content, detail) {
+      timelineStepCounter++;
+      const container = document.getElementById("timelineContainer");
+      const emptyEl = document.getElementById("timelineEmpty");
+      if (emptyEl) emptyEl.remove();
+
+      const entry = document.createElement("div");
+      entry.className = "timeline-entry";
+      entry.dataset.step = timelineStepCounter;
+      entry.dataset.status = "working";
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      let icon = "🔄";
+      let color = "var(--accent)";
+      if (type === "thought") { icon = "💭"; color = "var(--text-muted)"; }
+      else if (type === "action") { icon = "⚡"; color = "var(--accent)"; }
+
+      entry.innerHTML = `
+        <div style="display:flex; gap:12px; padding:12px 16px; border-left:2px solid ${color}; margin-left:8px; position:relative;">
+          <div style="position:absolute; left:-9px; top:14px; width:16px; height:16px; border-radius:50%; background:var(--bg); border:2px solid ${color}; display:flex; align-items:center; justify-content:center; font-size:9px;">${icon}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:${color};">${type === 'thought' ? 'Reasoning' : 'Action'}</span>
+              <span style="font-size:10px; color:var(--text-muted);">${timeStr}</span>
+              <span class="timeline-status" style="font-size:9px; font-weight:600; padding:1px 6px; border-radius:10px; background:rgba(245,158,11,0.12); color:var(--warning);">working</span>
+            </div>
+            <div style="font-size:12.5px; color:var(--text); line-height:1.5; font-weight:500;">${content}</div>
+            ${detail ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px; font-family:var(--font-mono); word-break:break-all;">${detail}</div>` : ""}
+          </div>
+        </div>
+      `;
+
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+      timelineEntries.push(entry);
+      return entry;
+    }
+
+    function completeTimelineEntry(entry, success, resultPreview) {
+      if (!entry) return;
+      entry.dataset.status = success ? "done" : "error";
+      const statusEl = entry.querySelector(".timeline-status");
+      if (statusEl) {
+        if (success) {
+          statusEl.textContent = "done";
+          statusEl.style.background = "rgba(16,185,129,0.12)";
+          statusEl.style.color = "var(--success)";
+        } else {
+          statusEl.textContent = "error";
+          statusEl.style.background = "rgba(239,68,68,0.12)";
+          statusEl.style.color = "var(--danger)";
+        }
+      }
+      if (resultPreview) {
+        const detailDiv = document.createElement("div");
+        detailDiv.style.cssText = "font-size:11px; color:var(--text-muted); margin-top:4px; font-family:var(--font-mono); max-height:80px; overflow:hidden; text-overflow:ellipsis; word-break:break-all;";
+        detailDiv.textContent = resultPreview.substring(0, 200);
+        entry.querySelector("div[style*='flex:1']>").appendChild(detailDiv);
+      }
+    }
+
+    let currentTimelineToolEntry = null;
+
+    // Auto-resize textarea
+    promptInput.addEventListener("input", () => {
+      promptInput.style.height = "auto";
+      promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + "px";
+    });
+
+    // Enter to send, Shift+Enter for newline
+    promptInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendPrompt();
+      }
+    });
+
+    async function initializeUI() {
+      await loadSessionsList();
+    }
+
+    // Load list of sessions
+    async function loadSessionsList() {
+      const list = document.getElementById("sessionsList");
+      const sessions = await window.quiver.listSessions();
+      if (!sessions || sessions.length === 0) {
+        list.innerHTML = '<div class="session-empty">No previous sessions.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      sessions.forEach(s => {
+        const item = document.createElement("div");
+        item.className = "session-item";
+        if (currentSessionPath === s.path) {
+          item.classList.add("active");
+        }
+        
+        const date = new Date(s.savedAt);
+        const timeStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString(undefined, { hour: '2-digit', minute:'2-digit' });
+        
+        item.innerHTML = `
+          <div class="session-item-main" onclick="selectSession('${s.path}', '${s.sessionId}')">
+            <span class="icon">💬</span>
+            <div class="details">
+              <span class="name">${s.sessionId}</span>
+              <span class="meta">${s.messageCount} messages · ${timeStr}</span>
+            </div>
+          </div>
+          <button class="delete-btn" title="Delete Session" onclick="deleteSession(event, '${s.path}')">×</button>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    async function selectSession(path, sessionId) {
+      if (agentRunning) {
+        alert("Please wait for the agent to finish working before switching sessions.");
+        return;
+      }
+      currentSessionPath = path;
+      currentSessionId = sessionId;
+      activeSessionTitle.textContent = sessionId;
+      
+      resetExplainabilityState();
+      
+      const state = await window.quiver.loadSession(path);
+      renderHistory(state.messages || []);
+      
+      await loadSessionsList();
+      showView("chat"); // Auto switch back to chat view on selection
+    }
+
+    async function deleteSession(event, path) {
+      event.stopPropagation();
+      if (!confirm("Are you sure you want to delete this session?")) return;
+      const success = await window.quiver.deleteSession(path);
+      if (success) {
+        if (currentSessionPath === path) {
+          startNewChat();
+        }
+        await loadSessionsList();
+      }
+    }
+
+    function startNewChat() {
+      if (agentRunning) {
+        alert("Please wait for the agent to finish working before starting a new chat.");
+        return;
+      }
+      currentSessionPath = null;
+      currentSessionId = null;
+      activeSessionTitle.textContent = "new chat";
+      chatArea.innerHTML = "";
+      
+      resetExplainabilityState();
+      
+      if (emptyState) {
+        emptyState.style.display = "flex";
+        chatArea.appendChild(emptyState);
+      }
+      loadSessionsList();
+      showView("chat");
+    }
+
+    // Render session messages from file
+    function renderHistory(messages) {
+      chatArea.innerHTML = "";
+      if (emptyState) emptyState.style.display = "none";
+
+      let toolResults = {};
+      messages.forEach(m => {
+        if (m.role === "tool" && m.tool_call_id) {
+          toolResults[m.tool_call_id] = m.content;
+        }
+      });
+
+      messages.forEach((m) => {
+        if (m.role === "system") return;
+
+        if (m.role === "user") {
+          addMessage("user", m.content);
+        } else if (m.role === "assistant") {
+          if (m.content) {
+            addMessage("assistant", m.content);
+          }
+          if (m.tool_calls) {
+            m.tool_calls.forEach(tc => {
+              const toolDiv = addToolCall(tc.function.name, tc.function.arguments || {});
+              const result = toolResults[tc.id];
+              if (result !== undefined) {
+                showToolResult(toolDiv, result);
+              }
+            });
+          }
+        }
+      });
+    }
+
+    async function sendPrompt() {
+      const text = promptInput.value.trim();
+      if (!text && pendingImages.length === 0) return;
+      if (agentRunning) return;
+
+      if (emptyState) emptyState.style.display = "none";
+
+      // Build the full prompt with image references
+      let fullPrompt = text;
+      if (pendingImages.length > 0) {
+        const imageBlock = pendingImages.map((img) => `[Image: ${img.path}]`).join("\n");
+        fullPrompt = text
+          ? `${imageBlock}\n\n${text}`
+          : `${imageBlock}\n\nPlease look at the image(s) above.`;
+        pendingImages = [];
+        promptInput.placeholder = "Ask Quiver to code, research, or analyze... (drag images here)";
+      }
+
+      addMessage("user", text || "(image only)");
+      promptInput.value = "";
+      promptInput.style.height = "auto";
+
+      agentRunning = true;
+      sendBtn.disabled = true;
+      sendBtn.style.display = "none";
+      stopBtn.style.display = "inline-block";
+      statusDot.className = "dot live";
+
+      const config = await window.quiver.loadConfig();
+      if (currentSessionPath) {
+        await window.quiver.touchSession(currentSessionPath);
+        await window.quiver.startAgent(config, true);
+      } else {
+        await window.quiver.startAgent(config, false);
+      }
+      await window.quiver.sendToAgent(fullPrompt);
+
+      currentAgentMsg = addMessage("agent", "");
+    }
+
+    function addMessage(role, content) {
+      const div = document.createElement("div");
+      div.className = `msg msg-${role}`;
+      div.innerHTML = `<div class="role">${role === "agent" ? "Quiver" : role}</div><div class="body"></div>`;
+      const body = div.querySelector(".body");
+      if (content) {
+        body._rawText = content;
+        body.innerHTML = renderMarkdown(content);
+      }
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    function formatToolName(name) {
+      const names = {
+        "view_file": "Read File",
+        "write_file": "Write File",
+        "replace_content": "Edit File",
+        "list_dir": "List Directory",
+        "format_code": "Format Code",
+        "grep_search": "Search Codebase",
+        "run_command": "Run Terminal Command",
+        "run_tests": "Run Test Suite",
+        "create_tool": "Generate Action Tool",
+        "log_tokens": "Analyze Context Tokens",
+        "web_search": "Search Web",
+        "scrape_url": "Extract Web Page",
+        "deep_research": "Deep Web Research",
+        "find_all": "Search Web Entities",
+        "entity_search": "Search Entity Database",
+        "browser_control": "Control Browser"
+      };
+      return names[name] || name;
+    }
+
+    function toggleToolCard(header) {
+      const card = header.parentElement;
+      card.classList.toggle("collapsed");
+    }
+
+    function addToolCall(toolName, toolArgs) {
+      const div = document.createElement("div");
+      div.className = "tool-call collapsed"; // Start collapsed
+      const argsStr = Object.entries(toolArgs || {})
+        .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`)
+        .join(", ");
+      
+      div.innerHTML = `
+        <div class="tool-header" onclick="toggleToolCard(this)">
+          <span class="tool-status-icon">⏳</span>
+          <span class="tool-name">${formatToolName(toolName)}</span>
+          <span class="tool-args">${escapeHtml(truncate(argsStr, 80))}</span>
+          <span class="tool-chevron">▾</span>
+        </div>
+        <div class="tool-content">
+          <div class="tool-args-full">
+            <strong>Arguments:</strong>
+            <pre>${escapeHtml(JSON.stringify(toolArgs, null, 2))}</pre>
+          </div>
+          <div class="tool-result" style="display:none;"></div>
+        </div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    function showToolResult(toolDiv, result) {
+      const iconEl = toolDiv.querySelector(".tool-status-icon");
+      if (iconEl) iconEl.textContent = "✓";
+      
+      const resultEl = toolDiv.querySelector(".tool-result");
+      resultEl.innerHTML = `<strong>Result:</strong><pre>${escapeHtml(result)}</pre>`;
+      resultEl.style.display = "block";
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function copyCode(btn) {
+      const codeEl = btn.nextElementSibling;
+      const text = codeEl.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 2000);
+      });
+    }
+
+    function appendToken(text) {
+      if (!currentAgentMsg) {
+        currentAgentMsg = addMessage("agent", "");
+      }
+      const body = currentAgentMsg.querySelector(".body");
+      body._rawText = (body._rawText || "") + text;
+      body.innerHTML = renderMarkdown(body._rawText);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    // Lightweight markdown renderer — no dependencies
+    function renderMarkdown(text) {
+      if (!text) return "";
+      let html = escapeHtml(text);
+
+      // Code blocks (```lang\ncode```)
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        return `<pre class="code-block-container"><button class="copy-btn" onclick="copyCode(this)">Copy</button><code>${code.trim()}</code></pre>`;
+      });
+
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+      // Bold
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+      // Italic
+      html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
+
+      // Links [text](url)
+      html = html.replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
+      );
+
+      // Headers
+      html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
+      html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
+      html = html.replace(/^# (.+)$/gm, '<div class="md-h1">$1</div>');
+
+      // Line breaks
+      html = html.replace(/\n/g, "<br>");
+
+      // Clean up extra <br> around block elements
+      html = html.replace(/<br>(<pre class="code-block-container">)/g, "$1");
+      html = html.replace(/(<\/pre>)<br>/g, "$1");
+      html = html.replace(/<br>(<div class="md-h)/g, "$1");
+      html = html.replace(/(<\/div>)<br>/g, "$1");
+
+      return html;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function truncate(str, max) {
+      if (!str) return "";
+      if (str.length <= max) return str;
+      return str.substring(0, max) + "...";
+    }
+
+    function setIdle() {
+      agentRunning = false;
+      sendBtn.disabled = false;
+      sendBtn.style.display = "inline-block";
+      stopBtn.style.display = "none";
+      statusDot.className = "dot idle";
+      // statusText removed
+      currentAgentMsg = null;
+    }
+
+    function setError(msg) {
+      addMessage("error", msg || "Unknown error");
+      agentRunning = false;
+      sendBtn.disabled = false;
+      sendBtn.style.display = "inline-block";
+      stopBtn.style.display = "none";
+      statusDot.className = "dot error";
+      // statusText removed
+      currentAgentMsg = null;
+    }
+
+    async function stopAgent() {
+      await window.quiver.stopAgent();
+      setIdle();
+    }
+
+    function addApproval(toolName, toolArgs) {
+      const div = document.createElement("div");
+      div.className = "approval";
+      const argsStr = Object.entries(toolArgs || {})
+        .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`)
+        .join("\n    ");
+      div.innerHTML = `
+        <div class="approval-title">⚠ Permission required</div>
+        <div class="approval-desc">
+          Quiver wants to run: <strong>${formatToolName(toolName)}</strong>
+          <pre>${argsStr}</pre>
+        </div>
+        <div class="approval-actions">
+          <button class="btn-yes" onclick="approveAction(true, this)">Allow</button>
+          <button class="btn-no" onclick="approveAction(false, this)">Deny</button>
+        </div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    async function approveAction(approve, btn) {
+      const approvalDiv = btn.closest(".approval");
+      if (approvalDiv) {
+        approvalDiv.style.opacity = "0.5";
+        approvalDiv.style.pointerEvents = "none";
+        const result = approve ? "✓ Approved" : "✗ Denied";
+        approvalDiv.querySelector(".approval-actions").innerHTML =
+          `<span style="color: ${approve ? "var(--success)" : "var(--danger)"}; font-size: 12px; font-weight: 600;">${result}</span>`;
+      }
+      await window.quiver.approveToolCall(approve);
+    }
+
+    let pendingToolDivs = [];
+
+    // Agent events
+    window.quiver.onAgentEvent((msg) => {
+      if (!msg.type) return;
+
+      switch (msg.type) {
+        case "token": {
+          const tokenText = msg.data?.text || "";
+          appendToken(tokenText);
+          accumulatedThought += tokenText;
+          break;
+        }
+
+        case "tool_call": {
+          const toolName = msg.data?.toolName || "unknown";
+          const toolArgs = msg.data?.toolArgs || {};
+          const toolDiv = addToolCall(toolName, toolArgs);
+          pendingToolDivs.push(toolDiv);
+          
+          // Log accumulated reasoning to timeline before action
+          if (accumulatedThought.trim().length > 10) {
+            const thoughtSummary = accumulatedThought.trim().substring(0, 300);
+            const thoughtEntry = addTimelineEntry("thought", thoughtSummary, null);
+            completeTimelineEntry(thoughtEntry, true, null);
+          }
+          accumulatedThought = "";
+          
+          // Log the action to timeline
+          const friendlyName = friendlyToolDetail(toolName, toolArgs);
+          currentTimelineToolEntry = addTimelineEntry("action", friendlyName, null);
+          break;
+        }
+
+        case "tool_result": {
+          if (pendingToolDivs.length > 0) {
+            const div = pendingToolDivs.shift();
+            showToolResult(div, msg.data?.toolResult || "");
+          }
+          // Update timeline entry
+          const resultText = msg.data?.toolResult || "";
+          const isError = resultText.startsWith("Error");
+          completeTimelineEntry(currentTimelineToolEntry, !isError, null);
+          currentTimelineToolEntry = null;
+          break;
+        }
+
+        case "approval":
+          addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
+          break;
+
+        case "done":
+          if (msg.data?.tokenStats) {
+            const ts = msg.data.tokenStats;
+            statsBar.innerHTML = [
+              `Turns: ${ts.turns || 0}`,
+              `Input: ${ts.inputTokens || 0}`,
+              `Output: ${ts.outputTokens || 0}`,
+              `Tools: ${ts.toolCalls || 0}`,
+            ].join(" · ");
+          }
+          if (currentAgentMsg) {
+            const body = currentAgentMsg.querySelector(".body");
+            if (!body._rawText && msg.data?.response) {
+              body._rawText = msg.data.response;
+              body.innerHTML = renderMarkdown(msg.data.response);
+            }
+          }
+          setIdle();
+          
+          const isFresh = (currentSessionPath === null);
+          loadSessionsList().then(async () => {
+            if (isFresh) {
+              const sessions = await window.quiver.listSessions();
+              if (sessions && sessions.length > 0) {
+                currentSessionPath = sessions[0].path;
+                currentSessionId = sessions[0].sessionId;
+                activeSessionTitle.textContent = currentSessionId;
+                await loadSessionsList();
+              }
+            }
+          });
+          break;
+
+        case "error":
+          setError(msg.data?.error || "Unknown error");
+          break;
+      }
+    });
+
+    window.quiver.onAgentRaw((line) => {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type) return;
+      } catch {}
+      appendToken(line);
+    });
+
+    window.quiver.onAgentStderr((data) => {
+      if (data.includes("[ERROR]") || data.includes('"type":"error"')) {
+        statusDot.className = "dot error";
+      }
+    });
+
+    window.quiver.onAgentExit((info) => {
+      setIdle();
+      loadSessionsList();
+    });
+
+    window.quiver.onAgentError((err) => {
+      setError(err.message || "Agent error");
+    });
+
+    promptInput.focus();
+
+    // Memory panel
+    let memoryVisible = false;
+    async function toggleMemory() {
+      memoryVisible = !memoryVisible;
+      const panel = document.getElementById("memoryPanel");
+      panel.style.display = memoryVisible ? "flex" : "none";
+      if (memoryVisible) {
+        await loadMemoryFiles();
+      }
+    }
+
+    async function loadMemoryFiles() {
+      const files = await window.quiver.listMemory();
+      const list = document.getElementById("memoryList");
+      if (!files || files.length === 0) {
+        list.innerHTML = '<div class="memory-empty">No memory files yet.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      for (const file of files) {
+        const item = document.createElement("div");
+        item.className = "memory-item";
+        item.innerHTML = `
+          <div class="memory-item-name">${file.name}</div>
+          <div class="memory-item-size">${file.size} bytes</div>
+          <pre class="memory-item-content">${escapeHtml(file.content).substring(0, 500)}</pre>
+        `;
+        list.appendChild(item);
+      }
+    }
+
+    window.toggleMemory = toggleMemory;
+
+    // ─── Drag and Drop Image Support ───────────────────────────────────
+    const dropOverlay = document.getElementById("dropOverlay");
+    let pendingImages = []; // Array of {path, name} for dropped files
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer.types.includes("Files")) {
+        dropOverlay.style.display = "flex";
+      }
+    }
+
+    function handleDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Only hide if leaving the container itself, not a child element
+      if (e.target === e.currentTarget) {
+        dropOverlay.style.display = "none";
+      }
+    }
+
+    async function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dropOverlay.style.display = "none";
+
+      const files = Array.from(e.dataTransfer.files);
+      const imageFiles = files.filter((f) =>
+        /\.(png|jpg|jpeg|gif|bmp|webp|tiff|svg)$/i.test(f.name),
+      );
+
+      if (imageFiles.length === 0) return;
+
+      for (const file of imageFiles) {
+        // Electron File objects have a `path` property with the real filesystem path
+        const filePath = file.path || file.name;
+        pendingImages.push({ path: filePath, name: file.name });
+      }
+
+      // Show image thumbnails in chat area
+      for (const img of pendingImages.slice(-imageFiles.length)) {
+        showImagePreview(img);
+      }
+
+      // Update placeholder
+      promptInput.placeholder = `${pendingImages.length} image(s) attached. Type your message...`;
+      promptInput.focus();
+    }
+
+    function showImagePreview(img) {
+      const div = document.createElement("div");
+      div.className = "msg msg-image-preview";
+      div.innerHTML = `
+        <div class="role">image attached</div>
+        <div class="body">
+          <img src="file://${img.path}" alt="${img.name}" class="dropped-image">
+          <div class="image-name">${img.name}</div>
+        </div>
+      `;
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    // Run initialization
+    initializeUI();

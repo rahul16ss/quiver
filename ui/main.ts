@@ -167,18 +167,22 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
 // ─── Agent Process Management ─────────────────────────────────────────
 
 function getAgentCommand(): { cmd: string; args: string[] } {
-  // In packaged app, use the bundled CLI script with Electron's Node.js
-  // In dev mode, use npx tsx
-  const isPackaged = app.isPackaged;
-
-  if (isPackaged) {
-    // Use system node with tsx loader to run the bundled CLI
+  if (app.isPackaged) {
+    // In packaged mode: use system `node` with tsx loader to run the
+    // bundled CLI from the app's Resources directory.
+    // The Cask's depends_on: node ensures `node` is on PATH.
     return {
-      cmd: process.execPath,
-      args: ["--import", "tsx", path.join(app.getAppPath(), "src", "cli.ts"), "--json"],
+      cmd: "node",
+      args: [
+        "--import",
+        "tsx",
+        path.join(process.resourcesPath, "src", "cli.ts"),
+        "--json",
+      ],
     };
   }
 
+  // Dev mode: use npx tsx
   return {
     cmd: "npx",
     args: ["tsx", "src/cli.ts", "--json"],
@@ -217,8 +221,6 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
   // In packaged mode, set APP_ROOT to resourcesPath
   if (app.isPackaged) {
     (env as Record<string, string>).APP_ROOT = process.resourcesPath;
-    (env as Record<string, string>).ELECTRON_PACKAGED = "1";
-    (env as Record<string, string>).ELECTRON_RUN_AS_NODE = "1";
   }
 
   // Ensure working directory exists (creates ~/.quiver/ in packaged mode)

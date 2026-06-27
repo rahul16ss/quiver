@@ -319,14 +319,10 @@ function detectImagePaths(input: string): string {
       const expanded = p.startsWith("~/")
         ? p.replace("~", process.env.HOME || "")
         : p;
-      // Check if file exists
-      try {
-        const { existsSync } = require("fs");
-        if (existsSync(expanded)) {
-          paths.push(expanded);
-        }
-      } catch {
-        // Can't check — include it anyway
+      // Only include if file actually exists — don't include paths that
+      // fail the check (the agent's processImageMarkers will also validate
+      // magic bytes as a second layer of defense)
+      if (existsSync(expanded)) {
         paths.push(expanded);
       }
     }
@@ -1258,7 +1254,17 @@ async function main() {
           for (let i = 0; i < msgs.length; i++) {
             const msg = msgs[i];
             const role = msg.role.toUpperCase();
-            const preview = (msg.content || "").substring(0, 80);
+            const previewRaw = msg.content;
+            const preview =
+              (typeof previewRaw === "string"
+                ? previewRaw
+                : Array.isArray(previewRaw)
+                  ? previewRaw
+                      .filter((p: any) => p.type === "text")
+                      .map((p: any) => p.text)
+                      .join(" ")
+                  : ""
+              ).substring(0, 80);
             const toolCount = msg.tool_calls?.length || 0;
             const toolInfo = toolCount > 0 ? ` [${toolCount} tool calls]` : "";
             console.log(
