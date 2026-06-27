@@ -17,14 +17,67 @@ function toggleContext() {
   contextVisible = !contextVisible;
   contextPanel.style.display = contextVisible ? "flex" : "none";
   contextBtn.classList.toggle("active", contextVisible);
+  if (contextVisible) loadContextData();
 }
 
 function updateContext(data) {
   if (data.model) document.getElementById("ctxModel").textContent = data.model;
-  if (data.memory !== undefined) document.getElementById("ctxMemory").textContent = data.memory || "—";
-  if (data.skills !== undefined) document.getElementById("ctxSkills").textContent = data.skills || "—";
   if (data.tools !== undefined) document.getElementById("ctxTools").textContent = data.tools || "—";
   if (data.tokens) document.getElementById("ctxTokens").textContent = data.tokens;
+}
+
+async function loadContextData() {
+  try {
+    const core = await window.quiver.loadCoreMemory();
+    document.getElementById("ctxIdentity").value = core.identity || "";
+    document.getElementById("ctxHuman").value = core.human_context || "";
+    document.getElementById("ctxProject").value = core.project_context || "";
+  } catch {}
+
+  try {
+    const files = await window.quiver.listMemory();
+    const list = document.getElementById("ctxMemList");
+    if (!files || files.length === 0) {
+      list.innerHTML = '<div class="ctx-loading">No memory files</div>';
+    } else {
+      list.innerHTML = "";
+      for (const f of files) {
+        const item = document.createElement("div");
+        item.className = "ctx-mem-item";
+        const preview = f.content.substring(0, 200).replace(/\n/g, " ");
+        item.innerHTML = '<div class="ctx-mem-item-name">' + f.name + '</div>' +
+          '<div class="ctx-mem-item-meta">' + f.size + ' bytes</div>' +
+          '<div class="ctx-mem-item-preview">' + escapeHtml(preview) + (f.content.length > 200 ? '\u2026' : '') + '</div>';
+        list.appendChild(item);
+      }
+    }
+  } catch { document.getElementById("ctxMemList").innerHTML = '<div class="ctx-loading">Unable to load</div>'; }
+
+  try {
+    const skills = await window.quiver.listSkills();
+    const list = document.getElementById("ctxSkillsList");
+    if (!skills || skills.length === 0) {
+      list.innerHTML = '<div class="ctx-loading">No skills</div>';
+    } else {
+      list.innerHTML = "";
+      for (const s of skills) {
+        const item = document.createElement("div");
+        item.className = "ctx-skill-item";
+        item.textContent = s;
+        list.appendChild(item);
+      }
+    }
+  } catch { document.getElementById("ctxSkillsList").innerHTML = '<div class="ctx-loading">Unable to load</div>'; }
+}
+
+async function saveCoreMemory() {
+  try {
+    await window.quiver.saveCoreMemory({
+      identity: document.getElementById("ctxIdentity").value.trim(),
+      human_context: document.getElementById("ctxHuman").value.trim(),
+      project_context: document.getElementById("ctxProject").value.trim(),
+    });
+  } catch {}
 }
 let currentAgentMsg = null;
 let currentSessionPath = null;

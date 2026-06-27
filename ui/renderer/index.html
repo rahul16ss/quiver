@@ -30,36 +30,72 @@
       <header class="header">
         <span class="session-title" id="activeSessionTitle">New Chat</span>
         <div class="header-right">
-          <button class="header-btn" id="contextBtn" onclick="toggleContext()" title="Context transparency — see what the model sees">
+          <button class="header-btn" id="contextBtn" onclick="toggleContext()" title="Context — see and control what the AI sees">
             <img src="assets/icon-database.png" class="btn-icon" alt=""> Context
           </button>
           <span class="status-dot idle" id="statusDot"></span>
         </div>
       </header>
 
-      <!-- Context transparency panel (collapsible) -->
-      <div class="context-panel" id="contextPanel" style="display:none;">
-        <div class="context-section">
-          <span class="context-label">Model</span>
-          <span class="context-value" id="ctxModel">—</span>
+      <!-- Context transparency sidebar (slide-out) -->
+      <aside class="context-sidebar" id="contextSidebar" style="display:none;">
+        <div class="context-header">
+          <span>Context</span>
+          <button class="context-close" onclick="toggleContext()">×</button>
         </div>
-        <div class="context-section">
-          <span class="context-label">Memory</span>
-          <span class="context-value" id="ctxMemory">—</span>
+
+        <div class="context-body" id="contextBody">
+          <!-- Model -->
+          <div class="ctx-group">
+            <div class="ctx-group-label">Model</div>
+            <div class="ctx-group-value" id="ctxModel">—</div>
+          </div>
+
+          <!-- Core Memory (editable) -->
+          <div class="ctx-group">
+            <div class="ctx-group-label">Core Memory</div>
+            <div class="ctx-memory-fields">
+              <div class="ctx-mem-field">
+                <span class="ctx-mem-key">Identity</span>
+                <textarea class="ctx-mem-input" id="ctxIdentity" rows="2" onchange="saveCoreMemory()"></textarea>
+              </div>
+              <div class="ctx-mem-field">
+                <span class="ctx-mem-key">Human Context</span>
+                <textarea class="ctx-mem-input" id="ctxHuman" rows="2" onchange="saveCoreMemory()"></textarea>
+              </div>
+              <div class="ctx-mem-field">
+                <span class="ctx-mem-key">Project Context</span>
+                <textarea class="ctx-mem-input" id="ctxProject" rows="2" onchange="saveCoreMemory()"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Persistent Memory Files -->
+          <div class="ctx-group">
+            <div class="ctx-group-label">Memory Files</div>
+            <div class="ctx-mem-list" id="ctxMemList">
+              <div class="ctx-loading">Loading…</div>
+            </div>
+          </div>
+
+          <!-- Skills -->
+          <div class="ctx-group">
+            <div class="ctx-group-label">Skills</div>
+            <div class="ctx-skills-list" id="ctxSkillsList">
+              <div class="ctx-loading">Loading…</div>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="ctx-group">
+            <div class="ctx-group-label">Stats</div>
+            <div class="ctx-stats">
+              <div class="ctx-stat"><span class="ctx-stat-label">Tools</span><span class="ctx-stat-val" id="ctxTools">—</span></div>
+              <div class="ctx-stat"><span class="ctx-stat-label">Tokens</span><span class="ctx-stat-val" id="ctxTokens">—</span></div>
+            </div>
+          </div>
         </div>
-        <div class="context-section">
-          <span class="context-label">Skills</span>
-          <span class="context-value" id="ctxSkills">—</span>
-        </div>
-        <div class="context-section">
-          <span class="context-label">Tools</span>
-          <span class="context-value" id="ctxTools">—</span>
-        </div>
-        <div class="context-section">
-          <span class="context-label">Tokens</span>
-          <span class="context-value" id="ctxTokens">—</span>
-        </div>
-      </div>
+      </aside>
 
       <!-- Chat -->
       <div class="chat" id="chatArea">
