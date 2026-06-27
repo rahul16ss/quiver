@@ -5,4 +5,4 @@ dist-electron/
 !.env.example
 .sessions/
 .DS_Store
-.quiver_cloud_notice_shown
+.quiver_cloud_notice_shown*.rtf
