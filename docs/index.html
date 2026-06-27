@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiver — Self-evolving AI agent for the terminal</title>
+  <title>Quiver — Open harness for open models</title>
   <link rel="icon" href="../branding/logo.png" type="image/png">
   <style>
     :root {
       --bg: #0a0a0b;
       --surface: #111113;
+      --surface-hover: #18181b;
       --border: #27272a;
       --text: #fafafa;
       --text-dim: #a1a1aa;
       --text-faint: #71717a;
       --accent: #6366f1;
       --accent-dim: rgba(99, 102, 241, 0.1);
+      --success: #22c55e;
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
       --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
     }
@@ -24,25 +26,30 @@
     a:hover { text-decoration: underline; }
     .container { max-width: 720px; margin: 0 auto; padding: 0 24px; }
 
+    /* Hero */
     .hero { padding: 120px 0 80px; text-align: center; }
     .hero-logo { width: 96px; height: 96px; margin-bottom: 24px; border-radius: 22%; }
-    .hero h1 { font-size: 48px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 12px; }
-    .hero p { font-size: 20px; color: var(--text-dim); max-width: 480px; margin: 0 auto 32px; }
+    .hero h1 { font-size: 48px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 8px; }
+    .hero .tagline { font-size: 20px; color: var(--accent); font-weight: 500; margin-bottom: 12px; }
+    .hero p { font-size: 18px; color: var(--text-dim); max-width: 520px; margin: 0 auto 32px; }
     .hero-badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
     .badge { font-family: var(--font-mono); font-size: 12px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); color: var(--text-dim); }
     .badge.accent { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
+    /* Install */
     .install { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 40px auto; max-width: 480px; }
     .install-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 8px; }
     .install code { display: block; font-family: var(--font-mono); font-size: 14px; color: var(--text); background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); }
     .install-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-    .install-tab { font-size: 12px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: var(--font); }
+    .install-tab { font-size: 12px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: var(--font); transition: all 0.15s; }
     .install-tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
+    /* Section */
     section { padding: 60px 0; border-top: 1px solid var(--border); }
     section h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
     section .lead { font-size: 16px; color: var(--text-dim); margin-bottom: 32px; }
 
+    /* Tool grid */
     .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
     .tool-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: border-color 0.15s; }
     .tool-card:hover { border-color: var(--text-faint); }
@@ -50,22 +57,37 @@
     .tool-card .desc { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
     .tool-card .category { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); margin-bottom: 6px; }
 
+    /* Architecture */
     .arch { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-dim); white-space: pre; overflow-x: auto; }
     .arch .label { color: var(--accent); }
     .arch .comment { color: var(--text-faint); }
 
-    .principles { display: grid; gap: 16px; }
+    /* Comparison */
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; }
+    .comp-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+    .comp-col h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+    .comp-col.closed h3 { color: var(--text-faint); }
+    .comp-col.open h3 { color: var(--accent); }
+    .comp-col ul { list-style: none; padding: 0; }
+    .comp-col li { font-size: 13px; color: var(--text-dim); padding: 4px 0; padding-left: 20px; position: relative; }
+    .comp-col.closed li::before { content: "✕"; position: absolute; left: 0; color: var(--text-faint); }
+    .comp-col.open li::before { content: "✓"; position: absolute; left: 0; color: var(--success); }
+
+    /* Principles */
+    .principles { display: grid; gap: 20px; }
     .principle { display: flex; gap: 16px; align-items: flex-start; }
-    .principle .num { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; width: 24px; }
+    .principle .num { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; width: 28px; }
     .principle .body h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
     .principle .body p { font-size: 14px; color: var(--text-dim); }
 
+    /* Commands table */
     .commands { width: 100%; border-collapse: collapse; }
     .commands th, .commands td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
     .commands th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
     .commands code { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
     .commands td:nth-child(2) { color: var(--text-dim); }
 
+    /* Footer */
     footer { padding: 40px 0; text-align: center; border-top: 1px solid var(--border); }
     footer p { font-size: 13px; color: var(--text-faint); }
     footer a { color: var(--text-dim); }
@@ -74,24 +96,28 @@
       .hero h1 { font-size: 36px; }
       .hero p { font-size: 16px; }
       .tool-grid { grid-template-columns: 1fr; }
+      .comparison { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
+<!-- Hero -->
 <div class="container">
   <div class="hero">
     <img src="../branding/logo.png" class="hero-logo" alt="Quiver">
     <h1>Quiver</h1>
-    <p>A self-evolving coding and research agent for the terminal. Powered by GLM-5.2, with 28 tools, persistent memory, cloud sync, and the ability to write its own tools at runtime.</p>
+    <div class="tagline">Open harness for open models</div>
+    <p>A self-evolving coding and research harness for the terminal, with a desktop app. Designed for the best open source models, with extensible tools, transparent and editable persistent and session memories.</p>
     <div class="hero-badges">
       <span class="badge accent">28 tools</span>
       <span class="badge">GLM-5.2</span>
       <span class="badge">TypeScript</span>
-      <span class="badge">MIT License</span>
+      <span class="badge">Apache License</span>
     </div>
   </div>
 
+  <!-- Install -->
   <div class="install">
     <div class="install-label">Install</div>
     <div class="install-tabs">
@@ -112,6 +138,7 @@ cd quiver && npm install -g .</code>
   </div>
 </div>
 
+<!-- Tools -->
 <section>
   <div class="container">
     <h2>28 Tools</h2>
@@ -149,10 +176,11 @@ cd quiver && npm install -g .</code>
   </div>
 </section>
 
+<!-- Architecture -->
 <section>
   <div class="container">
     <h2>Architecture</h2>
-    <p class="lead">Global identity, per-project memory, automatic cloud sync. Everything is a file.</p>
+    <p class="lead">Global identity, per-thread memory, zero lock-in. Everything is a file.</p>
 <div class="arch"><span class="comment">~/.quiver/                          ← Global (shared across projects)</span>
 <span class="label">├── core.json                        </span><span class="comment"># Identity + user context</span>
 <span class="label">├── skills/                          </span><span class="comment"># Skills (reusable procedures)</span>
@@ -172,27 +200,61 @@ cd quiver && npm install -g .</code>
   </div>
 </section>
 
+<!-- Open vs Closed -->
 <section>
   <div class="container">
-    <h2>Principles</h2>
-    <p class="lead">Twelve core principles, enforced in code.</p>
-    <div class="principles">
-      <div class="principle"><div class="num">01</div><div class="body"><h3>Read Before Write</h3><p>Always read a file before modifying it. Enforced at the code level.</p></div></div>
-      <div class="principle"><div class="num">02</div><div class="body"><h3>Minimal Edits</h3><p>Prefer targeted edits over full rewrites. Use apply_patch for multi-file diffs.</p></div></div>
-      <div class="principle"><div class="num">03</div><div class="body"><h3>Verify After Changes</h3><p>Run tests after code changes. Fix failures before declaring success.</p></div></div>
-      <div class="principle"><div class="num">04</div><div class="body"><h3>Explore First</h3><p>Understand project structure before making changes.</p></div></div>
-      <div class="principle"><div class="num">05</div><div class="body"><h3>No Hallucination</h3><p>Never fabricate file paths, function names, or APIs.</p></div></div>
-      <div class="principle"><div class="num">06</div><div class="body"><h3>Error Recovery</h3><p>When a tool fails, analyze, adjust, and retry.</p></div></div>
-      <div class="principle"><div class="num">07</div><div class="body"><h3>Progressive Disclosure</h3><p>Work incrementally — make a change, verify it, then move on.</p></div></div>
-      <div class="principle"><div class="num">08</div><div class="body"><h3>No Silent Actions</h3><p>Every action is visible to the user.</p></div></div>
-      <div class="principle"><div class="num">09</div><div class="body"><h3>Provenance</h3><p>Facts must come from files read, not from memory or inference.</p></div></div>
-      <div class="principle"><div class="num">10</div><div class="body"><h3>Reversibility Awareness</h3><p>Distinguish reversible from irreversible actions.</p></div></div>
-      <div class="principle"><div class="num">11</div><div class="body"><h3>Task Tracking</h3><p>For multi-step tasks, create a todo list.</p></div></div>
-      <div class="principle"><div class="num">12</div><div class="body"><h3>Context Transparency</h3><p>Show what enters the model call before each prompt.</p></div></div>
+    <h2>Open Harness vs Closed Harness</h2>
+    <p class="lead">Your harness, your memory, your model. Zero lock-in.</p>
+    <div class="comparison">
+      <div class="comp-col closed">
+        <h3>Closed Harness</h3>
+        <ul>
+          <li>Locked to one model provider</li>
+          <li>Memory is a black box</li>
+          <li>Context is opaque</li>
+          <li>No control over what the AI sees</li>
+          <li>Session history is trapped</li>
+          <li>Tools are fixed and proprietary</li>
+          <li>No self-improvement mechanism</li>
+        </ul>
+      </div>
+      <div class="comp-col open">
+        <h3>Quiver (Open Harness)</h3>
+        <ul>
+          <li>Works with any OpenAI-compatible model</li>
+          <li>Memory is files you can read and edit</li>
+          <li>Context is transparent and shown before each prompt</li>
+          <li>Edit exactly what the AI consumes next run</li>
+          <li>Sessions are JSON files, resumable, syncable</li>
+          <li>Tools are TypeScript files, extensible at runtime</li>
+          <li>Agent can propose updates to its own prompt</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
 
+<!-- Principles -->
+<section>
+  <div class="container">
+    <h2>Core Principles</h2>
+    <p class="lead">Enforced in code, not just aspirational.</p>
+    <div class="principles">
+      <div class="principle"><div class="num">01</div><div class="body"><h3>Your harness, your memory</h3><p>Ability to manage context as you exactly intend. Memory is files you own, edit, and control.</p></div></div>
+      <div class="principle"><div class="num">02</div><div class="body"><h3>Context Transparency</h3><p>Show what enters the model call before each prompt — memory, skills, tools, model, tokens.</p></div></div>
+      <div class="principle"><div class="num">03</div><div class="body"><h3>Explainability</h3><p>Trace user prompts, resulting chain of thoughts, operations performed, and results from tool calls by the harness.</p></div></div>
+      <div class="principle"><div class="num">04</div><div class="body"><h3>Provenance</h3><p>Facts must come from provided context, not from training. Never fabricate file paths, function names, or APIs.</p></div></div>
+      <div class="principle"><div class="num">05</div><div class="body"><h3>Read Before Write</h3><p>Always read a file before modifying it. Enforced at the code level — write and edit tools are blocked if the file wasn't read first.</p></div></div>
+      <div class="principle"><div class="num">06</div><div class="body"><h3>Minimal Edits</h3><p>Prefer targeted edits over full rewrites. Use apply_patch for multi-file diffs.</p></div></div>
+      <div class="principle"><div class="num">07</div><div class="body"><h3>Verify After Changes</h3><p>Run tests after code changes. Fix failures before declaring success.</p></div></div>
+      <div class="principle"><div class="num">08</div><div class="body"><h3>No Silent Actions</h3><p>Every action is visible to the user. Never perform hidden tool calls.</p></div></div>
+      <div class="principle"><div class="num">09</div><div class="body"><h3>Reversibility Awareness</h3><p>Distinguish reversible from irreversible actions. Warn before destructive operations.</p></div></div>
+      <div class="principle"><div class="num">10</div><div class="body"><h3>Self-Improvement</h3><p>The agent can propose updates to its own system prompt. The user reviews, edits, or rejects — the agent never modifies the prompt directly.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Commands -->
 <section>
   <div class="container">
     <h2>Commands</h2>
@@ -212,9 +274,27 @@ cd quiver && npm install -g .</code>
   </div>
 </section>
 
+<!-- CLI Flags -->
+<section>
+  <div class="container">
+    <h2>CLI Flags</h2>
+    <table class="commands">
+      <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>--continue, -c</code></td><td>Resume most recent session</td></tr>
+        <tr><td><code>--resume, -r</code></td><td>Pick a session to resume</td></tr>
+        <tr><td><code>--list-sessions</code></td><td>List saved sessions</td></tr>
+        <tr><td><code>--single-turn "prompt"</code></td><td>Run one prompt and exit</td></tr>
+        <tr><td><code>--json</code></td><td>Structured JSON output for scripts</td></tr>
+        <tr><td><code>--dry-run, -n</code></td><td>Preview tool actions without executing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <footer>
   <div class="container">
-    <p><a href="https://github.com/rahul16ss/quiver">github.com/rahul16ss/quiver</a> · MIT License</p>
+    <p><a href="https://github.com/rahul16ss/quiver">github.com/rahul16ss/quiver</a> · Apache License</p>
   </div>
 </footer>
 

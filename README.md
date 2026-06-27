@@ -4,11 +4,11 @@
 
 <h1 align="center">Quiver</h1>
 
-<p align="center">A self-evolving coding and research agent for the terminal.</p>
+<p align="center">Open harness for open models</p>
 
 ---
 
-Powered by GLM-5.2, with 28 tools, persistent memory, cloud sync, and the ability to write its own tools at runtime.
+A self-evolving coding and research harness for the terminal, with a desktop app. Designed for the best open source models, with extensible tools, transparent and editable persistent and session memories.
 
 ## Quick Start
 
@@ -120,4 +120,6 @@ Quiver can propose updates to its own system prompt using `prompt_update`. The u
 
 ## License
 
-MIT
+Apache License
+
+Apache License

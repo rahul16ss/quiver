@@ -1,8 +1,9 @@
 {
   "name": "quiver",
   "version": "1.0.0",
-  "description": "Quiver: A self-evolving agent harness for autonomous coding and research in the terminal.",
+  "description": "Quiver: Open harness for open models — self-evolving coding and research agent for the terminal.",
   "author": "rahul16ss",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "ui/main.ts",
   "bin": {
