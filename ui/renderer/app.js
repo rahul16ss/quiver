@@ -5,8 +5,27 @@ const stopBtn = document.getElementById("stopBtn");
 const statusDot = document.getElementById("statusDot");
 const emptyState = document.getElementById("emptyState");
 const activeSessionTitle = document.getElementById("activeSessionTitle");
+const contextPanel = document.getElementById("contextPanel");
+const contextBtn = document.getElementById("contextBtn");
 
 let agentRunning = false;
+let contextVisible = false;
+
+// ── Context transparency ─────────────────────────────────────────────
+
+function toggleContext() {
+  contextVisible = !contextVisible;
+  contextPanel.style.display = contextVisible ? "flex" : "none";
+  contextBtn.classList.toggle("active", contextVisible);
+}
+
+function updateContext(data) {
+  if (data.model) document.getElementById("ctxModel").textContent = data.model;
+  if (data.memory !== undefined) document.getElementById("ctxMemory").textContent = data.memory || "—";
+  if (data.skills !== undefined) document.getElementById("ctxSkills").textContent = data.skills || "—";
+  if (data.tools !== undefined) document.getElementById("ctxTools").textContent = data.tools || "—";
+  if (data.tokens) document.getElementById("ctxTokens").textContent = data.tokens;
+}
 let currentAgentMsg = null;
 let currentSessionPath = null;
 let pendingToolDivs = [];
@@ -322,6 +341,14 @@ window.quiver.onAgentEvent((msg) => {
     case "token":
       appendToken(msg.data?.text || "");
       break;
+    case "context_manifest":
+      updateContext(msg.data || {});
+      if (!contextVisible) {
+        contextVisible = true;
+        contextPanel.style.display = "flex";
+        contextBtn.classList.add("active");
+      }
+      break;
     case "tool_call": {
       const div = addToolCall(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
       pendingToolDivs.push(div);
@@ -339,8 +366,10 @@ window.quiver.onAgentEvent((msg) => {
     case "done":
       if (msg.data?.tokenStats) {
         const ts = msg.data.tokenStats;
+        const totalTokens = (ts.inputTokens || 0) + (ts.outputTokens || 0);
         const bar = document.querySelector(".stats-bar");
-        if (bar) bar.textContent = `${ts.turns || 0} turns · ${ts.toolCalls || 0} tools · ${(ts.inputTokens || 0) + (ts.outputTokens || 0)} tokens`;
+        if (bar) bar.textContent = `${ts.turns || 0} turns · ${ts.toolCalls || 0} tools · ${totalTokens} tokens`;
+        updateContext({ tokens: `${totalTokens.toLocaleString()} est.` });
       }
       if (currentAgentMsg && msg.data?.response) {
         const body = currentAgentMsg.querySelector(".body");

@@ -29,8 +29,37 @@
     <main class="main">
       <header class="header">
         <span class="session-title" id="activeSessionTitle">New Chat</span>
-        <span class="status-dot idle" id="statusDot"></span>
+        <div class="header-right">
+          <button class="header-btn" id="contextBtn" onclick="toggleContext()" title="Context transparency — see what the model sees">
+            <img src="assets/icon-database.png" class="btn-icon" alt=""> Context
+          </button>
+          <span class="status-dot idle" id="statusDot"></span>
+        </div>
       </header>
+
+      <!-- Context transparency panel (collapsible) -->
+      <div class="context-panel" id="contextPanel" style="display:none;">
+        <div class="context-section">
+          <span class="context-label">Model</span>
+          <span class="context-value" id="ctxModel">—</span>
+        </div>
+        <div class="context-section">
+          <span class="context-label">Memory</span>
+          <span class="context-value" id="ctxMemory">—</span>
+        </div>
+        <div class="context-section">
+          <span class="context-label">Skills</span>
+          <span class="context-value" id="ctxSkills">—</span>
+        </div>
+        <div class="context-section">
+          <span class="context-label">Tools</span>
+          <span class="context-value" id="ctxTools">—</span>
+        </div>
+        <div class="context-section">
+          <span class="context-label">Tokens</span>
+          <span class="context-value" id="ctxTokens">—</span>
+        </div>
+      </div>
 
       <!-- Chat -->
       <div class="chat" id="chatArea">

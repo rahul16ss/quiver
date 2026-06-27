@@ -185,7 +185,7 @@ export interface Message {
 
 /** Events emitted during prompt execution for GUI consumption. */
 export interface AgentEvent {
-  type: "token" | "tool_call" | "tool_result" | "approval" | "done" | "error";
+  type: "token" | "tool_call" | "tool_result" | "approval" | "done" | "error" | "context_manifest";
   data: {
     text?: string;
     toolName?: string;
@@ -194,6 +194,11 @@ export interface AgentEvent {
     approved?: boolean;
     response?: string;
     error?: string;
+    model?: string;
+    memory?: string;
+    skills?: string;
+    tools?: string;
+    tokens?: string;
     tokenStats?: {
       inputTokens: number;
       outputTokens: number;
@@ -1334,6 +1339,33 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // Before each prompt, display a compact summary of what the agent will "see."
     if (config.outputMode === "interactive") {
       this.printContextManifest(memories, skills, coreMemory);
+    }
+
+    // In JSON mode, emit context manifest as an event for the GUI
+    if (config.outputMode === "json" && onEvent) {
+      const allText = this.messages
+        .map((m) => {
+          if (typeof m.content === "string") return m.content;
+          if (Array.isArray(m.content)) {
+            return m.content
+              .filter((p: any) => p.type === "text")
+              .map((p: any) => p.text)
+              .join(" ");
+          }
+          return "";
+        })
+        .join(" ");
+      const estTokens = Math.ceil(allText.length / 4);
+      onEvent({
+        type: "context_manifest",
+        data: {
+          model: config.llmModelName,
+          memory: memories.map((m: any) => m.filename).join(", ") || "—",
+          skills: skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
+          tools: String(this.registry.getAllTools().length),
+          tokens: `${estTokens.toLocaleString()} / ${config.maxContextTokens.toLocaleString()}`,
+        },
+      });
     }
 
     // Append the user message — process [Image: path] markers for vision

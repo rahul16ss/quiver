@@ -92,7 +92,10 @@ async function isConfigured(): Promise<boolean> {
 
 function getWorkingDir(config: QuiverConfig): string {
   if (config.workspacePath) return config.workspacePath;
-  if (!app.isPackaged) return process.cwd();
+  if (!app.isPackaged) {
+    // Dev mode: use the project root (parent of ui/)
+    return path.resolve(__dirname, "..");
+  }
 
   // Packaged mode — use ~/.quiver/
   return path.join(app.getPath("home"), ".quiver");
@@ -284,7 +287,14 @@ function approveToolCall(approve: boolean): void {
 // ─── Memory File Management ──────────────────────────────────────────
 
 function getProjectMemoryDir(workspacePath: string): string {
-  const projectName = path.basename(workspacePath || process.cwd()) || "default";
+  let projectName: string;
+  if (workspacePath) {
+    projectName = path.basename(workspacePath);
+  } else if (!app.isPackaged) {
+    projectName = path.basename(path.resolve(__dirname, ".."));
+  } else {
+    projectName = path.basename(process.cwd()) || "default";
+  }
   return path.join(app.getPath("home"), ".quiver", "projects", projectName, "memory");
 }
 
@@ -294,7 +304,7 @@ async function listMemoryFiles(): Promise<
   try {
     const config = await loadConfig();
     const fs = await import("fs/promises");
-    const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
+    const memDir = getProjectMemoryDir(config.workspacePath || "");
     const files = await fs.readdir(memDir);
     const results: { name: string; content: string; size: number }[] = [];
     for (const file of files) {
@@ -360,7 +370,17 @@ async function createWindow(): Promise<void> {
 // ─── Sessions Management ──────────────────────────────────────────────
 
 function getProjectSessionsDir(workspacePath: string): string {
-  const projectName = path.basename(workspacePath || process.cwd()) || "default";
+  // In dev mode, workspacePath may be empty and process.cwd() is the Electron
+  // binary dir. Fall back to the project root (parent of ui/).
+  let projectName: string;
+  if (workspacePath) {
+    projectName = path.basename(workspacePath);
+  } else if (!app.isPackaged) {
+    // __dirname is ui/ — go up one level to get the project root
+    projectName = path.basename(path.resolve(__dirname, ".."));
+  } else {
+    projectName = path.basename(process.cwd()) || "default";
+  }
   return path.join(app.getPath("home"), ".quiver", "projects", projectName, ".sessions");
 }
 
@@ -368,7 +388,7 @@ async function listSessions(): Promise<any[]> {
   try {
     const config = await loadConfig();
     const fs = await import("fs/promises");
-    const sessionsDir = getProjectSessionsDir(config.workspacePath || process.cwd());
+    const sessionsDir = getProjectSessionsDir(config.workspacePath || "");
     const files = await fs.readdir(sessionsDir);
     const stateFiles = files.filter((f) => f.endsWith(".state.json"));
     const results: any[] = [];
