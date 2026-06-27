@@ -5,7 +5,7 @@ const stopBtn = document.getElementById("stopBtn");
 const statusDot = document.getElementById("statusDot");
 const emptyState = document.getElementById("emptyState");
 const activeSessionTitle = document.getElementById("activeSessionTitle");
-const contextPanel = document.getElementById("contextPanel");
+const contextPanel = document.getElementById("contextSidebar");
 const contextBtn = document.getElementById("contextBtn");
 
 let agentRunning = false;
