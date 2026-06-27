@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiver — Self-evolving AI agent for the terminal</title>
+  <style>
+    :root {
+      --bg: #0a0a0b;
+      --surface: #111113;
+      --border: #27272a;
+      --text: #fafafa;
+      --text-dim: #a1a1aa;
+      --text-faint: #71717a;
+      --accent: #6366f1;
+      --accent-dim: rgba(99, 102, 241, 0.1);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+    /* Hero */
+    .hero {
+      padding: 120px 0 80px;
+      text-align: center;
+    }
+
+    .hero-logo {
+      width: 96px;
+      height: 96px;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+
+    .hero p {
+      font-size: 20px;
+      color: var(--text-dim);
+      max-width: 480px;
+      margin: 0 auto 32px;
+    }
+
+    .hero-badges {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    .badge.accent { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* Install */
+    .install {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin: 40px auto;
+      max-width: 480px;
+    }
+
+    .install-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-faint);
+      margin-bottom: 8px;
+    }
+
+    .install code {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    /* Section */
+    section {
+      padding: 60px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    section h2 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    section .lead {
+      font-size: 16px;
+      color: var(--text-dim);
+      margin-bottom: 32px;
+    }
+
+    /* Tool grid */
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .tool-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      transition: border-color 0.15s;
+    }
+
+    .tool-card:hover { border-color: var(--text-faint); }
+
+    .tool-card .name {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .tool-card .desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+
+    .tool-card .category {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    /* Architecture */
+    .arch {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-dim);
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .arch .label { color: var(--accent); }
+    .arch .comment { color: var(--text-faint); }
+
+    /* Principles */
+    .principles {
+      display: grid;
+      gap: 16px;
+    }
+
+    .principle {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .principle .num {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+      width: 24px;
+    }
+
+    .principle .body h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .principle .body p {
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    /* Commands table */
+    .commands {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .commands th, .commands td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .commands th {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-faint);
+    }
+
+    .commands code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .commands td:nth-child(2) { color: var(--text-dim); }
+
+    /* Footer */
+    footer {
+      padding: 40px 0;
+      text-align: center;
+      border-top: 1px solid var(--border);
+    }
+
+    footer p {
+      font-size: 13px;
+      color: var(--text-faint);
+    }
+
+    footer a { color: var(--text-dim); }
+
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 36px; }
+      .hero p { font-size: 16px; }
+      .tool-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="container">
+  <div class="hero">
+    <img src="../branding/logo.png" class="hero-logo" alt="Quiver">
+    <h1>Quiver</h1>
+    <p>A self-evolving coding and research agent for the terminal. Powered by GLM-5.2, with 28 tools, persistent memory, cloud sync, and the ability to write its own tools at runtime.</p>
+    <div class="hero-badges">
+      <span class="badge accent">28 tools</span>
+      <span class="badge">GLM-5.2</span>
+      <span class="badge">TypeScript</span>
+      <span class="badge">MIT License</span>
+    </div>
+  </div>
+
+  <!-- Install -->
+  <div class="install">
+    <div class="install-label">Quick Start</div>
+    <code>npm install -g .
+quiver init
+quiver</code>
+  </div>
+</div>
+
+<!-- Tools -->
+<section>
+  <div class="container">
+    <h2>28 Tools</h2>
+    <p class="lead">Every tool is an atomic primitive. The agent composes them in a loop until the task is done.</p>
+    <div class="tool-grid">
+      <div class="tool-card"><div class="category">Files</div><div class="name">view_file</div><div class="desc">Read files with line numbers and range selection</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">write_file</div><div class="desc">Create or overwrite files</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">replace_content</div><div class="desc">Surgical find-and-replace in files</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">apply_patch</div><div class="desc">Apply unified diff patches across files</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">list_dir</div><div class="desc">List directory contents with sizes</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">glob</div><div class="desc">Find files by pattern matching</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">format_code</div><div class="desc">Format TypeScript/JavaScript files</div></div>
+      <div class="tool-card"><div class="category">Files</div><div class="name">grep_search</div><div class="desc">Search file contents with ripgrep</div></div>
+      <div class="tool-card"><div class="category">System</div><div class="name">run_command</div><div class="desc">Execute shell commands</div></div>
+      <div class="tool-card"><div class="category">System</div><div class="name">run_tests</div><div class="desc">Run TypeScript compilation and tests</div></div>
+      <div class="tool-card"><div class="category">System</div><div class="name">create_tool</div><div class="desc">Dynamically create new tools at runtime</div></div>
+      <div class="tool-card"><div class="category">System</div><div class="name">log_tokens</div><div class="desc">Parse session logs for token statistics</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">web_search</div><div class="desc">Search the web via Ollama Pro or Parallel.ai</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">scrape_url</div><div class="desc">Scrape web pages to markdown</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">search_docs</div><div class="desc">Query Context7 for library documentation</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">browser_control</div><div class="desc">Control a persistent browser session</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">deep_research</div><div class="desc">Multi-hop web research with citations</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">find_all</div><div class="desc">Discover and verify entities matching criteria</div></div>
+      <div class="tool-card"><div class="category">Web</div><div class="name">entity_search</div><div class="desc">Fast synchronous people/company search</div></div>
+      <div class="tool-card"><div class="category">Memory</div><div class="name">memory_append</div><div class="desc">Append facts to persistent memory</div></div>
+      <div class="tool-card"><div class="category">Memory</div><div class="name">memory_replace</div><div class="desc">Replace persistent memory file contents</div></div>
+      <div class="tool-card"><div class="category">Memory</div><div class="name">continual_learning</div><div class="desc">Mine session transcripts for patterns</div></div>
+      <div class="tool-card"><div class="category">GitHub</div><div class="name">github</div><div class="desc">GitHub API operations (issues, PRs, contents)</div></div>
+      <div class="tool-card"><div class="category">Planning</div><div class="name">todo_write</div><div class="desc">Manage a task checklist for the session</div></div>
+      <div class="tool-card"><div class="category">Planning</div><div class="name">ask_question</div><div class="desc">Ask the user a question during execution</div></div>
+      <div class="tool-card"><div class="category">Self-improvement</div><div class="name">prompt_update</div><div class="desc">Propose updates to the system prompt</div></div>
+      <div class="tool-card"><div class="category">Iteration</div><div class="name">ralph_loop</div><div class="desc">Iterative self-referential development loop</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section>
+  <div class="container">
+    <h2>Architecture</h2>
+    <p class="lead">Global identity, per-project memory, automatic cloud sync. Everything is a file.</p>
+<div class="arch"><span class="comment">~/.quiver/                          ← Global (shared across projects)</span>
+<span class="label">├── core.json                        </span><span class="comment"># Identity + user context</span>
+<span class="label">├── skills/                          </span><span class="comment"># Skills (reusable procedures)</span>
+<span class="comment">│   ├── system-prompt/SKILL.md      </span><span class="comment"># The system prompt (editable)</span>
+<span class="comment">│   └── cli-for-agents/SKILL.md     </span><span class="comment"># CLI design patterns</span>
+<span class="label">└── projects/{name}/</span>
+<span class="label">    ├── memory/                      </span><span class="comment"># Per-project memory</span>
+<span class="comment">    │   ├── persona.txt              </span><span class="comment"># Agent behavior notes</span>
+<span class="comment">    │   ├── human.txt                </span><span class="comment"># User details</span>
+<span class="comment">    │   ├── project.json             </span><span class="comment"># Project context</span>
+<span class="comment">    │   ├── user-preferences.md      </span><span class="comment"># Auto-learned preferences</span>
+<span class="comment">    │   └── workspace-facts.md       </span><span class="comment"># Auto-learned facts</span>
+<span class="label">    └── .sessions/                   </span><span class="comment"># Session logs + state</span>
+
+<span class="comment">Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud.</span>
+<span class="comment">Syncs to {cloud}/Quiver/ after every turn. No OAuth — just files in a folder.</span></div>
+  </div>
+</section>
+
+<!-- Principles -->
+<section>
+  <div class="container">
+    <h2>Principles</h2>
+    <p class="lead">Twelve core principles, enforced in code.</p>
+    <div class="principles">
+      <div class="principle"><div class="num">01</div><div class="body"><h3>Read Before Write</h3><p>Always read a file before modifying it. Enforced at the code level — write_file and replace_content are blocked if the file wasn't read first.</p></div></div>
+      <div class="principle"><div class="num">02</div><div class="body"><h3>Minimal Edits</h3><p>Prefer targeted edits over full rewrites. Use apply_patch for multi-file diffs.</p></div></div>
+      <div class="principle"><div class="num">03</div><div class="body"><h3>Verify After Changes</h3><p>Run tests after code changes. Fix failures before declaring success.</p></div></div>
+      <div class="principle"><div class="num">04</div><div class="body"><h3>Explore First</h3><p>Understand project structure before making changes. Don't assume file layouts.</p></div></div>
+      <div class="principle"><div class="num">05</div><div class="body"><h3>No Hallucination</h3><p>Never fabricate file paths, function names, or APIs. If unsure, read the file.</p></div></div>
+      <div class="principle"><div class="num">06</div><div class="body"><h3>Error Recovery</h3><p>When a tool fails, analyze the error, adjust, and retry. Don't give up.</p></div></div>
+      <div class="principle"><div class="num">07</div><div class="body"><h3>Progressive Disclosure</h3><p>Work incrementally — make a change, verify it, then move to the next step.</p></div></div>
+      <div class="principle"><div class="num">08</div><div class="body"><h3>No Silent Actions</h3><p>Every action is visible to the user. Never perform hidden tool calls.</p></div></div>
+      <div class="principle"><div class="num">09</div><div class="body"><h3>Provenance</h3><p>Facts must come from files read, not from memory or inference.</p></div></div>
+      <div class="principle"><div class="num">10</div><div class="body"><h3>Reversibility Awareness</h3><p>Distinguish reversible from irreversible actions. Warn before destructive operations.</p></div></div>
+      <div class="principle"><div class="num">11</div><div class="body"><h3>Task Tracking</h3><p>For multi-step tasks, create a todo list. Update status as you progress.</p></div></div>
+      <div class="principle"><div class="num">12</div><div class="body"><h3>Context Transparency</h3><p>Show what enters the model call — memory, skills, tools, model — before each prompt.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Commands -->
+<section>
+  <div class="container">
+    <h2>Commands</h2>
+    <p class="lead">In-session slash commands for the interactive CLI.</p>
+    <table class="commands">
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/help</code></td><td>Show available commands</td></tr>
+        <tr><td><code>/tools</code></td><td>List all tools</td></tr>
+        <tr><td><code>/config</code></td><td>Show configuration</td></tr>
+        <tr><td><code>/model &lt;name&gt;</code></td><td>Change model</td></tr>
+        <tr><td><code>/compact</code></td><td>Compact conversation history</td></tr>
+        <tr><td><code>/reset</code></td><td>Reset conversation (keeps memory)</td></tr>
+        <tr><td><code>/resume</code></td><td>Resume a previous session</td></tr>
+        <tr><td><code>/exit</code></td><td>End session (auto-saves)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- CLI Flags -->
+<section>
+  <div class="container">
+    <h2>CLI Flags</h2>
+    <table class="commands">
+      <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>--continue, -c</code></td><td>Resume most recent session</td></tr>
+        <tr><td><code>--resume, -r</code></td><td>Pick a session to resume</td></tr>
+        <tr><td><code>--list-sessions</code></td><td>List saved sessions</td></tr>
+        <tr><td><code>--single-turn "prompt"</code></td><td>Run one prompt and exit</td></tr>
+        <tr><td><code>--json</code></td><td>Structured JSON output for scripts</td></tr>
+        <tr><td><code>--dry-run, -n</code></td><td>Preview tool actions without executing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <p><a href="https://github.com/rahul16ss/quiver">github.com/rahul16ss/quiver</a> · MIT License</p>
+  </div>
+</footer>
+
+</body>
+</html>

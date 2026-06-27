@@ -30,6 +30,7 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
   "📋 Planning": ["todo_write", "ask_question"],
   "🔄 Self-Improvement": ["prompt_update"],
   "🔁 Iteration": ["ralph_loop"],
+  "🤖 Agents": ["subagent"],
 };
 
 type ToolDisplay = { name: string; displayName: string; description: string };

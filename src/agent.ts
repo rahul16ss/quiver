@@ -1148,6 +1148,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     prompt_update: "Update prompt",
     continual_learning: "Learn from sessions",
     ralph_loop: "Ralph loop",
+    subagent: "Subagent",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */

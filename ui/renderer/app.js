@@ -181,7 +181,7 @@ const TOOL_NAMES = {
   browser_control: "Browser", deep_research: "Deep research", find_all: "Find entities",
   entity_search: "Entity search", memory_append: "Save memory", memory_replace: "Update memory",
   github: "GitHub", todo_write: "Task list", ask_question: "Ask user",
-  prompt_update: "Update prompt", continual_learning: "Learn from sessions", ralph_loop: "Ralph loop",
+  prompt_update: "Update prompt", continual_learning: "Learn from sessions", ralph_loop: "Ralph loop", subagent: "Subagent",
 };
 
 const TOOL_ICONS = {
@@ -193,7 +193,7 @@ const TOOL_ICONS = {
   browser_control: "icon-browser.png", deep_research: "icon-deep-search.png", find_all: "icon-search.png",
   entity_search: "icon-search.png", memory_append: "icon-database.png", memory_replace: "icon-database.png",
   github: "icon-github.png", todo_write: "icon-verification.png", ask_question: "icon-cli.png",
-  prompt_update: "icon-edit.png", continual_learning: "icon-database.png", ralph_loop: "icon-goals.png",
+  prompt_update: "icon-edit.png", continual_learning: "icon-database.png", ralph_loop: "icon-goals.png", subagent: "icon-quiver-logo.png",
 };
 
 function getToolIcon(name) { return TOOL_ICONS[name] || null; }
