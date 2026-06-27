@@ -505,17 +505,19 @@ async function main() {
         }
 
         if (resolved === "/compact") {
-          const removed = agent.compactHistory();
-          if (removed > 0) {
+          const result = await agent.compactHistory();
+          if (result.removedCount > 0) {
             console.log(
               picocolors.green(
-                `\n♻️  Compacted conversation: removed ${removed} old messages.\n`,
+                `\n♻️  Compacted: ${result.removedCount} messages summarized.\n` +
+                `   ${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens.\n` +
+                `   Full conversation saved to: ${result.savedTo}\n`,
               ),
             );
           } else {
             console.log(
               picocolors.yellow(
-                `\nℹ️  Conversation is already compact. Nothing to trim.\n`,
+                `\nℹ️  Conversation is already compact. Nothing to compact.\n`,
               ),
             );
           }

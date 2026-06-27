@@ -8,6 +8,13 @@ import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
 import { statusLine, theme } from "./cli_ui.js";
 import {
+  compactWithSummarization,
+  offloadLargeToolResults,
+  needsCompaction,
+  calculateKeepRecent,
+  estimateConversationTokens,
+} from "./context_manager.js";
+import {
   maybeShowCloudNotice,
   ensureCloudDataDir,
   autoSyncToCloud,
@@ -830,42 +837,23 @@ export class Agent {
     this.sessionReadline = rl;
   }
 
-  // Compact conversation history to save context window space.
-  // Keeps the system prompt + last N messages, summarizes older ones.
-  public compactHistory(keepLast: number = 10): number {
-    if (this.messages.length <= keepLast + 1) return 0;
-
-    const systemMsg = this.messages.find((m) => m.role === "system");
-    let recentMessages = this.messages.slice(-keepLast);
-
-    // Don't start with orphaned tool messages whose parent assistant
-    // tool_calls were compacted away — the API would reject them.
-    while (
-      recentMessages.length > 0 &&
-      recentMessages[0].role === "tool" &&
-      !recentMessages.some(
-        (m) =>
-          m.role === "assistant" &&
-          m.tool_calls?.some((tc) => tc.id === recentMessages[0].tool_call_id),
-      )
-    ) {
-      recentMessages = recentMessages.slice(1);
-    }
-
-    const removedCount = this.messages.length - recentMessages.length - (systemMsg ? 1 : 0);
-
-    this.messages = [];
-    if (systemMsg) {
-      this.messages.push(systemMsg);
-    }
-    // Add a summary marker for compacted history
-    this.messages.push({
-      role: "system",
-      content: `[Context Compacted] ${removedCount} earlier messages were summarized to save context window space. The conversation continues from the recent messages below.`,
-    });
-    this.messages.push(...recentMessages);
-
-    return removedCount;
+  // Compact conversation history with LLM-powered summarization.
+  // Saves the original conversation to a file, generates a real summary,
+  // and replaces old messages with the summary + recent messages.
+  public async compactHistory(keepLast?: number): Promise<{
+    removedCount: number;
+    summary: string;
+    savedTo: string;
+    tokensBefore: number;
+    tokensAfter: number;
+  }> {
+    const keep = keepLast ?? calculateKeepRecent(this.messages);
+    const result = await compactWithSummarization(
+      this.messages,
+      keep,
+      this.logger.getSessionId(),
+    );
+    return result;
   }
 
   // Reset conversation but keep system prompt and core memory
@@ -1058,63 +1046,54 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
   }
 
   /**
-   * Trims conversation history if it exceeds the configured max context size.
-   * Keeps the system prompt and most recent messages, removing oldest tool/user exchanges.
+   * Manages context for very long conversations.
+   * 1. Offloads large tool results to files (replaces with references)
+   * 2. If still over threshold, triggers LLM-powered summarization
+   *
+   * This replaces the old crude trimContextIfNeeded that just deleted messages.
+   * Now information is preserved — either in files or in an LLM summary.
    */
-  private trimContextIfNeeded(): number {
-    const maxTokens = config.maxContextTokens;
-    if (maxTokens <= 0) return 0;
+  private async manageContextIfNeeded(): Promise<{
+    offloaded: number;
+    compacted: number;
+    summary: string;
+    savedTo: string;
+  }> {
+    // Step 1: Offload large tool results
+    const offloaded = await offloadLargeToolResults(
+      this.messages,
+      this.logger.getSessionId(),
+    );
 
-    // Estimate total tokens in conversation
-    let totalTokens = 0;
-    for (const msg of this.messages) {
-      if (msg.content) {
-        const text =
-          typeof msg.content === "string"
-            ? msg.content
-            : Array.isArray(msg.content)
-              ? msg.content
-                  .filter((p: any) => p.type === "text")
-                  .map((p: any) => p.text)
-                  .join(" ")
-              : "";
-        totalTokens += this.estimateTokens(text);
-      }
-      if (msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          totalTokens += this.estimateTokens(tc.function.arguments);
-        }
-      }
+    // Step 2: Check if we still need compaction
+    if (!needsCompaction(this.messages)) {
+      return { offloaded, compacted: 0, summary: "", savedTo: "" };
     }
 
-    if (totalTokens <= maxTokens) return 0;
+    // Step 3: LLM-powered summarization
+    const keepRecent = calculateKeepRecent(this.messages);
+    const result = await compactWithSummarization(
+      this.messages,
+      keepRecent,
+      this.logger.getSessionId(),
+    );
 
-    // Remove oldest non-system messages (keep system + last ~20 messages)
-    const keepRecent = 20;
-    if (this.messages.length <= keepRecent + 1) return 0;
-
-    const systemMessages = this.messages.filter((m) => m.role === "system");
-    const nonSystemMessages = this.messages.filter((m) => m.role !== "system");
-    let keptNonSystem = nonSystemMessages.slice(-keepRecent);
-
-    // Ensure we don't start with orphaned tool messages (whose parent
-    // assistant tool_calls were trimmed away). The API rejects requests
-    // where a tool message references a tool_call_id that doesn't exist.
-    while (
-      keptNonSystem.length > 0 &&
-      keptNonSystem[0].role === "tool" &&
-      !keptNonSystem.some(
-        (m) =>
-          m.role === "assistant" &&
-          m.tool_calls?.some((tc) => tc.id === keptNonSystem[0].tool_call_id),
-      )
-    ) {
-      keptNonSystem = keptNonSystem.slice(1);
+    if (result.removedCount > 0 && config.outputMode === "interactive") {
+      console.log(
+        picocolors.gray(
+          `   ♻️  Context compacted: ${result.removedCount} messages summarized, ` +
+          `${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens. ` +
+          `Full conversation saved to: ${result.savedTo}`,
+        ),
+      );
     }
 
-    const removedCount = nonSystemMessages.length - keptNonSystem.length;
-    this.messages = [...systemMessages, ...keptNonSystem];
-    return removedCount;
+    return {
+      offloaded,
+      compacted: result.removedCount,
+      summary: result.summary,
+      savedTo: result.savedTo,
+    };
   }
 
   // ── Human-friendly tool names ──────────────────────────────────────
@@ -1325,15 +1304,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       this.messages.unshift({ role: "system", content: systemPrompt });
     }
 
-    // Trim context if needed before adding new user message
-    const trimmed = this.trimContextIfNeeded();
-    if (trimmed > 0 && config.outputMode === "interactive") {
-      console.log(
-        picocolors.gray(
-          `   ♻️  Trimmed ${trimmed} old messages to fit context window.`,
-        ),
-      );
-    }
+    // Manage context for long conversations before adding new user message
+    // This offloads large tool results and triggers L-powered summarization
+    await this.manageContextIfNeeded();
 
     // ── Context Manifest: show what enters the model call ──
     // Core building philosophy: transparency of context passed to the agent.

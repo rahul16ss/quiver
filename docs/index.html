@@ -200,6 +200,20 @@ cd quiver && npm install -g .</code>
   </div>
 </section>
 
+<!-- Context Management -->
+<section>
+  <div class="container">
+    <h2>Context Management</h2>
+    <p class="lead">Your harness, your memory. No state on the model's side. Everything is saved to files you own.</p>
+    <div class="principles">
+      <div class="principle"><div class="num">01</div><div class="body"><h3>LLM-Powered Summarization</h3><p>When context approaches 85% of the window, old messages are summarized by an LLM — not deleted. The summary preserves session intent, decisions, artifacts, and next steps. The full conversation is saved to a file you can read anytime.</p></div></div>
+      <div class="principle"><div class="num">02</div><div class="body"><h3>Context Offloading</h3><p>Large tool results (20K+ tokens) are automatically saved to files and replaced in the conversation with file path references + 10-line previews. The agent can re-read the full content with view_file when needed. A 50x context reduction with zero information loss.</p></div></div>
+      <div class="principle"><div class="num">03</div><div class="body"><h3>User-Controlled Compaction</h3><p>Run /compact anytime to trigger summarization on your terms — at task boundaries, before new work, or when you decide prior context is no longer relevant. The harness doesn't decide for you.</p></div></div>
+      <div class="principle"><div class="num">04</div><div class="body"><h3>Filesystem Preservation</h3><p>Every compaction saves the original conversation to ~/.quiver/projects/{name}/.sessions/compacted/. You can always recover what was summarized. Nothing is lost.</p></div></div>
+    </div>
+  </div>
+</section>
+
 <!-- Open vs Closed -->
 <section>
   <div class="container">
