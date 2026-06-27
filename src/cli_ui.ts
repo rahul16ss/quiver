@@ -21,7 +21,6 @@ const KNOWN_FLAGS = [
   "--dry-run",
   "-n",
   "--single-turn",
-  "--recipe",
   "init",
   "signin",
   "cloud-sync",
@@ -43,7 +42,6 @@ export interface CliOptions {
   signin: boolean;
   cloudSync: boolean;
   singleTurn?: string;
-  recipe?: string;
   continue?: boolean;
   resume?: boolean;
   listSessions?: boolean;
@@ -255,15 +253,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
         throw new UsageError("--single-turn requires a prompt string.");
       }
       opts.singleTurn = next;
-      i++;
-      continue;
-    }
-    if (arg === "--recipe") {
-      const next = argv[i + 1];
-      if (!next || next.startsWith("-")) {
-        throw new UsageError("--recipe requires a recipe name.");
-      }
-      opts.recipe = next;
       i++;
       continue;
     }
