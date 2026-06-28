@@ -47,9 +47,19 @@ export class ToolRegistry {
         }
       }
       const files = await fs.readdir(this.toolsDir);
-      
+
+      // Infra modules (runtime, sandbox) are NOT tools — exclude them from the
+      // dynamic tool scan so startup is warning-free (US-5.2). They export
+      // helpers/manifests, not a `tool` object, and would otherwise emit
+      // spurious "Export 'tool' object not found" warnings.
+      const INFRA_NON_TOOL = ["runtime", "sandbox"];
+      const isToolFile = (file: string) =>
+        (file.endsWith(".ts") || file.endsWith(".js")) &&
+        !file.endsWith(".d.ts") &&
+        !INFRA_NON_TOOL.some((n) => file.startsWith(n));
+
       const loadPromises = files
-        .filter(file => (file.endsWith(".ts") || file.endsWith(".js")) && !file.endsWith(".d.ts"))
+        .filter(isToolFile)
         .map(async file => {
           const filePath = path.join(this.toolsDir, file);
           await this.loadToolFile(filePath);

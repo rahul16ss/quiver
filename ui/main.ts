@@ -4,11 +4,29 @@ import { fileURLToPath } from "url";
 import { spawn, ChildProcess } from "child_process";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { config } from "../src/config.ts";
+
 const execAsync = promisify(exec);
 
 // ESM doesn't have __dirname — create it from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Strict Content-Security-Policy enforced on the renderer (US-8.1).
+// Mirrors ui/security.ts CSP_POLICY; inlined here so the main process has no
+// unresolved relative import (the renderer CSP contract lives in security.ts).
+const CSP_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -24,7 +42,6 @@ interface QuiverConfig {
   parallelApiKey: string;
   ollamaApiKey: string;
   githubToken: string;
-  context7ApiKey: string;
   browserHeadless: boolean;
   requireApprovalFor: string[];
   maxContextTokens: number;
@@ -45,17 +62,16 @@ const CONFIG_FILE = path.join(app.getPath("userData"), "quiver-config.json");
 const DEFAULT_CONFIG: QuiverConfig = {
   workspacePath: process.cwd(),
   provider: {
-    baseUrl: "https://ollama.com/v1",
-    modelName: "glm-5.2:cloud",
+    baseUrl: config.llmBaseUrl,
+    modelName: config.llmModelName,
     apiKey: "",
   },
   parallelApiKey: "",
   ollamaApiKey: "",
   githubToken: "",
-  context7ApiKey: "",
   browserHeadless: true,
   requireApprovalFor: ["run_command", "write_file", "replace_content", "browser_control", "create_tool"],
-  maxContextTokens: 120000,
+  maxContextTokens: config.maxContextTokens,
   memoryDir: "./memory",
   skillsDir: "./skills",
   cloudSyncPath: "",
@@ -147,11 +163,9 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
     const replacements: Record<string, string> = {
       LLM_API_BASE_URL: config.provider.baseUrl,
       LLM_MODEL_NAME: config.provider.modelName,
-      LLM_API_KEY: config.provider.apiKey,
+      OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
-      OLLAMA_API_KEY: config.ollamaApiKey,
       GITHUB_TOKEN: config.githubToken,
-      CONTEXT7_API_KEY: config.context7ApiKey,
       BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
       REQUIRE_APPROVAL_FOR: config.requireApprovalFor.join(","),
       QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
@@ -216,11 +230,9 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     ...process.env,
     LLM_API_BASE_URL: config.provider.baseUrl,
     LLM_MODEL_NAME: config.provider.modelName,
-    LLM_API_KEY: config.provider.apiKey,
+    OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
-    OLLAMA_API_KEY: config.ollamaApiKey,
     GITHUB_TOKEN: config.githubToken,
-    CONTEXT7_API_KEY: config.context7ApiKey,
     BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
     REQUIRE_APPROVAL_FOR: config.requireApprovalFor.join(","),
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
@@ -279,9 +291,15 @@ function sendToAgent(text: string): void {
   agentProcess.stdin.write(text + "\n");
 }
 
-function approveToolCall(approve: boolean): void {
+function approveToolCall(approve: boolean, note?: string): void {
   if (!agentProcess || !agentProcess.stdin) return;
+  // "y" approves. "n" denies; an optional revision note is sent as a second
+  // line so the agent can feed concrete revision guidance back to the model
+  // (US-2.4 Request-revision flow).
   agentProcess.stdin.write((approve ? "y" : "n") + "\n");
+  if (!approve) {
+    agentProcess.stdin.write((note ? note : "") + "\n");
+  }
 }
 
 // ─── Memory File Management ──────────────────────────────────────────
@@ -337,6 +355,11 @@ async function saveMemoryFile(name: string, content: string): Promise<boolean> {
 
 // ─── Window Management ────────────────────────────────────────────────
 
+
+async function fs2read(ws: typeof import("fs/promises"), p: string): Promise<string> {
+  return ws.readFile(p, "utf8");
+}
+
 async function createWindow(): Promise<void> {
   const configured = await isConfigured();
 
@@ -352,8 +375,41 @@ async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
+
+  // Persist window size/position across launches (US-8.1), with validation:
+  // restored bounds are clamped to the visible screen and the minimum size so
+  // a window never restores off-screen or impossibly small.
+  const windowStateFile = path.join(app.getPath("userData"), "window-state.json");
+  try {
+    const ws = await import("fs/promises");
+    const saved = JSON.parse(await fs2read(ws, windowStateFile));
+    if (saved && typeof saved.width === "number" && typeof saved.height === "number") {
+      const screen = (await import("electron")).screen;
+      const displays = screen.getAllDisplays();
+      const onScreen = displays.some((d) => {
+        const a = d.workArea;
+        return saved.x >= a.x - 200 && saved.y >= a.y - 200 &&
+          saved.x + saved.width <= a.x + a.width + 200 &&
+          saved.y + saved.height <= a.y + a.height + 200;
+      });
+      const width = Math.max(800, Math.min(saved.width, 2400));
+      const height = Math.max(600, Math.min(saved.height, 1800));
+      mainWindow.setBounds({ x: onScreen ? saved.x : undefined, y: onScreen ? saved.y : undefined, width, height });
+    }
+  } catch {
+    // no saved state — use defaults
+  }
+  const persistBounds = () => {
+    if (!mainWindow) return;
+    const b = mainWindow.getBounds();
+    import("fs/promises").then((ws) => ws.writeFile(windowStateFile, JSON.stringify(b), "utf8")).catch(() => {});
+  };
+  mainWindow.on("resize", persistBounds);
+  mainWindow.on("move", persistBounds);
+  mainWindow.on("close", persistBounds);
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
@@ -402,7 +458,7 @@ async function listSessions(): Promise<any[]> {
           path: filePath,
           savedAt: state.savedAt || new Date().toISOString(),
           messageCount: state.messages?.length || 0,
-          model: state.model || "glm-5.2:cloud",
+          model: state.model || DEFAULT_CONFIG.provider.modelName,
         });
       } catch {
         // Skip corrupt files
@@ -512,8 +568,10 @@ function registerIpcHandlers(): void {
     sendToAgent(text);
     return true;
   });
-  ipcMain.handle("agent:approve", async (_evt, approve: boolean) => {
-    approveToolCall(approve);
+  ipcMain.handle("agent:approve", async (_evt, payload: any) => {
+    const approve = typeof payload === "boolean" ? payload : payload?.approve === true;
+    const note = typeof payload === "object" && payload ? payload?.note : undefined;
+    approveToolCall(approve, note);
     return true;
   });
   ipcMain.handle("agent:stop", async () => {
@@ -649,6 +707,18 @@ app.whenReady().then(async () => {
       { role: "togglefullscreen" },
     ]},
   ]));
+
+  // Enforce strict CSP on the renderer (US-8.1) — defense in depth alongside
+  // the meta tag in index.html. Blocks external scripts/connections.
+  const { session } = await import("electron");
+  session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
+    cb({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [CSP_POLICY],
+      },
+    });
+  });
 
   registerIpcHandlers();
   await createWindow();

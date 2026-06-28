@@ -58,19 +58,16 @@
       if (!workspacePath) { alert("Please select your workspace folder."); return; }
       if (!apiKey) { alert("Please enter your API key."); return; }
 
+      // Source all defaults from the main process (which sources the
+      // source-controlled defaults in src/config.ts) — no hardcoded model
+      // name, base URL, or context size here.
+      const defaults = await window.quiver.loadConfig();
       await window.quiver.saveConfig({
+        ...defaults,
         workspacePath,
-        provider: { baseUrl: "https://ollama.com/v1", modelName: "glm-5.2:cloud", apiKey },
+        provider: { ...defaults.provider, apiKey },
         parallelApiKey,
         ollamaApiKey: apiKey,
-        githubToken: "",
-        context7ApiKey: "",
-        browserHeadless: true,
-        requireApprovalFor: ["run_command", "write_file", "replace_content", "browser_control", "create_tool"],
-        maxContextTokens: 900000,
-        memoryDir: "./memory",
-        skillsDir: "./skills",
-        cloudSyncPath: "",
       });
       await window.quiver.loadMain();
     }

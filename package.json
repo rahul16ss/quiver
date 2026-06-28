@@ -1,7 +1,7 @@
 {
-  "name": "quiver",
+  "name": "quiver-agent",
   "version": "1.0.0",
-  "description": "Quiver: Open harness for open models — self-evolving coding and research agent for the terminal.",
+  "description": "Quiver: Open harness for open models \u2014 self-evolving coding and research agent for the terminal.",
   "author": "rahul16ss",
   "license": "Apache-2.0",
   "type": "module",
@@ -125,6 +125,30 @@
       {
         "from": ".env.example",
         "to": ".env.example"
+      },
+      {
+        "from": "node_modules/sharp",
+        "to": "node_modules/sharp"
+      },
+      {
+        "from": "node_modules/@img/sharp-darwin-x64",
+        "to": "node_modules/@img/sharp-darwin-x64"
+      },
+      {
+        "from": "node_modules/@img/sharp-darwin-arm64",
+        "to": "node_modules/@img/sharp-darwin-arm64"
+      },
+      {
+        "from": "node_modules/@img/sharp-libvips-linux-x64",
+        "to": "node_modules/@img/sharp-libvips-linux-x64"
+      },
+      {
+        "from": "node_modules/@img/sharp-linux-x64",
+        "to": "node_modules/@img/sharp-linux-x64"
+      },
+      {
+        "from": "node_modules/@img/sharp-wasm32",
+        "to": "node_modules/@img/sharp-wasm32"
       }
     ],
     "mac": {
@@ -154,6 +178,7 @@
     "fastest-levenshtein": "^1.0.16",
     "picocolors": "^1.1.1",
     "puppeteer": "^25.2.1",
+    "sharp": "^0.35.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {

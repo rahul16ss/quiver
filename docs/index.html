@@ -3,321 +3,1471 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiver — Open harness for open models</title>
+  <title>Quiver — Open Inspectable Harness for Open Models</title>
+  <meta name="description" content="A local-first, inspectable agent harness. Own agent memory in plain text files, swap models freely, attach visual context, and run agents with total context transparency—on the CLI or a native desktop app.">
   <link rel="icon" href="../branding/logo.png" type="image/png">
+  
+  <!-- Premium Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
   <style>
     :root {
-      --bg: #0a0a0b;
-      --surface: #111113;
-      --surface-hover: #18181b;
-      --border: #27272a;
-      --text: #fafafa;
-      --text-dim: #a1a1aa;
-      --text-faint: #71717a;
-      --accent: #6366f1;
-      --accent-dim: rgba(99, 102, 241, 0.1);
-      --success: #22c55e;
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-      --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+      --bg: #000000;
+      --surface: #0a0a0c;
+      --surface-card: #121215;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.2);
+      
+      --text: #ffffff;
+      --text-dim: #8e8e93;
+      --text-faint: #48484a;
+      
+      --accent: #2f80ed;
+      --accent-glow: rgba(47, 128, 237, 0.15);
+      
+      --success: #30d158;
+      --danger: #ff453a;
+      --warning: #ff9f0a;
+      
+      --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --font-title: "Outfit", var(--font);
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      
+      --radius: 12px;
+      --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .container { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 120px;
+    }
 
-    /* Hero */
-    .hero { padding: 120px 0 80px; text-align: center; }
-    .hero-logo { width: 96px; height: 96px; margin-bottom: 24px; border-radius: 22%; }
-    .hero h1 { font-size: 48px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 8px; }
-    .hero .tagline { font-size: 20px; color: var(--accent); font-weight: 500; margin-bottom: 12px; }
-    .hero p { font-size: 18px; color: var(--text-dim); max-width: 520px; margin: 0 auto 32px; }
-    .hero-badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-    .badge { font-family: var(--font-mono); font-size: 12px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); color: var(--text-dim); }
-    .badge.accent { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    a {
+      color: var(--text);
+      text-decoration: none;
+      transition: var(--transition);
+    }
+    a:hover {
+      color: var(--accent);
+    }
 
-    /* Install */
-    .install { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 40px auto; max-width: 480px; }
-    .install-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 8px; }
-    .install code { display: block; font-family: var(--font-mono); font-size: 14px; color: var(--text); background: var(--bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); }
-    .install-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-    .install-tab { font-size: 12px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; font-family: var(--font); transition: all 0.15s; }
-    .install-tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
 
-    /* Section */
-    section { padding: 60px 0; border-top: 1px solid var(--border); }
-    section h2 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
-    section .lead { font-size: 16px; color: var(--text-dim); margin-bottom: 32px; }
+    /* Minimalist Navbar */
+    .navbar {
+      height: 72px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(20px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-title);
+      font-size: 20px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+    .nav-logo img {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+    }
+    .nav-links {
+      display: flex;
+      gap: 32px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--text-dim);
+    }
+    .nav-links a {
+      color: var(--text-dim);
+    }
+    .nav-links a:hover {
+      color: var(--text);
+    }
 
-    /* Tool grid */
-    .tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-    .tool-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; transition: border-color 0.15s; }
-    .tool-card:hover { border-color: var(--text-faint); }
-    .tool-card .name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-    .tool-card .desc { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
-    .tool-card .category { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); margin-bottom: 6px; }
+    /* Hero Section */
+    .hero {
+      padding: 120px 0 80px;
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .hero h1 {
+      font-family: var(--font-title);
+      font-size: 72px;
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 24px;
+    }
+    .hero p {
+      font-size: 22px;
+      color: var(--text-dim);
+      font-weight: 300;
+      line-height: 1.5;
+      margin-bottom: 40px;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+    .btn {
+      font-size: 15px;
+      font-weight: 500;
+      padding: 12px 28px;
+      border-radius: 30px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .btn.primary {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .btn.primary:hover {
+      background: rgba(255, 255, 255, 0.9);
+      transform: scale(1.02);
+    }
+    .btn:hover {
+      border-color: var(--border-hover);
+      transform: scale(1.02);
+    }
 
-    /* Architecture */
-    .arch { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; color: var(--text-dim); white-space: pre; overflow-x: auto; }
-    .arch .label { color: var(--accent); }
-    .arch .comment { color: var(--text-faint); }
+    /* Section Typography */
+    section {
+      padding: 100px 0;
+      border-top: 1px solid var(--border);
+    }
+    .section-header {
+      margin-bottom: 60px;
+      max-width: 680px;
+    }
+    .section-header h2 {
+      font-family: var(--font-title);
+      font-size: 40px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+    .section-header .lead {
+      font-size: 18px;
+      color: var(--text-dim);
+      font-weight: 300;
+    }
 
-    /* Comparison */
-    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; }
-    .comp-col { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-    .comp-col h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
-    .comp-col.closed h3 { color: var(--text-faint); }
-    .comp-col.open h3 { color: var(--accent); }
-    .comp-col ul { list-style: none; padding: 0; }
-    .comp-col li { font-size: 13px; color: var(--text-dim); padding: 4px 0; padding-left: 20px; position: relative; }
-    .comp-col.closed li::before { content: "✕"; position: absolute; left: 0; color: var(--text-faint); }
-    .comp-col.open li::before { content: "✓"; position: absolute; left: 0; color: var(--success); }
+    /* Three Premium UX Stories */
+    .story-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 120px;
+    }
+    .story-row {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 60px;
+      align-items: center;
+    }
+    .story-row.reverse {
+      grid-template-columns: 0.9fr 1.1fr;
+    }
+    @media (max-width: 768px) {
+      .story-row, .story-row.reverse {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+    }
+    .story-visual {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      aspect-ratio: 16 / 10;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
+    }
+    .story-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .story-title {
+      font-family: var(--font-title);
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .story-desc {
+      color: var(--text-dim);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .user-story-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+    }
+    .user-story-card h5 {
+      font-family: var(--font-title);
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .user-story-card ul {
+      list-style: none;
+      color: var(--text-dim);
+      margin-top: 8px;
+      padding-left: 4px;
+    }
+    .user-story-card li {
+      margin-bottom: 4px;
+      position: relative;
+      padding-left: 14px;
+    }
+    .user-story-card li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
 
-    /* Principles */
-    .principles { display: grid; gap: 20px; }
-    .principle { display: flex; gap: 16px; align-items: flex-start; }
-    .principle .num { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--accent); flex-shrink: 0; width: 28px; }
-    .principle .body h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .principle .body p { font-size: 14px; color: var(--text-dim); }
+    /* High-Fidelity Mockup Elements */
+    .mock-editor {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: #e5e5e5;
+    }
+    .mock-bar {
+      display: flex;
+      gap: 6px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .mock-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border-hover);
+    }
+    .mock-pane {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 16px;
+      height: 100%;
+    }
+    .mock-left {
+      border-right: 1px solid var(--border);
+      padding-right: 12px;
+    }
+    .mock-tag {
+      color: var(--accent);
+    }
+    .mock-comment {
+      color: var(--text-dim);
+    }
+    
+    /* Swap Animation Mockup */
+    .mock-swap-container {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .mock-swap-card {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 20px;
+      text-align: center;
+      width: 120px;
+      transition: var(--transition);
+    }
+    .mock-swap-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+    .mock-swap-arrow {
+      font-size: 20px;
+      color: var(--text-dim);
+      animation: swapIndicator 2s infinite ease-in-out;
+    }
+    @keyframes swapIndicator {
+      0%, 100% { transform: translateX(-4px); opacity: 0.5; }
+      50% { transform: translateX(4px); opacity: 1; }
+    }
 
-    /* Commands table */
-    .commands { width: 100%; border-collapse: collapse; }
-    .commands th, .commands td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-    .commands th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
-    .commands code { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
-    .commands td:nth-child(2) { color: var(--text-dim); }
+    /* Timeline Mockup */
+    .mock-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+    .mock-time-step {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+    }
+    .mock-time-step span {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .mock-time-step.model span {
+      background: rgba(47, 128, 237, 0.15);
+      color: var(--accent);
+    }
+    .mock-time-step.tool span {
+      background: rgba(48, 209, 88, 0.15);
+      color: var(--success);
+    }
 
-    /* Footer */
-    footer { padding: 40px 0; text-align: center; border-top: 1px solid var(--border); }
-    footer p { font-size: 13px; color: var(--text-faint); }
-    footer a { color: var(--text-dim); }
+    /* Open vs Closed Harnesses */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin: 40px 0;
+    }
+    @media (max-width: 768px) {
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .comp-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 40px;
+    }
+    .comp-card h3 {
+      font-family: var(--font-title);
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .comp-card.closed h3 { color: var(--danger); }
+    .comp-card.open h3 { color: var(--success); }
+    .comp-card ul {
+      list-style: none;
+    }
+    .comp-card li {
+      font-size: 14px;
+      color: var(--text-dim);
+      padding: 12px 0;
+      padding-left: 28px;
+      position: relative;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    }
+    .comp-card li:last-child {
+      border-bottom: none;
+    }
+    .comp-card.closed li::before {
+      content: "✕";
+      position: absolute;
+      left: 0;
+      color: var(--danger);
+      font-weight: bold;
+    }
+    .comp-card.open li::before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: var(--success);
+      font-weight: bold;
+    }
 
-    @media (max-width: 640px) {
-      .hero h1 { font-size: 36px; }
-      .hero p { font-size: 16px; }
-      .tool-grid { grid-template-columns: 1fr; }
-      .comparison { grid-template-columns: 1fr; }
+    /* System Principles */
+    .principles-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-top: 40px;
+    }
+    @media (max-width: 768px) {
+      .principles-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .principle-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      transition: var(--transition);
+    }
+    .principle-card:hover {
+      border-color: var(--border-hover);
+    }
+    .principle-card .num {
+      font-family: var(--font-title);
+      font-size: 36px;
+      font-weight: 300;
+      color: var(--text-faint);
+      margin-bottom: 16px;
+    }
+    .principle-card h4 {
+      font-family: var(--font-title);
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .principle-card p {
+      font-size: 14px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    /* Quick Install */
+    .install-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      max-width: 540px;
+      margin: 40px auto 0;
+    }
+    .install-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      justify-content: center;
+    }
+    .install-tab {
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 18px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .install-tab.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+    .install-code {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--accent);
+      background: #000;
+      padding: 18px 24px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+
+    /* Interactive Tools Catalog */
+    .tools-search-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    @media (max-width: 768px) {
+      .tools-search-bar {
+        flex-direction: column;
+      }
+    }
+    .tool-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 12px 18px;
+      font-size: 14px;
+      outline: none;
+      transition: var(--transition);
+    }
+    .tool-input:focus {
+      border-color: var(--border-hover);
+    }
+    .tool-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 12px 18px;
+      font-size: 14px;
+      outline: none;
+      cursor: pointer;
+    }
+    .tools-catalog {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 768px) {
+      .tools-catalog {
+        grid-template-columns: 1fr;
+      }
+    }
+    .tool-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      transition: var(--transition);
+    }
+    .tool-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.02);
+    }
+    .tool-card .cat {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+    .tool-card .name {
+      font-family: var(--font-title);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .tool-card .desc {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    /* CLI Tables */
+    .table-wrapper {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow-x: auto;
+      margin-top: 32px;
+    }
+    .table-content {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      text-align: left;
+    }
+    .table-content th, .table-content td {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-content th {
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+    .table-content tr:last-child td {
+      border-bottom: none;
+    }
+    .table-content code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* Desktop App Mockup */
+    .mock-app {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #e5e5e5;
+      overflow: hidden;
+    }
+    .mock-app .mock-bar { padding: 10px 12px; }
+    .mock-app-body {
+      display: grid;
+      grid-template-columns: 0.8fr 2fr 1.1fr;
+      flex: 1;
+      min-height: 0;
+    }
+    .mock-app-side {
+      border-right: 1px solid var(--border);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mock-app-session {
+      padding: 6px 8px;
+      border-radius: 4px;
+      color: var(--text-dim);
+      border: 1px solid transparent;
+    }
+    .mock-app-session.active {
+      background: rgba(47, 128, 237, 0.12);
+      color: var(--text);
+      border-color: rgba(47, 128, 237, 0.3);
+    }
+    .mock-app-chat {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-right: 1px solid var(--border);
+    }
+    .mock-bubble {
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .mock-bubble.user {
+      background: var(--surface-card);
+      color: var(--text);
+      align-self: flex-end;
+      max-width: 80%;
+    }
+    .mock-bubble.agent {
+      background: rgba(47, 128, 237, 0.1);
+      color: var(--text-dim);
+      align-self: flex-start;
+      max-width: 90%;
+    }
+    .mock-app-drawer {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mock-drawer-title {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-faint);
+    }
+    .mock-drawer-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-dim);
+      font-size: 10px;
+    }
+    .mock-drawer-row .v { color: var(--accent); }
+
+    /* Vision Mockup */
+    .mock-vision {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #e5e5e5;
+    }
+    .mock-drop {
+      border: 1px dashed var(--border-hover);
+      border-radius: 8px;
+      padding: 14px;
+      text-align: center;
+      color: var(--text-dim);
+    }
+    .mock-shot {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .mock-shot-thumb {
+      width: 48px;
+      height: 36px;
+      border-radius: 4px;
+      background: linear-gradient(135deg, rgba(47,128,237,0.4), rgba(48,209,88,0.25));
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .mock-shot-meta { color: var(--text-dim); font-size: 10px; line-height: 1.5; }
+    .mock-shot-meta b { color: var(--text); font-weight: 600; }
+
+    /* Desktop download buttons */
+    .install-downloads {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .download-btn {
+      flex: 1;
+      min-width: 120px;
+      font-size: 13px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #000;
+      color: var(--text);
+      cursor: pointer;
+      transition: var(--transition);
+      text-align: center;
+    }
+    .download-btn:hover {
+      border-color: var(--border-hover);
+      background: var(--surface-card);
+      transform: scale(1.02);
+    }
+    .download-btn .plat {
+      display: block;
+      font-family: var(--font-title);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .download-btn .arch {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+    .download-btn.coming-soon {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+    .download-btn.coming-soon:hover {
+      border-color: var(--border);
+      background: #000;
+      transform: none;
+    }
+    .download-btn.coming-soon .plat { color: var(--text-dim); }
+
+    /* Footer styling */
+    footer {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-dim);
     }
   </style>
 </head>
 <body>
 
-<!-- Hero -->
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="container" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <div class="nav-logo">
+      <img src="../branding/logo.png" alt="Quiver Logo">
+      <span>Quiver</span>
+    </div>
+    <div class="nav-links">
+      <a href="#stories">UX Stories</a>
+      <a href="#principles">Principles</a>
+      <a href="#tools">Tools</a>
+      <a href="https://github.com/rahul16ss/quiver" target="_blank">GitHub</a>
+    </div>
+  </div>
+</nav>
+
 <div class="container">
-  <div class="hero">
-    <img src="../branding/logo.png" class="hero-logo" alt="Quiver">
-    <h1>Quiver</h1>
-    <div class="tagline">Open harness for open models</div>
-    <p>A self-evolving coding and research harness for the terminal, with a desktop app. Designed for the best open source models, with extensible tools, transparent and editable persistent and session memories.</p>
-    <div class="hero-badges">
-      <span class="badge accent">28 tools</span>
-      <span class="badge">GLM-5.2</span>
-      <span class="badge">TypeScript</span>
-      <span class="badge">Apache License</span>
+  <!-- Hero Section -->
+  <header class="hero">
+    <h1>An open inspectable harness<br>for open models.</h1>
+    <p>Quiver is a local-first development runtime. Own your agent's memory stack in plain text files, swap model providers instantly, and run cycles with complete context transparency.</p>
+    <div class="hero-buttons">
+      <a href="#install" class="btn primary">Install CLI</a>
+      <a href="#install" class="btn" onclick="showInstall('desktop')">Desktop App</a>
+      <a href="#stories" class="btn">Explore the UX</a>
     </div>
-  </div>
+  </header>
 
-  <!-- Install -->
-  <div class="install">
-    <div class="install-label">Install</div>
-    <div class="install-tabs">
-      <button class="install-tab active" onclick="showInstall('brew', this)">Homebrew</button>
-      <button class="install-tab" onclick="showInstall('npm', this)">npm</button>
-      <button class="install-tab" onclick="showInstall('source', this)">Source</button>
+  <!-- Product UX Stories -->
+  <section id="stories">
+    <div class="section-header">
+      <span class="story-meta">Product Design</span>
+      <h2>Designed for Complete Control</h2>
+      <p class="lead">The UX of an agent harness shouldn't be a mystery. We design for absolute inspectability, transparency, and freedom.</p>
     </div>
-    <div id="install-brew">
-      <code>brew install quiver</code>
+
+    <div class="story-grid">
+      <!-- Story 1 -->
+      <div class="story-row">
+        <div class="story-content">
+          <span class="story-meta">Story 01</span>
+          <h3 class="story-title">The Context Transparency Panel</h3>
+          <p class="story-desc">Telemetry belongs to you. Quiver shows you the exact, character-level prompt construction before sending it to the model. See what facts, preferences, and files go in—no hidden injections.</p>
+          
+          <div class="user-story-card">
+            <h5>User Story Details</h5>
+            <p><strong>As a</strong> developer pair-programming with local models,</p>
+            <p><strong>I want</strong> to view a formatted context drawer listing files and active prompt sizes,</p>
+            <p><strong>So that</strong> I know exactly what instructions and context enter the model on every turn.</p>
+            <ul>
+              <li>Visual byte-size and token count breakdown.</li>
+              <li>Tactile folders (`~/.quiver/projects/name/memory`) represent data.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="story-visual">
+          <div class="mock-editor">
+            <div class="mock-bar">
+              <div class="mock-dot"></div>
+              <div class="mock-dot"></div>
+              <div class="mock-dot"></div>
+              <span style="font-size: 9px; color: var(--text-dim); margin-left: 8px;">~/.quiver/projects/quiver/memory/</span>
+            </div>
+            <div class="mock-pane">
+              <div class="mock-left">
+                <span class="mock-tag">workspace-facts.md</span>
+                <p class="mock-comment" style="margin-top: 6px;"># Workspace State</p>
+                <p class="mock-comment">- Project relies on ESM modules</p>
+                <p class="mock-comment">- Test framework: npx tsx</p>
+              </div>
+              <div>
+                <span class="mock-tag">prompt_payload</span>
+                <p style="color: var(--text-dim); margin-top: 6px; font-size: 10px;">[System Prompt: 3.5k tokens]</p>
+                <p style="color: var(--text-dim); font-size: 10px;">[Active Context: 2.1k tokens]</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story 2 -->
+      <div class="story-row reverse">
+        <div class="story-visual">
+          <div class="mock-swap-container">
+            <div class="mock-swap-card active">
+              <span style="font-size: 10px; font-family: var(--font-mono); color: var(--accent);">Active Lens</span>
+              <h4 style="margin-top: 6px; font-size: 13px;">Ollama</h4>
+              <p style="font-size: 9px; color: var(--text-dim); margin-top: 4px;">Local Llama3</p>
+            </div>
+            <div class="mock-swap-arrow">⇆</div>
+            <div class="mock-swap-card">
+              <span style="font-size: 10px; font-family: var(--font-mono); color: var(--text-dim);">Gateway</span>
+              <h4 style="margin-top: 6px; font-size: 13px;">GLM Cloud</h4>
+              <p style="font-size: 9px; color: var(--text-dim); margin-top: 4px;">GLM-5.2 Model</p>
+            </div>
+          </div>
+        </div>
+        <div class="story-content">
+          <span class="story-meta">Story 02</span>
+          <h3 class="story-title">Zero-Friction Lens Swapping</h3>
+          <p class="story-desc">Intelligence is a layer, not a lock-in. Switch model providers, base URLs, or local endpoints on the fly. The harness maintains the session context and memory files seamlessly across compute layers.</p>
+          
+          <div class="user-story-card">
+            <h5>User Story Details</h5>
+            <p><strong>As a</strong> researcher running expensive runs,</p>
+            <p><strong>I want</strong> to toggle active endpoints instantly via the `/model` CLI command,</p>
+            <p><strong>So that</strong> I can offload complex reasoning to cloud gates and swap back to local models for quick edits.</p>
+            <ul>
+              <li>Real-time status transitions.</li>
+              <li>Seamless continuation of session memories.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story 3 -->
+      <div class="story-row">
+        <div class="story-content">
+          <span class="story-meta">Story 03</span>
+          <h3 class="story-title">Session Audit Timeline</h3>
+          <p class="story-desc">Debugging shouldn't involve raw console logs. Quiver records every model inference, prompt payload, tool run, and verification check inside clean, structured JSON session states, rendering a timeline.</p>
+          
+          <div class="user-story-card">
+            <h5>User Story Details</h5>
+            <p><strong>As an</strong> engineer verifying code correctness,</p>
+            <p><strong>I want</strong> to browse a chronological timeline of completed loops,</p>
+            <p><strong>So that</strong> I can audit tool parameters, stdout results, and compiler errors in sequence.</p>
+            <ul>
+              <li>Clear chronological trace structure.</li>
+              <li>Tool execution vs. Model inference tracking.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="story-visual">
+          <div class="mock-timeline">
+            <div class="mock-time-step model">
+              <span>MODEL</span>
+              <div>loop_1: classified prompt and selected tools</div>
+            </div>
+            <div class="mock-time-step tool">
+              <span>TOOL</span>
+              <div>todo_write: created task list list (Success)</div>
+            </div>
+            <div class="mock-time-step tool">
+              <span>TOOL</span>
+              <div>view_file: read src/agent.ts lines 1-120</div>
+            </div>
+            <div class="mock-time-step model">
+              <span>MODEL</span>
+              <div>loop_2: initiated surgical file edits</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story 4 -->
+      <div class="story-row reverse">
+        <div class="story-visual">
+          <div class="mock-app">
+            <div class="mock-bar">
+              <div class="mock-dot"></div>
+              <div class="mock-dot"></div>
+              <div class="mock-dot"></div>
+              <span style="font-size: 9px; color: var(--text-dim); margin-left: 8px;">Quiver — Desktop</span>
+            </div>
+            <div class="mock-app-body">
+              <div class="mock-app-side">
+                <div class="mock-app-session active">auth-refactor</div>
+                <div class="mock-app-session">landing-page</div>
+                <div class="mock-app-session">db-migration</div>
+                <div class="mock-app-session">vision-routing</div>
+              </div>
+              <div class="mock-app-chat">
+                <div class="mock-bubble user">Fix the login redirect loop.</div>
+                <div class="mock-bubble agent">Reading <span style="color:var(--accent)">src/auth.ts</span>… proposing a patch.</div>
+                <div class="mock-bubble agent" style="background:rgba(48,209,88,0.1)">✓ Diff approved · applied</div>
+              </div>
+              <div class="mock-app-drawer">
+                <div class="mock-drawer-title">Context · 4.2k</div>
+                <div class="mock-drawer-row"><span>workspace-facts.md</span><span class="v">in</span></div>
+                <div class="mock-drawer-row"><span>user-preferences.md</span><span class="v">in</span></div>
+                <div class="mock-drawer-row"><span>secrets/.env</span><span style="color:var(--danger)">blocked</span></div>
+                <div class="mock-drawer-title" style="margin-top:6px">Model · GLM-5.2</div>
+                <div class="mock-drawer-row"><span>tokens</span><span class="v">18%</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="story-content">
+          <span class="story-meta">Story 04</span>
+          <h3 class="story-title">A Native Desktop App</h3>
+          <p class="story-desc">The full harness, windowed. A dark, hardened Electron surface with a session sidebar, live context drawer, and side-by-side diff approvals—every CLI capability, plus drag-and-drop images and secure OS keychain storage. Sandbox-isolated, strict CSP, no node integration.</p>
+          <div class="user-story-card">
+            <h5>User Story Details</h5>
+            <p><strong>As a</strong> developer who lives in the GUI,</p>
+            <p><strong>I want</strong> a hardened desktop window with a context drawer and diff approvals,</p>
+            <p><strong>So that</strong> I can drive the agent visually without leaving my editor.</p>
+            <ul>
+              <li>Hardened Electron: sandbox, CSP, context isolation.</li>
+              <li>Side-by-side diff approvals with Request revision.</li>
+              <li>Drop images; secrets stay in the OS keychain.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story 5 -->
+      <div class="story-row">
+        <div class="story-content">
+          <span class="story-meta">Story 05</span>
+          <h3 class="story-title">Visual Context Routing</h3>
+          <p class="story-desc">Drop a screenshot, paste a mockup, or point at a design file. Quiver strips EXIF and geolocation locally, downscales the image, and routes it to a multimodal model—only with your explicit consent. The agent reads your UI the way you do.</p>
+          <div class="user-story-card">
+            <h5>User Story Details</h5>
+            <p><strong>As a</strong> developer debugging UI code,</p>
+            <p><strong>I want</strong> to attach screenshots so the agent can analyze visual changes,</p>
+            <p><strong>So that</strong> layout and styling feedback is grounded in what I actually see.</p>
+            <ul>
+              <li>EXIF and location metadata redacted locally.</li>
+              <li>Automatic downscaling before upload.</li>
+              <li>Remote vision routed only on explicit opt-in.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="story-visual">
+          <div class="mock-vision">
+            <div class="mock-drop">Drop image · or [Image: path]</div>
+            <div class="mock-shot">
+              <div class="mock-shot-thumb"></div>
+              <div class="mock-shot-meta">
+                <b>login-screen.png</b><br>
+                EXIF stripped · 2000×2000 → 1024×1024
+              </div>
+            </div>
+            <div class="mock-time-step model">
+              <span>MODEL</span>
+              <div>vision: header overlaps on &lt; 768px</div>
+            </div>
+            <div class="mock-time-step tool">
+              <span>TOOL</span>
+              <div>replace_content: src/Header.tsx</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="install-npm" style="display:none;">
-      <code>npm install -g quiver-agent</code>
+  </section>
+
+  <!-- Open vs Closed Comparison -->
+  <section id="comparison">
+    <div class="section-header">
+      <h2>Open vs. Closed Harnesses</h2>
+      <p class="lead">Stop letting closed SaaS layers gatekeep your agent's memory and execution steps.</p>
     </div>
-    <div id="install-source" style="display:none;">
-      <code>git clone https://github.com/rahul16ss/quiver
+
+    <div class="comparison-grid">
+      <div class="comp-card closed">
+        <h3>Proprietary Wrappers</h3>
+        <ul>
+          <li>Trapped in a single closed provider ecosystem.</li>
+          <li>Prompt context and agent histories locked in private databases.</li>
+          <li>System prompts are assembly lines hidden from developers.</li>
+          <li>Custom tools require proprietary JSON platform APIs.</li>
+        </ul>
+      </div>
+      
+      <div class="comp-card open">
+        <h3>Quiver open harness</h3>
+        <ul>
+          <li>Model sovereignty: swap local or cloud providers instantly.</li>
+          <li>Memory is local Markdown files under your version control.</li>
+          <li>Prompt structure fully detailed before execution.</li>
+          <li>Dynamic tools are simple TypeScript files.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- System Principles -->
+  <section id="principles">
+    <div class="section-header">
+      <h2>Harness Principles</h2>
+      <p class="lead">We align Quiver's architecture with clean, code-enforced rules of control and explainability.</p>
+    </div>
+
+    <div class="principles-grid">
+      <div class="principle-card">
+        <div class="num">01</div>
+        <h4>Local Context Control</h4>
+        <p>Your agent's memory, persona, and logs live in directories on your drive, sync naturally through your local folders, and belong completely to you.</p>
+      </div>
+
+      <div class="principle-card">
+        <div class="num">02</div>
+        <h4>Context Transparency</h4>
+        <p>No secret prompts. The resolved context bundle entering the model call is logged openly before every turn.</p>
+      </div>
+
+      <div class="principle-card">
+        <div class="num">03</div>
+        <h4>Total Explainability</h4>
+        <p>Chronological trace logs record exactly what prompts caused tool actions and the stdout returned by the OS.</p>
+      </div>
+
+      <div class="principle-card">
+        <div class="num">04</div>
+        <h4>Low-Level Primitives</h4>
+        <p>When tool capabilities are missing, the agent doesn't compromise—it builds the TypeScript code wrapper it needs at runtime.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Installation -->
+  <section id="install">
+    <div class="section-header" style="text-align: center; margin-bottom: 40px; margin-left: auto; margin-right: auto;">
+      <h2>Start Pairing Immediately</h2>
+      <p class="lead">Install the open harness via your preferred package manager—or grab the native desktop app.</p>
+    </div>
+
+    <div class="install-box">
+      <div class="install-tabs">
+        <button class="install-tab active" id="tab-brew" onclick="showInstall('brew')">Homebrew</button>
+        <button class="install-tab" id="tab-npm" onclick="showInstall('npm')">npm</button>
+        <button class="install-tab" id="tab-source" onclick="showInstall('source')">Source</button>
+        <button class="install-tab" id="tab-desktop" onclick="showInstall('desktop')">Desktop</button>
+      </div>
+      <div id="install-brew">
+        <code class="install-code">brew install quiver</code>
+      </div>
+      <div id="install-npm" style="display:none;">
+        <code class="install-code">npm install -g quiver-agent</code>
+      </div>
+      <div id="install-source" style="display:none;">
+        <code class="install-code">git clone https://github.com/rahul16ss/quiver
 cd quiver && npm install -g .</code>
+      </div>
+      <div id="install-desktop" style="display:none;">
+        <div class="install-downloads">
+          <a class="download-btn" href="https://github.com/rahul16ss/quiver/releases/latest" target="_blank"><span class="plat">macOS</span><span class="arch">.dmg · Apple Silicon</span></a>
+          <div class="download-btn coming-soon"><span class="plat">Windows</span><span class="arch">Coming soon</span></div>
+          <div class="download-btn coming-soon"><span class="plat">Linux</span><span class="arch">Coming soon</span></div>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
+
+  <!-- Atomic Tool Catalog -->
+  <section id="tools">
+    <div class="section-header">
+      <h2>Atomic Tool Catalog</h2>
+      <p class="lead">Every tool is a single-purpose script. The agent composes these dynamically in a loop.</p>
+    </div>
+
+    <div class="tools-search-bar">
+      <input type="text" class="tool-input" id="toolSearch" placeholder="Search tools (e.g. view, search, memory)..." onkeyup="filterTools()">
+      <select class="tool-select" id="toolCategory" onchange="filterTools()">
+        <option value="all">All Categories</option>
+        <option value="local storage">Local Storage</option>
+        <option value="system">System</option>
+        <option value="web">Web Search & Browse</option>
+        <option value="memory">Memory & Sync</option>
+        <option value="github">GitHub</option>
+        <option value="planning">Planning & Input</option>
+        <option value="self-improvement">Self-Evolution</option>
+      </select>
+    </div>
+
+    <div class="tools-catalog" id="toolGrid">
+      <!-- Local Storage -->
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">view_file</div>
+        <div class="desc">Reads files with line numbers and targeted range selections.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">write_file</div>
+        <div class="desc">Creates new files or overwrites existing files safely.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">replace_content</div>
+        <div class="desc">Performs surgical find-and-replace edits on targeted blocks of code.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">apply_patch</div>
+        <div class="desc">Applies unified multi-file diff patches from code review plans.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">list_dir</div>
+        <div class="desc">Lists folder structures with sizes and modification metadata.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">glob</div>
+        <div class="desc">Locates code assets quickly using pattern matching.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">format_code</div>
+        <div class="desc">Auto-formats TypeScript and JavaScript assets to maintain health.</div>
+      </div>
+      <div class="tool-card" data-category="local storage">
+        <div class="cat">Local Storage</div>
+        <div class="name">grep_search</div>
+        <div class="desc">Executes fast, case-sensitive pattern searches using ripgrep.</div>
+      </div>
+
+      <!-- System -->
+      <div class="tool-card" data-category="system">
+        <div class="cat">System</div>
+        <div class="name">run_command</div>
+        <div class="desc">Executes shell commands in a sandboxed, user-approved terminal container.</div>
+      </div>
+      <div class="tool-card" data-category="system">
+        <div class="cat">System</div>
+        <div class="name">run_tests</div>
+        <div class="desc">Compiles project assets and runs localized test suites.</div>
+      </div>
+      <div class="tool-card" data-category="system">
+        <div class="cat">System</div>
+        <div class="name">create_tool</div>
+        <div class="desc">Generates new TypeScript tool wrappers at runtime to dynamically expand abilities.</div>
+      </div>
+      <div class="tool-card" data-category="system">
+        <div class="cat">System</div>
+        <div class="name">log_tokens</div>
+        <div class="desc">Analyzes logs and generates statistics on token consumption.</div>
+      </div>
+
+      <!-- Web -->
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">web_search</div>
+        <div class="desc">Queries search endpoints via custom search or index providers.</div>
+      </div>
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">scrape_url</div>
+        <div class="desc">Scrapes targeted URLs, parsing HTML and converting it to clean Markdown.</div>
+      </div>
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">browser_control</div>
+        <div class="desc">Spawns and automates a browser instance for interactive browsing and scraping.</div>
+      </div>
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">deep_research</div>
+        <div class="desc">Executes recursive multi-step web searches, generating comprehensive cited digests.</div>
+      </div>
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">find_all</div>
+        <div class="desc">Discovers, parses, and validates online entities matching search parameters.</div>
+      </div>
+      <div class="tool-card" data-category="web">
+        <div class="cat">Web</div>
+        <div class="name">entity_search</div>
+        <div class="desc">Returns verified metadata about people and companies instantly.</div>
+      </div>
+
+      <!-- Memory -->
+      <div class="tool-card" data-category="memory">
+        <div class="cat">Memory</div>
+        <div class="name">memory_append</div>
+        <div class="desc">Saves high-signal facts directly to persistent markdown logs.</div>
+      </div>
+      <div class="tool-card" data-category="memory">
+        <div class="cat">Memory</div>
+        <div class="name">memory_replace</div>
+        <div class="desc">Surgically replaces old rules in persistent memory files.</div>
+      </div>
+      <div class="tool-card" data-category="memory">
+        <div class="cat">Memory</div>
+        <div class="name">continual_learning</div>
+        <div class="desc">Transcribes session events to extract preferences, saving patterns locally.</div>
+      </div>
+
+      <!-- GitHub -->
+      <div class="tool-card" data-category="github">
+        <div class="cat">GitHub</div>
+        <div class="name">github</div>
+        <div class="desc">Automates pull requests, issue tracking, and repository queries.</div>
+      </div>
+
+      <!-- Planning -->
+      <div class="tool-card" data-category="planning">
+        <div class="cat">Planning</div>
+        <div class="name">todo_write</div>
+        <div class="desc">Creates and manages persistent check-lists to coordinate task branches.</div>
+      </div>
+      <div class="tool-card" data-category="planning">
+        <div class="cat">Planning</div>
+        <div class="name">ask_question</div>
+        <div class="desc">Queries the user in the CLI to resolve highly ambiguous paths.</div>
+      </div>
+
+      <!-- Self-Evolution -->
+      <div class="tool-card" data-category="self-improvement">
+        <div class="cat">Self-Evolution</div>
+        <div class="name">prompt_update</div>
+        <div class="desc">Proposes edits to the active system prompt file based on user patterns.</div>
+      </div>
+      <div class="tool-card" data-category="self-improvement">
+        <div class="cat">Self-Evolution</div>
+        <div class="name">ralph_loop</div>
+        <div class="desc">Triggers an iterative, self-referential development cycle on the project.</div>
+      </div>
+      <div class="tool-card" data-category="self-improvement">
+        <div class="cat">Self-Evolution</div>
+        <div class="name">subagent</div>
+        <div class="desc">Spawns an isolated sub-agent with targeted tools to run research tasks in parallel.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Commands -->
+  <section id="interface">
+    <div class="section-header">
+      <h2>Harness Commands</h2>
+      <p class="lead">Take active control of your sessions with built-in commands. <a href="reference.html" style="color: var(--accent);">Learn More →</a></p>
+    </div>
+    
+    <div class="table-wrapper">
+      <table class="table-content">
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/help</code></td>
+            <td>Show helper manual detailing command inputs.</td>
+          </tr>
+          <tr>
+            <td><code>/tools</code></td>
+            <td>Display list of all compiled tool wrappers in the registry.</td>
+          </tr>
+          <tr>
+            <td><code>/config</code></td>
+            <td>Prints configurations, active models, and paths.</td>
+          </tr>
+          <tr>
+            <td><code>/model &lt;name&gt;</code></td>
+            <td>Swaps the active LLM choice (e.g. <code>/model llama3</code>).</td>
+          </tr>
+          <tr>
+            <td><code>/compact</code></td>
+            <td>Runs text compaction on intermediate trace logs.</td>
+          </tr>
+          <tr>
+            <td><code>/reset</code></td>
+            <td>Clears execution context without deleting memory folders.</td>
+          </tr>
+          <tr>
+            <td><code>/resume</code></td>
+            <td>Prompts a selection of saved runs to resume.</td>
+          </tr>
+          <tr>
+            <td><code>/exit</code></td>
+            <td>Closes the session stream, dumps trace files, and exits.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Runtime Flags -->
+  <section id="flags">
+    <div class="section-header">
+      <h2>Runtime Flags</h2>
+      <p class="lead">Configure execution behavior when launching Quiver sessions.</p>
+    </div>
+    
+    <div class="table-wrapper">
+      <table class="table-content">
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--continue, -c</code></td>
+            <td>Immediately restarts the most recently active session log.</td>
+          </tr>
+          <tr>
+            <td><code>--resume &lt;id&gt;, -r &lt;id&gt;</code></td>
+            <td>Resumes a specific session by its file ID directly.</td>
+          </tr>
+          <tr>
+            <td><code>--list-sessions</code></td>
+            <td>Lists all local JSON session logs with token stats.</td>
+          </tr>
+          <tr>
+            <td><code>--single-turn &quot;prompt&quot;</code></td>
+            <td>Executes the input instruction directly in the terminal and exits.</td>
+          </tr>
+          <tr>
+            <td><code>--json</code></td>
+            <td>Formats terminal responses to structured JSON for scripting.</td>
+          </tr>
+          <tr>
+            <td><code>--dry-run, -n</code></td>
+            <td>Simulates tool choices and shows arguments without modifying any files.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
-
-<!-- Tools -->
-<section>
-  <div class="container">
-    <h2>28 Tools</h2>
-    <p class="lead">Every tool is an atomic primitive. The agent composes them in a loop until the task is done.</p>
-    <div class="tool-grid">
-      <div class="tool-card"><div class="category">Files</div><div class="name">view_file</div><div class="desc">Read files with line numbers and range selection</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">write_file</div><div class="desc">Create or overwrite files</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">replace_content</div><div class="desc">Surgical find-and-replace in files</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">apply_patch</div><div class="desc">Apply unified diff patches across files</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">list_dir</div><div class="desc">List directory contents with sizes</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">glob</div><div class="desc">Find files by pattern matching</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">format_code</div><div class="desc">Format TypeScript/JavaScript files</div></div>
-      <div class="tool-card"><div class="category">Files</div><div class="name">grep_search</div><div class="desc">Search file contents with ripgrep</div></div>
-      <div class="tool-card"><div class="category">System</div><div class="name">run_command</div><div class="desc">Execute shell commands</div></div>
-      <div class="tool-card"><div class="category">System</div><div class="name">run_tests</div><div class="desc">Run TypeScript compilation and tests</div></div>
-      <div class="tool-card"><div class="category">System</div><div class="name">create_tool</div><div class="desc">Dynamically create new tools at runtime</div></div>
-      <div class="tool-card"><div class="category">System</div><div class="name">log_tokens</div><div class="desc">Parse session logs for token statistics</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">web_search</div><div class="desc">Search the web via Ollama Pro or Parallel.ai</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">scrape_url</div><div class="desc">Scrape web pages to markdown</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">search_docs</div><div class="desc">Query Context7 for library documentation</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">browser_control</div><div class="desc">Control a persistent browser session</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">deep_research</div><div class="desc">Multi-hop web research with citations</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">find_all</div><div class="desc">Discover and verify entities matching criteria</div></div>
-      <div class="tool-card"><div class="category">Web</div><div class="name">entity_search</div><div class="desc">Fast synchronous people/company search</div></div>
-      <div class="tool-card"><div class="category">Memory</div><div class="name">memory_append</div><div class="desc">Append facts to persistent memory</div></div>
-      <div class="tool-card"><div class="category">Memory</div><div class="name">memory_replace</div><div class="desc">Replace persistent memory file contents</div></div>
-      <div class="tool-card"><div class="category">Memory</div><div class="name">continual_learning</div><div class="desc">Mine session transcripts for patterns</div></div>
-      <div class="tool-card"><div class="category">GitHub</div><div class="name">github</div><div class="desc">GitHub API operations (issues, PRs, contents)</div></div>
-      <div class="tool-card"><div class="category">Planning</div><div class="name">todo_write</div><div class="desc">Manage a task checklist for the session</div></div>
-      <div class="tool-card"><div class="category">Planning</div><div class="name">ask_question</div><div class="desc">Ask the user a question during execution</div></div>
-      <div class="tool-card"><div class="category">Self-improvement</div><div class="name">prompt_update</div><div class="desc">Propose updates to the system prompt</div></div>
-      <div class="tool-card"><div class="category">Iteration</div><div class="name">ralph_loop</div><div class="desc">Iterative self-referential development loop</div></div>
-      <div class="tool-card"><div class="category">Agents</div><div class="name">subagent</div><div class="desc">Spawn an isolated agent for delegated tasks</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- Architecture -->
-<section>
-  <div class="container">
-    <h2>Architecture</h2>
-    <p class="lead">Global identity, per-thread memory, zero lock-in. Everything is a file.</p>
-<div class="arch"><span class="comment">~/.quiver/                          ← Global (shared across projects)</span>
-<span class="label">├── core.json                        </span><span class="comment"># Identity + user context</span>
-<span class="label">├── skills/                          </span><span class="comment"># Skills (reusable procedures)</span>
-<span class="comment">│   ├── system-prompt/SKILL.md      </span><span class="comment"># The system prompt (editable)</span>
-<span class="comment">│   └── cli-for-agents/SKILL.md     </span><span class="comment"># CLI design patterns</span>
-<span class="label">└── projects/{name}/</span>
-<span class="label">    ├── memory/                      </span><span class="comment"># Per-project memory</span>
-<span class="comment">    │   ├── persona.txt              </span><span class="comment"># Agent behavior notes</span>
-<span class="comment">    │   ├── human.txt                </span><span class="comment"># User details</span>
-<span class="comment">    │   ├── project.json             </span><span class="comment"># Project context</span>
-<span class="comment">    │   ├── user-preferences.md      </span><span class="comment"># Auto-learned preferences</span>
-<span class="comment">    │   └── workspace-facts.md       </span><span class="comment"># Auto-learned facts</span>
-<span class="label">    └── .sessions/                   </span><span class="comment"># Session logs + state</span>
-
-<span class="comment">Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud.</span>
-<span class="comment">Syncs to {cloud}/Quiver/ after every turn. No OAuth — just files in a folder.</span></div>
-  </div>
-</section>
-
-<!-- Context Management -->
-<section>
-  <div class="container">
-    <h2>Context Management</h2>
-    <p class="lead">Your harness, your memory. No state on the model's side. Everything is saved to files you own.</p>
-    <div class="principles">
-      <div class="principle"><div class="num">01</div><div class="body"><h3>LLM-Powered Summarization</h3><p>When context approaches 85% of the window, old messages are summarized by an LLM — not deleted. The summary preserves session intent, decisions, artifacts, and next steps. The full conversation is saved to a file you can read anytime.</p></div></div>
-      <div class="principle"><div class="num">02</div><div class="body"><h3>Context Offloading</h3><p>Large tool results (20K+ tokens) are automatically saved to files and replaced in the conversation with file path references + 10-line previews. The agent can re-read the full content with view_file when needed. A 50x context reduction with zero information loss.</p></div></div>
-      <div class="principle"><div class="num">03</div><div class="body"><h3>User-Controlled Compaction</h3><p>Run /compact anytime to trigger summarization on your terms — at task boundaries, before new work, or when you decide prior context is no longer relevant. The harness doesn't decide for you.</p></div></div>
-      <div class="principle"><div class="num">04</div><div class="body"><h3>Filesystem Preservation</h3><p>Every compaction saves the original conversation to ~/.quiver/projects/{name}/.sessions/compacted/. You can always recover what was summarized. Nothing is lost.</p></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- Open vs Closed -->
-<section>
-  <div class="container">
-    <h2>Open Harness vs Closed Harness</h2>
-    <p class="lead">Your harness, your memory, your model. Zero lock-in.</p>
-    <div class="comparison">
-      <div class="comp-col closed">
-        <h3>Closed Harness</h3>
-        <ul>
-          <li>Locked to one model provider</li>
-          <li>Memory is a black box</li>
-          <li>Context is opaque</li>
-          <li>No control over what the AI sees</li>
-          <li>Session history is trapped</li>
-          <li>Tools are fixed and proprietary</li>
-          <li>No self-improvement mechanism</li>
-        </ul>
-      </div>
-      <div class="comp-col open">
-        <h3>Quiver (Open Harness)</h3>
-        <ul>
-          <li>Works with any OpenAI-compatible model</li>
-          <li>Memory is files you can read and edit</li>
-          <li>Context is transparent and shown before each prompt</li>
-          <li>Edit exactly what the AI consumes next run</li>
-          <li>Sessions are JSON files, resumable, syncable</li>
-          <li>Tools are TypeScript files, extensible at runtime</li>
-          <li>Agent can propose updates to its own prompt</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Principles -->
-<section>
-  <div class="container">
-    <h2>Core Principles</h2>
-    <p class="lead">Enforced in code, not just aspirational.</p>
-    <div class="principles">
-      <div class="principle"><div class="num">01</div><div class="body"><h3>Your harness, your memory</h3><p>Ability to manage context as you exactly intend. Memory is files you own, edit, and control.</p></div></div>
-      <div class="principle"><div class="num">02</div><div class="body"><h3>Context Transparency</h3><p>Show what enters the model call before each prompt — memory, skills, tools, model, tokens.</p></div></div>
-      <div class="principle"><div class="num">03</div><div class="body"><h3>Explainability</h3><p>Trace user prompts, resulting chain of thoughts, operations performed, and results from tool calls by the harness.</p></div></div>
-      <div class="principle"><div class="num">04</div><div class="body"><h3>Provenance</h3><p>Facts must come from provided context, not from training. Never fabricate file paths, function names, or APIs.</p></div></div>
-      <div class="principle"><div class="num">05</div><div class="body"><h3>Read Before Write</h3><p>Always read a file before modifying it. Enforced at the code level — write and edit tools are blocked if the file wasn't read first.</p></div></div>
-      <div class="principle"><div class="num">06</div><div class="body"><h3>Minimal Edits</h3><p>Prefer targeted edits over full rewrites. Use apply_patch for multi-file diffs.</p></div></div>
-      <div class="principle"><div class="num">07</div><div class="body"><h3>Verify After Changes</h3><p>Run tests after code changes. Fix failures before declaring success.</p></div></div>
-      <div class="principle"><div class="num">08</div><div class="body"><h3>No Silent Actions</h3><p>Every action is visible to the user. Never perform hidden tool calls.</p></div></div>
-      <div class="principle"><div class="num">09</div><div class="body"><h3>Reversibility Awareness</h3><p>Distinguish reversible from irreversible actions. Warn before destructive operations.</p></div></div>
-      <div class="principle"><div class="num">10</div><div class="body"><h3>Self-Improvement</h3><p>The agent can propose updates to its own system prompt. The user reviews, edits, or rejects — the agent never modifies the prompt directly.</p></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- Commands -->
-<section>
-  <div class="container">
-    <h2>Commands</h2>
-    <table class="commands">
-      <thead><tr><th>Command</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>/help</code></td><td>Show available commands</td></tr>
-        <tr><td><code>/tools</code></td><td>List all tools</td></tr>
-        <tr><td><code>/config</code></td><td>Show configuration</td></tr>
-        <tr><td><code>/model &lt;name&gt;</code></td><td>Change model</td></tr>
-        <tr><td><code>/compact</code></td><td>Compact conversation history</td></tr>
-        <tr><td><code>/reset</code></td><td>Reset conversation (keeps memory)</td></tr>
-        <tr><td><code>/resume</code></td><td>Resume a previous session</td></tr>
-        <tr><td><code>/exit</code></td><td>End session (auto-saves)</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<!-- CLI Flags -->
-<section>
-  <div class="container">
-    <h2>CLI Flags</h2>
-    <table class="commands">
-      <thead><tr><th>Flag</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>--continue, -c</code></td><td>Resume most recent session</td></tr>
-        <tr><td><code>--resume, -r</code></td><td>Pick a session to resume</td></tr>
-        <tr><td><code>--list-sessions</code></td><td>List saved sessions</td></tr>
-        <tr><td><code>--single-turn "prompt"</code></td><td>Run one prompt and exit</td></tr>
-        <tr><td><code>--json</code></td><td>Structured JSON output for scripts</td></tr>
-        <tr><td><code>--dry-run, -n</code></td><td>Preview tool actions without executing</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
 
 <footer>
   <div class="container">
-    <p><a href="https://github.com/rahul16ss/quiver">github.com/rahul16ss/quiver</a> · Apache License</p>
+     <p>
+      <a href="https://github.com/rahul16ss/quiver" target="_blank">github.com/rahul16ss/quiver</a> · 
+      <a href="reference.html">Technical Reference</a> ·
+      Open-Source Apache-2.0 License · 
+      Inspired by <a href="https://github.com/langchain-ai/langchain" target="_blank" style="color: var(--text-dim); text-decoration: underline;">LangChain</a> & <a href="https://github.com/aaif-goose/goose" target="_blank" style="color: var(--text-dim); text-decoration: underline;">Goose</a>
+    </p>
   </div>
 </footer>
 
 <script>
-function showInstall(tab, btn) {
+function showInstall(tab) {
   document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
   document.querySelectorAll('[id^="install-"]').forEach(d => d.style.display = 'none');
   document.getElementById('install-' + tab).style.display = 'block';
+}
+
+function filterTools() {
+  const query = document.getElementById('toolSearch').value.toLowerCase();
+  const category = document.getElementById('toolCategory').value.toLowerCase();
+  const cards = document.querySelectorAll('.tool-card');
+
+  cards.forEach(card => {
+    const name = card.querySelector('.name').innerText.toLowerCase();
+    const desc = card.querySelector('.desc').innerText.toLowerCase();
+    const cardCat = card.getAttribute('data-category').toLowerCase();
+    
+    const matchesQuery = name.includes(query) || desc.includes(query);
+    const matchesCategory = (category === 'all' || cardCat === category);
+
+    if (matchesQuery && matchesCategory) {
+      card.style.display = 'block';
+    } else {
+      card.style.display = 'none';
+    }
+  });
 }
 </script>
 

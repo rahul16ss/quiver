@@ -7,9 +7,14 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist",
     "rootDir": "./",
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
-  "include": ["src/**/*", "tests/**/*", "ui/**/*"]
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "ui/**/*"
+  ]
 }

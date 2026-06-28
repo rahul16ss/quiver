@@ -89,6 +89,15 @@ export function getProjectSessionsDir(): string {
 }
 
 /**
+ * Per-project generated-tools directory (~/.quiver/projects/{projectName}/tools/).
+ * Holds JIT-compiled generated tool sources/binaries and approval metadata.
+ * This is private local-only data (never synced to the cloud).
+ */
+export function getProjectToolsDir(): string {
+  return path.join(getProjectRoot(), "tools");
+}
+
+/**
  * Ensure all required directories exist.
  * Called once at startup. Also seeds the global skills directory with
  * the system-prompt skill if it doesn't exist yet.

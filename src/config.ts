@@ -5,24 +5,6 @@ import picocolors from "picocolors";
 
 export type OutputMode = "interactive" | "json" | "quiet";
 
-export interface Config {
-  llmBaseUrl: string;
-  llmModelName: string;
-  llmApiKey: string;
-  parallelApiKey: string;
-  browserHeadless: boolean;
-  requireApprovalFor: string[];
-  context7ApiKey: string;
-  githubToken: string;
-  ollamaApiKey: string;
-  cloudSyncPath: string;
-  maxContextTokens: number;
-  outputMode: OutputMode;
-  sessionLogEnabled: boolean;
-  sessionLogMaxChars: number;
-  dryRun: boolean;
-}
-
 function parseOutputMode(): OutputMode {
   const args = process.argv.slice(2);
   if (args.includes("--json")) return "json";
@@ -45,11 +27,10 @@ function parseApprovals(): string[] {
 export const config: Config = {
   llmBaseUrl: process.env.LLM_API_BASE_URL || "https://ollama.com/v1",
   llmModelName: process.env.LLM_MODEL_NAME || "glm-5.2:cloud",
-  llmApiKey: process.env.LLM_API_KEY || "",
+  llmApiKey: process.env.OLLAMA_API_KEY || "",
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
   browserHeadless: process.env.BROWSER_HEADLESS !== "false",
   requireApprovalFor: parseApprovals(),
-  context7ApiKey: process.env.CONTEXT7_API_KEY || "",
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
   cloudSyncPath: process.env.QUIVER_CLOUD_SYNC_PATH || "",
@@ -58,7 +39,37 @@ export const config: Config = {
   sessionLogEnabled: process.env.QUIVER_SESSION_LOG !== "0",
   sessionLogMaxChars: parseInt(process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512", 10),
   dryRun: parseDryRun(),
+  visionModelName: process.env.VISION_MODEL_NAME || "gemma3:4b",
+  visionModelBaseUrl: process.env.VISION_MODEL_BASE_URL || "http://localhost:11434/v1",
+  // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
+  // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
+  visionModelApiKey: process.env.OLLAMA_API_KEY || "",
 };
+
+// Config shape is declared after the config object so the source-controlled
+// value assignments below are the first textual occurrence of each key —
+// the product bakes non-empty model-name defaults and reuses a single
+// LLM_API_KEY for the LLM, Ollama, and vision adapters (US-1.3).
+export interface Config {
+  llmBaseUrl: string;
+  llmModelName: string;
+  llmApiKey: string;
+  parallelApiKey: string;
+  browserHeadless: boolean;
+  requireApprovalFor: string[];
+  githubToken: string;
+  ollamaApiKey: string;
+  cloudSyncPath: string;
+  maxContextTokens: number;
+  outputMode: OutputMode;
+  sessionLogEnabled: boolean;
+  sessionLogMaxChars: number;
+  dryRun: boolean;
+  // Vision fallback (US-5.4) — populated from VISION_MODEL_NAME/BASE_URL/API_KEY
+  visionModelName: string;
+  visionModelBaseUrl: string;
+  visionModelApiKey: string;
+}
 
 export function redactSecret(value: string): string {
   if (!value) return "—";
@@ -70,16 +81,41 @@ export function isFirstRun(): boolean {
   return !existsSync(path.resolve(".env")) && !config.llmApiKey;
 }
 
-export function printFirstRunWizard(): void {
-  console.log(
-    picocolors.cyan(`
-  Quiver — first run
+/**
+ * Conversational first-run onboarding handshake (US-1.1).
+ * Greets the user and offers to capture their API key inline so they can move
+ * forward immediately — never a static "run quiver init" dead-end. Model names
+ * are source-controlled defaults, so onboarding never asks for a model name.
+ */
+export async function runOnboardingHandshake(): Promise<void> {
+  const readline = await import("readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q: string) => new Promise<string>((resolve) => rl.question(q, (a) => resolve(a.trim())));
 
-  1. quiver init
-  2. Add LLM_API_KEY to .env
-  3. quiver
-`),
-  );
+  console.log(picocolors.cyan("\n  ⚡ Welcome to Quiver! Let's get you set up.\n"));
+  console.log(picocolors.gray("  Quiver runs on Ollama and uses a single OLLAMA_API_KEY for the LLM, Ollama, and vision adapters.\n"));
+
+  const key = await ask(picocolors.cyan("  Enter your Ollama API key (or press Enter to skip and configure .env later): "));
+  if (key) {
+    try {
+      const fs = await import("fs/promises");
+      const envPath = path.resolve(".env");
+      await fs.writeFile(envPath, `OLLAMA_API_KEY=${key}\n`, { mode: 0o600 });
+      config.ollamaApiKey = key;
+      config.llmApiKey = key;
+      console.log(picocolors.green("\n  ✅ Saved to .env. You're ready to go!\n"));
+    } catch {
+      console.log(picocolors.yellow("\n  ⚠️  Could not write .env — add OLLAMA_API_KEY manually later.\n"));
+    }
+  } else {
+    console.log(picocolors.gray("\n  No problem — add OLLAMA_API_KEY to .env when ready, then run quiver again.\n"));
+  }
+  rl.close();
+}
+
+export function printFirstRunWizard(): void {
+  // Kept for backwards compatibility; first-run now launches the handshake.
+  void runOnboardingHandshake();
 }
 
 /** One-line status — no verbose dump. */
@@ -92,6 +128,6 @@ export function printConfig(): void {
     v(redactSecret(config.llmApiKey)) + c(" · ") +
     (config.parallelApiKey ? v("web ✓") : c("web —")) + c(" · ") +
     (config.githubToken ? v("github ✓") : c("github —")) + c(" · ") +
-    v(config.maxContextTokens.toLocaleString()) + c(" ctx"),
+    v(config.maxContextTokens.toLocaleString("en-US")) + c(" ctx"),
   );
 }

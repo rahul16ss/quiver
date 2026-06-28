@@ -1,0 +1,286 @@
+/* Quiver — Typography-first CSS (Outfit + Inter) */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --color-bg: #0a0a0b;
+  --color-surface: #131316;
+  --color-border: #1e1e24;
+  --color-text: #e4e4e7;
+  --color-text-muted: #71717a;
+  --color-accent: #6366f1;
+  --color-accent-hover: #818cf8;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --max-width: 720px;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 1rem;
+  --spacing-md: 2rem;
+  --spacing-lg: 4rem;
+  --spacing-xl: 6rem;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Layout ──────────────────────────────────────────────────────── */
+
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 var(--spacing-sm);
+}
+
+section {
+  padding: var(--spacing-lg) 0;
+}
+
+section:first-child {
+  padding-top: var(--spacing-xl);
+}
+
+/* ─── Typography ──────────────────────────────────────────────────── */
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: 3rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm);
+}
+
+h2 {
+  font-size: 2rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin-bottom: var(--spacing-xs);
+}
+
+p {
+  color: var(--color-text-muted);
+  font-size: 1.0625rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+p strong {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.875em;
+  background: var(--color-surface);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: var(--spacing-sm);
+  overflow-x: auto;
+  margin-bottom: var(--spacing-sm);
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* ─── Hero ────────────────────────────────────────────────────────── */
+
+.hero {
+  text-align: center;
+  padding: var(--spacing-xl) 0 var(--spacing-lg);
+}
+
+.hero h1 {
+  font-size: 3.5rem;
+  font-weight: 600;
+}
+
+.hero .tagline {
+  font-size: 1.25rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.hero .install {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-family: 'SF Mono', monospace;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.hero .install:hover {
+  border-color: var(--color-accent);
+}
+
+.hero .install .copy-hint {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
+}
+
+/* ─── Sections ────────────────────────────────────────────────────── */
+
+.section-label {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-accent);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* ─── Cards ───────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.card h3 {
+  color: var(--color-text);
+}
+
+.card p {
+  margin-bottom: 0;
+}
+
+/* ─── Footer ──────────────────────────────────────────────────────── */
+
+footer {
+  padding: var(--spacing-lg) 0;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+}
+
+footer a {
+  margin: 0 var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+footer a:hover {
+  color: var(--color-accent);
+}
+
+/* ─── Mockup ──────────────────────────────────────────────────────── */
+
+.mockup {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  font-family: 'SF Mono', monospace;
+  font-size: 0.85rem;
+  overflow: hidden;
+}
+
+.mockup .header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mockup .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.mockup .dot.red { background: #ef4444; }
+.mockup .dot.yellow { background: #f59e0b; }
+.mockup .dot.green { background: #22c55e; }
+
+/* ─── Animations ──────────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background: var(--color-accent);
+  animation: blink 1s infinite;
+  vertical-align: text-bottom;
+}
+
+/* ─── Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  h1 { font-size: 2.25rem; }
+  .hero h1 { font-size: 2.5rem; }
+  .hero .tagline { font-size: 1rem; }
+  section { padding: var(--spacing-md) 0; }
+}

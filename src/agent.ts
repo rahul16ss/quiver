@@ -19,6 +19,8 @@ import {
   ensureCloudDataDir,
   autoSyncToCloud,
 } from "./cloud_sync.js";
+import { loadReviewedMemoryContext } from "./prompt/assembler.js";
+import { calculateBackoffWithJitter } from "./logger.js";
 import {
   getProjectMemoryDir,
   getSkillsDir,
@@ -32,6 +34,26 @@ import {
 // real image (by magic bytes, not just extension), reads it, and encodes
 // as base64 data URL for the OpenAI-compatible vision API.
 // Security: only local files, no path traversal, size-limited, magic-byte validated.
+
+// ─── US-6.3: Auto-retry is gated by an explicit retry-safe/idempotent ──
+// predicate. Destructive/shell/state-mutating tools are NEVER auto-retried;
+// only read-only, idempotent tools may be retried on transient failure.
+const RETRY_SAFE_TOOLS = new Set([
+  "view_file",
+  "list_dir",
+  "grep",
+  "find",
+  "web_search",
+  "scrape_url",
+  "deep_research",
+  "find_all",
+  "entity_search",
+]);
+
+/** A tool is retry-safe only if it is read-only and idempotent (US-6.3). */
+function isRetrySafe(toolName: string): boolean {
+  return RETRY_SAFE_TOOLS.has(toolName);
+}
 
 const IMAGE_MAGIC: Record<string, number[]> = {
   png: [0x89, 0x50, 0x4e, 0x47],
@@ -488,7 +510,7 @@ async function askUserApproval(
   toolName: string,
   args: any,
   sessionRl?: readline.Interface,
-): Promise<boolean> {
+): Promise<{ approved: boolean; revisionNote?: string }> {
   const displayName = Agent.getToolDisplayName(toolName);
 
   // Detect irreversible actions for stronger warning (Principle: Reversibility Awareness)
@@ -519,7 +541,14 @@ async function askUserApproval(
     return new Promise((resolve) => {
       sessionRl.question(prompt, (answer) => {
         const cleanAnswer = answer.trim().toLowerCase();
-        resolve(cleanAnswer === "y" || cleanAnswer === "yes");
+        const approved = cleanAnswer === "y" || cleanAnswer === "yes";
+        if (approved) return resolve({ approved: true });
+        // Deny — offer an optional revision note (US-2.4). In GUI mode the
+        // note arrives as the next stdin line from the renderer.
+        sessionRl.question(
+          picocolors.gray("Revision note (optional, press Enter to just deny): "),
+          (note) => resolve({ approved: false, revisionNote: note.trim() || undefined }),
+        );
       });
     });
   }
@@ -531,9 +560,13 @@ async function askUserApproval(
 
   return new Promise((resolve) => {
     rl.question(prompt, (answer) => {
-      rl.close();
       const cleanAnswer = answer.trim().toLowerCase();
-      resolve(cleanAnswer === "y" || cleanAnswer === "yes");
+      const approved = cleanAnswer === "y" || cleanAnswer === "yes";
+      if (approved) { rl.close(); return resolve({ approved: true }); }
+      rl.question(
+        picocolors.gray("Revision note (optional, press Enter to just deny): "),
+        (note) => { rl.close(); resolve({ approved: false, revisionNote: note.trim() || undefined }); },
+      );
     });
   });
 }
@@ -607,6 +640,7 @@ export class Agent {
   private filesReadThisSession: Set<string> = new Set();
   // Cloud sync: show notice once per session
   private cloudSyncInitialized = false;
+  private pendingRevisionNote: string | undefined = undefined;
 
   constructor(registry: ToolRegistry) {
     this.registry = registry;
@@ -895,6 +929,21 @@ export class Agent {
     } catch {
       // Ignore directory read errors
     }
+
+    // US-12.2: accepted (reviewed) memory facts are part of active prompt
+    // assembly — the review queue's "accept" action must reach the model.
+    try {
+      const reviewedContext = await loadReviewedMemoryContext();
+      if (reviewedContext) {
+        results.push({
+          filename: "reviewed-facts.md",
+          sizeBytes: reviewedContext.length,
+          content: reviewedContext,
+        });
+      }
+    } catch {
+      // Non-critical — never block the turn on memory loading
+    }
     return results;
   }
 
@@ -1112,7 +1161,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     log_tokens: "Log stats",
     web_search: "Web search",
     scrape_url: "Read webpage",
-    search_docs: "Search docs",
     browser_control: "Browser",
     memory_append: "Save memory",
     memory_replace: "Update memory",
@@ -1603,18 +1651,28 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         if (config.dryRun) {
           isApproved = true;
         } else if (config.requireApprovalFor.includes(toolName)) {
-          // Emit approval event for GUI
+          // Emit approval event for GUI. For file-mutation tools, include the
+          // current file content so the renderer can render a real before/after
+          // diff (US-2.4) rather than a static placeholder.
           if (onEvent) {
-            onEvent({
-              type: "approval",
-              data: { toolName, toolArgs: args },
-            });
+            const approvalData: any = { toolName, toolArgs: args };
+            const mutPath = args.filePath ? path.resolve(args.filePath) : "";
+            if (mutPath && fsSync.existsSync(mutPath)) {
+              try {
+                approvalData.currentContent = fsSync.readFileSync(mutPath, "utf8");
+              } catch { /* unreadable — omit */ }
+            }
+            approvalData.proposedContent =
+              args.content ?? args.newString ?? args.new_content ?? "";
+            onEvent({ type: "approval", data: approvalData });
           }
-          isApproved = await askUserApproval(
+          const decision = await askUserApproval(
             toolName,
             args,
             this.sessionReadline ?? undefined,
           );
+          isApproved = decision.approved;
+          this.pendingRevisionNote = decision.revisionNote;
         }
 
         let result: any;
@@ -1625,7 +1683,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             console.log(formatDetails(toolName, args, theme().gray("  ")));
           }
         } else if (!isApproved) {
-          result = `Error: Action '${toolName}' was denied by the user.`;
+          const note = this.pendingRevisionNote;
+          this.pendingRevisionNote = undefined;
+          result = note
+            ? `Error: Action '${toolName}' was denied by the user. Revision requested: ${note}`
+            : `Error: Action '${toolName}' was denied by the user.`;
           console.log(picocolors.red(`  ✗ ${displayName} — declined by you`));
         } else {
           const keyArg = this.summarizeToolArgs(toolName, args);
@@ -1664,31 +1726,46 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 );
               }
             } else {
-              try {
-                result = await tool.execute(args);
-                this.tokenStats.toolCalls++;
+              // US-6.3: only retry-safe (read-only/idempotent) tools are
+              // auto-retried on transient failure. Destructive/shell tools
+              // execute exactly once so a transient blip can never repeat a
+              // state-changing action.
+              const retrySafe = isRetrySafe(toolName);
+              const maxAttempts = retrySafe ? 3 : 1;
+              let attempt = 0;
+              let lastErr: any = null;
+              while (true) {
+                try {
+                  result = await tool.execute(args);
+                  this.tokenStats.toolCalls++;
 
-                // Track files read for read-before-write enforcement
-                if (toolName === "view_file" && args.filePath) {
-                  this.filesReadThisSession.add(path.resolve(args.filePath));
-                }
-
-                if (config.outputMode === "interactive") {
-                  process.stdout.write(
-                    `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
-                  );
-                  // ── Result Preview (Principle: Result Visibility) ──
-                  // Show a truncated preview of what the tool returned
-                  const preview = this.summarizeResult(result);
-                  if (preview) {
-                    console.log(picocolors.gray(`    → ${preview}`));
+                  if (toolName === "view_file" && args.filePath) {
+                    this.filesReadThisSession.add(path.resolve(args.filePath));
                   }
+
+                  if (config.outputMode === "interactive") {
+                    process.stdout.write(
+                      `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
+                    );
+                    const preview = this.summarizeResult(result);
+                    if (preview) {
+                      console.log(picocolors.gray(`    → ${preview}`));
+                    }
+                  }
+                  lastErr = null;
+                  break;
+                } catch (error: any) {
+                  lastErr = error;
+                  attempt++;
+                  if (attempt >= maxAttempts || !retrySafe) break;
+                  await new Promise((r) => setTimeout(r, calculateBackoffWithJitter(attempt - 1)));
                 }
-              } catch (error: any) {
-                result = `Error performing action: ${error.message}`;
+              }
+              if (lastErr) {
+                result = `Error performing action: ${lastErr.message}`;
                 if (config.outputMode === "interactive") {
                   process.stdout.write(
-                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(error.message.slice(0, 60))}\n`,
+                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.slice(0, 60))}\n`,
                   );
                 }
               }

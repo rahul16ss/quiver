@@ -63,12 +63,13 @@
     }
 
     async function saveSettings() {
+      // currentConfig is always fully defaulted by the main process
+      // (loadConfig merges src/config.ts defaults), so no hardcoded fallbacks.
       await window.quiver.saveConfig({
         ...currentConfig,
         workspacePath: document.getElementById("workspacePath").value.trim(),
         provider: {
-          baseUrl: currentConfig?.provider?.baseUrl || "https://ollama.com/v1",
-          modelName: currentConfig?.provider?.modelName || "glm-5.2:cloud",
+          ...currentConfig?.provider,
           apiKey: document.getElementById("apiKey").value.trim(),
         },
         parallelApiKey: document.getElementById("parallelApiKey").value.trim(),

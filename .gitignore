@@ -1,8 +1,77 @@
+# ─── Dependencies ─────────────────────────────────────────────────────
 node_modules/
+
+# ─── Build / release artifacts ────────────────────────────────────────
 dist/
 dist-electron/
+build/
+out/
+release/
+*.tsbuildinfo
+# Packaged Electron binaries
+*.app
+*.dmg
+*.exe
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
+# ─── Secrets & local env ──────────────────────────────────────────────
 .env
+.env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.env.local
+
+# ─── Local runtime state (never commit user data) ─────────────────────
 .sessions/
+.quiver/
+.agents/
+input.txt
+*.session
+*.state.json
+
+# ─── Logs & coverage ──────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+*.lcov
+.tap/
+
+# ─── OS junk ──────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ─── Editor / IDE ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.cursor/
+.history/
+*.swp
+*.swo
+*~
+
+# ─── Misc scratch ─────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
 .quiver_cloud_notice_shown*.rtf
+gitignore and remember.rtf
+
+# ─── Private vendor blueprint (not part of the open-source release) ───
+.spec-swimlane.md
