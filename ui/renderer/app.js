@@ -230,7 +230,7 @@ const TOOL_NAMES = {
   apply_patch: "Apply patch", list_dir: "List folder", glob: "Find files",
   format_code: "Format code", grep_search: "Search files", run_command: "Run command",
   run_tests: "Run tests", create_tool: "Create tool", log_tokens: "Log stats",
-  web_search: "Web search", scrape_url: "Read webpage", search_docs: "Search docs",
+  web_search: "Web search", scrape_url: "Read webpage",
   browser_control: "Browser", deep_research: "Deep research", find_all: "Find entities",
   entity_search: "Entity search", memory_append: "Save memory", memory_replace: "Update memory",
   github: "GitHub", todo_write: "Task list", ask_question: "Ask user",
@@ -242,7 +242,7 @@ const TOOL_ICONS = {
   apply_patch: "icon-edit.png", list_dir: "icon-folder.png", glob: "icon-search.png",
   format_code: "icon-edit.png", grep_search: "icon-search.png", run_command: "icon-cli.png",
   run_tests: "icon-verification.png", create_tool: "icon-edit.png", log_tokens: "icon-cli.png",
-  web_search: "icon-search.png", scrape_url: "icon-browser.png", search_docs: "icon-search.png",
+  web_search: "icon-search.png", scrape_url: "icon-browser.png",
   browser_control: "icon-browser.png", deep_research: "icon-deep-search.png", find_all: "icon-search.png",
   entity_search: "icon-search.png", memory_append: "icon-database.png", memory_replace: "icon-database.png",
   github: "icon-github.png", todo_write: "icon-verification.png", ask_question: "icon-cli.png",
@@ -294,22 +294,63 @@ function showToolResult(toolDiv, result) {
 
 // ── Approval ─────────────────────────────────────────────────────────
 
+const FILE_MUTATION_TOOLS = new Set(["write_file", "replace_content", "apply_patch", "create_tool"]);
+
+/**
+ * Render a side-by-side diff preview for a file-mutation approval (US-2.4).
+ * Shows the proposed change so the user can make an informed Approve / Reject
+ * / Request revision decision.
+ */
+function renderDiff(toolName, toolArgs) {
+  const fp = toolArgs && (toolArgs.filePath || toolArgs.path || "");
+  const isNew = toolName === "create_tool" || (toolName === "write_file" && !toolArgs.content);
+  const proposed = String(toolArgs.content || toolArgs.newString || toolArgs.new_content || "");
+  const original = String(toolArgs.oldString || toolArgs.old_string || "");
+  const escape = (t) => String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  if (toolName === "replace_content") {
+    return `<div class="diff-sideBySide"><div class="diff-col"><div class="diff-h">before</div><pre>${escape(original)}</pre></div><div class="diff-col"><div class="diff-h">after</div><pre>${escape(proposed)}</pre></div></div>`;
+  }
+  return `<div class="diff-sideBySide"><div class="diff-col"><div class="diff-h">${isNew ? "new file" : "current"}</div><pre>${escape(original)}</pre></div><div class="diff-col"><div class="diff-h">proposed</div><pre>${escape(proposed)}</pre></div></div>`;
+}
+
 function addApproval(toolName, toolArgs) {
   const div = document.createElement("div");
   div.className = "approval";
   const argsStr = Object.entries(toolArgs || {})
     .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`).join("\n    ");
+  const isMutation = FILE_MUTATION_TOOLS.has(toolName);
+  const diffHtml = isMutation ? `<div class="diff-preview">${renderDiff(toolName, toolArgs)}</div>` : "";
+  const reviseBtn = isMutation
+    ? `<button class="btn-revise" onclick="requestRevision(this)">Request revision</button>`
+    : "";
 
   div.innerHTML = `
     <div class="approval-title">Permission required</div>
     <div class="approval-desc">Quiver wants to run: <strong>${formatToolName(toolName)}</strong><pre>${argsStr}</pre></div>
+    ${diffHtml}
     <div class="approval-actions">
-      <button class="btn-yes" onclick="approveAction(true,this)">Allow</button>
-      <button class="btn-no" onclick="approveAction(false,this)">Deny</button>
+      <button class="btn-yes" onclick="approveAction(true,this)">Approve</button>
+      <button class="btn-no" onclick="approveAction(false,this)">Reject</button>
+      ${reviseBtn}
     </div>
   `;
   chatArea.appendChild(div);
   chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+/**
+ * Request revision: reject the proposed change and signal the agent to revise.
+ * Sends the existing approval as denied with a revision hint (US-2.4).
+ */
+async function requestRevision(btn) {
+  const div = btn.closest(".approval");
+  if (div) {
+    div.style.opacity = "0.5";
+    div.style.pointerEvents = "none";
+    div.querySelector(".approval-actions").innerHTML =
+      `<span style="color:var(--warning);font-size:12px;font-weight:500;">↩ Revision requested</span>`;
+  }
+  await window.quiver.approveToolCall(false);
 }
 
 async function approveAction(approve, btn) {
@@ -414,7 +455,7 @@ window.quiver.onAgentEvent((msg) => {
       break;
     }
     case "approval":
-      addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
+      addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {}, msg.data?.currentContent, msg.data?.proposedContent);
       break;
     case "done":
       if (msg.data?.tokenStats) {

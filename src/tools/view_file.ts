@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
+import { wrapUntrustedFile } from "../prompts/security.js";
 
 export const tool: Tool = {
   name: "view_file",
@@ -60,7 +61,9 @@ export const tool: Tool = {
       }
 
       const header = `[File: ${resolvedPath}] [Lines ${start}-${end} of ${totalLines}]${end < totalLines ? ` (use startLine=${end + 1} to continue)` : ""}\n`;
-      return header + formatted;
+      // US-9.4: file contents are untrusted data — wrap them in untrusted
+      // boundaries so the model never follows instructions embedded inside.
+      return wrapUntrustedFile(resolvedPath, header + formatted);
     } catch (error: any) {
       throw new Error(`Failed to read file at ${filePath}: ${error.message}`);
     }

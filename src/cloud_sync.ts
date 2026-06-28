@@ -22,7 +22,7 @@
  * The user can also set QUIVER_CLOUD_SYNC_PATH to any synced folder.
  */
 
-import { promises as fs, existsSync, mkdirSync } from "fs";
+import { promises as fs, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { config } from "./config.js";
@@ -33,8 +33,47 @@ import {
   getGlobalRoot,
 } from "./paths.js";
 
+import * as crypto from "crypto";
+import { getCredential, setCredential, isKeychainAvailable } from "./secrets/keychain.js";
+import { AuditChain } from "./logger.js";
+
 const QUIVER_FOLDER = "Quiver";
 const NOTICE_FILE = path.join(os.homedir(), ".quiver_cloud_notice_shown");
+
+/**
+ * Opt-in gate (US-4.4): detecting a cloud folder is NEVER consent. Cloud sync
+ * stays disabled until the user explicitly enables it. Consent sources:
+ *   - QUIVER_CLOUD_SYNC_ENABLED env var ("1" / "true")
+ *   - versioned schema config sync.enabled === true (written by the GUI
+ *     settings panel / `quiver init`)
+ * Default is OFF; the auto-detected folder alone never flips this on.
+ */
+export function isCloudSyncEnabled(): boolean {
+  const env = process.env.QUIVER_CLOUD_SYNC_ENABLED;
+  if (env === "1" || env === "true" || env === "on") return true;
+  try {
+    const file = path.join(getGlobalRoot(), "sync.json");
+    if (existsSync(file)) {
+      const cfg = JSON.parse(readFileSyncSafe(file));
+      if (cfg && cfg.enabled === true) return true;
+    }
+  } catch {
+    // ignore — opt-in is conservative (default off)
+  }
+  return false;
+}
+
+function readFileSyncSafe(p: string): string {
+  return readFileSync(p, "utf8");
+}
+
+/**
+ * Sync is "active" only when the user has opted in AND a sync destination is
+ * available. A merely-detected cloud folder never makes sync active.
+ */
+export function isCloudSyncActive(): boolean {
+  return isCloudSyncEnabled() && detectCloudFolder() !== null;
+}
 
 /** Install links for popular cloud sync apps. */
 export const CLOUD_APP_LINKS: { name: string; url: string }[] = [
@@ -144,18 +183,13 @@ export function getQuiverDataDir(): string {
 /**
  * Check if a cloud sync folder is detected (for status display).
  */
-export function isCloudSyncActive(): boolean {
-  return detectCloudFolder() !== null;
-}
-
-/**
- * Get cloud sync status for display.
- */
 export function getCloudSyncStatus(): {
   active: boolean;
   provider: string;
   path: string;
 } {
+  // Side-effect-free (US-4.4): a status probe must NEVER create folders on
+  // disk. Detection alone is reported; "active" requires explicit opt-in.
   const cloudFolder = detectCloudFolder();
 
   if (!cloudFolder) {
@@ -166,8 +200,6 @@ export function getCloudSyncStatus(): {
     };
   }
 
-  // Detect provider from the full path (not just basename, since we may
-  // have descended into a subfolder like "My Drive")
   const fullPath = cloudFolder.toLowerCase();
   let provider = "Cloud folder";
   if (fullPath.includes("google")) provider = "Google Drive";
@@ -176,27 +208,10 @@ export function getCloudSyncStatus(): {
   else if (fullPath.includes("icloud")) provider = "iCloud";
   else provider = path.basename(cloudFolder);
 
-  // Check if the cloud folder is actually writable
-  const cloudQuiverPath = path.join(cloudFolder, QUIVER_FOLDER);
-  let writable = true;
-  try {
-    mkdirSync(cloudQuiverPath, { recursive: true });
-  } catch {
-    writable = false;
-  }
-
-  if (!writable) {
-    return {
-      active: false,
-      provider: `${provider} (not writable)`,
-      path: path.join(os.homedir(), "QuiverData"),
-    };
-  }
-
   return {
-    active: true,
+    active: isCloudSyncActive(),
     provider,
-    path: cloudQuiverPath,
+    path: path.join(cloudFolder, QUIVER_FOLDER),
   };
 }
 
@@ -259,38 +274,259 @@ export async function ensureCloudDataDir(): Promise<void> {
   await fs.mkdir(path.join(dataDir, "projects", projectName, "sessions"), { recursive: true });
 }
 
+// ─── Sync scope & exclusion policy (US-4.4) ───────────────────────────
+// NEVER reach the sync destination:
+//   - raw private session logs (the entire .sessions/ tree: *.json,
+//     *.state.json, screenshots, tool binaries, raw transcripts)
+//   - secrets / credentials (.env, private keys, certificates)
+// Inspectable memory files (persona.txt, *.md, project.json, core.json) ARE
+// eligible — but only after client-side AES-256-GCM encryption.
+
+const SECRET_FILE_PATTERNS = [
+  /^\.env(\..*)?$/i,
+  /^\.env$/i,
+  /^(id_rsa|id_dsa|id_ecdsa|id_ed25519)$/i,
+  /\.(pem|key|p12|pfx|keystore|jks)$/i,
+  /^\.git(-credentials|config)?$/i,
+  /credential/i,
+  /\.(ssh|kdbx)$/i,
+];
+
 /**
- * Sync memory/ and .sessions/ to the Quiver cloud data folder.
- * Copies local files to the cloud folder (upload) and copies cloud files
- * that don't exist locally back (download for new-machine setup).
+ * A file is sync-eligible only if it is NOT a secret/credential artifact.
+ * (Raw session logs are excluded by never placing the sessions dir in scope.)
+ */
+export function isSyncEligible(fileName: string): boolean {
+  const base = path.basename(fileName);
+  if (base.startsWith(".") && base === ".env") return false;
+  return !SECRET_FILE_PATTERNS.some((re) => re.test(base));
+}
+
+// ─── AES-256-GCM client-side encryption (US-4.4) ──────────────────────
+// The sync key is a 256-bit key persisted once at ~/.quiver/sync.key (0600).
+// The sync key is a 256-bit key persisted in the OS credential store
+// (US-4.4: "passphrase/key stored in the OS credential store"). When the
+// keychain is unavailable (headless/CI/locked session), a 0600 on-disk file
+// at ~/.quiver/sync.key is used as a restrictive fallback so the pipeline
+// never silently disables encryption. The key NEVER leaves the machine —
+// only ciphertext is written to the sync folder.
+
+const SYNC_KEYCHAIN_REF = "QUIVER_SYNC_KEY";
+
+async function getSyncKey(): Promise<Buffer> {
+  // 1. OS credential store (preferred)
+  if (isKeychainAvailable()) {
+    const stored = await getCredential(SYNC_KEYCHAIN_REF);
+    if (stored) {
+      const buf = Buffer.from(stored, "base64");
+      if (buf.length === 32) return buf;
+    }
+    const key = crypto.randomBytes(32);
+    await setCredential(SYNC_KEYCHAIN_REF, key.toString("base64"));
+    return key;
+  }
+  // 2. Restrictive on-disk fallback (0600, never synced, never in config.json)
+  const keyPath = path.join(getGlobalRoot(), "sync.key");
+  if (existsSync(keyPath)) {
+    const raw = readFileSync(keyPath);
+    if (raw.length === 32) return Buffer.from(raw);
+  }
+  const key = crypto.randomBytes(32);
+  mkdirSync(getGlobalRoot(), { recursive: true });
+  writeFileSync(keyPath, key, { mode: 0o600 });
+  return key;
+}
+
+const GCM_IV_LEN = 12;
+const GCM_TAG_LEN = 16;
+
+/** Encrypt a buffer with AES-256-GCM. Layout: iv(12) || tag(16) || ciphertext. */
+export async function encryptBuffer(buf: Buffer): Promise<Buffer> {
+  const key = await getSyncKey();
+  const iv = crypto.randomBytes(GCM_IV_LEN);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(buf), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]);
+}
+
+/** Decrypt an AES-256-GCM buffer produced by encryptBuffer. */
+export async function decryptBuffer(buf: Buffer): Promise<Buffer> {
+  if (buf.length < GCM_IV_LEN + GCM_TAG_LEN) throw new Error("ciphertext too short");
+  const key = await getSyncKey();
+  const iv = buf.subarray(0, GCM_IV_LEN);
+  const tag = buf.subarray(GCM_IV_LEN, GCM_IV_LEN + GCM_TAG_LEN);
+  const enc = buf.subarray(GCM_IV_LEN + GCM_TAG_LEN);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(enc), decipher.final()]);
+}
+
+// ─── Tamper-evident audit for sync actions (US-9.5 / US-4.4) ────────────
+const SYNC_AUDIT_FILE = path.join(getGlobalRoot(), "sync_audit.json");
+
+/** Append a tamper-evident entry to the persistent sync audit chain. */
+async function logSyncAudit(action: "sync_conflict" | "sync_cleanup", payload: string): Promise<void> {
+  try {
+    let chain: AuditChain;
+    if (existsSync(SYNC_AUDIT_FILE)) {
+      const raw = readFileSync(SYNC_AUDIT_FILE, "utf8");
+      chain = AuditChain.deserialize(raw);
+    } else {
+      chain = new AuditChain();
+    }
+    chain.appendEntry(action, payload);
+    mkdirSync(getGlobalRoot(), { recursive: true });
+    writeFileSync(SYNC_AUDIT_FILE, chain.serialize(), "utf8");
+  } catch {
+    // audit is best-effort — never block sync on it
+  }
+}
+
+// ─── Consent-gated cleanup of leaked plaintext artifacts (US-4.4 P0) ────
+// Pre-fix runs leaked plaintext (raw logs, screenshots, tool binaries,
+// credentials, unencrypted memory) to the cloud folder. This NEVER auto-
+// deletes — the user's sync target is user-owned data. It enumerates the
+// leaked artifacts, shows the list, deletes ONLY after explicit consent,
+// and logs every removal to the audit chain.
+
+export interface LeakedArtifact {
+  path: string;        // absolute path inside the cloud Quiver folder
+  relPath: string;     // path relative to the Quiver folder
+  sizeBytes: number;
+  reason: string;      // why it is considered a leaked plaintext artifact
+}
+
+function classifyLeak(relPath: string): string | null {
+  const base = path.basename(relPath);
+  // Our own encrypted artifacts are never leaks.
+  if (base.endsWith(".enc")) return null;
+  // Conflict-preserved copies are intentional, not leaks.
+  if (base.includes(".conflict.") || base.includes(".cloud.")) return null;
+  if (/^\.env(\..*)?$/i.test(base) || /^(id_rsa|id_dsa|id_ecdsa|id_ed25519)$/i.test(base) || /\.(pem|key|p12|pfx)$/i.test(base))
+    return "credential/secret file";
+  if (/\.(state\.)?json$/i.test(base)) return "raw session log";
+  if (/screenshot/i.test(base) || /\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(base)) return "screenshot/image";
+  if (/\.js$/i.test(base)) return "generated tool binary";
+  if (/\.(txt|md|json)$/i.test(base)) return "unencrypted memory/data file";
+  return null;
+}
+
+/**
+ * Enumerate leaked plaintext artifacts in the cloud Quiver folder. Read-only:
+ * does not delete anything. Returns the list for the user to review.
+ */
+export async function enumerateLeakedArtifacts(): Promise<LeakedArtifact[]> {
+  const folder = detectCloudFolder();
+  if (!folder) return [];
+  const quiver = path.join(folder, QUIVER_FOLDER);
+  if (!existsSync(quiver)) return [];
+  const out: LeakedArtifact[] = [];
+  const walk = async (d: string) => {
+    for (const e of await fs.readdir(d, { withFileTypes: true })) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) await walk(full);
+      else {
+        const rel = path.relative(quiver, full);
+        const reason = classifyLeak(rel);
+        if (reason) {
+          try {
+            const st = await fs.stat(full);
+            out.push({ path: full, relPath: rel, sizeBytes: st.size, reason });
+          } catch { /* skip unreadable */ }
+        }
+      }
+    }
+  };
+  await walk(quiver);
+  return out;
+}
+
+/**
+ * Consent-gated removal of leaked plaintext artifacts. Deletes ONLY when
+ * `confirm` is true (the caller must have already shown the list and obtained
+ * explicit y/N consent). Every removal is logged to the tamper-evident audit
+ * chain. Never automatic.
+ */
+export async function cleanupLeakedArtifacts(confirm: boolean): Promise<{
+  removed: string[];
+  skipped: string[];
+}> {
+  const removed: string[] = [];
+  const skipped: string[] = [];
+  if (!confirm) {
+    const leaked = await enumerateLeakedArtifacts();
+    for (const a of leaked) skipped.push(a.relPath);
+    return { removed, skipped };
+  }
+  const leaked = await enumerateLeakedArtifacts();
+  for (const a of leaked) {
+    try {
+      await fs.unlink(a.path);
+      removed.push(a.relPath);
+      await logSyncAudit("sync_cleanup", `removed leaked plaintext: ${a.relPath} (${a.reason})`);
+    } catch (err: any) {
+      skipped.push(a.relPath);
+      await logSyncAudit("sync_cleanup", `failed to remove ${a.relPath}: ${err.message}`);
+    }
+  }
+  return { removed, skipped };
+}
+
+/** Atomic write: temp file + fsync + rename (US-4.4). */
+async function atomicWriteFile(filePath: string, data: Buffer): Promise<void> {
+  const dir = path.dirname(filePath);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = filePath + ".tmp-" + crypto.randomBytes(4).toString("hex");
+  const fh = await fs.open(tmp, "w");
+  try {
+    await fh.writeFile(data);
+    await fh.datasync();
+  } finally {
+    await fh.close();
+  }
+  await fs.rename(tmp, filePath);
+}
+
+/**
+ * Sync inspectable memory to the Quiver cloud data folder.
+ *
+ * Opt-in gate (US-4.4): a complete no-op (no folder creation, no I/O) while
+ * sync is disabled — detection of a cloud folder is never consent.
+ *
+ * When enabled: uploads eligible memory files (secrets/raw logs excluded)
+ * AES-256-GCM encrypted, written atomically; downloads missing files back,
+ * decrypting them locally. Plaintext never reaches the destination.
  */
 export async function syncToCloud(): Promise<{
   uploaded: string[];
   downloaded: string[];
   errors: { file: string; error: string }[];
+  conflicts: string[];
 }> {
-  const dataDir = getQuiverDataDir();
   const result = {
     uploaded: [] as string[],
     downloaded: [] as string[],
     errors: [] as { file: string; error: string }[],
+    conflicts: [] as string[],
   };
 
-  // Ensure the cloud data dir exists
+  // Opt-in gate: while disabled, sync is a pure no-op (US-4.4).
+  if (!isCloudSyncActive()) return result;
+
+  const dataDir = getQuiverDataDir();
   await ensureCloudDataDir();
 
-  // Directories to sync — global core + per-project data
   const projectName = getProjectName();
+  // Scope: global core + per-project memory only. The raw .sessions/ tree
+  // (logs, state, screenshots, generated tool binaries) is intentionally
+  // excluded from sync — it is private local-only data.
   const dirs: { local: string; prefix: string; filter?: string }[] = [
-    // Global core memory (identity, human context) — only sync core.json
     { local: getGlobalRoot(), prefix: "global", filter: "core.json" },
-    // Per-project memory (persona.txt, human.txt, user-preferences.md, workspace-facts.md, project.json)
     { local: getProjectMemoryDir(), prefix: `projects/${projectName}/memory` },
-    // Per-project sessions (logs, state files)
-    { local: getProjectSessionsDir(), prefix: `projects/${projectName}/sessions` },
   ];
 
-  // Upload: copy local files to cloud
+  // Upload: encrypt + atomic-write eligible local files
   for (const dir of dirs) {
     let localFiles: string[] = [];
     try {
@@ -304,28 +540,44 @@ export async function syncToCloud(): Promise<{
       // Local dir doesn't exist yet — skip
     }
 
-    // Apply filter if set (e.g., only sync core.json from global root)
-    const filesToSync = dir.filter ? localFiles.filter((f) => f === dir.filter) : localFiles;
+    const filesToSync = (dir.filter ? localFiles.filter((f) => f === dir.filter) : localFiles)
+      .filter((f) => isSyncEligible(f));
 
     for (const fileName of filesToSync) {
       const localPath = path.join(dir.local, fileName);
       const cloudDir = path.join(dataDir, dir.prefix);
-      const cloudPath = path.join(cloudDir, fileName);
-
+      const cloudPath = path.join(cloudDir, fileName + ".enc");
       try {
-        await fs.mkdir(cloudDir, { recursive: true });
-        await fs.copyFile(localPath, cloudPath);
+        const plain = await fs.readFile(localPath);
+        const localHash = crypto.createHash("sha256").update(plain).digest("hex");
+        // Conflict detection (US-4.4): if a cloud artifact already exists and
+        // its decrypted content differs from local, both versions diverged.
+        // Preserve both (keep-both) and surface the conflict.
+        if (existsSync(cloudPath)) {
+          try {
+            const existingCipher = await fs.readFile(cloudPath);
+            const existingPlain = await decryptBuffer(existingCipher);
+            const cloudHash = crypto.createHash("sha256").update(existingPlain).digest("hex");
+            if (cloudHash !== localHash) {
+              const conflictPath = path.join(cloudDir, `${fileName}.conflict.${Date.now()}.enc`);
+              await fs.copyFile(cloudPath, conflictPath);
+              result.conflicts.push(`${dir.prefix}/${fileName}`);
+              await logSyncAudit("sync_conflict", `${dir.prefix}/${fileName}: local and cloud diverged; both versions preserved`);
+            }
+          } catch {
+            // unreadable cloud artifact — treat as fresh upload
+          }
+        }
+        const cipher = await encryptBuffer(plain);
+        await atomicWriteFile(cloudPath, cipher);
         result.uploaded.push(`${dir.prefix}/${fileName}`);
       } catch (err: any) {
-        result.errors.push({
-          file: `${dir.prefix}/${fileName}`,
-          error: err.message,
-        });
+        result.errors.push({ file: `${dir.prefix}/${fileName}`, error: err.message });
       }
     }
   }
 
-  // Download: copy cloud files that don't exist locally
+  // Download: decrypt cloud files that don't exist locally
   for (const dir of dirs) {
     const cloudDir = path.join(dataDir, dir.prefix);
     let cloudFiles: string[] = [];
@@ -334,21 +586,41 @@ export async function syncToCloud(): Promise<{
     } catch {
       continue;
     }
-
     for (const fileName of cloudFiles) {
+      // Only consider our encrypted artifacts (skip temp/stray files)
+      if (!fileName.endsWith(".enc")) continue;
+      const localName = fileName.replace(/\.enc$/, "");
+      if (dir.filter && localName !== dir.filter) continue;
       const cloudPath = path.join(cloudDir, fileName);
-      const localPath = path.join(dir.local, fileName);
-
+      const localPath = path.join(dir.local, localName);
+      if (existsSync(localPath)) {
+        // Both versions exist — detect divergence and preserve both.
+        try {
+          const localPlain = await fs.readFile(localPath);
+          const localHash = crypto.createHash("sha256").update(localPlain).digest("hex");
+          const cipher = await fs.readFile(cloudPath);
+          const cloudPlain = await decryptBuffer(cipher);
+          const cloudHash = crypto.createHash("sha256").update(cloudPlain).digest("hex");
+          if (cloudHash !== localHash) {
+            const conflictLocal = path.join(dir.local, `${localName}.cloud.${Date.now()}`);
+            await fs.writeFile(conflictLocal, cloudPlain);
+            result.conflicts.push(`${dir.prefix}/${localName}`);
+            await logSyncAudit("sync_conflict", `${dir.prefix}/${localName}: local and cloud diverged on download; cloud copy preserved locally`);
+          }
+        } catch (err: any) {
+          result.errors.push({ file: `${dir.prefix}/${localName}`, error: err.message });
+        }
+        continue;
+      }
       if (!existsSync(localPath)) {
         try {
+          const cipher = await fs.readFile(cloudPath);
+          const plain = await decryptBuffer(cipher);
           await fs.mkdir(dir.local, { recursive: true });
-          await fs.copyFile(cloudPath, localPath);
-          result.downloaded.push(`${dir.prefix}/${fileName}`);
+          await fs.writeFile(localPath, plain);
+          result.downloaded.push(`${dir.prefix}/${localName}`);
         } catch (err: any) {
-          result.errors.push({
-            file: `${dir.prefix}/${fileName}`,
-            error: err.message,
-          });
+          result.errors.push({ file: `${dir.prefix}/${localName}`, error: err.message });
         }
       }
     }

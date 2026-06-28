@@ -5,6 +5,7 @@ import {
   printConfig,
   isFirstRun,
   printFirstRunWizard,
+  runOnboardingHandshake,
   redactSecret,
 } from "./config.js";
 import {
@@ -35,7 +36,7 @@ import { detectImagePaths } from "./image_input.js";
 import { printHelp, printInSessionHelp, printEnhancedTools } from "./help.js";
 import { promptUser } from "./multiline.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
-import { runCloudSync } from "./cloud_sync_ui.js";
+import { runCloudSync, runCleanupLeaks } from "./cloud_sync_ui.js";
 import {
   getProjectName,
   getProjectMemoryDir,
@@ -100,21 +101,38 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
+  if (cliOpts.cleanupLeaks) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      await runCleanupLeaks(rl);
+    } finally {
+      rl.close();
+    }
+    process.exit(EXIT.OK);
+  }
+
   if (cliOpts.unknownFlags.length > 0) {
     printUnknownFlagHints(cliOpts.unknownFlags);
     process.exit(EXIT.USAGE);
   }
 
-  // ── First-run wizard ──
+  // ── First-run onboarding handshake (US-1.1) ──
+  // Launches a conversational setup so the user can move forward instead of
+  // dead-ending on a static "run quiver init" message + config-error exit.
   if (isFirstRun()) {
-    printFirstRunWizard();
-    process.exit(EXIT.CONFIG);
+    await runOnboardingHandshake();
   }
 
   const t = theme();
   const isQuiet = config.outputMode === "quiet";
   const isJson = config.outputMode === "json";
-  const isInteractive = config.outputMode === "interactive";
+  // Interactive crash-recovery gating must require a real TTY (US-13.2):
+  // piped/non-interactive runs must never consume stdin or auto-discard
+  // crashed sessions. isInteractive is therefore bound to BOTH the output
+  // mode AND stdin/stdout being a TTY.
+  const isInteractive =
+    config.outputMode === "interactive" &&
+    process.stdin.isTTY && process.stdout.isTTY;
 
   // ── Banner — one line, no noise ──
   if (isInteractive) {
@@ -479,9 +497,6 @@ async function main() {
           );
           console.log(
             `   - GitHub Token:      ${redactSecret(config.githubToken)}`,
-          );
-          console.log(
-            `   - Context7:          ${config.context7ApiKey ? redactSecret(config.context7ApiKey) : "No key needed (free)"}`,
           );
           console.log(`   - Skills Dir:        ${getSkillsDir()}`);
           console.log(`   - Memory Dir:        ${getProjectMemoryDir()}`);

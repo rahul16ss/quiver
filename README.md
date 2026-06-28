@@ -8,7 +8,7 @@
 
 ---
 
-A self-evolving coding and research harness for the terminal, with a desktop app. Designed for the best open source models, with extensible tools, transparent and editable persistent and session memories.
+A self-evolving coding and research harness for the terminal, and with a Desktop app. Designed to be optimised for the best open source models, with extensible tools, transparent/ editable/ portable persistent and session memories.
 
 ## Quick Start
 
@@ -17,6 +17,16 @@ npm install -g .
 quiver init        # Set up .env with your API key
 quiver             # Start a session
 ```
+
+## Vision Fallback
+
+The primary model is optimised for coding but text-only. When you attach an image or video, Quiver automatically routes the request to the best multimodal model via Ollama:
+
+```bash
+ollama pull <multimodal-model>   # Install your preferred vision model
+```
+
+Configure via `VISION_MODEL_NAME` in `.env` or Settings → Vision Model in the GUI.
 
 ## Architecture
 
@@ -38,13 +48,13 @@ quiver             # Start a session
 
 Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{cloud}/Quiver/` after every turn. No OAuth — just files in a folder.
 
-## Tools (28)
+## Tools
 
 | Category | Tools |
 |----------|-------|
-| Files | view_file, write_file, replace_content, apply_patch, list_dir, glob, format_code, grep_search |
+| Local storage | view_file, write_file, replace_content, apply_patch, list_dir, glob, format_code, grep_search |
 | System | run_command, run_tests, create_tool, log_tokens |
-| Web | web_search, scrape_url, search_docs, browser_control, deep_research, find_all, entity_search |
+| Web | web_search, scrape_url, browser_control, deep_research, find_all, entity_search |
 | Memory | memory_append, memory_replace, continual_learning |
 | GitHub | github |
 | Planning | todo_write, ask_question |
@@ -54,18 +64,11 @@ Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{clo
 
 ## Principles
 
-1. **Read Before Write** — Always read a file before modifying it. Enforced at the code level.
-2. **Minimal Edits** — Prefer targeted edits over full rewrites. Use apply_patch for multi-file diffs.
-3. **Verify After Changes** — Run tests after code changes. Fix failures before declaring success.
-4. **Explore First** — Understand project structure before making changes.
-5. **No Hallucination** — Never fabricate file paths, function names, or APIs.
-6. **Error Recovery** — When a tool fails, analyze, adjust, and retry.
-7. **Progressive Disclosure** — Work incrementally — make a change, verify it, then move on.
-8. **No Silent Actions** — Every action is visible to the user.
-9. **Provenance** — Facts must come from files read, not from memory or inference.
-10. **Reversibility Awareness** — Distinguish reversible from irreversible actions.
-11. **Task Tracking** — For multi-step tasks, create a todo list.
-12. **Context Transparency** — Show what enters the model call before each prompt.
+1. **Your harness, your memory** — Ability to manage context as you exactly intend.
+2. **Context Transparency** — Show what enters the model call before each prompt.
+3. **Explainability** — Trace user prompts, and resulting chain of thoughts, operations performed, results from tool calls by the harness.
+4. **Provenance** — Facts must come from provided context, not from training.
+5. **Low level Primitives** — When the right tool doesn't exist, the agent should recognize that and build the primitive it needs — not work around the absence.
 
 ## Commands
 
@@ -93,14 +96,30 @@ Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{clo
 
 ## Configuration
 
-See `.env.example` for all options. Key settings:
+Quiver reads a small, fixed set of environment variables from `.env` (see
+`.env.example`). API keys may also be stored in the OS keychain. A **single
+`OLLAMA_API_KEY`** powers the primary LLM, the Ollama adapter, and the vision
+adapter — no separate LLM/vision keys are required. `LLM_API_KEY`,
+`VISION_MODEL_API_KEY`, and `CONTEXT7_API_KEY` are retired.
 
-```bash
-LLM_API_KEY=          # Required — get yours at ollama.com
-PARALLEL_API_KEY=     # Optional — powers web search, deep research
-REQUIRE_APPROVAL_FOR= # Comma-separated tools needing approval
-QUIVER_MAX_CONTEXT_TOKENS=900000  # Context window limit
-```
+| Variable | Required | Description |
+| --- | --- | --- |
+| `OLLAMA_API_KEY` | yes | Single API key for the LLM, Ollama, and vision adapters |
+| `LLM_API_BASE_URL` | no | LLM API base URL (default `https://ollama.com/v1`) |
+| `LLM_MODEL_NAME` | no | Primary model — source-controlled default, override only |
+| `VISION_MODEL_NAME` | no | Vision model — source-controlled default, override only |
+| `VISION_MODEL_BASE_URL` | no | Vision adapter base URL |
+| `REQUIRE_APPROVAL_FOR` | no | Comma-separated tools needing approval |
+| `QUIVER_MAX_CONTEXT_TOKENS` | no | Context window limit (default `120000`) |
+| `BROWSER_HEADLESS` | no | `true`/`false` — show browser window for sign-in |
+| `QUIVER_SESSION_LOG` | no | `0` to disable session logging |
+| `QUIVER_SESSION_LOG_MAX_CHARS` | no | Max chars logged per session message |
+| `PARALLEL_API_KEY` | optional | Powers web search, scrape, deep research, find_all |
+| `GITHUB_TOKEN` | optional | GitHub tooling (issues/PRs/repos) — developers only |
+
+Model names are source-controlled in `src/config.ts`; the first-run wizard
+never asks for a model name. Cloud sync, when enabled, additionally reads
+opt-in sync flags — see `docs/sync.md`.
 
 ## GUI
 
@@ -119,7 +138,5 @@ Quiver can propose updates to its own system prompt using `prompt_update`. The u
 `continual_learning` mines past session transcripts for high-signal patterns and writes them to `user-preferences.md` and `workspace-facts.md` in the project memory directory.
 
 ## License
-
-Apache License
 
 Apache License

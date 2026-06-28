@@ -42,6 +42,7 @@ export interface CliOptions {
   init: boolean;
   signin: boolean;
   cloudSync: boolean;
+  cleanupLeaks: boolean;
   singleTurn?: string;
   continue?: boolean;
   resume?: boolean;
@@ -72,6 +73,8 @@ export interface QuiverTheme {
   dry: ColorFn;
   promptUser: () => string;
   promptAgent: () => string;
+  brandBorder: ColorFn;
+  brandBar: ColorFn;
 }
 
 const identity = {
@@ -126,6 +129,8 @@ export function theme(
     promptAgent: () =>
       pc.bold(pc.cyan("Q> ")) +
       pc.gray(`[${config.llmModelName}] `),
+    brandBorder: pc.gray,
+    brandBar: pc.cyan,
   };
 }
 
@@ -207,6 +212,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     init: false,
     signin: false,
     cloudSync: false,
+    cleanupLeaks: false,
     continue: false,
     resume: false,
     listSessions: false,
@@ -246,6 +252,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg === "cloud-sync") {
       opts.cloudSync = true;
+      continue;
+    }
+    if (arg === "--cleanup-leaks") {
+      opts.cleanupLeaks = true;
       continue;
     }
     if (arg === "--single-turn") {

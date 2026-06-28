@@ -19,7 +19,6 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
   "🌐 Web": [
     "web_search",
     "scrape_url",
-    "search_docs",
     "browser_control",
     "deep_research",
     "find_all",

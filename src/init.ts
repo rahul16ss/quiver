@@ -47,21 +47,21 @@ export async function runInitWizard(): Promise<void> {
   }
 
   const apiKey = await promptLine(
-    t.cyan("Enter your LLM_API_KEY (press Enter to skip): "),
+    t.cyan("Enter your OLLAMA_API_KEY (press Enter to skip): "),
   );
 
   if (apiKey) {
     let envContent = readFileSync(ENV_FILE, "utf8");
-    if (/^LLM_API_KEY=.*$/m.test(envContent)) {
+    if (/^OLLAMA_API_KEY=.*$/m.test(envContent)) {
       envContent = envContent.replace(
-        /^LLM_API_KEY=.*$/m,
-        `LLM_API_KEY=${apiKey}`,
+        /^OLLAMA_API_KEY=.*$/m,
+        `OLLAMA_API_KEY=${apiKey}`,
       );
     } else {
-      envContent += `\nLLM_API_KEY=${apiKey}\n`;
+      envContent += `\nOLLAMA_API_KEY=${apiKey}\n`;
     }
     writeFileSync(ENV_FILE, envContent, "utf8");
-    statusLine("OK", "Saved LLM_API_KEY to .env");
+    statusLine("OK", "Saved OLLAMA_API_KEY to .env");
   } else {
     statusLine("INFO", "Skipped API key — edit .env manually when ready.");
   }
