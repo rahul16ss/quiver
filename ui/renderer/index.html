@@ -70,13 +70,13 @@
               </div>
             </div>
           </div>
-
           <!-- Persistent Memory Files -->
           <div class="ctx-group">
             <div class="ctx-group-label">Memory Files</div>
             <div class="ctx-mem-list" id="ctxMemList">
               <div class="ctx-loading">Loading…</div>
             </div>
+            <button class="ctx-add-btn" onclick="openMemoryEditor('')">+ New memory file</button>
           </div>
 
           <!-- Skills -->
@@ -94,9 +94,49 @@
               <div class="ctx-stat"><span class="ctx-stat-label">Tools</span><span class="ctx-stat-val" id="ctxTools">—</span></div>
               <div class="ctx-stat"><span class="ctx-stat-label">Tokens</span><span class="ctx-stat-val" id="ctxTokens">—</span></div>
             </div>
+            <div class="ctx-token-bar-wrap" id="ctxTokenBarWrap" style="display:none;">
+              <div class="ctx-token-bar" id="ctxTokenBar"></div>
+              <span class="ctx-token-bar-label" id="ctxTokenBarLabel"></span>
+            </div>
           </div>
         </div>
       </aside>
+
+      <!-- Memory file editor modal -->
+      <div class="modal-overlay" id="memEditorOverlay" style="display:none;" onclick="closeMemoryEditor(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span id="memEditorTitle">Edit Memory File</span>
+            <button class="context-close" onclick="closeMemoryEditor()">×</button>
+          </div>
+          <div class="modal-body">
+            <input id="memEditorName" class="modal-input" placeholder="filename.md">
+            <textarea id="memEditorContent" class="modal-textarea" placeholder="Memory content…"></textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-primary" onclick="saveMemoryFile()">Save</button>
+            <button class="btn-secondary" onclick="closeMemoryEditor()">Cancel</button>
+            <button class="btn-danger" id="memDeleteBtn" onclick="deleteMemoryFile()" style="display:none;">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skill viewer modal -->
+      <div class="modal-overlay" id="skillViewerOverlay" style="display:none;" onclick="closeSkillViewer(event)">
+        <div class="modal-card" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <span id="skillViewerTitle">Skill</span>
+            <button class="context-close" onclick="closeSkillViewer()">×</button>
+          </div>
+          <div class="modal-body">
+            <textarea id="skillViewerContent" class="modal-textarea" placeholder="Skill content…"></textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-primary" onclick="saveSkillFile()">Save</button>
+            <button class="btn-secondary" onclick="closeSkillViewer()">Close</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Chat -->
       <div class="chat" id="chatArea">

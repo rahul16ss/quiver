@@ -19,10 +19,16 @@ import {
   ensureCloudDataDir,
   autoSyncToCloud,
 } from "./cloud_sync.js";
-import { loadReviewedMemoryContext, assemblePrompt } from "./prompt/assembler.js";
+import {
+  loadReviewedMemoryContext,
+  assemblePrompt,
+} from "./prompt/assembler.js";
 import { classifyCommand } from "./security/command_policy.js";
 import { SECURITY_PREAMBLE } from "./prompts/security.js";
-import { FileReadHistory, WriteBlockedException } from "./session/file_access.js";
+import {
+  FileReadHistory,
+  WriteBlockedException,
+} from "./session/file_access.js";
 import { getActiveProvider } from "./providers/index.js";
 import { getAdapterForModel, type HarnessAdapter } from "./adapters/index.js";
 import { type ModelInfo } from "./providers/index.js";
@@ -34,12 +40,27 @@ import {
   wrapToolCall,
   type LifecycleContext,
 } from "./lifecycle.js";
-import { ConsecutiveFailureTracker, createDiagnosticBlock, formatDiagnosticBlock } from "./diagnostics.js";
+import {
+  ConsecutiveFailureTracker,
+  createDiagnosticBlock,
+  formatDiagnosticBlock,
+} from "./diagnostics.js";
 import { filterByPrivacy } from "./memory/privacy.js";
-import { parseMemoryCitations, validateCitations as validateCitationsImport, updateUsageStats, getAllUsageStats as getAllUsageStatsImport } from "./memory/citation_parser.js";
-import { getDefaultDecayConfig, getArchivalCandidates } from "./memory/decay.js";
+import {
+  parseMemoryCitations,
+  validateCitations as validateCitationsImport,
+  updateUsageStats,
+  getAllUsageStats as getAllUsageStatsImport,
+} from "./memory/citation_parser.js";
+import {
+  getDefaultDecayConfig,
+  getArchivalCandidates,
+} from "./memory/decay.js";
 import { redactSecrets } from "./security/secrets.js";
-import { CheckpointManager, detectCrashedSession } from "./session/checkpoint.js";
+import {
+  CheckpointManager,
+  detectCrashedSession,
+} from "./session/checkpoint.js";
 import { calculateBackoffWithJitter } from "./logger.js";
 import {
   getProjectMemoryDir,
@@ -161,10 +182,13 @@ async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
  */
 async function processImageMarkers(
   input: string,
-): Promise<string | Array<
-  | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string } }
->> {
+): Promise<
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    >
+> {
   const imageMarker = /\[Image:\s*([^\]]+)\]/g;
   const matches = [...input.matchAll(imageMarker)];
 
@@ -224,10 +248,13 @@ async function processImageMarkers(
 
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null | Array<
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } }
-  >;
+  content:
+    | string
+    | null
+    | Array<
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string } }
+      >;
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -235,7 +262,14 @@ export interface Message {
 
 /** Events emitted during prompt execution for GUI consumption. */
 export interface AgentEvent {
-  type: "token" | "tool_call" | "tool_result" | "approval" | "done" | "error" | "context_manifest";
+  type:
+    | "token"
+    | "tool_call"
+    | "tool_result"
+    | "approval"
+    | "done"
+    | "error"
+    | "context_manifest";
   data: {
     text?: string;
     toolName?: string;
@@ -508,22 +542,26 @@ async function askUserApproval(
   // Detect irreversible actions for stronger warning (Principle: Reversibility Awareness)
   const irreversible = isIrreversibleAction(toolName, args);
 
-  console.log(picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`));
-  console.log(picocolors.yellow(`│  Quiver wants to:`));
-  console.log(picocolors.yellow(`│  `));
-  console.log(picocolors.yellow(`│  Action: `) + picocolors.green(displayName));
-  console.log(picocolors.yellow(`│  Details:`));
-  console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
-  if (irreversible) {
+  // In JSON mode, the approval UI is rendered by the GUI via the "approval" event.
+  // Suppress the text-based permission box to avoid non-JSON output on stdout.
+  if (config.outputMode === "interactive") {
+    console.log(picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`));
+    console.log(picocolors.yellow(`│  Quiver wants to:`));
+    console.log(picocolors.yellow(`│  `));
+    console.log(picocolors.yellow(`│  Action: `) + picocolors.green(displayName));
+    console.log(picocolors.yellow(`│  Details:`));
+    console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
+    if (irreversible) {
+      console.log(
+        picocolors.red(`│  ⚠ IRREVERSIBLE: This action cannot be undone.`),
+      );
+    }
     console.log(
-      picocolors.red(`│  ⚠ IRREVERSIBLE: This action cannot be undone.`),
+      picocolors.yellow(
+        `└───────────────────────────────────────────────────────────`,
+      ),
     );
   }
-  console.log(
-    picocolors.yellow(
-      `└───────────────────────────────────────────────────────────`,
-    ),
-  );
 
   const prompt = irreversible
     ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
@@ -538,8 +576,14 @@ async function askUserApproval(
         // Deny — offer an optional revision note (US-2.4). In GUI mode the
         // note arrives as the next stdin line from the renderer.
         sessionRl.question(
-          picocolors.gray("Revision note (optional, press Enter to just deny): "),
-          (note) => resolve({ approved: false, revisionNote: note.trim() || undefined }),
+          picocolors.gray(
+            "Revision note (optional, press Enter to just deny): ",
+          ),
+          (note) =>
+            resolve({
+              approved: false,
+              revisionNote: note.trim() || undefined,
+            }),
         );
       });
     });
@@ -554,10 +598,16 @@ async function askUserApproval(
     rl.question(prompt, (answer) => {
       const cleanAnswer = answer.trim().toLowerCase();
       const approved = cleanAnswer === "y" || cleanAnswer === "yes";
-      if (approved) { rl.close(); return resolve({ approved: true }); }
+      if (approved) {
+        rl.close();
+        return resolve({ approved: true });
+      }
       rl.question(
         picocolors.gray("Revision note (optional, press Enter to just deny): "),
-        (note) => { rl.close(); resolve({ approved: false, revisionNote: note.trim() || undefined }); },
+        (note) => {
+          rl.close();
+          resolve({ approved: false, revisionNote: note.trim() || undefined });
+        },
       );
     });
   });
@@ -635,7 +685,8 @@ export class Agent {
   // file modified between read and write is never silently overwritten.
   private fileReadHistory: FileReadHistory;
   // US-13.4: consecutive-failure loop detection (3 identical failures → pause).
-  private failureTracker: ConsecutiveFailureTracker = new ConsecutiveFailureTracker();
+  private failureTracker: ConsecutiveFailureTracker =
+    new ConsecutiveFailureTracker();
   // US-2.2B: the active harness adapter for the current model (alignment layer).
   private adapter: HarnessAdapter | null = null;
   // US-2.2A: the active model provider (transport layer).
@@ -655,7 +706,10 @@ export class Agent {
     this.logger = new SessionLogger();
     this.fileReadHistory = new FileReadHistory(this.logger.getSessionId());
     // US-13.2: per-turn checkpoints + crash recovery (wired below).
-    this.checkpointManager = new CheckpointManager(this.logger.getSessionId(), getProjectId());
+    this.checkpointManager = new CheckpointManager(
+      this.logger.getSessionId(),
+      getProjectId(),
+    );
 
     // US-15.1: register the lifecycle interception engine (transparency,
     // provenance, and the maker-checker verification gate). Hooks fire at
@@ -784,11 +838,14 @@ export class Agent {
     if (!this.checkpointManager) return;
     const sessionMessages = this.messages.map((m) => ({
       role: m.role,
-      content: typeof m.content === "string"
-        ? m.content
-        : Array.isArray(m.content)
-          ? m.content.map((p: any) => (p.type === "text" ? p.text : "")).join("")
-          : "",
+      content:
+        typeof m.content === "string"
+          ? m.content
+          : Array.isArray(m.content)
+            ? m.content
+                .map((p: any) => (p.type === "text" ? p.text : ""))
+                .join("")
+            : "",
       tool_calls: m.tool_calls,
       tool_call_id: m.tool_call_id,
       name: m.name,
@@ -803,7 +860,8 @@ export class Agent {
       metadata: {
         total_loops: this.tokenStats.turns,
         total_tool_calls: this.tokenStats.toolCalls,
-        total_tokens: this.tokenStats.inputTokens + this.tokenStats.outputTokens,
+        total_tokens:
+          this.tokenStats.inputTokens + this.tokenStats.outputTokens,
       },
     });
   }
@@ -981,7 +1039,11 @@ export class Agent {
       for (const file of files) {
         const filePath = path.join(memoryDir, file);
         const stats = await fs.stat(filePath);
-        if (stats.isFile() && !file.startsWith(".") && file !== "project.json") {
+        if (
+          stats.isFile() &&
+          !file.startsWith(".") &&
+          file !== "project.json"
+        ) {
           const content = await fs.readFile(filePath, "utf8");
           results.push({
             filename: file,
@@ -1014,17 +1076,19 @@ export class Agent {
   // US-4.3: track memory citations found in model output.
   private async trackCitations(assistantContent: string): Promise<void> {
     try {
-      const adapter = this.adapter || getAdapterForModel({
-        id: config.llmModelName,
-        displayName: config.llmModelName,
-        providerId: "default",
-        contextWindowTokens: config.maxContextTokens,
-        supportsTools: true,
-        supportsParallelToolCalls: true,
-        supportsImages: false,
-        supportsStreaming: true,
-        supportsReasoningSummaries: false,
-      });
+      const adapter =
+        this.adapter ||
+        getAdapterForModel({
+          id: config.llmModelName,
+          displayName: config.llmModelName,
+          providerId: "default",
+          contextWindowTokens: config.maxContextTokens,
+          supportsTools: true,
+          supportsParallelToolCalls: true,
+          supportsImages: false,
+          supportsStreaming: true,
+          supportsReasoningSummaries: false,
+        });
       const citations = adapter.parseMemoryCitations(assistantContent);
       if (citations.length === 0) return;
       // Validate against the memory files that actually exist so false
@@ -1038,7 +1102,7 @@ export class Agent {
       } catch {
         existing = [];
       }
-      const formattedCitations = citations.map(c => ({
+      const formattedCitations = citations.map((c) => ({
         file: c.file,
         section: c.section,
         text: c.text,
@@ -1203,9 +1267,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     }
 
     // Append active skills (excluding the system-prompt skill itself)
-    const activeSkills = skills.filter(
-      (s) => s.id !== "quiver-system-prompt",
-    );
+    const activeSkills = skills.filter((s) => s.id !== "quiver-system-prompt");
     let toolInstructions = "";
     if (activeSkills.length > 0) {
       toolInstructions = `--- ACTIVE TASK PROCEDURES (SKILLS) ---\n`;
@@ -1288,8 +1350,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       console.log(
         picocolors.gray(
           `   ♻️  Context compacted: ${result.removedCount} messages summarized, ` +
-          `${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens. ` +
-          `Full conversation saved to: ${result.savedTo}`,
+            `${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens. ` +
+            `Full conversation saved to: ${result.savedTo}`,
         ),
       );
     }
@@ -1429,7 +1491,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     parts.push(`${memories.length} memory`);
     if (skills.length > 0) parts.push(`${skills.length} skills`);
     parts.push(`${this.registry.getAllTools().length} tools`);
-    if (imageCount > 0) parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
+    if (imageCount > 0)
+      parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
     parts.push(config.llmModelName);
 
     console.log(dim(`  ┌ context: ${parts.join(" · ")}`));
@@ -1547,7 +1610,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         data: {
           model: config.llmModelName,
           memory: memories.map((m: any) => m.filename).join(", ") || "—",
-          skills: skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
+          skills:
+            skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
           tools: String(this.registry.getAllTools().length),
           tokens: `${estTokens.toLocaleString()} / ${config.maxContextTokens.toLocaleString()}`,
         },
@@ -1696,6 +1760,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         number,
         { id?: string; name?: string; arguments: string }
       > = {};
+      let streamFinishReason: string | undefined;
+      let truncationRetries = 0;
+      const maxTruncationRetries = 2;
 
       const runModel = async () => {
         let retries = 0;
@@ -1738,7 +1805,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   accumulatedToolCalls[idx] = { arguments: "" };
                 }
                 if (ev.toolCallId) accumulatedToolCalls[idx].id = ev.toolCallId;
-                if (ev.toolCallName) accumulatedToolCalls[idx].name = ev.toolCallName;
+                if (ev.toolCallName)
+                  accumulatedToolCalls[idx].name = ev.toolCallName;
               } else if (ev.type === "tool_call_delta") {
                 const idx = ev.toolCallIndex ?? 0;
                 if (!accumulatedToolCalls[idx]) {
@@ -1750,6 +1818,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 if (ev.toolCallArguments) {
                   accumulatedToolCalls[idx].arguments += ev.toolCallArguments;
                 }
+              } else if (ev.type === "done") {
+                // Capture finish_reason from the provider's done event.
+                // "length" means the model hit max_output_tokens and was
+                // truncated mid-generation — we handle this after the stream
+                // completes (below) to decide whether to continue or retry.
+                streamFinishReason = ev.finishReason;
               } else if (ev.type === "error") {
                 throw new Error(ev.error || "Provider stream error");
               }
@@ -1762,11 +1836,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             }
             const delay = Math.min(1000 * Math.pow(2, retries), 8000);
             spinner.stop();
-            console.log(
-              picocolors.yellow(
-                `   ⚠️  Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
-              ),
-            );
+            if (config.outputMode === "interactive") {
+              console.log(
+                picocolors.yellow(
+                  `   ⚠️  Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
+                ),
+              );
+            }
             spinner.start();
             await new Promise((r) => setTimeout(r, delay));
           }
@@ -1787,6 +1863,107 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       }
       spinner.stop();
 
+      // ── Output Truncation Recovery (finish_reason: "length") ──────────
+      // When the model hits max_output_tokens, the response is incomplete.
+      // Two cases:
+      //   1. Truncated mid-text (no tool calls): push the partial assistant
+      //      message, inject a "continue" prompt, and re-enter the loop so
+      //      the model picks up where it left off.
+      //   2. Truncated mid-tool-call (partial JSON args): the tool call is
+      //      malformed and cannot be executed. Retry the model call with
+      //      doubled maxOutputTokens (capped at 16384) so the model has room
+      //      to complete the tool call.
+      if (
+        streamFinishReason === "length" &&
+        truncationRetries < maxTruncationRetries
+      ) {
+        truncationRetries++;
+        const hasPartialToolCalls =
+          Object.keys(accumulatedToolCalls).length > 0;
+
+        if (hasPartialToolCalls) {
+          // Case 2: truncated mid-tool-call. Retry with a larger output budget.
+          const newMax = Math.min(adapterDefaults.maxOutputTokens * 2, 16384);
+          if (config.outputMode === "interactive") {
+            console.log(
+              picocolors.yellow(
+                `   ⚠️  Output truncated mid-tool-call (max_tokens=${adapterDefaults.maxOutputTokens}). Retrying with ${newMax} tokens...`,
+              ),
+            );
+          }
+          await this.logger.logEvent("truncation_recovery", {
+            reason: "length",
+            mode: "retry_with_doubled_max_tokens",
+            oldMax: adapterDefaults.maxOutputTokens,
+            newMax,
+          });
+          // Temporarily raise the output token limit for this retry.
+          adapterDefaults.maxOutputTokens = newMax;
+          // Reset accumulators and re-run the model with the same messages.
+          assistantContent = "";
+          firstStreamingToken = true;
+          accumulatedToolCalls = {};
+          streamFinishReason = undefined;
+          spinner.start();
+          try {
+            await wrapModelCall(lifecycleCtx, runModel);
+          } catch (err: any) {
+            spinner.stop();
+            throw err;
+          }
+          spinner.stop();
+        } else {
+          // Case 1: truncated mid-text. Push the partial message and inject
+          // a continuation prompt so the model resumes from where it stopped.
+          if (config.outputMode === "interactive") {
+            console.log(
+              picocolors.yellow(
+                `   ⚠️  Output truncated (max_tokens=${adapterDefaults.maxOutputTokens}). Continuing...`,
+              ),
+            );
+          }
+          await this.logger.logEvent("truncation_recovery", {
+            reason: "length",
+            mode: "continue_prompt",
+            maxTokens: adapterDefaults.maxOutputTokens,
+          });
+          // Push the partial assistant message as-is.
+          const partialMsg: Message = {
+            role: "assistant",
+            content: assistantContent || "",
+          };
+          this.messages.push(partialMsg);
+          await this.logger.logEvent("assistant_response", partialMsg);
+          // Inject a continuation prompt — the model will see its own partial
+          // output in history and pick up from the last sentence.
+          this.messages.push({
+            role: "user",
+            content:
+              "Continue from where you left off. Do not repeat what you already wrote.",
+          });
+          lastAssistantContent = assistantContent;
+          // Re-enter the while(true) loop for the continuation turn.
+          continue;
+        }
+      } else if (
+        streamFinishReason === "length" &&
+        truncationRetries >= maxTruncationRetries
+      ) {
+        // Exhausted truncation retries — proceed with whatever we have rather
+        // than looping forever. The response may be incomplete.
+        if (config.outputMode === "interactive") {
+          console.log(
+            picocolors.yellow(
+              `   ⚠️  Output still truncated after ${maxTruncationRetries} retries. Proceeding with partial response.`,
+            ),
+          );
+        }
+        await this.logger.logEvent("truncation_recovery_exhausted", {
+          reason: "length",
+          retries: truncationRetries,
+        });
+      }
+
       const toolCalls: ToolCall[] = Object.keys(accumulatedToolCalls).map(
         (key) => {
           const idx = parseInt(key, 10);
@@ -1800,7 +1977,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             },
           };
         },
-      )
+      );
 
       const assistantMsg: Message = {
         role: "assistant",
@@ -1872,8 +2049,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             const mutPath = args.filePath ? path.resolve(args.filePath) : "";
             if (mutPath && fsSync.existsSync(mutPath)) {
               try {
-                approvalData.currentContent = fsSync.readFileSync(mutPath, "utf8");
-              } catch { /* unreadable — omit */ }
+                approvalData.currentContent = fsSync.readFileSync(
+                  mutPath,
+                  "utf8",
+                );
+              } catch {
+                /* unreadable — omit */
+              }
             }
             approvalData.proposedContent =
               args.content ?? args.newString ?? args.new_content ?? "";
@@ -1918,8 +2100,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             resolvedPath
           ) {
             try {
-              const verify = await this.fileReadHistory.verifyBeforeWrite(resolvedPath);
-              if (!verify.matches) writeBlockedReason = verify.reason || "file was not read first";
+              const verify =
+                await this.fileReadHistory.verifyBeforeWrite(resolvedPath);
+              if (!verify.matches)
+                writeBlockedReason = verify.reason || "file was not read first";
             } catch (e: any) {
               writeBlockedReason = e.message;
             }
@@ -1966,13 +2150,23 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   const parsedArgs = tool.parameters.safeParse(args);
                   if (!parsedArgs.success) {
                     const issues = parsedArgs.error.issues
-                      .map((iss) => `${iss.path.join(".") || "(root)"}: ${iss.message}`)
+                      .map(
+                        (iss) =>
+                          `${iss.path.join(".") || "(root)"}: ${iss.message}`,
+                      )
                       .join("; ");
                     result = formatDiagnosticBlock(
-                      createDiagnosticBlock(toolName, args, new Error(`Invalid tool arguments: ${issues}`)),
+                      createDiagnosticBlock(
+                        toolName,
+                        args,
+                        new Error(`Invalid tool arguments: ${issues}`),
+                      ),
                     );
                     if (config.outputMode === "interactive") {
-                      statusLine("ERROR", `${displayName} rejected invalid args — ${issues}`);
+                      statusLine(
+                        "ERROR",
+                        `${displayName} rejected invalid args — ${issues}`,
+                      );
                     }
                     break; // do not execute; do not retry a schema failure
                   }
@@ -1987,13 +2181,17 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                       changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
                     },
                   };
-                  result = await wrapToolCall(toolCtx, async () => tool.execute(args));
+                  result = await wrapToolCall(toolCtx, async () =>
+                    tool.execute(args),
+                  );
                   this.tokenStats.toolCalls++;
 
                   if (toolName === "view_file" && args.filePath) {
                     // US-6.1: record canonical path + SHA-256 + mtimeMs for
                     // compare-and-swap verification on the next write.
-                    await this.fileReadHistory.recordRead(path.resolve(args.filePath)).catch(() => {});
+                    await this.fileReadHistory
+                      .recordRead(path.resolve(args.filePath))
+                      .catch(() => {});
                   }
 
                   if (config.outputMode === "interactive") {
@@ -2013,14 +2211,19 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   lastErr = error;
                   attempt++;
                   if (attempt >= maxAttempts || !retrySafe) break;
-                  await new Promise((r) => setTimeout(r, calculateBackoffWithJitter(attempt - 1)));
+                  await new Promise((r) =>
+                    setTimeout(r, calculateBackoffWithJitter(attempt - 1)),
+                  );
                 }
               }
               if (lastErr) {
                 // US-13.4: structured diagnostics + consecutive-failure loop
                 // detection. Three identical failures on the same tool pause and
                 // alert the user so the agent never silently thrashes.
-                const stuck = this.failureTracker.recordFailure(toolName, lastErr);
+                const stuck = this.failureTracker.recordFailure(
+                  toolName,
+                  lastErr,
+                );
                 const diag = createDiagnosticBlock(toolName, args, lastErr);
                 result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
                 if (config.outputMode === "interactive") {
@@ -2041,7 +2244,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           } // end destructive action guard
         }
 
-        const resultStr = typeof result === "string" ? result : safeStringify(result);
+        const resultStr =
+          typeof result === "string" ? result : safeStringify(result);
         const toolMsg: Message = {
           role: "tool",
           content: resultStr,
