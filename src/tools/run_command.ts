@@ -2,12 +2,14 @@ import { exec } from "child_process";
 import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
+import { classifyCommand, targetsOutsideWorkspace } from "../security/command_policy.js";
 
 export const tool: Tool = {
   name: "run_command",
   description:
     "Runs a shell command in the terminal and returns stdout, stderr, and exit code. " +
-    "Note: Commands in the approval list will prompt for user confirmation before execution.",
+    "Commands are classified into risk bands (US-6.2); destructive, privileged, network, " +
+    "secret-risk, and exfiltration commands require user approval before execution.",
   parameters: z.object({
     command: z.string().describe("The exact CLI command to run."),
     cwd: z
@@ -26,13 +28,27 @@ export const tool: Tool = {
   execute: async ({ command, cwd, timeout }) => {
     const maxBuffer = 1024 * 1024 * 10; // 10MB
     const effectiveTimeout = Math.min(timeout || 30000, 120000);
+    const workingDir = cwd || process.cwd();
 
-    console.log(picocolors.gray(`   ⚡ Running command: ${command}`));
+    // US-6.2: classify the command into a risk band. The agent's approval gate
+    // uses this classification to prompt the user before high-risk commands; as
+    // defense-in-depth the tool also refuses commands that target paths outside
+    // the workspace (escape / exfiltration attempts).
+    const classification = classifyCommand(command, workingDir);
+    if (targetsOutsideWorkspace(command, workingDir)) {
+      return `Error: Refusing to run command '${command}' — it targets a path outside the workspace ('${workingDir}'). Run commands that operate outside the workspace manually.`;
+    }
+
+    const riskTag =
+      classification.risk === "safe"
+        ? ""
+        : picocolors.gray(` [risk: ${classification.risk}]`);
+    console.log(picocolors.gray(`   ⚡ Running command: ${command}`) + riskTag);
 
     return new Promise((resolve) => {
       exec(
         command,
-        { maxBuffer, cwd: cwd || undefined, timeout: effectiveTimeout },
+        { maxBuffer, cwd: workingDir, timeout: effectiveTimeout },
         (error, stdout, stderr) => {
           const parts: string[] = [];
           if (stdout) parts.push(`STDOUT:\n${stdout.trim()}`);

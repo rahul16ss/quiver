@@ -48,6 +48,10 @@ interface QuiverConfig {
   memoryDir: string;
   skillsDir: string;
   cloudSyncPath: string;
+  visionModelName?: string;
+  visionModelBaseUrl?: string;
+  sessionLogEnabled?: boolean;
+  sessionLogMaxChars?: number;
 }
 
 // ─── Globals ─────────────────────────────────────────────────────────
@@ -478,11 +482,39 @@ async function loadSessionFile(filePath: string): Promise<any> {
   return JSON.parse(content);
 }
 
-async function deleteSessionFile(filePath: string): Promise<boolean> {
+async function deleteSessionFile(filePath: string, permanent: boolean = false): Promise<boolean> {
+  if (permanent) {
+    return permanentlyDeleteSessionFile(filePath);
+  }
+  try {
+    const fs = await import("fs/promises");
+    // US-8.2: Session deletion moves files to an archive/trash folder
+    // instead of silent hard-deletion, unless the user selects "Permanent Delete".
+    const sessionsDir = path.dirname(filePath);
+    const archiveDir = path.join(sessionsDir, "archive");
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    // Move state file to archive
+    const basename = path.basename(filePath);
+    const archivePath = path.join(archiveDir, basename);
+    await fs.rename(filePath, archivePath);
+
+    // Also move corresponding log files if they exist
+    const logPath = filePath.replace(".state.json", ".json");
+    try { await fs.rename(logPath, path.join(archiveDir, path.basename(logPath))); } catch {}
+    const loglPath = filePath.replace(".state.json", ".jsonl");
+    try { await fs.rename(loglPath, path.join(archiveDir, path.basename(loglPath))); } catch {}
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function permanentlyDeleteSessionFile(filePath: string): Promise<boolean> {
   try {
     const fs = await import("fs/promises");
     await fs.unlink(filePath);
-    // Also try to delete corresponding JSON log if exists
     const logPath = filePath.replace(".state.json", ".json");
     try { await fs.unlink(logPath); } catch {}
     const loglPath = filePath.replace(".state.json", ".jsonl");
@@ -585,7 +617,7 @@ function registerIpcHandlers(): void {
   // Sessions
   ipcMain.handle("sessions:list", async () => listSessions());
   ipcMain.handle("sessions:load", async (_evt, filePath: string) => loadSessionFile(filePath));
-  ipcMain.handle("sessions:delete", async (_evt, filePath: string) => deleteSessionFile(filePath));
+  ipcMain.handle("sessions:delete", async (_evt, filePath: string, permanent: boolean = false) => deleteSessionFile(filePath, permanent));
   ipcMain.handle("sessions:touch", async (_evt, filePath: string) => touchSessionFile(filePath));
 
   // Memory
@@ -618,6 +650,90 @@ function registerIpcHandlers(): void {
       return true;
     } catch {
       return false;
+    }
+  });
+
+  // US-8.4: Settings IPC handlers
+  ipcMain.handle("settings:get", async () => {
+    return await loadConfig();
+  });
+  ipcMain.handle("settings:update", async (_evt, payload: { section: string; values: any }) => {
+    const config = await loadConfig();
+    const { section, values } = payload;
+    // Update the requested section
+    if (section === "provider") {
+      config.provider = { ...config.provider, ...values };
+    } else if (section === "vision") {
+      config.visionModelName = values.visionModelName || config.visionModelName;
+      config.visionModelBaseUrl = values.visionModelBaseUrl || config.visionModelBaseUrl;
+    } else if (section === "approvals") {
+      config.requireApprovalFor = values.approvals || [];
+    } else if (section === "sync") {
+      config.cloudSyncPath = values.syncPath || "";
+    } else if (section === "memory") {
+      config.sessionLogEnabled = values.sessionLogEnabled !== false;
+      config.sessionLogMaxChars = values.sessionLogMaxChars || 512;
+    }
+    await saveConfig(config);
+    return true;
+  });
+  ipcMain.handle("settings:set-credential", async (_evt, payload: { key: string; value: string }) => {
+    try {
+      const { setCredential, isKeychainAvailable } = await import("../src/secrets/keychain.js");
+      if (isKeychainAvailable() && await setCredential(payload.key, payload.value)) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  // US-4.4: Sync IPC handlers
+  ipcMain.handle("sync:status", async () => {
+    try {
+      const { getCloudSyncStatus } = await import("../src/cloud_sync.js");
+      return await getCloudSyncStatus();
+    } catch {
+      return { active: false, path: "" };
+    }
+  });
+  ipcMain.handle("sync:enable", async (_evt, payload: { path: string }) => {
+    try {
+      const config = await loadConfig();
+      config.cloudSyncPath = payload.path;
+      await saveConfig(config);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  ipcMain.handle("sync:disable", async () => {
+    try {
+      const config = await loadConfig();
+      config.cloudSyncPath = "";
+      await saveConfig(config);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // US-12.2: Memory review IPC handlers
+  ipcMain.handle("memory:review:list", async () => {
+    try {
+      const { getPendingFacts, getAllFactsForReview } = await import("../src/memory/review_queue.js");
+      return await getAllFactsForReview();
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle("memory:review:action", async (_evt, payload: { factId: string; action: string; content: string }) => {
+    try {
+      const { processReview } = await import("../src/memory/review_queue.js");
+      return await processReview(payload.factId, payload.action as any, payload.content || undefined);
+    } catch (error: any) {
+      return { action: payload.action, factId: payload.factId, success: false, message: error?.message || "Failed" };
     }
   });
 

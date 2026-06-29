@@ -94,6 +94,37 @@ This document defines the formal threat model for Quiver, a local-first AI codin
 └─────────────────────────────────────────────────────────┘
 ```
 
+## Wiring & Enforcement Status
+
+The mitigations above are enforced in the live agent loop and the tools, not
+just present as modules:
+
+- **Path sandbox (T5)** — `view_file`, `write_file`, `replace_content`, and
+  `apply_patch` resolve every target through `assertToolPathAllowed`
+  (`src/security/tool_paths.ts`). Non-existent files under a symlinked
+  workspace (e.g. macOS `/var` → `/private/var`) are normalized via the
+  deepest existing ancestor so a new file deep in the workspace is never
+  wrongly blocked.
+- **Command risk classification (T4)** — `run_command` classifies each command
+  and refuses outside-workspace targets; the agent approval gate uses the same
+  `classifyCommand()` so approval is bound to risk band, not tool name.
+- **Read-before-write (T2/T5)** — `FileReadHistory` (SHA-256 + mtimeMs) replaces
+  the path-only `Set<string>` tracker, so a file changed between read and write
+  is never silently overwritten.
+- **Atomic writes** — file-mutating tools use temp-write-then-rename with a
+  backup recorded for `/rollback`.
+- **Secrets in the OS keychain (T6)** — `src/secrets/keychain.ts` shell-escapes
+  `service`/`account` for the macOS `security` command (closes a command-
+  injection vector) and retrieves Windows credentials via the Win32 `CredRead`
+  PInvoke (`cmdkey /list` deliberately does not expose passwords).
+- **Stable project identity (US-1.2)** — `getProjectId()` returns a persisted
+  UUID (`~/.quiver/projects/{name}/project.json`) used as the canonical
+  `project_id` in checkpoints, so identity survives `process.cwd()` basename
+  changes.
+
+The acceptance contract (`tests/spec_acceptance_tests.ts`, `npm test`) verifies each of these
+enforcements behaviorally and via its `WIRE-*` integration checks.
+
 ## Incident Response
 
 1. **Prompt injection detected:** The agent's output is logged, the untrusted content is flagged, and the user is notified.

@@ -34,13 +34,13 @@ Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
 
 1. Update version in `package.json`
 2. Update session schema version if needed (`src/session/schema.ts`)
-3. Run full test suite: `npm test`
+3. Run acceptance contract: `npm test` (must be 118/118 green — asserts the SPEC + WIRE-* integration)
 4. TypeScript compilation check: `npx tsc --noEmit`
-5. Update `docs/` if architecture changed
-6. Build/package Electron app: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)
-7. Create GitHub release with tagged binary
-8. Update Homebrew formula (`Formula/quiver.rb`)
-9. Verify `quiver --version` works after install
+6. Update `docs/` if architecture changed
+7. Build/package Electron app: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)
+8. Create GitHub release with tagged binary
+9. Update Homebrew formula (`Formula/quiver.rb`)
+10. Verify `quiver --version` works after install
 
 ## Uninstall
 

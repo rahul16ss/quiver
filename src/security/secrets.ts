@@ -52,7 +52,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   },
   {
     type: "parallel_key",
-    pattern: /[A-Za-z0-9]{8}-[A-Za-z0-9_\-]{20,}/gi,
+    pattern: /[A-Za-z0-9]{8}-(?!([0-9a-f]{4}-){3}[0-9a-f]{12})[A-Za-z0-9_\-]{20,}/gi,
   },
   {
     type: "aws_access_key",
@@ -107,7 +107,8 @@ export function detectSecrets(text: string): DetectedSecret[] {
  * Redact all secrets from a text string.
  * Replaces detected secrets with [REDACTED_SECRET].
  */
-export function redactSecrets(text: string): string {
+export function redactSecrets(text: string | null | undefined): string {
+  if (text == null) return text ?? "";
   let result = text;
   for (const { pattern } of SECRET_PATTERNS) {
     result = result.replace(pattern, REDACTED);

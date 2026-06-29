@@ -17,6 +17,8 @@ import * as path from "path";
 import { config } from "./config.js";
 import { getProjectSessionsDir, getProjectName } from "./paths.js";
 
+import { redactSecrets } from "./security/secrets.js";
+
 // ─── Truncation ──────────────────────────────────────────────────────
 
 export function truncateForLog(
@@ -37,27 +39,6 @@ export function truncateForLog(
 // Redacts API keys, tokens, and other secrets from log/state output.
 // Patterns cover common secret formats and .env KEY=VALUE lines.
 
-const SECRET_PATTERNS: RegExp[] = [
-  // .env KEY=VALUE lines for known secret keys
-  /^(LLM_API_KEY|PARALLEL_API_KEY|OLLAMA_API_KEY|GITHUB_TOKEN|CONTEXT7_API_KEY|API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)\s*=\s*.+$/gim,
-  // Bearer tokens in Authorization headers
-  /Bearer\s+[A-Za-z0-9_\-\.]+/gi,
-  // GitHub tokens (ghp_, gho_, ghs_, ghu_)
-  /gh[pousr]_[A-Za-z0-9]{36,}/gi,
-  // OpenRouter-style keys (sk-or-v1-...)
-  /sk-or-v1-[A-Za-z0-9]+/gi,
-  // OpenAI-style keys (sk-...)
-  /sk-[A-Za-z0-9]{20,}/gi,
-  // Ollama API keys (hex hash format)
-  /[a-f0-9]{32}\.[A-Za-z0-9_\-]+/gi,
-  // Parallel.ai API keys
-  /[A-Za-z0-9]{8}-[A-Za-z0-9_\-]{20,}/gi,
-  // Generic long hex/base64 strings that look like API keys (40+ chars)
-  /(?=[A-Za-z0-9_\-]{40,})(?=.*[a-zA-Z])(?=.*\d)[A-Za-z0-9_\-]{40,}/g,
-];
-
-const REDACTED = "[REDACTED]";
-
 /** Safe JSON.stringify that handles circular references without throwing. */
 export function safeStringify(obj: any): string {
   try {
@@ -74,14 +55,6 @@ export function safeStringify(obj: any): string {
       return String(obj);
     }
   }
-}
-
-export function redactSecrets(text: string): string {
-  let result = text;
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, REDACTED);
-  }
-  return result;
 }
 
 export function sanitizeLogData(type: string, data: any): any {

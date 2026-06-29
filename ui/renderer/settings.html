@@ -5,38 +5,226 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiver — Settings</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .settings-section {
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border, #333);
+    }
+    .settings-section:last-child { border-bottom: none; }
+    .settings-section h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--accent, #4a9eff);
+    }
+    .settings-row { margin-bottom: 10px; }
+    .settings-row label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: var(--text-faint, #888);
+    }
+    .settings-row input,
+    .settings-row select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border, #333);
+      border-radius: 6px;
+      background: var(--bg-secondary, #1a1a1a);
+      color: var(--text, #e0e0e0);
+      font-size: 13px;
+    }
+    .settings-row .hint {
+      font-size: 11px;
+      color: var(--text-faint, #666);
+      margin-top: 3px;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .toggle-row label { margin: 0; }
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: var(--border, #333);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle.active { background: var(--accent, #4a9eff); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle.active::after { transform: translateX(16px); }
+    .memory-stat {
+      display: inline-block;
+      padding: 4px 10px;
+      margin: 2px;
+      border-radius: 4px;
+      background: var(--bg-secondary, #1a1a1a);
+      font-size: 12px;
+    }
+  </style>
 </head>
 <body>
   <div class="form-page">
-    <div class="form-card">
+    <div class="form-card" style="max-width:640px;">
       <img src="assets/logo.png" class="form-logo" alt="Quiver">
       <h1>Settings</h1>
       <p class="subtitle">Configure your Quiver instance</p>
 
-      <div class="form-group">
+      <!-- US-8.4: Model Provider -->
+      <div class="settings-section">
+        <h3>Model Provider</h3>
+        <div class="settings-row">
+          <label>Provider</label>
+          <select id="provider">
+            <option value="ollama">Ollama (Local / Cloud)</option>
+            <option value="custom">Custom OpenAI-compatible</option>
+          </select>
+          <div class="hint">Choose your LLM backend. Ollama supports both local and cloud models.</div>
+        </div>
+        <div class="settings-row">
+          <label>Model Name</label>
+          <input id="modelName" type="text" placeholder="glm-5.2:cloud">
+          <div class="hint">Source-controlled default. Override only if you know what you're doing.</div>
+        </div>
+        <div class="settings-row">
+          <label>API Base URL</label>
+          <input id="baseUrl" type="text" placeholder="https://ollama.com/v1">
+        </div>
+        <div class="settings-row">
+          <label>Max Context Tokens</label>
+          <input id="maxContextTokens" type="number" placeholder="120000" min="8000" max="2000000">
+        </div>
+      </div>
+
+      <!-- US-8.4: API Credentials -->
+      <div class="settings-section">
+        <h3>API Credentials</h3>
+        <div class="settings-row">
+          <label>Ollama API Key</label>
+          <input id="apiKey" type="password" placeholder="Your Ollama API key">
+          <div class="hint">Single key powers LLM, Ollama, and vision. Stored in OS keychain.</div>
+        </div>
+        <div class="settings-row">
+          <label>Parallel API Key <span style="font-weight:400;color:var(--text-faint);">(optional)</span></label>
+          <input id="parallelApiKey" type="password" placeholder="For web search & deep research">
+        </div>
+        <div class="settings-row">
+          <label>GitHub Token <span style="font-weight:400;color:var(--text-faint);">(optional, developers only)</span></label>
+          <input id="githubToken" type="password" placeholder="For GitHub API operations">
+        </div>
+      </div>
+
+      <!-- US-8.4: Vision Model -->
+      <div class="settings-section">
+        <h3>Vision Model</h3>
+        <div class="settings-row">
+          <label>Vision Model Name</label>
+          <input id="visionModelName" type="text" placeholder="gemma3:4b">
+          <div class="hint">Multimodal model for image analysis. Uses the same Ollama API key.</div>
+        </div>
+        <div class="settings-row">
+          <label>Vision Model Base URL</label>
+          <input id="visionModelBaseUrl" type="text" placeholder="http://localhost:11434/v1">
+        </div>
+        <div class="toggle-row">
+          <label>Remote vision routing consent</label>
+          <div class="toggle" id="visionConsent" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="hint" style="margin-top:-4px;">Allow sending images to a remote vision model. Off by default for privacy.</div>
+      </div>
+
+      <!-- US-8.4: Approvals -->
+      <div class="settings-section">
+        <h3>Approvals</h3>
+        <div class="hint" style="margin-bottom:8px;">Tools that require explicit approval before execution:</div>
+        <div class="toggle-row">
+          <label>run_command (shell execution)</label>
+          <div class="toggle active" id="apprRunCommand" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="toggle-row">
+          <label>write_file (file creation)</label>
+          <div class="toggle active" id="apprWriteFile" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="toggle-row">
+          <label>replace_content (file editing)</label>
+          <div class="toggle active" id="apprReplaceContent" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="toggle-row">
+          <label>browser_control (browser automation)</label>
+          <div class="toggle active" id="apprBrowser" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="toggle-row">
+          <label>create_tool (runtime tool synthesis)</label>
+          <div class="toggle active" id="apprCreateTool" onclick="this.classList.toggle('active')"></div>
+        </div>
+      </div>
+
+      <!-- US-8.4: Cloud Sync -->
+      <div class="settings-section">
+        <h3>Cloud Sync</h3>
+        <div class="toggle-row">
+          <label>Enable cloud sync</label>
+          <div class="toggle" id="syncEnabled" onclick="this.classList.toggle('active')"></div>
+        </div>
+        <div class="settings-row">
+          <label>Sync Directory</label>
+          <div class="dir-picker-row">
+            <input id="syncPath" type="text" placeholder="Select sync destination folder" readonly>
+            <button class="btn-browse" onclick="browseSyncDir()">Browse</button>
+          </div>
+          <div class="hint">Sync is disabled by default. Uses AES-256-GCM client-side encryption.</div>
+        </div>
+      </div>
+
+      <!-- US-8.4: Memory -->
+      <div class="settings-section">
+        <h3>Memory</h3>
+        <div id="memoryStats" style="margin-bottom:10px;">
+          <span class="memory-stat" id="memPending">Pending: —</span>
+          <span class="memory-stat" id="memReviewed">Reviewed: —</span>
+          <span class="memory-stat" id="memTotal">Total: —</span>
+        </div>
+        <div class="settings-row">
+          <label>Session Logging</label>
+          <div class="toggle-row">
+            <label>Enable session log persistence</label>
+            <div class="toggle active" id="sessionLogEnabled" onclick="this.classList.toggle('active')"></div>
+          </div>
+        </div>
+        <div class="settings-row">
+          <label>Session Log Max Chars</label>
+          <input id="sessionLogMaxChars" type="number" placeholder="512" min="0" max="10000">
+        </div>
+        <div class="settings-row">
+          <label>Browser Mode</label>
+          <select id="browserHeadless">
+            <option value="true">Headless (recommended)</option>
+            <option value="false">Visible window</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:20px;">
         <label>Workspace</label>
         <div class="dir-picker-row">
           <input id="workspacePath" type="text" placeholder="Workspace folder" readonly>
           <button class="btn-browse" onclick="browseWorkspace()">Browse</button>
         </div>
-      </div>
-
-      <div class="form-group">
-        <label>API Key</label>
-        <input id="apiKey" type="password" placeholder="Ollama API key">
-      </div>
-
-      <div class="form-group">
-        <label>Parallel API Key <span style="font-weight:400;text-transform:none;color:var(--text-faint);">(optional)</span></label>
-        <input id="parallelApiKey" type="password" placeholder="For web search & deep research">
-      </div>
-
-      <div class="form-group">
-        <label>Browser Mode</label>
-        <select id="browserHeadless">
-          <option value="true">Headless (recommended)</option>
-          <option value="false">Visible window</option>
-        </select>
       </div>
 
       <div class="form-actions">
@@ -51,10 +239,51 @@
 
     async function loadSettings() {
       currentConfig = await window.quiver.loadConfig();
+      // Model Provider
       document.getElementById("workspacePath").value = currentConfig.workspacePath || "";
+      document.getElementById("modelName").value = currentConfig.provider?.modelName || "";
+      document.getElementById("baseUrl").value = currentConfig.provider?.baseUrl || "";
+      document.getElementById("maxContextTokens").value = currentConfig.maxContextTokens || 120000;
+      // API Credentials
       document.getElementById("apiKey").value = currentConfig.provider?.apiKey || "";
       document.getElementById("parallelApiKey").value = currentConfig.parallelApiKey || "";
+      document.getElementById("githubToken").value = currentConfig.githubToken || "";
+      // Vision Model
+      document.getElementById("visionModelName").value = currentConfig.visionModelName || "";
+      document.getElementById("visionModelBaseUrl").value = currentConfig.visionModelBaseUrl || "";
+      // Approvals — populate from config
+      const approvals = currentConfig.requireApprovalFor || [];
+      setToggle("apprRunCommand", approvals.includes("run_command"));
+      setToggle("apprWriteFile", approvals.includes("write_file"));
+      setToggle("apprReplaceContent", approvals.includes("replace_content"));
+      setToggle("apprBrowser", approvals.includes("browser_control"));
+      setToggle("apprCreateTool", approvals.includes("create_tool"));
+      // Cloud Sync
+      setToggle("syncEnabled", !!(currentConfig.cloudSyncPath && currentConfig.cloudSyncPath.length > 0));
+      document.getElementById("syncPath").value = currentConfig.cloudSyncPath || "";
+      // Memory
+      setToggle("sessionLogEnabled", currentConfig.sessionLogEnabled !== false);
+      document.getElementById("sessionLogMaxChars").value = currentConfig.sessionLogMaxChars || 512;
       document.getElementById("browserHeadless").value = currentConfig.browserHeadless ? "true" : "false";
+      // Load memory stats
+      try {
+        const stats = await window.quiver.memory?.reviewList?.();
+        if (stats && Array.isArray(stats)) {
+          document.getElementById("memPending").textContent = `Pending: ${stats.filter(f => !f.reviewed).length}`;
+          document.getElementById("memReviewed").textContent = `Reviewed: ${stats.filter(f => f.reviewed).length}`;
+          document.getElementById("memTotal").textContent = `Total: ${stats.length}`;
+        }
+      } catch { /* memory review may not be available */ }
+    }
+
+    function setToggle(id, active) {
+      const el = document.getElementById(id);
+      if (el) { if (active) el.classList.add("active"); else el.classList.remove("active"); }
+    }
+
+    function isToggleActive(id) {
+      const el = document.getElementById(id);
+      return el ? el.classList.contains("active") : false;
     }
 
     async function browseWorkspace() {
@@ -62,18 +291,42 @@
       if (selected) document.getElementById("workspacePath").value = selected;
     }
 
+    async function browseSyncDir() {
+      const selected = await window.quiver.selectWorkspaceDir();
+      if (selected) document.getElementById("syncPath").value = selected;
+    }
+
     async function saveSettings() {
-      // currentConfig is always fully defaulted by the main process
-      // (loadConfig merges src/config.ts defaults), so no hardcoded fallbacks.
+      // Build approvals list from toggles
+      const approvals = [];
+      if (isToggleActive("apprRunCommand")) approvals.push("run_command");
+      if (isToggleActive("apprWriteFile")) approvals.push("write_file");
+      if (isToggleActive("apprReplaceContent")) approvals.push("replace_content");
+      if (isToggleActive("apprBrowser")) approvals.push("browser_control");
+      if (isToggleActive("apprCreateTool")) approvals.push("create_tool");
+
+      const syncPath = document.getElementById("syncPath").value.trim();
+      const syncOn = isToggleActive("syncEnabled");
+
       await window.quiver.saveConfig({
         ...currentConfig,
         workspacePath: document.getElementById("workspacePath").value.trim(),
         provider: {
           ...currentConfig?.provider,
           apiKey: document.getElementById("apiKey").value.trim(),
+          modelName: document.getElementById("modelName").value.trim(),
+          baseUrl: document.getElementById("baseUrl").value.trim(),
         },
-        parallelApiKey: document.getElementById("parallelApiKey").value.trim(),
         ollamaApiKey: document.getElementById("apiKey").value.trim(),
+        parallelApiKey: document.getElementById("parallelApiKey").value.trim(),
+        githubToken: document.getElementById("githubToken").value.trim(),
+        visionModelName: document.getElementById("visionModelName").value.trim(),
+        visionModelBaseUrl: document.getElementById("visionModelBaseUrl").value.trim(),
+        maxContextTokens: parseInt(document.getElementById("maxContextTokens").value) || 120000,
+        requireApprovalFor: approvals,
+        cloudSyncPath: syncOn ? syncPath : "",
+        sessionLogEnabled: isToggleActive("sessionLogEnabled"),
+        sessionLogMaxChars: parseInt(document.getElementById("sessionLogMaxChars").value) || 512,
         browserHeadless: document.getElementById("browserHeadless").value === "true",
       });
       await window.quiver.loadMain();

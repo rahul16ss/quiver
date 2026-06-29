@@ -3,6 +3,7 @@ import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
 import { wrapUntrustedFile } from "../prompts/security.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 export const tool: Tool = {
   name: "view_file",
@@ -33,7 +34,8 @@ export const tool: Tool = {
   }),
   execute: async ({ filePath, startLine, endLine, showLineNumbers }) => {
     try {
-      const resolvedPath = path.resolve(filePath);
+      // US-9.2: sandbox the read path (blocks .env, credentials, .ssh, etc.).
+      const resolvedPath = assertToolPathAllowed(filePath, "read").absolutePath;
       const content = await fs.readFile(resolvedPath, "utf8");
       const lines = content.split("\n");
       const totalLines = lines.length;

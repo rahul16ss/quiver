@@ -1,6 +1,7 @@
 import "dotenv/config";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as path from "path";
+import * as os from "os";
 import picocolors from "picocolors";
 
 export type OutputMode = "interactive" | "json" | "quiet";
@@ -78,7 +79,19 @@ export function redactSecret(value: string): string {
 }
 
 export function isFirstRun(): boolean {
-  return !existsSync(path.resolve(".env")) && !config.llmApiKey;
+  // US-1.1: first-run detection keys off ~/.quiver/core.json (the global
+  // identity/config file), not merely a local .env. If core.json is missing
+  // or empty, this is a genuine first run that should launch the handshake.
+  const coreJsonPath = path.join(os.homedir(), ".quiver", "core.json");
+  if (!existsSync(coreJsonPath)) return true;
+  try {
+    const coreContent = readFileSync(coreJsonPath, "utf8");
+    const core = JSON.parse(coreContent);
+    // Empty or missing essential fields = first run
+    return !core || Object.keys(core).length === 0 || !core.identity;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -98,14 +111,25 @@ export async function runOnboardingHandshake(): Promise<void> {
   const key = await ask(picocolors.cyan("  Enter your Ollama API key (or press Enter to skip and configure .env later): "));
   if (key) {
     try {
-      const fs = await import("fs/promises");
-      const envPath = path.resolve(".env");
-      await fs.writeFile(envPath, `OLLAMA_API_KEY=${key}\n`, { mode: 0o600 });
-      config.ollamaApiKey = key;
-      config.llmApiKey = key;
-      console.log(picocolors.green("\n  ✅ Saved to .env. You're ready to go!\n"));
+      // US-1.3: try the OS keychain first; fall back to .env with a warning
+      // that it is a plaintext fallback (not as secure as the keychain).
+      const { setCredential, isKeychainAvailable } = await import("./secrets/keychain.js");
+      const keychainOk = isKeychainAvailable() && await setCredential("OLLAMA_API_KEY", key);
+      if (keychainOk) {
+        config.ollamaApiKey = key;
+        config.llmApiKey = key;
+        console.log(picocolors.green("\n  ✅ Saved to OS keychain. You're ready to go!\n"));
+      } else {
+        // Plaintext .env fallback — warn the user (US-1.3)
+        const fs = await import("fs/promises");
+        const envPath = path.resolve(".env");
+        await fs.writeFile(envPath, `OLLAMA_API_KEY=${key}\n`, { mode: 0o600 });
+        config.ollamaApiKey = key;
+        config.llmApiKey = key;
+        console.log(picocolors.yellow("\n  ⚠️  Saved to .env (plaintext fallback, 0600). Consider using the OS keychain for better security.\n"));
+      }
     } catch {
-      console.log(picocolors.yellow("\n  ⚠️  Could not write .env — add OLLAMA_API_KEY manually later.\n"));
+      console.log(picocolors.yellow("\n  ⚠️  Could not save API key — add OLLAMA_API_KEY manually later.\n"));
     }
   } else {
     console.log(picocolors.gray("\n  No problem — add OLLAMA_API_KEY to .env when ready, then run quiver again.\n"));

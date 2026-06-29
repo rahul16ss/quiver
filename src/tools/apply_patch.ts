@@ -2,6 +2,8 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
+import { atomicWrite } from "../fs/atomic_write.js";
 
 /**
  * ApplyPatch — applies a unified diff patch to files.
@@ -133,7 +135,9 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
     throw new Error("Patch file has no target path.");
   }
 
-  const resolvedPath = path.resolve(targetPath);
+  // US-9.2: sandbox the target path. New files use "write"; deletions use "delete".
+  const operation = patch.newPath === null ? "delete" : "write";
+  const resolvedPath = assertToolPathAllowed(targetPath, operation).absolutePath;
 
   // New file creation
   if (patch.oldPath === null && patch.newPath !== null) {
@@ -142,8 +146,7 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
         h.lines.filter((l) => l.startsWith("+")).map((l) => l.substring(1)),
       )
       .join("\n");
-    await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-    await fs.writeFile(resolvedPath, newContent + "\n", "utf8");
+    await atomicWrite(resolvedPath, newContent + "\n");
     return `Created new file: ${resolvedPath}`;
   }
 
@@ -189,7 +192,7 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
     oldIdx++;
   }
 
-  await fs.writeFile(resolvedPath, newLines.join("\n"), "utf8");
+  await atomicWrite(resolvedPath, newLines.join("\n"));
   return `Patched file: ${resolvedPath} (${patch.hunks.length} hunk${patch.hunks.length === 1 ? "" : "s"})`;
 }
 

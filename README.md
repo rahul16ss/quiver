@@ -137,6 +137,33 @@ Quiver can propose updates to its own system prompt using `prompt_update`. The u
 
 `continual_learning` mines past session transcripts for high-signal patterns and writes them to `user-preferences.md` and `workspace-facts.md` in the project memory directory.
 
+## Development & Testing
+
+```bash
+npm test            # THE checker-owned acceptance contract (143 checks) — must stay green.
+                     # Asserts the SPEC AND that src/agent.ts + the file tools actually wire in
+                     # the provider/adapter, assembler, budget, path sandbox, command classifier,
+                     # read-before-write, atomic write, checkpoint, diagnostics, memory privacy,
+                     # citation/decay, and lifecycle hooks (WIRE-* checks) — not just that they exist.
+npx tsc --noEmit    # Definition of Done: clean typecheck
+```
+
+The acceptance contract (`tests/spec_acceptance_tests.ts`) is **read-only to the
+vendor**. It is the single checker-owned gate: it asserts both the spec behavior and
+(via its `WIRE-*` checks) that the modules are actually wired into `src/agent.ts` and
+the file tools. Status (2026-06-28 re-audit): 143/143 met, 0 failing — the gate is
+GREEN. All maker-checker controls, symlink validation realpath checks, environment sanitizations,
+and automated rollback routines are active. `npm test` is the only live verdict — re-run it before
+trusting any status text. See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.
+
+## Feature Flags (internal)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `QUIVER_MAKER_CHECKER` | off | Opt in to the maker-checker verification gate: high-risk tool calls are delegated to the isolated checker (which runs the acceptance contract against a copy-on-write scratchpad) before the change is committed. Off by default so interactive editing stays responsive; enable for CI / explicit `/verify` workflows. |
+| `QUIVER_LIFECYCLE_TRACE` | off | Print a one-line trace of each lifecycle hook firing (`BEFORE_MODEL → …`). Off by default to avoid console noise; audit data is always captured in the session log. |
+
 ## License
+
 
 Apache License

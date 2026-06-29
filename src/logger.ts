@@ -17,7 +17,6 @@
 import * as crypto from "crypto";
 import {
   SessionLogger,
-  redactSecrets,
   sanitizeLogData,
   truncateForLog,
   safeStringify,
@@ -27,6 +26,7 @@ import {
   formatLogListForCLI,
   type LogMetadata,
 } from "./session_logger.js";
+import { redactSecrets } from "./security/secrets.js";
 import { config } from "./config.js";
 import { getProjectSessionsDir } from "./paths.js";
 import { promises as fs } from "fs";

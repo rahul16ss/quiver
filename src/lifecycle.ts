@@ -179,8 +179,10 @@ export class LifecycleHookRegistry {
           timestamp: new Date().toISOString(),
         });
 
-        // Emit console trace in interactive mode (explainability)
-        if (config.outputMode === "interactive" && entries.length > 0) {
+        // Emit console trace only when explicitly enabled (default off). The
+        // per-hook trace is noisy on every model/tool call, so it is opt-in via
+        // QUIVER_LIFECYCLE_TRACE; audit data is always captured via logger events.
+        if (process.env.QUIVER_LIFECYCLE_TRACE === "1") {
           process.stderr.write(
             picocolors.gray(
               `  ⎚ ${stage} → ${entry.id}${entry.description ? ` (${entry.description})` : ""}\n`,
@@ -322,10 +324,22 @@ export function registerBuiltinHooks(
     "wrap_tool_call",
     "builtin.maker-checker-gate",
     async (ctx) => {
-      if (ctx.toolCall && isHighRisk(ctx.toolCall.name)) {
-        const changeHash =
-          String(ctx.metadata?.changeHash ?? `${ctx.sessionId}:${ctx.loopCount}:${ctx.toolCall.name}`);
-        const verdict = await runChecker(changeHash);
+      // US-15.1: high-risk ops are always verified by default — the maker
+      // cannot self-certify. The checker runs the acceptance contract against
+      // a copy-on-write scratchpad before a high-risk change is committed.
+      // The user may opt out via QUIVER_MAKER_CHECKER=0 for latency-sensitive
+      // workflows, but the default is always-on.
+      if (ctx.toolCall && isHighRisk(ctx.toolCall.name, ctx.toolCall.args)) {
+        const changeHash = String(
+          ctx.metadata?.changeHash ??
+            `${ctx.sessionId}:${ctx.loopCount}:${ctx.toolCall.name}`,
+        );
+        const verdict = await runChecker(
+          changeHash,
+          process.cwd(),
+          ctx.toolCall.name,
+          ctx.toolCall.args,
+        );
         logger.logEvent("maker_checker_verdict", {
           tool: ctx.toolCall.name,
           verdict: verdict.verdict,
@@ -334,10 +348,10 @@ export function registerBuiltinHooks(
           failed: verdict.failed,
           evidence: verdict.evidence,
         });
-        if (verdict.verdict === "reject") {
+        if (verdict.verdict === "reject" || verdict.verdict === "revise") {
           return {
             abort: true,
-            abortReason: `maker-checker rejected change ${changeHash}: ${verdict.evidence}`,
+            abortReason: `maker-checker ${verdict.verdict}ed change ${changeHash}: ${verdict.evidence}`,
           };
         }
       }
@@ -433,18 +447,19 @@ export async function wrapToolCall(
   ctx: LifecycleContext,
   toolFn: () => Promise<any>,
 ): Promise<any> {
-  // wrap_tool_call: fire hooks that audit/log the tool execution
+  // Execute the tool first so its changes are written to the workspace
+  // and can be validated by the checker (US-15.1, US-15.3).
+  ctx.toolResult = await toolFn();
+
+  // wrap_tool_call: fire hooks that audit or verify the modifications
   const wrapResult = await lifecycleRegistry.fire("wrap_tool_call", ctx);
   if (wrapResult.abort) {
+    // If validation fails (rejected or revise), rollback the last file write (US-10.2)
+    const { rollbackLast } = await import("./fs/atomic_write.js");
+    await rollbackLast().catch(() => {});
     throw new Error(
       `Pipeline aborted at wrap_tool_call: ${wrapResult.abortReason}`,
     );
-  }
-  if (wrapResult.shortCircuit) {
-    ctx.toolResult = wrapResult.value;
-  } else {
-    // Execute the actual tool call
-    ctx.toolResult = await toolFn();
   }
 
   return ctx.toolResult;

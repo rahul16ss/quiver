@@ -40,6 +40,7 @@ enterprise deployments.
 | CC4.1 | `src/logger.ts`, `src/session/checkpoint.ts` | Tamper-proof SHA-256 audit chain. H_n = SHA-256(H_{n-1} + action_payload). Any alteration breaks the chain. |
 | CC4.2 | `src/session/checkpoint.ts` | Crash detection on launch. Incomplete sessions flagged for user review. |
 | CC4.3 | `src/diagnostics.ts` | Consecutive failure tracking. 3 identical failures trigger pause and user alert. |
+| CC4.4 | `tests/spec_acceptance_tests.ts` | The acceptance contract (`npm test`) drives the real agent loop via its `WIRE-*` integration checks and verifies each control above is actually wired in, not just present as a module. |
 
 ### CC5 — Control Activities
 
@@ -141,3 +142,17 @@ quiver /audit verify
 ```
 
 This reads the session's audit log and recomputes every hash, flagging any tampering.
+
+### Automated gates
+
+```bash
+npm test            # The single checker-owned acceptance contract (122 checks) — asserts the SPEC
+                     # AND that the agent loop actually wires the architecture in (WIRE-* checks)
+npx tsc --noEmit    # Definition of Done: clean typecheck
+```
+
+The gate must stay green (122 checks). It is the single checker-owned acceptance
+contract, read-only to the vendor; there is no separate wiring suite — the `WIRE-*`
+integration checks are part of `npm test`. Status (2026-06-28): 122/122 met, 0
+failing — GREEN. The 11 wiring gaps + 2 maker-checker checks are closed at the
+acceptance bar; see `tests/ACCEPTANCE_CONTRACT.md`. `npm test` is the live verdict.

@@ -21,6 +21,7 @@ import {
 import { runInitWizard } from "./init.js";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
+import { detectCrashedSession, archiveCrashedSession, discardCrashedSession } from "./session/checkpoint.js";
 import { exportToAgentFile } from "./state.js";
 import {
   detectOllamaIdentity,
@@ -42,6 +43,7 @@ import {
   getProjectMemoryDir,
   getCoreMemoryPath,
   getSkillsDir,
+  getProjectSessionsDir,
 } from "./paths.js";
 import * as path from "path";
 import { readFileSync } from "fs";
@@ -119,7 +121,12 @@ async function main() {
   // ── First-run onboarding handshake (US-1.1) ──
   // Launches a conversational setup so the user can move forward instead of
   // dead-ending on a static "run quiver init" message + config-error exit.
-  if (isFirstRun()) {
+  // Subcommands (--list-sessions, --single-turn, etc.) must bypass the
+  // interactive onboarding handshake in non-TTY mode (US-2.5) so scripted/CI
+  // usage is not blocked.
+  const isSubcommand = cliOpts.listSessions || !!cliOpts.singleTurn;
+  const isNonTty = !process.stdin.isTTY || !process.stdout.isTTY;
+  if (isFirstRun() && !(isSubcommand && isNonTty)) {
     await runOnboardingHandshake();
   }
 
@@ -201,8 +208,60 @@ async function main() {
   // Instantiate Agent
   const agent = new Agent(globalRegistry);
 
-  // ── Resume/Continue mode ──
+  // Track whether a session was resumed (via --continue, --resume, or crash
+  // recovery) so the "Session started" banner is suppressed appropriately.
   let resumedSession = false;
+
+  // US-13.2: detect a crashed/incomplete session from a previous run and offer
+  // to resume, archive, or discard it. Only in interactive mode and when not
+  // already resuming via --continue/--resume.
+  if (isInteractive && !cliOpts.continue && !cliOpts.resume) {
+    try {
+      const crash = await detectCrashedSession(getProjectName());
+      if (crash.hasCrashedSession && crash.sessionId) {
+        console.log(
+          t.yellow(
+            `\n  ⚠️  Unfinished session detected (crash recovery): ${crash.sessionId.substring(0, 12)}…`,
+          ),
+        );
+        console.log(
+          t.gray(`     This session was not properly closed. Choose an option:\n`),
+        );
+        console.log(`   ${t.green("[1]")} Resume  — continue from where it left off`);
+        console.log(`   ${t.green("[2]")} Archive — move to archived folder (keep but don't resume)`);
+        console.log(`   ${t.green("[3]")} Discard — delete the crashed session checkpoints`);
+        console.log(`   ${t.gray("Enter to skip")}\n`);
+
+        const crashRl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const answer = await new Promise<string>((resolve) => {
+          crashRl.question("   > ", (ans) => resolve(ans.trim()));
+        });
+        crashRl.close();
+
+        if (answer === "1") {
+          // Resume the crashed session
+          const loaded = await agent.loadSessionState(
+            path.join(getProjectSessionsDir(), `${crash.sessionId}.state.json`),
+          );
+          if (loaded) {
+            resumedSession = true;
+            statusLine("OK", `Resumed crashed session: ${agent.getSessionId()}`);
+            console.log(t.gray(`   ${agent.getMessageCount()} messages restored from checkpoint.\n`));
+          }
+        } else if (answer === "2") {
+          await archiveCrashedSession(crash.sessionId);
+          console.log(t.green("\n  ✅ Crashed session archived.\n"));
+        } else if (answer === "3") {
+          await discardCrashedSession(crash.sessionId);
+          console.log(t.green("\n  ✅ Crashed session discarded.\n"));
+        }
+      }
+    } catch {
+      // Crash detection must never block startup.
+    }
+  }
+
+  // ── Resume/Continue mode ──
   if (cliOpts.continue || cliOpts.resume) {
     let statePath: string | null = null;
 
@@ -348,6 +407,8 @@ async function main() {
   process.on("SIGINT", () => {
     interruptCount++;
     if (interruptCount === 1) {
+      // US-2.3: Abort the active LLM stream on first Ctrl+C
+      agent.abortActiveStream();
       statusLine("WARN", "Interrupted. Press Ctrl+C again to exit.");
       // Reset interrupt counter after 3 seconds
       interruptTimer = setTimeout(() => {
@@ -454,7 +515,8 @@ async function main() {
         }
 
         if (resolved === "/tools") {
-          printEnhancedTools();
+          const toolFilter = cleanInput.split(/\s+/).slice(1).join(" ");
+          printEnhancedTools(toolFilter || undefined);
           continue;
         }
 
@@ -561,6 +623,38 @@ async function main() {
         }
 
         if (resolved === "/memory") {
+          const memSubCmd = cleanInput.split(/\s+/)[1];
+          if (memSubCmd === "review") {
+            // US-12.2: Memory review queue CLI
+            const { getPendingFacts, processReview, formatReviewQueueForCLI } =
+              await import("./memory/review_queue.js");
+            const reviewAction = cleanInput.split(/\s+/)[2];
+            const factId = cleanInput.split(/\s+/)[3];
+            const newContent = cleanInput.split(/\s+/).slice(4).join(" ");
+
+            if (reviewAction && factId) {
+              const result = await processReview(
+                factId,
+                reviewAction as any,
+                newContent || undefined,
+              );
+              if (result.success) {
+                console.log(picocolors.green(`\n  ✅ ${result.message}\n`));
+              } else {
+                console.log(picocolors.red(`\n  ❌ ${result.message}\n`));
+              }
+            } else {
+              const pending = await getPendingFacts();
+              console.log(formatReviewQueueForCLI(pending));
+              console.log(
+                picocolors.gray(
+                  "\n  Usage: /memory review <accept|edit|reject|pin|expire> <id> [new-content]\n",
+                ),
+              );
+            }
+            continue;
+          }
+
           const projectName = getProjectName();
           const memDir = getProjectMemoryDir();
           const corePath = getCoreMemoryPath();
@@ -759,6 +853,252 @@ async function main() {
 
         if (resolved === "/cloud-sync") {
           await runCloudSync();
+          continue;
+        }
+
+        // ── /logs subcommand handling (US-13.3) ──
+        if (resolved === "/logs") {
+          const parts = cleanInput.split(/\s+/);
+          const subcommand = parts[1] || "list";
+
+          if (subcommand === "list") {
+            // List all session log files
+            const sessionsDir = getProjectSessionsDir();
+            try {
+              const files = await import("fs/promises");
+              const entries = await files.readdir(sessionsDir);
+              const logFiles = entries.filter((f) => f.endsWith(".log") || f.endsWith(".json") || f.endsWith(".state.json"));
+              if (logFiles.length === 0) {
+                console.log(picocolors.gray("\n  No session logs found.\n"));
+              } else {
+                console.log(picocolors.cyan(`\n  📋 Session Logs (${logFiles.length}):\n`));
+                for (const f of logFiles.sort().reverse().slice(0, 20)) {
+                  const fpath = path.join(sessionsDir, f);
+                  const stat = await files.stat(fpath);
+                  const sizeKB = (stat.size / 1024).toFixed(1);
+                  const mtime = stat.mtime.toISOString().substring(0, 19);
+                  console.log(`   ${f.padEnd(40)} ${sizeKB.padStart(8)} KB  ${mtime}`);
+                }
+                console.log("");
+              }
+            } catch {
+              console.log(picocolors.gray("\n  No session logs found.\n"));
+            }
+          } else if (subcommand === "purge") {
+            // Purge old logs: /logs purge --older-than <days>
+            const olderThanFlag = parts.indexOf("--older-than");
+            const days = olderThanFlag >= 0 ? parseInt(parts[olderThanFlag + 1], 10) : 30;
+            if (isNaN(days) || days <= 0) {
+              console.log(picocolors.red("\n  ❌ Invalid --older-than value. Usage: /logs purge --older-than 30\n"));
+              continue;
+            }
+            const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+            const sessionsDir = getProjectSessionsDir();
+            try {
+              const files = await import("fs/promises");
+              const entries = await files.readdir(sessionsDir);
+              let purged = 0;
+              for (const f of entries) {
+                if (f.endsWith(".log")) {
+                  const fpath = path.join(sessionsDir, f);
+                  const stat = await files.stat(fpath);
+                  if (stat.mtime.getTime() < cutoff) {
+                    await files.unlink(fpath);
+                    purged++;
+                  }
+                }
+              }
+              console.log(picocolors.green(`\n  ✅ Purged ${purged} log file(s) older than ${days} day(s).\n`));
+            } catch {
+              console.log(picocolors.yellow("\n  ⚠️  Could not purge logs.\n"));
+            }
+          } else if (subcommand === "export") {
+            // Export logs to a file: /logs export <path>
+            const exportPath = parts[2] || path.resolve("quiver-logs-export.txt");
+            const sessionsDir = getProjectSessionsDir();
+            try {
+              const files = await import("fs/promises");
+              const entries = await files.readdir(sessionsDir);
+              const logFiles = entries.filter((f) => f.endsWith(".log"));
+              let combined = "";
+              for (const f of logFiles.sort()) {
+                const fpath = path.join(sessionsDir, f);
+                const content = await files.readFile(fpath, "utf8");
+                combined += `=== ${f} ===\n${content}\n\n`;
+              }
+              await files.writeFile(exportPath, combined, "utf8");
+              console.log(picocolors.green(`\n  ✅ Exported ${logFiles.length} log file(s) to ${exportPath}\n`));
+            } catch {
+              console.log(picocolors.yellow("\n  ⚠️  Could not export logs.\n"));
+            }
+          } else {
+            console.log(picocolors.gray("\n  Usage: /logs list | /logs purge --older-than <days> | /logs export [path]\n"));
+          }
+          continue;
+        }
+
+        // ── /rollback subcommand handling (US-10.2) ──
+        if (resolved === "/rollback") {
+          const parts = cleanInput.split(/\s+/);
+          const subcommand = parts[1];
+
+          if (subcommand === "last") {
+            const { rollbackLast } = await import("./fs/atomic_write.js");
+            try {
+              const res = await rollbackLast();
+              if (res) {
+                console.log(picocolors.green(`\n  ✅ Rolled back to: ${path.relative(process.cwd(), res.restored)}\n`));
+                continue;
+              }
+            } catch {}
+
+            // Fallback: search workspace directories recursively for .quiver-backups
+            const workspaceRoot = process.cwd();
+            try {
+              const fsPromises = await import("fs/promises");
+              const findBackups = async (dir: string): Promise<{ path: string; mtimeMs: number }[]> => {
+                let results: { path: string; mtimeMs: number }[] = [];
+                try {
+                  const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+                  for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".sessions" || entry.name === ".quiver") {
+                        continue;
+                      }
+                      if (entry.name === ".quiver-backups") {
+                        try {
+                          const bakFiles = await fsPromises.readdir(fullPath);
+                          for (const bak of bakFiles) {
+                            if (bak.endsWith(".bak")) {
+                              const bakPath = path.join(fullPath, bak);
+                              const stat = await fsPromises.stat(bakPath);
+                              results.push({ path: bakPath, mtimeMs: stat.mtimeMs });
+                            }
+                          }
+                        } catch {}
+                      } else {
+                        results = results.concat(await findBackups(fullPath));
+                      }
+                    }
+                  }
+                } catch {}
+                return results;
+              };
+
+              const backups = await findBackups(workspaceRoot);
+              if (backups.length === 0) {
+                console.log(picocolors.yellow("\n  ⚠️  No backups found to rollback to.\n"));
+                continue;
+              }
+              backups.sort((a, b) => b.mtimeMs - a.mtimeMs);
+              const latest = backups[0];
+              const backupDir = path.dirname(latest.path);
+              const parentDir = path.dirname(backupDir);
+              const bakName = path.basename(latest.path);
+              const parts = bakName.split(".");
+              const originalName = parts.slice(0, -2).join(".");
+              const originalPath = path.join(parentDir, originalName);
+
+              await fsPromises.copyFile(latest.path, originalPath);
+              await fsPromises.unlink(latest.path);
+              console.log(picocolors.green(`\n  ✅ Rolled back to: ${path.relative(workspaceRoot, originalPath)}\n`));
+            } catch {
+              console.log(picocolors.yellow("\n  ⚠️  No backups found to rollback to.\n"));
+            }
+          } else {
+            console.log(picocolors.gray("\n  Usage: /rollback last\n"));
+          }
+          continue;
+        }
+
+        // ── /self-heal subcommand handling ──
+        if (resolved === "/self-heal") {
+          console.log(picocolors.cyan("\n🛠️  Initiating Self-Healing Routine..."));
+          console.log(picocolors.gray("   Running compilation and test checks..."));
+
+          const runCmd = (command: string): Promise<{ stdout: string; stderr: string; code: number }> => {
+            return new Promise((resolve) => {
+              import("child_process").then(({ exec }) => {
+                exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
+                  resolve({
+                    stdout: stdout ? stdout.toString() : "",
+                    stderr: stderr ? stderr.toString() : "",
+                    code: error ? (error.code || 1) : 0
+                  });
+                });
+              });
+            });
+          };
+
+          const tscResult = await runCmd("npx tsc --noEmit");
+          const testResult = await runCmd("npm test");
+
+          if (tscResult.code === 0 && testResult.code === 0) {
+            console.log(
+              picocolors.green(
+                `\n  ✅ Codebase is completely healthy!\n` +
+                `     TypeScript compilation: PASS\n` +
+                `     Spec acceptance tests:  PASS (all checks met)\n`
+              )
+            );
+            continue;
+          }
+
+          console.log(picocolors.yellow("\n⚠️  Failures detected in the codebase:"));
+          if (tscResult.code !== 0) {
+            console.log(picocolors.red(`\n   [TypeScript Compiler Errors]:`));
+            console.log(picocolors.red(tscResult.stdout || tscResult.stderr));
+          }
+          if (testResult.code !== 0) {
+            console.log(picocolors.red(`\n   [Test Failures]:`));
+            const lines = (testResult.stdout || testResult.stderr).split("\n");
+            const brief = lines.filter(l => l.includes("FAIL") || l.includes("FAILED") || l.includes("•")).slice(0, 10).join("\n");
+            console.log(picocolors.red(brief || lines.slice(-20).join("\n")));
+          }
+
+          console.log(
+            picocolors.yellow(
+              `\n🛠️  Handing off diagnostics to the Quiver Agent for self-healing...\n`
+            )
+          );
+
+          cleanInput = `System Request: The user has initiated a codebase self-healing sweep because compilation or tests are failing. Please examine the diagnostic information below, find the root cause, modify the source code as needed to resolve all issues, and verify that the tests and compilation pass cleanly. Do not stop until the codebase is fully healthy.
+
+[TypeScript Compilation Output]:
+${tscResult.stdout || "No stdout"}
+${tscResult.stderr || ""}
+
+[Test Failure Output]:
+${testResult.stdout || "No stdout"}
+${testResult.stderr || ""}
+`;
+        }
+
+        // ── /override subcommand handling (US-15.4) ──
+        if (resolved === "/override") {
+          const parts = cleanInput.split(/\s+/);
+          const changeHash = parts[1];
+          const confirmation = parts.slice(2).join(" ");
+
+          if (!changeHash || !confirmation) {
+            console.log(picocolors.gray("\n  Usage: /override <changeHash> <confirmation text>\n"));
+            console.log(picocolors.gray("  Example: /override abc12345 I confirm this change is safe\n"));
+            continue;
+          }
+
+          try {
+            const { overrideVerdict } = await import("./subagents/checker.js");
+            const result = await overrideVerdict(changeHash, confirmation);
+            if (result.overridden) {
+              console.log(picocolors.green(`\n  ✅ ${result.reason}\n`));
+              console.log(picocolors.gray("  The maker-checker verdict has been overridden and logged to the audit chain.\n"));
+            } else {
+              console.log(picocolors.yellow(`\n  ⚠️  Override failed: ${result.reason}\n`));
+            }
+          } catch (error: any) {
+            console.log(picocolors.red(`\n  ❌ Error: ${error.message}\n`));
+          }
           continue;
         }
 

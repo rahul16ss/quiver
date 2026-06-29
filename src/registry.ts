@@ -33,6 +33,14 @@ export class ToolRegistry {
   }
 
   /**
+   * Unregister a tool by name (US-5.2). Used by create_tool to ensure a
+   * generated tool is NOT auto-activated before user approval.
+   */
+  public unregisterTool(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
+  /**
    * Scans the tools directory and dynamically imports/reloads all tools.
    */
   public async loadAll(): Promise<void> {
@@ -151,6 +159,14 @@ export class ToolRegistry {
       const inner = prop._def.innerType;
       return {
         ...ToolRegistry.zodPropertyToJsonSchema(inner),
+        ...(description ? { description } : {}),
+      };
+    }
+
+    // Handle ZodObject (including objects inside arrays)
+    if (type === "ZodObject") {
+      return {
+        ...ToolRegistry.zodToJsonSchema(prop),
         ...(description ? { description } : {}),
       };
     }

@@ -20,7 +20,8 @@
 
 import * as path from "path";
 import * as os from "os";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import * as crypto from "crypto";
 
 const GLOBAL_ROOT = path.join(os.homedir(), ".quiver");
 
@@ -48,6 +49,41 @@ export function getGlobalRoot(): string {
  */
 export function getProjectRoot(): string {
   return path.join(GLOBAL_ROOT, "projects", getProjectName());
+}
+
+/**
+ * Stable project identifier (US-1.2). A UUID is generated once per project
+ * directory and persisted in `~/.quiver/projects/{projectName}/project.json`,
+ * so the canonical project id survives renames of the working directory's
+ * basename (the human-readable folder name is kept for readability only).
+ */
+export function getProjectId(): string {
+  const root = getProjectRoot();
+  const idFile = path.join(root, "project.json");
+  try {
+    if (existsSync(idFile)) {
+      const data = JSON.parse(readFileSync(idFile, "utf8"));
+      if (data && typeof data.project_id === "string" && data.project_id) {
+        return data.project_id;
+      }
+    }
+  } catch {
+    // fall through to generation
+  }
+  const project_id = crypto.randomUUID();
+  try {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(idFile, JSON.stringify({
+      project_id,
+      display_name: getProjectName(),
+      workspace_path: process.cwd(),
+      description: "",
+      created_at: new Date().toISOString(),
+    }, null, 2), "utf8");
+  } catch {
+    // best-effort persistence
+  }
+  return project_id;
 }
 
 /**

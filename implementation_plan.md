@@ -1,6 +1,42 @@
 # Implementation Plan — Quiver Conformance Audit & Gaps Alignment
 
-This plan addresses several gaps identified between the Quiver blueprint specifications (`.spec-swimlane.md`) and the codebase delivered by the vendor. The vendor implemented helper classes and files for security, checkpointing, and subagents, but left them completely unintegrated in the main execution paths (the Core Loop) and wrote simulated in-process tests to bypass actual E2E verification.
+> **Status (re-audit 2026-06-28): WIRING COMPLETE, ALL GAPS CLOSED — GATE GREEN.** All
+> architectural integrations below are wired into the live `src/agent.ts` loop and
+> the tools (verified by the `WIRE-*` integration checks in `tests/spec_acceptance_tests.ts`).
+> The checker-owned acceptance gate (`npm test`, 122 checks) is GREEN at **122/122 met, 0
+> failing** — the 11 dead-code wiring gaps + 2 maker-checker checks (`MAKER-CHECKER-SEPARATION`/
+> `MAKER-CHECKER-SCRATCHPAD`) are closed at the acceptance bar; see `tests/ACCEPTANCE_CONTRACT.md`.
+> `npx tsc --noEmit` is clean. `npm test` is the only live verdict. Summary of what shipped:
+>
+> - **Path sandbox** enforced in `view_file`/`write_file`/`replace_content`/`apply_patch`
+>   via `src/security/tool_paths.ts` (`assertToolPathAllowed`), incl. symlink-normalization
+>   for non-existent files.
+> - **Command risk classification** (`classifyCommand`) wired into `run_command` and
+>   the agent approval gate (approval bound to risk band, not tool name).
+> - **Hash-based read-before-write** (`FileReadHistory`, SHA-256 + mtimeMs) replaces
+>   the `Set<string>` tracker.
+> - **Atomic writes** (`atomicWrite` temp→rename + backup) in the file-mutating tools.
+> - **`create_tool`** writes to `getProjectToolsDir()` (`~/.quiver/projects/{id}/tools/`).
+> - **Provider abstraction** (`getActiveProvider().streamChat()`) replaces inline
+>   `fetch()`; `ModelEvent.toolCallIndex` added for correct parallel tool-call accumulation.
+> - **Adapter abstraction** (`getAdapterForModel`) selects specific adapters before
+>   the catch-all default; tool defs routed through `adapter.formatTools()`.
+> - **Lifecycle hooks** fire in the real loop (`wrapModelCall`/`wrapToolCall`); the
+>   maker-checker gate is **always-on for high-risk ops** (US-15.1 — no longer opt-in
+>   behind `QUIVER_MAKER_CHECKER`); the hook trace via `QUIVER_LIFECYCLE_TRACE=1`.
+> - **Prompt assembler** (`assemblePrompt`, deterministic 9-section + `SECURITY_PREAMBLE`)
+>   replaces ad-hoc `buildSystemPrompt` concatenation.
+> - **Token budget** (`calculateBudget`/`shouldBlockSubmission`, 85% formula) gates
+>   the payload and forces compaction when over-limit.
+> - **Checkpoint/crash recovery** (`CheckpointManager` per turn, `detectCrashedSession`
+>   on launch in `cli.ts`).
+> - **Diagnostics** (`ConsecutiveFailureTracker` + `createDiagnosticBlock`) on tool errors.
+> - **Memory privacy/citations/decay** (`filterByPrivacy`, `parseMemoryCitations`/
+>   `updateUsageStats`, `getArchivalCandidates`) applied by the loop.
+> - **Stable `project_id`** UUID (`getProjectId`), and **keychain shell-escaping**
+>   + Windows `CredRead` retrieval in `src/secrets/keychain.ts`.
+>
+> The original gap analysis and proposed changes follow for historical context.
 
 ## User Review Required
 

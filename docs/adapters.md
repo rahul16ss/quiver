@@ -61,3 +61,17 @@ export interface AdapterDefaults {
 ## Registration
 
 Custom adapters can be registered via `registerAdapter()`. The system automatically selects the best adapter for a given model via `getAdapterForModel()`.
+## Selection & Wiring
+
+`getAdapterForModel(model)` evaluates **specific adapters first** (Claude, GLM)
+and falls back to `DefaultAdapter` last. `DefaultAdapter.supports()` returns
+`true` for every model, so it must be evaluated last or it shadows the
+model-specific adapters.
+
+The real agent loop resolves the adapter once per session
+(`getAdapterForModel(modelInfo)`), pulls `getDefaults()` (e.g. `maxOutputTokens`
+for the request payload), and routes tool definitions through
+`adapter.formatTools()`. Tool format stays OpenAI function-calling for all
+adapters because the transport is OpenAI-compatible — even Claude reached via
+OpenRouter uses OpenAI tool format, so `ClaudeAdapter` intentionally does not
+override `formatTools()`.
