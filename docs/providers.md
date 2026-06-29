@@ -64,3 +64,11 @@ The provider emits `ModelEvent` objects via async iterable:
 - `tool_call_end` — Tool call completes
 - `done` — Stream finished
 - `error` — Error occurred
+## Wiring
+
+`getActiveProvider()` is the transport used by the real agent loop
+(`src/agent.ts`); the loop no longer performs an inline `fetch()` to
+`/chat/completions`. `ModelEvent` now carries `toolCallIndex` on
+`tool_call_start`/`tool_call_delta` so the agent can accumulate multiple
+parallel tool calls correctly (the first streaming delta carries the id and
+name together on most OpenAI-compatible servers).

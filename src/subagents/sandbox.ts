@@ -7,6 +7,7 @@
  */
 
 import { promises as fs } from "fs";
+import * as fsSync from "fs";
 import * as path from "path";
 import { DEFAULT_SUBAGENT_CONFIG, type SubagentConfig } from "./types.js";
 
@@ -81,12 +82,14 @@ export async function cleanupScratchpad(
  * @param filesModified - List of file paths the subagent modified
  * @param workspaceRoot - The main workspace root
  * @param blockedPaths - Glob patterns for blocked paths
+ * @param scratchpadDir - Optional scratchpad directory to resolve real file paths (prevents symlink escapes)
  * @returns { valid: string[]; invalid: string[] }
  */
 export function validateSubagentFiles(
   filesModified: string[],
   workspaceRoot: string,
   blockedPaths: string[] = [],
+  scratchpadDir?: string,
 ): { valid: string[]; invalid: string[] } {
   const valid: string[] = [];
   const invalid: string[] = [];
@@ -94,9 +97,28 @@ export function validateSubagentFiles(
   const defaultBlocked = [".env", ".env.*", "*.pem", "*.key", ".git/", "node_modules/"];
   const allBlocked = [...defaultBlocked, ...blockedPaths];
 
+  // Make sure workspaceRoot is resolved
+  let resolvedWorkspaceRoot = path.resolve(workspaceRoot);
+  try {
+    resolvedWorkspaceRoot = fsSync.realpathSync(resolvedWorkspaceRoot);
+  } catch {
+    // ignore
+  }
+
   for (const file of filesModified) {
-    const resolved = path.resolve(file);
-    const relative = path.relative(workspaceRoot, resolved);
+    let resolved = path.isAbsolute(file)
+      ? file
+      : scratchpadDir
+      ? path.join(scratchpadDir, file)
+      : path.join(resolvedWorkspaceRoot, file);
+
+    try {
+      resolved = fsSync.realpathSync(resolved);
+    } catch {
+      // File may not exist yet or is a dangling link
+    }
+
+    const relative = path.relative(resolvedWorkspaceRoot, resolved);
 
     // Check if inside workspace
     if (relative.startsWith("..") || path.isAbsolute(relative)) {

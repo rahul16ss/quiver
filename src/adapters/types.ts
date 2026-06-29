@@ -324,7 +324,11 @@ export function getAdapter(name: string): HarnessAdapter {
  * Get the adapter that best fits a given model.
  */
 export function getAdapterForModel(model: ModelInfo): HarnessAdapter {
+  // Check specific adapters first (claude, glm), then fall back to the
+  // default adapter. DefaultAdapter.supports() returns true for every model,
+  // so it must be evaluated LAST or it would shadow the model-specific ones.
   for (const adapter of adapters.values()) {
+    if (adapter.id === "default") continue;
     if (adapter.supports(model)) return adapter;
   }
   return defaultAdapter;

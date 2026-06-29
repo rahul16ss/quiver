@@ -192,6 +192,90 @@ export const tool: Tool = {
       console.log("  │  [3] Reject — discard the proposal");
       console.log("  └──────────────────────────────────────────────────");
 
+      const { Agent } = await import("../agent.js");
+      const activeRl = Agent.activeSessionReadline;
+
+      const handleChoice = async (choice: string, resolve: (val: any) => void) => {
+        if (choice === "1") {
+          // Accept
+          try {
+            await fs.writeFile(promptPath, pendingContent, "utf8");
+            await fs.unlink(pendingPath).catch(() => {});
+            resolve(
+              `System prompt updated successfully. The new prompt will be active on the next prompt() call. Reason: ${reason}`,
+            );
+          } catch (err: any) {
+            resolve(`Error applying update: ${err.message}`);
+          }
+        } else if (choice === "2") {
+          // Edit — open in $EDITOR or $VISUAL
+          const editor = process.env.VISUAL || process.env.EDITOR || "vi";
+          const { execSync } = await import("child_process");
+          try {
+            execSync(`${editor} "${pendingPath}"`, { stdio: "inherit" });
+            // After editing, ask if they want to apply
+            const askApply = async (rlToUse: any, shouldClose: boolean) => {
+              return new Promise<void>((resApply) => {
+                rlToUse.question(
+                  "\n  Apply the edited version? (y/N): ",
+                  async (applyAnswer: string) => {
+                    if (shouldClose) rlToUse.close();
+                    if (
+                      applyAnswer.trim().toLowerCase() === "y" ||
+                      applyAnswer.trim().toLowerCase() === "yes"
+                    ) {
+                      try {
+                        const edited = await fs.readFile(pendingPath, "utf8");
+                        await fs.writeFile(promptPath, edited, "utf8");
+                        await fs.unlink(pendingPath).catch(() => {});
+                        resolve(
+                          "System prompt updated with your edited version. The new prompt will be active on the next prompt() call.",
+                        );
+                      } catch (err: any) {
+                        resolve(`Error applying edited update: ${err.message}`);
+                      }
+                    } else {
+                      await fs.unlink(pendingPath).catch(() => {});
+                      resolve(
+                        "Update rejected. The proposal has been discarded.",
+                      );
+                    }
+                    resApply();
+                  },
+                );
+              });
+            };
+
+            if (activeRl) {
+              await askApply(activeRl, false);
+            } else {
+              const rl2 = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout,
+              });
+              await askApply(rl2, true);
+            }
+          } catch (err: any) {
+            resolve(
+              `Error opening editor: ${err.message}. The proposal is saved at: ${pendingPath}. You can edit it manually and copy it to ${promptPath}.`,
+            );
+          }
+        } else {
+          // Reject
+          await fs.unlink(pendingPath).catch(() => {});
+          resolve("Update rejected. The system prompt remains unchanged.");
+        }
+      };
+
+      if (activeRl) {
+        return new Promise((resolve) => {
+          activeRl.question("  > ", async (answer) => {
+            const choice = answer.trim();
+            await handleChoice(choice, resolve);
+          });
+        });
+      }
+
       const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -201,65 +285,7 @@ export const tool: Tool = {
         rl.question("  > ", async (answer) => {
           rl.close();
           const choice = answer.trim();
-
-          if (choice === "1") {
-            // Accept
-            try {
-              await fs.writeFile(promptPath, pendingContent, "utf8");
-              await fs.unlink(pendingPath).catch(() => {});
-              resolve(
-                `System prompt updated successfully. The new prompt will be active on the next prompt() call. Reason: ${reason}`,
-              );
-            } catch (err: any) {
-              resolve(`Error applying update: ${err.message}`);
-            }
-          } else if (choice === "2") {
-            // Edit — open in $EDITOR or $VISUAL
-            const editor = process.env.VISUAL || process.env.EDITOR || "vi";
-            const { execSync } = await import("child_process");
-            try {
-              execSync(`${editor} "${pendingPath}"`, { stdio: "inherit" });
-              // After editing, ask if they want to apply
-              const rl2 = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-              });
-              rl2.question(
-                "\n  Apply the edited version? (y/N): ",
-                async (applyAnswer) => {
-                  rl2.close();
-                  if (
-                    applyAnswer.trim().toLowerCase() === "y" ||
-                    applyAnswer.trim().toLowerCase() === "yes"
-                  ) {
-                    try {
-                      const edited = await fs.readFile(pendingPath, "utf8");
-                      await fs.writeFile(promptPath, edited, "utf8");
-                      await fs.unlink(pendingPath).catch(() => {});
-                      resolve(
-                        "System prompt updated with your edited version. The new prompt will be active on the next prompt() call.",
-                      );
-                    } catch (err: any) {
-                      resolve(`Error applying edited update: ${err.message}`);
-                    }
-                  } else {
-                    await fs.unlink(pendingPath).catch(() => {});
-                    resolve(
-                      "Update rejected. The proposal has been discarded.",
-                    );
-                  }
-                },
-              );
-            } catch (err: any) {
-              resolve(
-                `Error opening editor: ${err.message}. The proposal is saved at: ${pendingPath}. You can edit it manually and copy it to ${promptPath}.`,
-              );
-            }
-          } else {
-            // Reject
-            await fs.unlink(pendingPath).catch(() => {});
-            resolve("Update rejected. The system prompt remains unchanged.");
-          }
+          await handleChoice(choice, resolve);
         });
       });
     } catch (error: any) {

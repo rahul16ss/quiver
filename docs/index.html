@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiver — Open Inspectable Harness for Open Models</title>
   <meta name="description" content="A local-first, inspectable agent harness. Own agent memory in plain text files, swap models freely, attach visual context, and run agents with total context transparency—on the CLI or a native desktop app.">
-  <link rel="icon" href="../branding/logo.png" type="image/png">
+  <link rel="icon" href="assets/logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/logo.png">
   
   <!-- Premium Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -816,7 +817,7 @@
 <nav class="navbar">
   <div class="container" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
     <div class="nav-logo">
-      <img src="../branding/logo.png" alt="Quiver Logo">
+      <img src="assets/logo.png" alt="Quiver Logo">
       <span>Quiver</span>
     </div>
     <div class="nav-links">
@@ -1120,6 +1121,18 @@
         <div class="num">04</div>
         <h4>Low-Level Primitives</h4>
         <p>When tool capabilities are missing, the agent doesn't compromise—it builds the TypeScript code wrapper it needs at runtime.</p>
+      </div>
+
+      <div class="principle-card">
+        <div class="num">05</div>
+        <h4>Maker-Checker Sandbox</h4>
+        <p>High-risk code changes are executed in isolated copy-on-write scratchpads, validated by checker subagents, and subject to automatic rollback on failures.</p>
+      </div>
+
+      <div class="principle-card">
+        <div class="num">06</div>
+        <h4>Hardened Credentials</h4>
+        <p>API keys are isolated from child processes, redacted in session logs, and securely resolved from macOS, Linux, or Windows keychains.</p>
       </div>
     </div>
   </section>

@@ -102,6 +102,8 @@ export class SubagentPool {
         const { valid, invalid } = validateSubagentFiles(
           result.filesModified,
           workspaceRoot,
+          [],
+          scratchpad,
         );
 
         if (invalid.length > 0) {
@@ -162,10 +164,31 @@ export class SubagentPool {
         "--single-turn", task.prompt,
       ];
 
+      const childEnv = { ...process.env };
+      const sensitiveKeys = [
+        "LLM_API_KEY",
+        "PARALLEL_API_KEY",
+        "OLLAMA_API_KEY",
+        "GITHUB_TOKEN",
+        "CONTEXT7_API_KEY",
+        "API_KEY",
+        "SECRET",
+        "TOKEN",
+        "PASSWORD",
+        "PRIVATE_KEY",
+        "ACCESS_KEY",
+        "SECRET_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ];
+      for (const key of sensitiveKeys) {
+        delete childEnv[key];
+      }
+
       const child = spawn(tsxPath, args, {
         cwd: scratchpad,
         env: {
-          ...process.env,
+          ...childEnv,
           QUIVER_SUBAGENT_DEPTH: String(task.recursionDepth),
         },
         stdio: ["pipe", "pipe", "pipe"],

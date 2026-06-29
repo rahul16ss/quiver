@@ -189,7 +189,8 @@ function suggestRemedies(toolName: string, errorMessage: string, errorType: stri
 /**
  * Redact sensitive values from args before including in diagnostic blocks.
  */
-function redactArgs(args: Record<string, any>): Record<string, any> {
+function redactArgs(args: Record<string, any> | undefined | null): Record<string, any> {
+  if (!args) return {};
   const redacted: Record<string, any> = {};
   const sensitiveKeys = ["apiKey", "api_key", "password", "token", "secret", "key"];
 

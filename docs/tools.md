@@ -71,3 +71,23 @@ Dynamically generated tools execute in isolated worker threads with:
 ## Tool Registry
 
 The `ToolRegistry` class manages tool loading, hot-reloading, and OpenAI function-calling schema serialization. Tools are loaded from `src/tools/` at startup and can be dynamically created via `create_tool`.
+## Security Enforcement (wired)
+
+The file/shell tools enforce the security modules directly, not just the agent:
+
+- **Path sandbox** — `view_file`, `write_file`, `replace_content`, and
+  `apply_patch` resolve every target through `src/security/tool_paths.ts`
+  (`assertToolPathAllowed`), which canonicalizes paths, resolves symlinks, hard-
+  blocks sensitive globs (`.env`, `*.pem`, `*.key`, `id_rsa`, `.git/`) and
+  sensitive home dirs (`.ssh`, `.aws`, `.config`), and confines writes to the
+  workspace or `~/.quiver`.
+- **Atomic writes** — `write_file`, `replace_content`, and `apply_patch` write
+  via `atomicWrite()` (temp → rename) with a backup recorded in
+  `sessionBackups` for `/rollback`.
+- **Command risk classification** — `run_command` classifies every command via
+  `classifyCommand()` (risk band + approval flag) and refuses commands that
+  target paths outside the workspace. The agent approval gate uses the same
+  classifier so `rm -rf` prompts while `ls` runs free.
+- **Generated-tool destination** — `create_tool` writes to
+  `getProjectToolsDir()` (`~/.quiver/projects/{id}/tools/`), never to
+  `src/tools/`.

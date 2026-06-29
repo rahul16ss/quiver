@@ -18,7 +18,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/compact", aliases: ["/co"], desc: "Compact conversation history" },
   { name: "/reset", aliases: ["/r"], desc: "Reset conversation (keep memory)" },
   { name: "/cost", aliases: [], desc: "Show token usage stats" },
-  { name: "/memory", aliases: ["/mem"], desc: "View loaded memory" },
+  { name: "/memory", aliases: ["/mem"], desc: "View loaded memory (/memory review for pending facts)" },
   { name: "/model", aliases: ["/m"], desc: "Show or change model" },
   {
     name: "/history",
@@ -41,6 +41,26 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: "/cloud-sync",
     aliases: ["/cs"],
     desc: "Show cloud sync status & install links",
+  },
+  {
+    name: "/logs",
+    aliases: ["/log"],
+    desc: "Manage session logs (list, purge, export)",
+  },
+  {
+    name: "/rollback",
+    aliases: ["/rb"],
+    desc: "Rollback to a previous backup (e.g. /rollback last)",
+  },
+  {
+    name: "/self-heal",
+    aliases: ["/heal", "/fix"],
+    desc: "Scan codebase for errors/failures and self-heal",
+  },
+  {
+    name: "/override",
+    aliases: ["/ov"],
+    desc: "Override the last maker-checker verdict (US-15.4)",
   },
 ];
 

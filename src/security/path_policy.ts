@@ -103,7 +103,23 @@ function resolveRealPath(inputPath: string): { absolutePath: string; realPath: s
     const realPath = realpathSync(absolutePath);
     return { absolutePath, realPath };
   } catch {
-    // File doesn't exist yet (creation case) — use absolute path
+    // File (or some ancestors) don't exist yet (creation case). Walk up to the
+    // deepest existing ancestor, resolve THAT through realpath (so symlinked
+    // roots like macOS /var -> /private/var are normalized), then re-append the
+    // non-existent tail. This keeps the candidate on the same resolved basis as
+    // the workspace root so a new file deep inside the workspace is never
+    // wrongly seen as outside it.
+    let dir = path.dirname(absolutePath);
+    const tail: string[] = [path.basename(absolutePath)];
+    while (dir !== path.dirname(dir)) {
+      try {
+        const dirReal = realpathSync(dir);
+        return { absolutePath, realPath: path.join(dirReal, ...tail.reverse()) };
+      } catch {
+        tail.push(path.basename(dir));
+        dir = path.dirname(dir);
+      }
+    }
     return { absolutePath, realPath: absolutePath };
   }
 }
@@ -152,7 +168,20 @@ export function resolveAndAssertPathAllowed(
   operation: "read" | "write" | "delete",
   policy: PathPolicy,
 ): ResolvedPath {
-  const { absolutePath, realPath } = resolveRealPath(inputPath);
+  // Security: reject null bytes in paths (CWE-158 — null byte injection)
+  if (inputPath.includes("\0")) {
+    throw new Error(
+      `Path contains null bytes — this is a security violation and is not permitted.`,
+    );
+  }
+
+  // Expand tilde (~) to home directory so home-dir blocked paths are checked correctly
+  let normalizedInput = inputPath;
+  if (normalizedInput.startsWith("~")) {
+    normalizedInput = path.join(os.homedir(), normalizedInput.slice(1));
+  }
+
+  const { absolutePath, realPath } = resolveRealPath(normalizedInput);
 
   const inside = isInsideWorkspace(realPath, policy.workspaceRoot);
 

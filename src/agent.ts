@@ -19,13 +19,34 @@ import {
   ensureCloudDataDir,
   autoSyncToCloud,
 } from "./cloud_sync.js";
-import { loadReviewedMemoryContext } from "./prompt/assembler.js";
+import { loadReviewedMemoryContext, assemblePrompt } from "./prompt/assembler.js";
+import { classifyCommand } from "./security/command_policy.js";
+import { SECURITY_PREAMBLE } from "./prompts/security.js";
+import { FileReadHistory, WriteBlockedException } from "./session/file_access.js";
+import { getActiveProvider } from "./providers/index.js";
+import { getAdapterForModel, type HarnessAdapter } from "./adapters/index.js";
+import { type ModelInfo } from "./providers/index.js";
+import { calculateBudget, shouldBlockSubmission } from "./context/budget.js";
+import {
+  lifecycleRegistry,
+  registerBuiltinHooks,
+  wrapModelCall,
+  wrapToolCall,
+  type LifecycleContext,
+} from "./lifecycle.js";
+import { ConsecutiveFailureTracker, createDiagnosticBlock, formatDiagnosticBlock } from "./diagnostics.js";
+import { filterByPrivacy } from "./memory/privacy.js";
+import { parseMemoryCitations, validateCitations as validateCitationsImport, updateUsageStats, getAllUsageStats as getAllUsageStatsImport } from "./memory/citation_parser.js";
+import { getDefaultDecayConfig, getArchivalCandidates } from "./memory/decay.js";
+import { redactSecrets } from "./security/secrets.js";
+import { CheckpointManager, detectCrashedSession } from "./session/checkpoint.js";
 import { calculateBackoffWithJitter } from "./logger.js";
 import {
   getProjectMemoryDir,
   getSkillsDir,
   getProjectSessionsDir,
   getProjectName,
+  getProjectId,
   ensureDirectories,
 } from "./paths.js";
 
@@ -264,27 +285,6 @@ function truncateForLog(
 // Redacts API keys, tokens, and other secrets from log/state output.
 // Patterns cover common secret formats and .env KEY=VALUE lines.
 
-const SECRET_PATTERNS: RegExp[] = [
-  // .env KEY=VALUE lines for known secret keys
-  /^(LLM_API_KEY|PARALLEL_API_KEY|OLLAMA_API_KEY|GITHUB_TOKEN|CONTEXT7_API_KEY|API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)\s*=\s*.+$/gim,
-  // Bearer tokens in Authorization headers
-  /Bearer\s+[A-Za-z0-9_\-\.]+/gi,
-  // GitHub tokens (ghp_, gho_, ghs_, ghu_)
-  /gh[pousr]_[A-Za-z0-9]{36,}/gi,
-  // OpenRouter-style keys (sk-or-v1-...)
-  /sk-or-v1-[A-Za-z0-9]+/gi,
-  // OpenAI-style keys (sk-...)
-  /sk-[A-Za-z0-9]{20,}/gi,
-  // Ollama API keys (hex hash format)
-  /[a-f0-9]{32}\.[A-Za-z0-9_\-]+/gi,
-  // Parallel.ai API keys
-  /[A-Za-z0-9]{8}-[A-Za-z0-9_\-]{20,}/gi,
-  // Generic long hex/base64 strings that look like API keys (40+ chars, must contain both letters and digits)
-  /(?=[A-Za-z0-9_\-]{40,})(?=.*[a-zA-Z])(?=.*\d)[A-Za-z0-9_\-]{40,}/g,
-];
-
-const REDACTED = "[REDACTED]";
-
 /** Safe JSON.stringify that handles circular references without throwing. */
 function safeStringify(obj: any): string {
   try {
@@ -301,14 +301,6 @@ function safeStringify(obj: any): string {
       return String(obj);
     }
   }
-}
-
-function redactSecrets(text: string): string {
-  let result = text;
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, REDACTED);
-  }
-  return result;
 }
 
 function sanitizeLogData(type: string, data: any): any {
@@ -626,6 +618,8 @@ class Spinner {
 }
 
 export class Agent {
+  public static activeSessionReadline: readline.Interface | null = null;
+
   private registry: ToolRegistry;
   private messages: Message[] = [];
   private logger: SessionLogger;
@@ -636,15 +630,41 @@ export class Agent {
     turns: 0,
   };
   private sessionReadline: readline.Interface | null = null;
-  // Track files read in the current session for read-before-write enforcement
-  private filesReadThisSession: Set<string> = new Set();
+  // US-6.1: hash-based read-before-write (compare-and-swap). Replaces the
+  // crude Set<string> path tracker with SHA-256 + mtimeMs verification so a
+  // file modified between read and write is never silently overwritten.
+  private fileReadHistory: FileReadHistory;
+  // US-13.4: consecutive-failure loop detection (3 identical failures → pause).
+  private failureTracker: ConsecutiveFailureTracker = new ConsecutiveFailureTracker();
+  // US-2.2B: the active harness adapter for the current model (alignment layer).
+  private adapter: HarnessAdapter | null = null;
+  // US-2.2A: the active model provider (transport layer).
+  private provider: import("./providers/index.js").ModelProvider | null = null;
+  // US-13.2: checkpoint/crash-recovery manager for this session.
+  private checkpointManager: CheckpointManager | null = null;
   // Cloud sync: show notice once per session
   private cloudSyncInitialized = false;
+  private memoryDecayRun = false;
   private pendingRevisionNote: string | undefined = undefined;
+  // US-2.3: Active stream abort controller — allows Ctrl+C / Stop to halt
+  // the current LLM stream generation within 1-2 seconds.
+  private activeAbortController: AbortController | null = null;
 
   constructor(registry: ToolRegistry) {
     this.registry = registry;
     this.logger = new SessionLogger();
+    this.fileReadHistory = new FileReadHistory(this.logger.getSessionId());
+    // US-13.2: per-turn checkpoints + crash recovery (wired below).
+    this.checkpointManager = new CheckpointManager(this.logger.getSessionId(), getProjectId());
+
+    // US-15.1: register the lifecycle interception engine (transparency,
+    // provenance, and the maker-checker verification gate). Hooks fire at
+    // deterministic stages of the request pipeline — see src/lifecycle.ts.
+    try {
+      registerBuiltinHooks(lifecycleRegistry, this.logger);
+    } catch {
+      // Hook registration must never block agent startup.
+    }
 
     // Add default system prompt structure (will be dynamically updated with skills and memory)
     this.messages.push({
@@ -682,6 +702,20 @@ export class Agent {
       await fs.writeFile(statePath, JSON.stringify(state, null, 2), "utf8");
     } catch {
       // Fail silently — session state saving is best-effort
+    }
+  }
+
+  /**
+   * US-2.3: Abort the active LLM stream generation.
+   * Called by the SIGINT handler when the user presses Ctrl+C during
+   * model generation. Halts the stream within 1-2 seconds, preserves
+   * session state and file modifications up to the abort point, and
+   * writes a checkpoint.
+   */
+  public abortActiveStream(): void {
+    if (this.activeAbortController) {
+      this.activeAbortController.abort();
+      this.activeAbortController = null;
     }
   }
 
@@ -742,6 +776,35 @@ export class Agent {
         }));
       }
       return redacted;
+    });
+  }
+
+  /** US-13.2: write a checkpoint capturing the current turn's state. */
+  private async writeCheckpoint(): Promise<void> {
+    if (!this.checkpointManager) return;
+    const sessionMessages = this.messages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((p: any) => (p.type === "text" ? p.text : "")).join("")
+          : "",
+      tool_calls: m.tool_calls,
+      tool_call_id: m.tool_call_id,
+      name: m.name,
+      timestamp: new Date().toISOString(),
+    }));
+    await this.checkpointManager.checkpoint({
+      messages: sessionMessages as any[],
+      approvals: [],
+      fileReadHashes: this.fileReadHistory.getAllRecords(),
+      model: config.llmModelName,
+      adapter: this.adapter?.id ?? "default",
+      metadata: {
+        total_loops: this.tokenStats.turns,
+        total_tool_calls: this.tokenStats.toolCalls,
+        total_tokens: this.tokenStats.inputTokens + this.tokenStats.outputTokens,
+      },
     });
   }
 
@@ -869,6 +932,7 @@ export class Agent {
   /** Share the CLI readline so approval prompts don't open a second listener on stdin. */
   public setSessionReadline(rl: readline.Interface): void {
     this.sessionReadline = rl;
+    Agent.activeSessionReadline = rl;
   }
 
   // Compact conversation history with LLM-powered summarization.
@@ -945,6 +1009,67 @@ export class Agent {
       // Non-critical — never block the turn on memory loading
     }
     return results;
+  }
+
+  // US-4.3: track memory citations found in model output.
+  private async trackCitations(assistantContent: string): Promise<void> {
+    try {
+      const adapter = this.adapter || getAdapterForModel({
+        id: config.llmModelName,
+        displayName: config.llmModelName,
+        providerId: "default",
+        contextWindowTokens: config.maxContextTokens,
+        supportsTools: true,
+        supportsParallelToolCalls: true,
+        supportsImages: false,
+        supportsStreaming: true,
+        supportsReasoningSummaries: false,
+      });
+      const citations = adapter.parseMemoryCitations(assistantContent);
+      if (citations.length === 0) return;
+      // Validate against the memory files that actually exist so false
+      // citations (hallucinated doc names) never inflate hit counts.
+      const memoryDir = getProjectMemoryDir();
+      let existing: string[] = [];
+      try {
+        existing = (await fs.readdir(memoryDir)).filter(
+          (f) => !f.startsWith(".") && f !== "project.json",
+        );
+      } catch {
+        existing = [];
+      }
+      const formattedCitations = citations.map(c => ({
+        file: c.file,
+        section: c.section,
+        text: c.text,
+        position: (c as any).position ?? 0,
+      }));
+      const { valid } = validateCitationsImport(formattedCitations, existing);
+      if (valid.length > 0) {
+        await updateUsageStats(valid);
+      }
+    } catch {
+      // Non-critical — never block the turn on citation tracking.
+    }
+  }
+
+  // US-4.3: best-effort decay pass — log archival candidates for the user.
+  private async runMemoryDecay(): Promise<void> {
+    try {
+      const allStats = await getAllUsageStatsImport();
+      const cfg = getDefaultDecayConfig();
+      const candidates = getArchivalCandidates(allStats, cfg);
+      if (candidates.length > 0 && config.outputMode === "interactive") {
+        const names = candidates.map((c) => c.file).join(", ");
+        console.log(
+          picocolors.gray(
+            `   ♻️  Memory decay: ${candidates.length} fact(s) cold and rarely cited (${names}). Consider archiving via /memory.`,
+          ),
+        );
+      }
+    } catch {
+      // Non-critical.
+    }
   }
 
   // Load versioned skills
@@ -1059,17 +1184,21 @@ You are powered by model ${config.llmModelName} and have access to file operatio
 Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     }
 
-    // Append core memory blocks
-    systemPrompt += `\n\n--- CORE MEMORY BLOCKS ---
+    // US-11.1: deterministic 9-section prompt assembly. The base prompt loaded
+    // above is the identity section; core memory, persistent memories, and
+    // active skills are mapped into the spec's ordered sections and assembled
+    // through assemblePrompt() (with the security preamble injected by the
+    // assembler) so the prompt shape is deterministic, not ad-hoc concatenation.
+    const projectContext = `--- CORE MEMORY BLOCKS ---
 [Identity]: ${coreMemory.identity || ""}
 [Human Context]: ${coreMemory.human_context || ""}
-[Project Context]: ${coreMemory.project_context || ""}\n`;
+[Project Context]: ${coreMemory.project_context || ""}`;
 
-    // Append persistent memories
+    let memoryContext = "";
     if (memories.length > 0) {
-      systemPrompt += `\n--- ACTIVE PERSISTENT MEMORY ---\n`;
+      memoryContext = `--- ACTIVE PERSISTENT MEMORY ---\n`;
       for (const m of memories) {
-        systemPrompt += `[Memory Snippet: ${m.filename}]\n${m.content}\n\n`;
+        memoryContext += `[Memory Snippet: ${m.filename}]\n${m.content}\n\n`;
       }
     }
 
@@ -1077,14 +1206,42 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     const activeSkills = skills.filter(
       (s) => s.id !== "quiver-system-prompt",
     );
+    let toolInstructions = "";
     if (activeSkills.length > 0) {
-      systemPrompt += `\n--- ACTIVE TASK PROCEDURES (SKILLS) ---\n`;
+      toolInstructions = `--- ACTIVE TASK PROCEDURES (SKILLS) ---\n`;
       for (const s of activeSkills) {
-        systemPrompt += `[Skill: ${s.id} (v${s.version})]\nPurpose: ${s.purpose}\nInstructions:\n${s.content}\n\n`;
+        toolInstructions += `[Skill: ${s.id} (v${s.version})]\nPurpose: ${s.purpose}\nInstructions:\n${s.content}\n\n`;
       }
     }
 
-    return systemPrompt;
+    const modelInfo: ModelInfo = {
+      id: config.llmModelName,
+      displayName: config.llmModelName,
+      providerId: this.provider?.id ?? "default",
+      contextWindowTokens: config.maxContextTokens,
+      supportsTools: true,
+      supportsParallelToolCalls: true,
+      supportsImages: false,
+      supportsStreaming: true,
+      supportsReasoningSummaries: false,
+    };
+    const adapter = this.adapter ?? getAdapterForModel(modelInfo);
+    const assembled = assemblePrompt(
+      {
+        identity: systemPrompt,
+        safetyPolicy: SECURITY_PREAMBLE,
+        adapterInstructions: "",
+        toolInstructions,
+        memoryContext,
+        projectContext,
+        conversationSummary: "",
+        recentMessages: [],
+        currentUserRequest: "",
+      },
+      adapter,
+      modelInfo,
+    );
+    return assembled.systemPrompt;
   }
 
   /**
@@ -1337,6 +1494,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       }
     }
 
+    // US-4.3: run a best-effort memory decay pass once per session so stale,
+    // never-cited facts surface as archival candidates (provenance + decay).
+    if (!this.memoryDecayRun) {
+      this.memoryDecayRun = true;
+      this.runMemoryDecay().catch(() => {});
+    }
+
     // 1. Dynamically load Skills and Memory Context
     const memories = await this.loadMemory();
     const skills = await this.loadSkills();
@@ -1421,170 +1585,207 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
       // Gather current tool definitions
       const activeTools = this.registry.getAllTools();
-      const tools = activeTools.map(ToolRegistry.getOpenAIToolDefinition);
+      const openAiDefs = activeTools.map(ToolRegistry.getOpenAIToolDefinition);
 
-      // No loop indicator — internal plumbing, not useful to the user
+      // US-2.2A/2.2B: resolve the active model provider (transport) and harness
+      // adapter (alignment) for the current model. Both are cached for the
+      // session so the Model-Harness-Fit architecture — the product's central
+      // differentiator — actually drives the real agent loop, not just tests.
+      if (!this.provider) {
+        this.provider = getActiveProvider();
+      }
+      let modelInfo: ModelInfo;
+      try {
+        modelInfo = await this.provider.getModelInfo(config.llmModelName);
+      } catch {
+        modelInfo = {
+          id: config.llmModelName,
+          displayName: config.llmModelName,
+          providerId: this.provider.id,
+          contextWindowTokens: config.maxContextTokens,
+          supportsTools: true,
+          supportsParallelToolCalls: true,
+          supportsImages: false,
+          supportsStreaming: true,
+          supportsReasoningSummaries: false,
+        };
+      }
+      if (!this.adapter) {
+        this.adapter = getAdapterForModel(modelInfo);
+      }
+      const adapterDefaults = this.adapter.getDefaults(modelInfo);
+
+      // Route tool definitions through the adapter's format mapping (US-2.2B).
+      const tools = this.adapter.formatTools(
+        activeTools.map((t, idx) => ({
+          name: t.name,
+          description: t.description,
+          parameters: openAiDefs[idx].function?.parameters,
+        })),
+      ) as any[];
 
       const payload: any = {
         model: config.llmModelName,
         messages: this.messages,
         temperature: 0.2,
-        max_tokens: 8192, // Prevent runaway responses
+        max_tokens: adapterDefaults.maxOutputTokens,
       };
-
       if (tools.length > 0) {
         payload.tools = tools;
         payload.tool_choice = "auto";
       }
 
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      if (config.llmApiKey) {
-        headers["Authorization"] = `Bearer ${config.llmApiKey}`;
-      }
-
-      payload.stream = true;
-
       // Spinner for better UX while waiting for API response
       const spinner = new Spinner(loopCount === 1 ? "Thinking…" : "Working…");
       spinner.start();
 
-      let response: Response | null = null;
-      let retries = 0;
-      const maxRetries = 3;
-
-      while (retries <= maxRetries) {
-        try {
-          response = await fetch(`${config.llmBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(payload),
-          });
-          break;
-        } catch (err: any) {
-          retries++;
-          if (retries > maxRetries) {
-            spinner.stop();
-            console.error(
-              picocolors.red(
-                `\n❌ Failed to connect to LLM server after ${maxRetries + 1} attempts: ${err.message}`,
-              ),
-            );
-            await this.logger.logEvent("api_error", {
-              error: err.message,
-              retries,
-            });
-            throw err;
+      // US-11.2 / US-3.3: model-aware token budget with the 0.85 compaction
+      // formula. A hard stop blocks submission when the payload exceeds the
+      // model's context window — we compact and retry instead of sending an
+      // over-limit payload the provider will reject.
+      const conversationText = this.messages
+        .map((m) => {
+          if (typeof m.content === "string") return m.content;
+          if (Array.isArray(m.content)) {
+            return m.content
+              .filter((part: any) => part.type === "text")
+              .map((part: any) => part.text)
+              .join(" ");
           }
-          // Exponential backoff
-          const delay = Math.min(1000 * Math.pow(2, retries), 8000);
-          spinner.stop();
-          console.log(
-            picocolors.yellow(
-              `   ⚠️  Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
-            ),
-          );
-          spinner.start();
-          await new Promise((r) => setTimeout(r, delay));
-        }
+          return "";
+        })
+        .join(" ");
+      const systemPromptStr =
+        typeof this.messages[0]?.content === "string"
+          ? (this.messages[0].content as string)
+          : "";
+      const budget = calculateBudget(
+        {
+          systemPrompt: systemPromptStr,
+          memoryContext: "",
+          toolDefinitions: JSON.stringify(tools),
+          conversationBuffer: conversationText,
+        },
+        modelInfo,
+        this.adapter,
+      );
+      if (shouldBlockSubmission(budget)) {
+        spinner.stop();
+        await this.manageContextIfNeeded();
+        spinner.start();
       }
 
-      spinner.stop();
-
-      // response is guaranteed to be set here — if all retries failed, we threw above
-      if (!response) {
-        throw new Error("Failed to get response from LLM server.");
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        const msg = `LLM Server returned error (${response.status}): ${errorText}`;
-        console.error(picocolors.red(`\n❌ ${msg}`));
-        await this.logger.logEvent("api_error", {
-          status: response.status,
-          response: errorText,
-        });
-        throw new Error(msg);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("LLM response body is not readable.");
-      }
+      // ── Lifecycle: BEFORE_MODEL → wrap_model_call → AFTER_MODEL (US-15.1).
+      // The interception engine fires its transparency/provenance hooks here;
+      // the maker-checker verification gate lives on wrap_tool_call instead.
+      const lifecycleCtx: LifecycleContext = {
+        userInput,
+        messages: this.messages,
+        systemPrompt: systemPromptStr,
+        tools,
+        model: config.llmModelName,
+        isVision: false,
+        sessionId: this.logger.getSessionId(),
+        loopCount,
+        metadata: {},
+      };
 
       let assistantContent = "";
+      let firstStreamingToken = true;
       let accumulatedToolCalls: Record<
         number,
         { id?: string; name?: string; arguments: string }
       > = {};
-      const decoder = new TextDecoder();
-      let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        let streamDone = false;
-        for (const line of lines) {
-          const cleanLine = line.trim();
-          if (!cleanLine || !cleanLine.startsWith("data: ")) continue;
-          if (cleanLine === "data: [DONE]") {
-            streamDone = true;
-            break;
-          }
-
+      const runModel = async () => {
+        let retries = 0;
+        const maxRetries = 3;
+        // US-2.3: Create an AbortController for this stream so Ctrl+C can
+        // halt generation. Stored on the instance so abortActiveStream()
+        // can signal it from the SIGINT handler.
+        this.activeAbortController = new AbortController();
+        while (true) {
           try {
-            const parsed = JSON.parse(cleanLine.substring(6));
-            const choice = parsed.choices?.[0];
-            if (!choice) continue;
-
-            const delta = choice.delta;
-            if (!delta) continue;
-
-            if (delta.content) {
-              assistantContent += delta.content;
-              this.tokenStats.outputTokens += this.estimateTokens(
-                delta.content,
-              );
-              onToken(delta.content);
-              if (onEvent) {
-                onEvent({ type: "token", data: { text: delta.content } });
+            for await (const ev of this.provider!.streamChat(
+              {
+                model: config.llmModelName,
+                messages: this.messages as any[],
+                tools,
+                temperature: 0.2,
+                maxTokens: adapterDefaults.maxOutputTokens,
+                stream: true,
+              },
+              this.activeAbortController.signal,
+            )) {
+              if (ev.type === "text_delta" && ev.content) {
+                // Stop the spinner on the first visible token so its 80ms
+                // \r<frame> Thinking… repaint no longer clobbers the start of
+                // the streamed line (which dropped the first 1-2 chars of each
+                // line of assistant output — the "missing letters" UX bug).
+                if (firstStreamingToken) {
+                  spinner.stop();
+                  firstStreamingToken = false;
+                }
+                assistantContent += ev.content;
+                this.tokenStats.outputTokens += this.estimateTokens(ev.content);
+                onToken(ev.content);
+                if (onEvent) {
+                  onEvent({ type: "token", data: { text: ev.content } });
+                }
+              } else if (ev.type === "tool_call_start") {
+                const idx = ev.toolCallIndex ?? 0;
+                if (!accumulatedToolCalls[idx]) {
+                  accumulatedToolCalls[idx] = { arguments: "" };
+                }
+                if (ev.toolCallId) accumulatedToolCalls[idx].id = ev.toolCallId;
+                if (ev.toolCallName) accumulatedToolCalls[idx].name = ev.toolCallName;
+              } else if (ev.type === "tool_call_delta") {
+                const idx = ev.toolCallIndex ?? 0;
+                if (!accumulatedToolCalls[idx]) {
+                  accumulatedToolCalls[idx] = { arguments: "" };
+                }
+                if (ev.toolCallId && !accumulatedToolCalls[idx].id) {
+                  accumulatedToolCalls[idx].id = ev.toolCallId;
+                }
+                if (ev.toolCallArguments) {
+                  accumulatedToolCalls[idx].arguments += ev.toolCallArguments;
+                }
+              } else if (ev.type === "error") {
+                throw new Error(ev.error || "Provider stream error");
               }
             }
-
-            if (delta.tool_calls) {
-              for (const tcDelta of delta.tool_calls) {
-                const index = tcDelta.index;
-                if (index === undefined) continue;
-
-                if (!accumulatedToolCalls[index]) {
-                  accumulatedToolCalls[index] = { arguments: "" };
-                }
-
-                if (tcDelta.id) {
-                  accumulatedToolCalls[index].id = tcDelta.id;
-                }
-                if (tcDelta.function?.name) {
-                  accumulatedToolCalls[index].name = tcDelta.function.name;
-                }
-                if (tcDelta.function?.arguments) {
-                  accumulatedToolCalls[index].arguments +=
-                    tcDelta.function.arguments;
-                }
-              }
+            return { assistantContent, accumulatedToolCalls };
+          } catch (err: any) {
+            retries++;
+            if (retries > maxRetries) {
+              throw err;
             }
-          } catch {
-            // Ignore incomplete line parse failures
+            const delay = Math.min(1000 * Math.pow(2, retries), 8000);
+            spinner.stop();
+            console.log(
+              picocolors.yellow(
+                `   ⚠️  Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
+              ),
+            );
+            spinner.start();
+            await new Promise((r) => setTimeout(r, delay));
           }
         }
-        if (streamDone) break;
+      };
+
+      try {
+        await wrapModelCall(lifecycleCtx, runModel);
+      } catch (err: any) {
+        spinner.stop();
+        console.error(
+          picocolors.red(
+            `\n❌ Failed to connect to LLM server after retries: ${err.message}`,
+          ),
+        );
+        await this.logger.logEvent("api_error", { error: err.message });
+        throw err;
       }
+      spinner.stop();
 
       const toolCalls: ToolCall[] = Object.keys(accumulatedToolCalls).map(
         (key) => {
@@ -1599,7 +1800,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             },
           };
         },
-      );
+      )
 
       const assistantMsg: Message = {
         role: "assistant",
@@ -1614,6 +1815,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       await this.logger.logEvent("assistant_response", assistantMsg);
 
       lastAssistantContent = assistantContent;
+
+      // US-4.3: parse memory citations from the model output and bump hit
+      // counts so decay + provenance tracking reflects what the model used.
+      this.trackCitations(assistantContent).catch(() => {});
 
       if (toolCalls.length === 0) {
         break;
@@ -1646,11 +1851,19 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           onEvent({ type: "tool_call", data: { toolName, toolArgs: args } });
         }
 
-        // Human-Approval Gate Check (centralized in agent, not duplicated in tools)
+        // Human-Approval Gate Check (centralized in agent, not duplicated in tools).
+        // US-6.2: for run_command, approval is bound to the command's risk band
+        // (destructive / privileged / network / secret-risk / exfiltration),
+        // not just the tool name — so `ls` runs freely while `rm -rf /` prompts.
         let isApproved = true;
+        const needsApproval =
+          config.requireApprovalFor.includes(toolName) ||
+          (toolName === "run_command" &&
+            typeof args.command === "string" &&
+            classifyCommand(args.command).requiresApproval);
         if (config.dryRun) {
           isApproved = true;
-        } else if (config.requireApprovalFor.includes(toolName)) {
+        } else if (needsApproval) {
           // Emit approval event for GUI. For file-mutation tools, include the
           // current file content so the renderer can render a real before/after
           // diff (US-2.4) rather than a static placeholder.
@@ -1693,22 +1906,30 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           const keyArg = this.summarizeToolArgs(toolName, args);
           const argHint = keyArg ? picocolors.gray(` ${keyArg}`) : "";
 
-          // ── Destructive Action Guard (Principle: Read Before Write) ──
-          // Enforce that write_file and replace_content cannot run on a file
-          // that was never read in the current session.
+          // ── Destructive Action Guard (US-6.1: hash-based read-before-write) ──
+          // write_file/replace_content cannot run on a file that was never read
+          // in this session, and the on-disk SHA-256 + mtimeMs must match what
+          // was captured at read time (compare-and-swap). A mismatch means the
+          // file changed underneath us — reject and force a re-read.
           const resolvedPath = args.filePath ? path.resolve(args.filePath) : "";
-          const fileExists = resolvedPath ? fsSync.existsSync(resolvedPath) : false;
-
+          let writeBlockedReason: string | null = null;
           if (
             (toolName === "write_file" || toolName === "replace_content") &&
-            resolvedPath &&
-            fileExists &&
-            !this.filesReadThisSession.has(resolvedPath)
+            resolvedPath
           ) {
-            result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 this file was not read first. Always use view_file to read a file before modifying it. This is a safety guard to prevent blind edits.`;
+            try {
+              const verify = await this.fileReadHistory.verifyBeforeWrite(resolvedPath);
+              if (!verify.matches) writeBlockedReason = verify.reason || "file was not read first";
+            } catch (e: any) {
+              writeBlockedReason = e.message;
+            }
+          }
+
+          if (writeBlockedReason) {
+            result = `Error: Refusing to ${toolName === "write_file" ? "write to" : "edit"} '${args.filePath}' \u2014 ${writeBlockedReason}`;
             if (config.outputMode === "interactive") {
               process.stdout.write(
-                `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)}${argHint} \u2014 not read first\n`,
+                `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)}${argHint} \u2014 read-before-write check failed\n`,
               );
             }
           } else {
@@ -1736,11 +1957,43 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               let lastErr: any = null;
               while (true) {
                 try {
-                  result = await tool.execute(args);
+                  // US-9.4 / US-13.4: validate the model's tool-call arguments against
+                  // the tool's Zod schema BEFORE executing. Model text is unverified —
+                  // never run a tool on unvalidated args (a missing required field
+                  // previously produced "○ undefined" todo items). A validation
+                  // failure becomes a structured diagnostic returned to the model so
+                  // it can self-correct next turn, instead of executing with gaps.
+                  const parsedArgs = tool.parameters.safeParse(args);
+                  if (!parsedArgs.success) {
+                    const issues = parsedArgs.error.issues
+                      .map((iss) => `${iss.path.join(".") || "(root)"}: ${iss.message}`)
+                      .join("; ");
+                    result = formatDiagnosticBlock(
+                      createDiagnosticBlock(toolName, args, new Error(`Invalid tool arguments: ${issues}`)),
+                    );
+                    if (config.outputMode === "interactive") {
+                      statusLine("ERROR", `${displayName} rejected invalid args — ${issues}`);
+                    }
+                    break; // do not execute; do not retry a schema failure
+                  }
+                  args = parsedArgs.data; // apply defaults + strip unknown keys
+                  // US-15.1: route the tool call through the lifecycle interception
+                  // engine (wrap_tool_call) so the provenance audit hook — and the
+                  // opt-in maker-checker gate — actually fire in the real loop.
+                  const toolCtx: LifecycleContext = {
+                    ...lifecycleCtx,
+                    toolCall: { name: toolName, args },
+                    metadata: {
+                      changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
+                    },
+                  };
+                  result = await wrapToolCall(toolCtx, async () => tool.execute(args));
                   this.tokenStats.toolCalls++;
 
                   if (toolName === "view_file" && args.filePath) {
-                    this.filesReadThisSession.add(path.resolve(args.filePath));
+                    // US-6.1: record canonical path + SHA-256 + mtimeMs for
+                    // compare-and-swap verification on the next write.
+                    await this.fileReadHistory.recordRead(path.resolve(args.filePath)).catch(() => {});
                   }
 
                   if (config.outputMode === "interactive") {
@@ -1752,6 +2005,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                       console.log(picocolors.gray(`    → ${preview}`));
                     }
                   }
+                  // US-13.4: success resets the consecutive-failure loop detector.
+                  this.failureTracker.reset();
                   lastErr = null;
                   break;
                 } catch (error: any) {
@@ -1762,12 +2017,25 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 }
               }
               if (lastErr) {
-                result = `Error performing action: ${lastErr.message}`;
+                // US-13.4: structured diagnostics + consecutive-failure loop
+                // detection. Three identical failures on the same tool pause and
+                // alert the user so the agent never silently thrashes.
+                const stuck = this.failureTracker.recordFailure(toolName, lastErr);
+                const diag = createDiagnosticBlock(toolName, args, lastErr);
+                result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
                 if (config.outputMode === "interactive") {
                   process.stdout.write(
                     `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.slice(0, 60))}\n`,
                   );
+                  if (stuck) {
+                    console.warn(
+                      picocolors.yellow(
+                        `   ⚠️  Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
+                      ),
+                    );
+                  }
                 }
+                await this.logger.logEvent("tool_failure_diagnostic", diag);
               }
             }
           } // end destructive action guard
@@ -1807,6 +2075,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         console.log("");
       }
     }
+
+    // US-13.2: write a tamper-evident checkpoint after every turn so a crash
+    // can be detected and resumed on the next launch (crash recovery).
+    await this.writeCheckpoint().catch(() => {});
 
     // Auto-save session state after each prompt completes (sync for reliability)
     this.saveSessionStateSync();

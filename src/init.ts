@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 import * as path from "path";
 import readline from "readline";
 import { theme, statusLine, EXIT } from "./cli_ui.js";
@@ -43,6 +43,11 @@ export async function runInitWizard(): Promise<void> {
     statusLine("WARN", ".env already exists — skipping copy.");
   } else {
     copyFileSync(ENV_EXAMPLE, ENV_FILE);
+    try {
+      chmodSync(ENV_FILE, 0o600);
+    } catch {
+      // Ignore permission setting errors on non-Unix platforms
+    }
     statusLine("OK", "Created .env from .env.example");
   }
 
@@ -61,6 +66,11 @@ export async function runInitWizard(): Promise<void> {
       envContent += `\nOLLAMA_API_KEY=${apiKey}\n`;
     }
     writeFileSync(ENV_FILE, envContent, "utf8");
+    try {
+      chmodSync(ENV_FILE, 0o600);
+    } catch {
+      // Ignore
+    }
     statusLine("OK", "Saved OLLAMA_API_KEY to .env");
   } else {
     statusLine("INFO", "Skipped API key — edit .env manually when ready.");

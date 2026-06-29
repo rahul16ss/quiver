@@ -20,6 +20,8 @@ import type { HarnessAdapter, PromptAssemblyInput } from "../adapters/types.js";
 import type { ModelInfo } from "../providers/types.js";
 import { SECURITY_PREAMBLE } from "../prompts/security.js";
 import { readReviewedMemoryFacts } from "../memory/schema.js";
+import { filterByPrivacy } from "../memory/privacy.js";
+import { config } from "../config.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -44,9 +46,18 @@ export async function loadReviewedMemoryContext(): Promise<string> {
   try {
     const facts = await readReviewedMemoryFacts();
     if (!facts || facts.length === 0) return "";
-    const lines = facts
-      .filter((f) => f.privacy !== "secret")
-      .map((f) => `- [${f.type}${f.confidence ? `/${f.confidence}` : ""}] ${f.content}`);
+    // US-12.3: filter facts by privacy label before they reach the model. A
+    // remote provider never sees `private`/`secret` facts; `secret` facts are
+    // excluded from every remote context (and from cloud sync).
+    const isRemote = !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(config.llmBaseUrl);
+    const safe = filterByPrivacy(facts, {
+      isRemote,
+      includePrivate: false,
+      includeProject: true,
+    });
+    const lines = safe.map(
+      (f) => `- [${f.type}${f.confidence ? `/${f.confidence}` : ""}] ${f.content}`,
+    );
     return lines.length ? `Reviewed memory facts:\n${lines.join("\n")}` : "";
   } catch {
     return "";
@@ -146,11 +157,13 @@ export function assemblePrompt(
   });
 
   // Build the system prompt from included sections
-  const includedSections = sections.filter((s) => s.included);
-  const systemPrompt = includedSections
-    .map((s) => s.content)
-    .join("\n\n---\n\n");
+  const adapterInput = {
+    ...input,
+    safetyPolicy: safetyContent,
+  };
+  const systemPrompt = adapter.buildSystemPrompt(adapterInput);
 
+  const includedSections = sections.filter((s) => s.included);
   const totalTokenEstimate = includedSections.reduce((sum, s) => sum + s.tokenEstimate, 0);
 
   return {

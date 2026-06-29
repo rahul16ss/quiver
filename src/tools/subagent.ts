@@ -58,11 +58,30 @@ async function runSubagent(task: string, tools: string[]): Promise<SubagentResul
 
     const args = [cliPath, "--json", "--single-turn", prompt];
 
-    const env = { ...process.env };
+    const childEnv = { ...process.env };
+    const sensitiveKeys = [
+      "LLM_API_KEY",
+      "PARALLEL_API_KEY",
+      "OLLAMA_API_KEY",
+      "GITHUB_TOKEN",
+      "CONTEXT7_API_KEY",
+      "API_KEY",
+      "SECRET",
+      "TOKEN",
+      "PASSWORD",
+      "PRIVATE_KEY",
+      "ACCESS_KEY",
+      "SECRET_KEY",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY"
+    ];
+    for (const key of sensitiveKeys) {
+      delete childEnv[key];
+    }
 
     const child: ChildProcess = spawn(tsxPath, args, {
       cwd: process.cwd(),
-      env,
+      env: childEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
 

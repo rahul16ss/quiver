@@ -176,9 +176,20 @@ export function classifyCommand(
   const hash = crypto.createHash("sha256").update(hashInput).digest("hex").substring(0, 16);
   const trimmed = command.trim();
 
-  // Check for hard-blocked patterns first
+  // Normalize bash quoting constructs before pattern matching so obfuscation
+  // like r""m, r''m, or $'rm' is detected as the actual command "rm".
+  // This closes the quote-splitting bypass (CWE-78 - shell injection).
+  const normalized = trimmed
+    .replace(/\$'([^']*)'/g, "$1")   // $'rm' -> rm (ANSI-C quoting)
+    .replace(/'([^']*)'/g, "$1")    // r'm' -> rm (single-quote splitting)
+    .replace(/""/g, "");              // r""m -> rm (double-quote splitting)
+
+  // Check for hard-blocked patterns first (against both raw and normalized)
   for (const blocked of DEFAULT_BLOCKED_PATTERNS) {
-    if (trimmed.toLowerCase().includes(blocked.toLowerCase())) {
+    if (
+      trimmed.toLowerCase().includes(blocked.toLowerCase()) ||
+      normalized.toLowerCase().includes(blocked.toLowerCase())
+    ) {
       return {
         risk: "destructive",
         reason: `Hard-blocked pattern detected: '${blocked}'`,
@@ -204,7 +215,7 @@ export function classifyCommand(
     if (!patternGroup) continue;
 
     for (const pattern of patternGroup.patterns) {
-      if (pattern.test(trimmed)) {
+      if (pattern.test(trimmed) || pattern.test(normalized)) {
         const requiresApproval =
           band === "destructive" ||
           band === "privileged" ||

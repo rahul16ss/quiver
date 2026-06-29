@@ -123,6 +123,12 @@ export const tool: Tool = {
           if (!newTodos || newTodos.length === 0) {
             return "Error: 'todos' array is required for 'create' action.";
           }
+          const missingContent = newTodos.findIndex(
+            (it) => !it || typeof it.content !== "string" || !it.content.trim(),
+          );
+          if (missingContent !== -1) {
+            return `Error: todo item #${missingContent + 1} is missing a non-empty 'content' string. Every todo requires a 'content' field.`;
+          }
 
           const todos: TodoItem[] = newTodos.map((item, index) => ({
             id: `todo_${Date.now()}_${index}`,

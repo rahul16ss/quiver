@@ -37,6 +37,7 @@ export interface ModelEvent {
   toolCallId?: string;
   toolCallName?: string;
   toolCallArguments?: string;
+  toolCallIndex?: number;
   error?: string;
   finishReason?: string;
   usage?: {
@@ -180,11 +181,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
-              if (tc.function?.name && !tc.id) {
+              const idx = typeof tc.index === "number" ? tc.index : 0;
+              if (tc.function?.name) {
                 yield {
                   type: "tool_call_start",
                   toolCallId: tc.id,
                   toolCallName: tc.function.name,
+                  toolCallIndex: idx,
                 };
               }
               if (tc.function?.arguments) {
@@ -192,6 +195,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
                   type: "tool_call_delta",
                   toolCallId: tc.id,
                   toolCallArguments: tc.function.arguments,
+                  toolCallIndex: idx,
                 };
               }
             }

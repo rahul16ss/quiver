@@ -49,3 +49,47 @@ consent-gated), and the maker-checker verification discipline.
 
 If you believe a check is wrong, raise it in writing — do not edit the
 contract.
+
+## Integration & Wiring (part of the single gate)
+
+A module that exists yet is never imported by the real agent loop is worth
+nothing. The acceptance contract therefore contains `WIRE-*` integration checks
+that drive the real `src/agent.ts` loop and the tools and prove the architecture
+is actually wired in — not just present on the workbench. They run as part of
+`npm test` (there is no separate wiring suite).
+
+```
+tests/
+└── spec_acceptance_tests.ts   # THE acceptance contract (checker-owned) — `npm test`
+```
+
+```bash
+npm test   # = npx tsx tests/run_tests.ts — the single acceptance gate
+```
+
+It covers, among its 122 checks:
+
+- **Agent-loop wiring** (`WIRE-*`, structural) — `agent.ts` imports and fires
+  lifecycle (`wrapModelCall`/`wrapToolCall`), sources model transport via
+  `getActiveProvider().streamChat()` (no inline `fetch`), selects the adapter via
+  `getAdapterForModel()`, builds the prompt through `assemblePrompt()`, applies
+  `calculateBudget()`/`shouldBlockSubmission()`, uses `FileReadHistory` (not a
+  `Set<string>`), classifies `run_command` via `classifyCommand()`, writes
+  per-turn checkpoints, tracks consecutive failures, and parses memory citations.
+- **Tool security** — the path sandbox actually blocks `.env` and `~/.ssh`
+  writes and refuses outside-workspace writes; `run_command` classifies risk
+  bands and outside-workspace targets.
+- **File integrity** — atomic writes create backups and support rollback;
+  hash + mtime compare-and-swap blocks stale/unread writes.
+- **Spec-gap checks** — the criteria the prior 89-check contract omitted
+  (project.json schema, first-run core.json, subcommand bypass, crash prompts,
+  `/logs`, `/rollback`, create_tool disabled-by-default, session schema, docs,
+  landing page, moderate command band, blocked globs, CoW scratchpad, behavioral
+  untrusted wrap).
+
+> **Status (re-audit 2026-06-28): 122/122 met, 0 failing — gate is GREEN.**
+> The 11 dead-code wiring gaps + 2 maker-checker checks (`MAKER-CHECKER-SEPARATION`/
+> `MAKER-CHECKER-SCRATCHPAD`) are closed at the acceptance bar. This contract is
+> checker-owned and read-only to the vendor; `npm test` is the only live verdict.
+> Defense-in-depth: checker `noNetwork`/`readOnly` are env signals + scratchpad cwd,
+> not OS-level socket blocking — see `tests/ACCEPTANCE_CONTRACT.md`.

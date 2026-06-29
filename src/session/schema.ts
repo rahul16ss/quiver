@@ -165,7 +165,7 @@ export async function listSessions(): Promise<SessionMetadata[]> {
   const sessionsDir = getProjectSessionsDir();
   try {
     const files = await fs.readdir(sessionsDir);
-    const sessionFiles = files.filter((f) => f.endsWith(".json"));
+    const sessionFiles = files.filter((f) => f.endsWith(".state.json"));
 
     const metadata: SessionMetadata[] = [];
     for (const file of sessionFiles) {
@@ -184,7 +184,7 @@ export async function listSessions(): Promise<SessionMetadata[]> {
         }
 
         metadata.push({
-          sessionId: file.replace(".json", ""),
+          sessionId: file.replace(".state.json", ""),
           filePath,
           sizeBytes: stat.size,
           mtime: stat.mtime,

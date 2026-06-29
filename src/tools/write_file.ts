@@ -2,6 +2,8 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
+import { atomicWrite } from "../fs/atomic_write.js";
 
 export const tool: Tool = {
   name: "write_file",
@@ -12,9 +14,11 @@ export const tool: Tool = {
   }),
   execute: async ({ filePath, content }) => {
     try {
-      const resolvedPath = path.resolve(filePath);
-      await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-      await fs.writeFile(resolvedPath, content, "utf8");
+      // US-9.2: sandbox the path before any filesystem access.
+      const resolved = assertToolPathAllowed(filePath, "write");
+      const resolvedPath = resolved.absolutePath;
+      // US-10.2: atomic write (temp → rename) with backup + rollback history.
+      await atomicWrite(resolvedPath, content);
       return `File successfully written to ${resolvedPath}`;
     } catch (error: any) {
       throw new Error(`Failed to write file to ${filePath}: ${error.message}`);

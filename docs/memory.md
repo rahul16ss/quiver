@@ -96,3 +96,19 @@ On session completion, the `afterAgent` lifecycle hook runs a lightweight LLM ex
 1. Feeds session trace to a local or fast remote model
 2. Extracts preferences, errors, and architecture facts
 3. New facts enter the pending review queue
+## Wiring into the agent loop
+
+Privacy, citations, and decay are applied by the real loop, not just exported
+as functions:
+
+- **Privacy filtering (US-12.3)** — `loadReviewedMemoryContext()` in
+  `src/prompt/assembler.ts` runs accepted facts through `filterByPrivacy()`
+  using `isRemote` derived from `LLM_API_BASE_URL`. Remote providers never see
+  `private`/`secret` facts; `secret` facts never leave the machine.
+- **Citation tracking (US-4.3)** — after each assistant response the agent parses
+  `<memory-citation>` tags via `parseMemoryCitations()`, validates them against
+  the memory files that actually exist, and bumps `hit_count`/`last_used` via
+  `updateUsageStats()`.
+- **Decay (US-4.3)** — once per session the agent runs a decay pass
+  (`getArchivalCandidates()`) and surfaces cold, rarely-cited facts as archival
+  candidates.

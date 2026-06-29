@@ -142,13 +142,38 @@ export function printInSessionHelp(): void {
   );
 }
 
-export function printEnhancedTools(): void {
-  const tools = globalRegistry.getAllTools().map((t) => ({
+export function printEnhancedTools(filter?: string): void {
+  let tools = globalRegistry.getAllTools().map((t) => ({
     name: t.name,
     displayName: Agent.getToolDisplayName(t.name),
     description: t.description,
   }));
-  console.log(picocolors.cyan(`\n  Available tools (${tools.length})\n`));
+
+  // US-5.1: Search/filter support
+  if (filter && filter.trim()) {
+    const q = filter.trim().toLowerCase();
+    tools = tools.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.displayName.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q),
+    );
+  }
+
+  console.log(
+    picocolors.cyan(
+      `\n  Available tools (${tools.length}${filter ? ` matching "${filter}"` : ""})\n`,
+    ),
+  );
+
+  if (tools.length === 0) {
+    console.log(
+      picocolors.gray(
+        "  No tools match your search. Try /tools without a filter to see all.\n",
+      ),
+    );
+    return;
+  }
 
   const categories = categorizeTools(tools);
   for (const group of categories) {
@@ -170,5 +195,11 @@ export function printEnhancedTools(): void {
       console.log(`    ${picocolors.green(tool.displayName)}${dots}${desc}`);
     }
     console.log("");
+  }
+
+  if (!filter) {
+    console.log(
+      picocolors.gray("  Tip: /tools <search> to filter (e.g. /tools file)\n"),
+    );
   }
 }

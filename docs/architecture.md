@@ -64,6 +64,20 @@ User Input
   → Lifecycle Hooks (afterAgent)
 ```
 
+> **Implementation status.** Every stage above is the *live* agent loop in
+> `src/agent.ts`, not aspirational. The model call goes through
+> `getActiveProvider().streamChat()`; the prompt through `assemblePrompt()`;
+> the budget through `calculateBudget()`/`shouldBlockSubmission()`; file tools
+> through the path sandbox (`src/security/tool_paths.ts`) + atomic writes
+> (`src/fs/atomic_write.ts`); read-before-write through `FileReadHistory`
+> (SHA-256 + mtimeMs compare-and-swap); tool calls through `wrapToolCall()`
+> (lifecycle `wrap_tool_call` hooks); and every turn writes a checkpoint via
+> `CheckpointManager` for crash recovery. The maker-checker gate and the
+> lifecycle hook trace are opt-in (see `README.md` → Feature Flags) so the
+> default interactive path stays responsive. The acceptance contract
+> (`tests/spec_acceptance_tests.ts`, `npm test`) verifies this wiring end-to-end
+> via its `WIRE-*` integration checks.
+
 ## Security Layers
 
 1. **Path Sandbox** — All file operations constrained to workspace root

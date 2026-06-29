@@ -10,6 +10,9 @@
  * archival or removal.
  */
 
+import * as fs from "fs";
+import * as path from "path";
+import { getProjectMemoryDir } from "../paths.js";
 import type { UsageStats } from "./citation_parser.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -56,9 +59,22 @@ export function calculateDecay(
   let daysSinceUse: number;
   if (stats?.last_used) {
     daysSinceUse = (now - new Date(stats.last_used).getTime()) / (1000 * 60 * 60 * 24);
+  } else if (stats?.file) {
+    // Never cited/used — fall back to the creation/modification time of the file itself
+    try {
+      const filePath = path.join(getProjectMemoryDir(), stats.file);
+      if (fs.existsSync(filePath)) {
+        const stat = fs.statSync(filePath);
+        const createdTime = stat.birthtimeMs || stat.mtimeMs;
+        daysSinceUse = (now - createdTime) / (1000 * 60 * 60 * 24);
+      } else {
+        daysSinceUse = 0; // File does not exist yet, treat as brand new
+      }
+    } catch {
+      daysSinceUse = 0; // Fallback
+    }
   } else {
-    // Never used — use a large number
-    daysSinceUse = Infinity;
+    daysSinceUse = 0;
   }
 
   // Decay formula: hit_count × 0.5^(elapsed_days / half_life_days)
