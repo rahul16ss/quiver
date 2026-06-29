@@ -23,7 +23,25 @@ function toggleContext() {
 function updateContext(data) {
   if (data.model) document.getElementById("ctxModel").textContent = data.model;
   if (data.tools !== undefined) document.getElementById("ctxTools").textContent = data.tools || "—";
-  if (data.tokens) document.getElementById("ctxTokens").textContent = data.tokens;
+  if (data.tokens) {
+    document.getElementById("ctxTokens").textContent = data.tokens;
+    // Parse "12,345 / 120,000" format and show a progress bar
+    const parts = data.tokens.split("/");
+    if (parts.length === 2) {
+      const used = parseInt(parts[0].replace(/[^0-9]/g, ""), 10);
+      const max = parseInt(parts[1].replace(/[^0-9]/g, ""), 10);
+      if (max > 0) {
+        const pct = Math.min(100, (used / max) * 100);
+        const bar = document.getElementById("ctxTokenBar");
+        const label = document.getElementById("ctxTokenBarLabel");
+        const wrap = document.getElementById("ctxTokenBarWrap");
+        bar.style.width = pct + "%";
+        bar.className = "ctx-token-bar" + (pct > 85 ? " danger" : pct > 65 ? " warning" : "");
+        label.textContent = Math.round(pct) + "% of context window";
+        wrap.style.display = "block";
+      }
+    }
+  }
 }
 
 async function loadContextData() {
@@ -44,6 +62,8 @@ async function loadContextData() {
       for (const f of files) {
         const item = document.createElement("div");
         item.className = "ctx-mem-item";
+        item.style.cursor = "pointer";
+        item.onclick = () => openMemoryEditor(f.name, f.content);
         const preview = f.content.substring(0, 200).replace(/\n/g, " ");
         item.innerHTML = '<div class="ctx-mem-item-name">' + f.name + '</div>' +
           '<div class="ctx-mem-item-meta">' + f.size + ' bytes</div>' +
@@ -63,6 +83,8 @@ async function loadContextData() {
       for (const s of skills) {
         const item = document.createElement("div");
         item.className = "ctx-skill-item";
+        item.style.cursor = "pointer";
+        item.onclick = () => openSkillViewer(s);
         item.textContent = s;
         list.appendChild(item);
       }
@@ -79,12 +101,95 @@ async function saveCoreMemory() {
     });
   } catch {}
 }
+
+// ── Memory file editor ────────────────────────────────────────────────
+
+let editingMemName = "";
+
+function openMemoryEditor(name, content) {
+  editingMemName = name || "";
+  document.getElementById("memEditorTitle").textContent = name ? "Edit " + name : "New Memory File";
+  document.getElementById("memEditorName").value = name || "";
+  document.getElementById("memEditorContent").value = content || "";
+  document.getElementById("memDeleteBtn").style.display = name ? "inline-block" : "none";
+  document.getElementById("memEditorOverlay").style.display = "flex";
+}
+
+function closeMemoryEditor(event) {
+  if (event && event.target !== document.getElementById("memEditorOverlay")) return;
+  document.getElementById("memEditorOverlay").style.display = "none";
+}
+
+async function saveMemoryFile() {
+  const name = document.getElementById("memEditorName").value.trim();
+  const content = document.getElementById("memEditorContent").value;
+  if (!name) { alert("Please enter a filename"); return; }
+  try {
+    await window.quiver.saveMemory(name, content);
+    closeMemoryEditor();
+    loadContextData();
+  } catch (e) { alert("Failed to save: " + (e.message || e)); }
+}
+
+async function deleteMemoryFile() {
+  const name = document.getElementById("memEditorName").value.trim();
+  if (!name || !confirm("Delete " + name + "?")) return;
+  try {
+    await window.quiver.deleteMemory(name);
+    closeMemoryEditor();
+    loadContextData();
+  } catch (e) { alert("Failed to delete: " + (e.message || e)); }
+}
+
+// ── Skill viewer ───────────────────────────────────────────────────────
+
+let editingSkillName = "";
+
+async function openSkillViewer(skillName) {
+  editingSkillName = skillName;
+  document.getElementById("skillViewerTitle").textContent = "Skill: " + skillName;
+  document.getElementById("skillViewerContent").value = "Loading…";
+  document.getElementById("skillViewerOverlay").style.display = "flex";
+  try {
+    const content = await window.quiver.readSkill(skillName);
+    document.getElementById("skillViewerContent").value = content || "(empty)";
+  } catch (e) {
+    document.getElementById("skillViewerContent").value = "Error loading skill: " + (e.message || e);
+  }
+}
+
+function closeSkillViewer(event) {
+  if (event && event.target !== document.getElementById("skillViewerOverlay")) return;
+  document.getElementById("skillViewerOverlay").style.display = "none";
+}
+
+async function saveSkillFile() {
+  const content = document.getElementById("skillViewerContent").value;
+  try {
+    await window.quiver.saveSkill(editingSkillName, content);
+    closeSkillViewer();
+  } catch (e) { alert("Failed to save skill: " + (e.message || e)); }
+}
+
 let currentAgentMsg = null;
 let currentSessionPath = null;
 let pendingToolDivs = [];
 let pendingImages = [];
 
 // ── Sessions ──────────────────────────────────────────────────────────
+
+function generateSessionTitle(session) {
+  // Try to extract the first user message from the session
+  if (session.firstUserMessage) {
+    const msg = session.firstUserMessage;
+    return msg.length > 40 ? msg.substring(0, 40) + "…" : msg;
+  }
+  // Fall back to a shorter UUID with date
+  const date = new Date(session.savedAt);
+  const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const shortId = session.sessionId.length > 12 ? session.sessionId.substring(0, 12) : session.sessionId;
+  return shortId + " · " + dateStr;
+}
 
 async function loadSessionsList() {
   const list = document.getElementById("sessionsList");
@@ -103,11 +208,11 @@ async function loadSessionsList() {
     const timeStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
       " " + date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-    const shortId = s.sessionId.length > 20 ? s.sessionId.substring(0, 20) + "…" : s.sessionId;
+    const title = generateSessionTitle(s);
 
     item.innerHTML = `
       <div style="flex:1;overflow:hidden;" onclick="selectSession('${s.path}','${s.sessionId}')">
-        <div class="name">${shortId}</div>
+        <div class="name">${escapeHtml(title)}</div>
         <div class="meta">${s.messageCount} msgs · ${timeStr}</div>
       </div>
       <button class="delete-btn" onclick="deleteSession(event,'${s.path}')">×</button>
@@ -119,9 +224,16 @@ async function loadSessionsList() {
 async function selectSession(path, sessionId) {
   if (agentRunning) return;
   currentSessionPath = path;
-  activeSessionTitle.textContent = sessionId.length > 24 ? sessionId.substring(0, 24) + "…" : sessionId;
-
+  // Load session to get first user message for title
   const state = await window.quiver.loadSession(path);
+  const firstUserMsg = (state.messages || []).find(m => m.role === "user");
+  if (firstUserMsg) {
+    const title = firstUserMsg.content.length > 40 ? firstUserMsg.content.substring(0, 40) + "…" : firstUserMsg.content;
+    activeSessionTitle.textContent = title;
+  } else {
+    activeSessionTitle.textContent = sessionId.length > 24 ? sessionId.substring(0, 24) + "…" : sessionId;
+  }
+
   renderHistory(state.messages || []);
   await loadSessionsList();
 }
@@ -478,8 +590,16 @@ window.quiver.onAgentEvent((msg) => {
           const sessions = await window.quiver.listSessions();
           if (sessions && sessions.length > 0) {
             currentSessionPath = sessions[0].path;
-            activeSessionTitle.textContent = sessions[0].sessionId.length > 24
-              ? sessions[0].sessionId.substring(0, 24) + "…" : sessions[0].sessionId;
+            // Generate a human-readable title from the first user message
+            const state = await window.quiver.loadSession(sessions[0].path);
+            const firstUserMsg = (state.messages || []).find(m => m.role === "user");
+            if (firstUserMsg) {
+              activeSessionTitle.textContent = firstUserMsg.content.length > 40
+                ? firstUserMsg.content.substring(0, 40) + "…" : firstUserMsg.content;
+            } else {
+              activeSessionTitle.textContent = sessions[0].sessionId.length > 24
+                ? sessions[0].sessionId.substring(0, 24) + "…" : sessions[0].sessionId;
+            }
             await loadSessionsList();
           }
         });
@@ -491,9 +611,11 @@ window.quiver.onAgentEvent((msg) => {
   }
 });
 
-window.quiver.onAgentRaw((line) => {
-  try { const p = JSON.parse(line); if (p.type) return; } catch {}
-  appendToken(line);
+window.quiver.onAgentRaw((_line) => {
+  // In JSON mode, all legitimate model output arrives as JSON events (token,
+  // tool_call, tool_result, done, etc.). Non-JSON lines on stdout are console
+  // noise (status messages, permission boxes) that should NOT be appended to
+  // the chat as model output. Silently ignore them to prevent duplication.
 });
 
 window.quiver.onAgentStderr((data) => {

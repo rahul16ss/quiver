@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("quiver", {
   // Memory
   listMemory: () => ipcRenderer.invoke("memory:list"),
   saveMemory: (name, content) => ipcRenderer.invoke("memory:save", name, content),
+  deleteMemory: (name) => ipcRenderer.invoke("memory:delete", name),
   loadCoreMemory: () => ipcRenderer.invoke("memory:loadCore"),
   saveCoreMemory: (core) => ipcRenderer.invoke("memory:saveCore"),
 

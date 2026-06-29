@@ -357,6 +357,21 @@ async function saveMemoryFile(name: string, content: string): Promise<boolean> {
   }
 }
 
+async function deleteMemoryFile(name: string): Promise<boolean> {
+  try {
+    const config = await loadConfig();
+    const fs = await import("fs/promises");
+    const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
+    const filePath = path.join(memDir, name);
+    // Safety: only delete files within the memory directory
+    if (!filePath.startsWith(memDir)) return false;
+    await fs.unlink(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Window Management ────────────────────────────────────────────────
 
 
@@ -624,6 +639,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("memory:list", async () => listMemoryFiles());
   ipcMain.handle("memory:save", async (_evt, name: string, content: string) =>
     saveMemoryFile(name, content),
+  );
+  ipcMain.handle("memory:delete", async (_evt, name: string) =>
+    deleteMemoryFile(name),
   );
   ipcMain.handle("memory:loadCore", async () => {
     const config = await loadConfig();
