@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
+import { hasBinary } from "../utils/find_binary.js";
 
 export const tool: Tool = {
   name: "grep_search",
@@ -52,12 +53,7 @@ export const tool: Tool = {
     }
 
     // Check ripgrep availability (cross-platform)
-    const rgAvailable = await new Promise<boolean>((resolve) => {
-      const cmd = process.platform === "win32" ? "where rg" : "which rg";
-      exec(cmd, { timeout: 2000 }, (err, stdout) => {
-        resolve(!err && stdout.trim().length > 0);
-      });
-    });
+    const rgAvailable = hasBinary("rg");
 
     // Build command args as array (no shell interpolation) for security
     if (rgAvailable) {
@@ -92,12 +88,7 @@ export const tool: Tool = {
     }
 
     // Check grep availability (may not exist on Windows)
-    const grepAvailable = await new Promise<boolean>((resolve) => {
-      const cmd = process.platform === "win32" ? "where grep" : "which grep";
-      exec(cmd, { timeout: 2000 }, (err, stdout) => {
-        resolve(!err && stdout.trim().length > 0);
-      });
-    });
+    const grepAvailable = hasBinary("grep");
 
     if (grepAvailable) {
       // Fall back to grep using execFile (no shell injection)
