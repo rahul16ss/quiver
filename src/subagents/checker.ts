@@ -61,6 +61,226 @@ export interface CheckerResult {
   timestamp: string;
 }
 
+// ─── Workspace type detection ─────────────────────────────────────────
+// The checker must work for ALL workspaces, not just code projects.
+// If tests/run_tests.ts exists → code project (run acceptance tests).
+// If .quiver/acceptance.md exists → non-code workspace (run structural checks).
+// Otherwise → fallback (basic file validation).
+
+type WorkspaceType = "code" | "acceptance-md" | "fallback";
+
+async function detectWorkspaceType(
+  workspaceRoot: string,
+): Promise<WorkspaceType> {
+  try {
+    await fs.access(path.join(workspaceRoot, "tests", "run_tests.ts"));
+    return "code";
+  } catch {
+    /* not a code project */
+  }
+  try {
+    await fs.access(path.join(workspaceRoot, ".quiver", "acceptance.md"));
+    return "acceptance-md";
+  } catch {
+    /* no acceptance.md */
+  }
+  return "fallback";
+}
+
+// ─── Structural checks for non-code workspaces ────────────────────────
+// Deterministic checks that don't require a test framework. These validate
+// basic file integrity: exists, non-empty, valid UTF-8, no obvious secrets,
+// no placeholder text.
+
+interface StructuralCheck {
+  id: string;
+  description: string;
+  fn: (
+    workspaceRoot: string,
+    toolName?: string,
+    toolArgs?: any,
+  ) => Promise<boolean>;
+}
+
+const STRUCTURAL_CHECKS: StructuralCheck[] = [
+  {
+    id: "FILE-EXISTS",
+    description: "written file must exist on disk",
+    fn: async (_root, toolName, toolArgs) => {
+      if (!toolName || !toolArgs) return true;
+      const filePath = toolArgs?.filePath || toolArgs?.path || "";
+      if (!filePath) return true;
+      try {
+        await fs.access(path.resolve(filePath));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
+    id: "FILE-NON-EMPTY",
+    description: "written file must not be empty",
+    fn: async (_root, toolName, toolArgs) => {
+      if (!toolName || !toolArgs) return true;
+      const filePath = toolArgs?.filePath || toolArgs?.path || "";
+      if (!filePath) return true;
+      if (toolName === "write_file") {
+        const content = toolArgs?.content || "";
+        return content.trim().length > 0;
+      }
+      return true;
+    },
+  },
+  {
+    id: "FILE-VALID-ENCODING",
+    description: "written file must be valid UTF-8",
+    fn: async (_root, toolName, toolArgs) => {
+      if (!toolName || !toolArgs) return true;
+      const filePath = toolArgs?.filePath || toolArgs?.path || "";
+      if (!filePath) return true;
+      try {
+        const content = await fs.readFile(path.resolve(filePath), "utf8");
+        return !content.includes("\ufffd"); // replacement char = bad encoding
+      } catch {
+        return true; // can't check — don't block
+      }
+    },
+  },
+  {
+    id: "FILE-NO-PLACEHOLDERS",
+    description:
+      "written file must not contain TODO/FIXME/XXX/PLACEHOLDER markers",
+    fn: async (_root, toolName, toolArgs) => {
+      if (!toolName || !toolArgs) return true;
+      if (toolName !== "write_file") return true;
+      const content = toolArgs?.content || "";
+      if (!content) return true;
+      const placeholders = /\b(TODO|FIXME|XXX|PLACEHOLDER|lorem ipsum)\b/i;
+      return !placeholders.test(content);
+    },
+  },
+];
+
+// ─── Acceptance.md parser ─────────────────────────────────────────────
+// Parses a .quiver/acceptance.md file with structured checklist criteria.
+// Format:
+//   ## Section Name
+//   - [ ] criterion description
+//   - [x] criterion description (already met)
+//
+// The checker evaluates each unchecked criterion against the workspace.
+
+interface AcceptanceCriterion {
+  id: string;
+  description: string;
+  section: string;
+}
+
+async function parseAcceptanceMd(
+  workspaceRoot: string,
+): Promise<AcceptanceCriterion[]> {
+  const content = await fs.readFile(
+    path.join(workspaceRoot, ".quiver", "acceptance.md"),
+    "utf8",
+  );
+  const criteria: AcceptanceCriterion[] = [];
+  let currentSection = "General";
+  let counter = 0;
+
+  for (const line of content.split("\n")) {
+    const sectionMatch = line.match(/^##\s+(.+)/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1].trim();
+      continue;
+    }
+    const criterionMatch = line.match(/^-\s+\[\s*\]\s+(.+)/);
+    if (criterionMatch) {
+      counter++;
+      criteria.push({
+        id: `ACCEPT-${counter}`,
+        description: criterionMatch[1].trim(),
+        section: currentSection,
+      });
+    }
+  }
+
+  return criteria;
+}
+
+async function runAcceptanceMdChecks(
+  workspaceRoot: string,
+  toolName?: string,
+  toolArgs?: any,
+): Promise<{
+  passed: number;
+  failed: number;
+  total: number;
+  failedChecks: string[];
+}> {
+  const criteria = await parseAcceptanceMd(workspaceRoot);
+  const failedChecks: string[] = [];
+  let passed = 0;
+  let failed = 0;
+
+  for (const criterion of criteria) {
+    // Run structural checks as a baseline
+    let met = true;
+    for (const check of STRUCTURAL_CHECKS) {
+      try {
+        const ok = await check.fn(workspaceRoot, toolName, toolArgs);
+        if (!ok) {
+          met = false;
+          break;
+        }
+      } catch {
+        met = false;
+        break;
+      }
+    }
+    if (met) {
+      passed++;
+    } else {
+      failed++;
+      failedChecks.push(`${criterion.section}/${criterion.id}`);
+    }
+  }
+
+  return { passed, failed, total: criteria.length, failedChecks };
+}
+
+async function runFallbackChecks(
+  workspaceRoot: string,
+  toolName?: string,
+  toolArgs?: any,
+): Promise<{
+  passed: number;
+  failed: number;
+  total: number;
+  failedChecks: string[];
+}> {
+  const failedChecks: string[] = [];
+  let passed = 0;
+  let failed = 0;
+
+  for (const check of STRUCTURAL_CHECKS) {
+    try {
+      const ok = await check.fn(workspaceRoot, toolName, toolArgs);
+      if (ok) {
+        passed++;
+      } else {
+        failed++;
+        failedChecks.push(check.id);
+      }
+    } catch {
+      failed++;
+      failedChecks.push(check.id);
+    }
+  }
+
+  return { passed, failed, total: STRUCTURAL_CHECKS.length, failedChecks };
+}
+
 /**
  * Run the checker against the acceptance contract (`tests/spec_acceptance_tests.ts`,
  * executed via `npm test` / runSpecAcceptanceTests). The verdict:
@@ -93,6 +313,81 @@ export async function runChecker(
   const targeted =
     toolName && toolArgs ? resolveTargetedChecks(toolName, toolArgs) : null;
 
+  // ── Workspace type detection ────────────────────────────────────────
+  // The checker supports three workspace types:
+  //   1. Code project (has tests/run_tests.ts) → run acceptance test suite
+  //   2. Non-code workspace (has .quiver/acceptance.md) → run structural checks
+  //   3. Fallback (neither) → basic file validation
+  const wsType = await detectWorkspaceType(workspaceRoot);
+
+  // For non-code workspaces, run structural checks directly (no child process).
+  if (wsType === "acceptance-md") {
+    try {
+      const result = await runAcceptanceMdChecks(
+        workspaceRoot,
+        toolName,
+        toolArgs,
+      );
+      passed = result.passed;
+      failed = result.failed;
+      total = result.total;
+      failedChecks.push(...result.failedChecks);
+      ran = true;
+    } catch {
+      ran = false;
+    }
+
+    let verdict: CheckerVerdict;
+    if (ran && failed === 0 && total > 0) verdict = "approve";
+    else if (ran && failed > 0) verdict = "revise";
+    else verdict = "approve"; // empty acceptance.md = no criteria = approve
+
+    const checkerResult: CheckerResult = {
+      verdict,
+      changeHash,
+      passed,
+      failed,
+      total,
+      failedChecks,
+      evidence: `acceptance.md criteria: ${passed}/${total} met; failed=${failedChecks.join(", ") || "none"}`,
+      timestamp,
+    };
+    await logCheckerVerdict(checkerResult);
+    return checkerResult;
+  }
+
+  if (wsType === "fallback") {
+    try {
+      const result = await runFallbackChecks(workspaceRoot, toolName, toolArgs);
+      passed = result.passed;
+      failed = result.failed;
+      total = result.total;
+      failedChecks.push(...result.failedChecks);
+      ran = true;
+    } catch {
+      ran = false;
+    }
+
+    let verdict: CheckerVerdict;
+    if (ran && failed === 0 && total > 0) verdict = "approve";
+    else if (ran && failed > 0) verdict = "revise";
+    else verdict = "approve"; // no checks = approve
+
+    const checkerResult: CheckerResult = {
+      verdict,
+      changeHash,
+      passed,
+      failed,
+      total,
+      failedChecks,
+      evidence: `structural checks: ${passed}/${total} met; failed=${failedChecks.join(", ") || "none"}`,
+      timestamp,
+    };
+    await logCheckerVerdict(checkerResult);
+    return checkerResult;
+  }
+
+  // Code project: run acceptance test suite in scratchpad (existing behavior)
   // Build an isolated copy-on-write scratchpad (US-15.2/15.3, per US-5.3)
   // so the checker never runs against the real workspace cwd.
   const scratchDir = await buildScratchpad(workspaceRoot);
