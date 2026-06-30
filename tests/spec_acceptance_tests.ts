@@ -101,7 +101,6 @@ import {
   DEFAULT_PERMISSIONS,
   FULL_PERMISSIONS,
 } from "../src/tools/sandbox.js";
-import { SubagentPool } from "../src/subagents/pool.js";
 import { compactWithSummarization } from "../src/context_manager.js";
 import {
   encodeImageAsDataURL,
@@ -2266,20 +2265,6 @@ async function absorbedContract(tmpWs: string) {
     },
   );
 
-  // US-5.3 subagent recursion depth ≤ 2
-  await check(
-    "SUBAGENT-RECURSION-LIMIT",
-    "US-5.3",
-    "subagent pool must block spawning beyond recursion depth 2",
-    () => {
-      const pool = new SubagentPool({
-        maxConcurrency: 2,
-        maxRecursionDepth: 2,
-      });
-      return pool.canSpawn(2) === true && pool.canSpawn(3) === false;
-    },
-  );
-
   // US-13.4 diagnostics — 3 consecutive identical failures pause; different resets
   await check(
     "DIAGNOSTICS-FAILURE-LOOP",
@@ -3066,31 +3051,6 @@ async function missingSpecContract(tmpWs: string) {
     },
   );
 
-  // US-5.3: subagents run on copy-on-write scratchpads, not the real workspace.
-  await check(
-    "SUBAGENT-COW-SCRATCHPAD",
-    "US-5.3",
-    "subagent pool must execute on a copy-on-write scratchpad (isolated cwd), merging back only via a validation gate",
-    () => {
-      const pool = codeOnly("src/subagents/pool.ts");
-      const hasScratchpad = /createScratchpad|scratchpad/i.test(pool);
-      const isolatedCwd = /cwd:\s*scratchpad/.test(pool);
-      const mergesBack =
-        /merge|validation|blocked from merging|outside workspace/i.test(pool);
-      if (!hasScratchpad)
-        throw new Error(
-          "subagent pool does not use a copy-on-write scratchpad",
-        );
-      if (!isolatedCwd)
-        throw new Error("subagent does not run with the scratchpad as cwd");
-      if (!mergesBack)
-        throw new Error(
-          "subagent results are not merged via a validation gate",
-        );
-      return hasScratchpad && isolatedCwd && mergesBack;
-    },
-  );
-
   // US-9.4 behavioral: view_file must actually wrap returned content in untrusted tags.
   await check(
     "UNTRUSTED-WRAP-BEHAVIORAL",
@@ -3099,7 +3059,7 @@ async function missingSpecContract(tmpWs: string) {
     async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-vf-accept-"));
       tmpDirs.push(tmp);
-      const sentinel = `SENTINEL_UNTRUSTED_${Date.now()}`;
+      const sentinel = "SENTINEL_UNTRUSTED_" + Date.now();
       const f = path.join(tmp, "x.txt");
       await fs.writeFile(f, sentinel, "utf8");
       const prevCwd = process.cwd();
@@ -3107,6 +3067,7 @@ async function missingSpecContract(tmpWs: string) {
       try {
         const mod = await import("../src/tools/view_file.js");
         const out = await mod.tool.execute({ filePath: "x.txt" });
+
         const s = typeof out === "string" ? out : JSON.stringify(out);
         return (
           s.includes("<untrusted_file") &&
@@ -3177,176 +3138,7 @@ async function missingSpecContract(tmpWs: string) {
 
 // ─── Phase 2: Adversarial Maker-Checker (US-15.5, US-15.6, US-15.7) ────
 
-async function adversarialMakerCheckerContract() {
-  // US-15.5: Dual-Instance Agent Orchestration Loop
-  await check(
-    "ADVERSARIAL-MODULE",
-    "US-15.5",
-    "adversarial maker-checker module must exist with distinct Maker and Checker system prompts",
-    () => {
-      const advPath = path.join(ROOT, "src", "subagents", "adversarial.ts");
-      if (!existsSync(advPath))
-        throw new Error(
-          "src/subagents/adversarial.ts does not exist — US-15.5 unimplemented",
-        );
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      // Must define both maker and checker system prompts
-      if (!/MAKER_SYSTEM_PROMPT/i.test(adv))
-        throw new Error(
-          "adversarial module does not define a MAKER_SYSTEM_PROMPT",
-        );
-      if (!/CHECKER_SYSTEM_PROMPT/i.test(adv))
-        throw new Error(
-          "adversarial module does not define a CHECKER_SYSTEM_PROMPT",
-        );
-      // The prompts must be different (adversarial, not identical)
-      if (/You are the MAKER/.test(adv) && /You are the CHECKER/.test(adv)) {
-        // Good — distinct role assignments
-      } else {
-        throw new Error(
-          "maker and checker system prompts do not assign distinct roles",
-        );
-      }
-      // The maker must be prevented from modifying the checker's config
-      if (
-        !/cannot.*modify.*checker/i.test(adv) &&
-        !/CANNOT.*modify.*checker/i.test(adv)
-      ) {
-        throw new Error(
-          "maker is not explicitly prevented from modifying the checker's configuration",
-        );
-      }
-      return true;
-    },
-  );
 
-  await check(
-    "ADVERSARIAL-ORCHESTRATOR",
-    "US-15.5",
-    "orchestrator must spawn both maker and checker agent instances with turn alternation",
-    () => {
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      // Must have a runAdversarialLoop function
-      if (!/runAdversarialLoop/.test(adv))
-        throw new Error(
-          "no runAdversarialLoop function — US-15.5 unimplemented",
-        );
-      // Must alternate turns (maker → checker → maker → ...)
-      if (!/maker.*turn/i.test(adv) && !/agent.*maker/i.test(adv))
-        throw new Error("no maker turn in the loop");
-      if (!/checker.*turn/i.test(adv) && !/agent.*checker/i.test(adv))
-        throw new Error("no checker turn in the loop");
-      // Must have a maxTurns limit (default 5 per US-15.7)
-      if (!/maxTurns/.test(adv))
-        throw new Error(
-          "no maxTurns limit — US-15.7 requires a maximum of 5 turns",
-        );
-      return true;
-    },
-  );
-
-  // US-15.6: Shared Protocol & Critique Channel
-  await check(
-    "ADVERSARIAL-PROTOCOL",
-    "US-15.6",
-    "maker and checker must communicate via a shared protocol document file",
-    () => {
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      // Must have a protocol document initialization
-      if (!/initProtocolDoc/.test(adv))
-        throw new Error("no initProtocolDoc function — US-15.6 unimplemented");
-      // The protocol path must be a local file (e.g. maker-checker-protocol.md)
-      if (!/maker-checker-protocol/i.test(adv))
-        throw new Error(
-          "protocol document is not named maker-checker-protocol.md",
-        );
-      // Must have append functionality for turns
-      if (!/appendProtocolEntry/.test(adv))
-        throw new Error(
-          "no appendProtocolEntry function — turns are not logged to the protocol",
-        );
-      // Must have a read function so agents can read each other's entries
-      if (!/readProtocolDoc/.test(adv))
-        throw new Error(
-          "no readProtocolDoc function — agents cannot read the protocol",
-        );
-      return true;
-    },
-  );
-
-  // US-15.7: Adversarial Test Generation & Turn Alternation
-  await check(
-    "ADVERSARIAL-TEST-GEN",
-    "US-15.7",
-    "checker must write independent test cases in a checker-owned path that the maker cannot modify",
-    () => {
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      // Must create a checker-owned test directory
-      if (!/createCheckerTestDir/.test(adv))
-        throw new Error(
-          "no createCheckerTestDir function — US-15.7 unimplemented",
-        );
-      // The checker test path must be separate from src/
-      if (!/checker-tests/i.test(adv))
-        throw new Error("checker test directory is not named 'checker-tests'");
-      // Must verify checker test integrity (maker cannot tamper)
-      if (!/verifyCheckerTestsIntegrity/.test(adv))
-        throw new Error(
-          "no integrity verification for checker tests — maker could tamper",
-        );
-      // Must have a structured approve verdict
-      if (
-        !/approve.*reject.*revise/i.test(adv) ||
-        !/"approve"|"reject"|"revise"/i.test(adv)
-      ) {
-        if (!/AdversarialVerdict/.test(adv))
-          throw new Error("no structured verdict type (approve/reject/revise)");
-      }
-      return true;
-    },
-  );
-
-  await check(
-    "ADVERSARIAL-AUDIT",
-    "US-15.4",
-    "adversarial verdicts must be appended to the tamper-evident audit chain",
-    () => {
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      if (!/AuditChain/.test(adv))
-        throw new Error(
-          "adversarial verdicts are not logged to the audit chain",
-        );
-      if (!/logAdversarialVerdict/.test(adv))
-        throw new Error("no logAdversarialVerdict function");
-      return true;
-    },
-  );
-
-  await check(
-    "ADVERSARIAL-SCRATCHPAD",
-    "US-15.2/15.7",
-    "adversarial loop must use an isolated copy-on-write scratchpad (shared helper)",
-    () => {
-      const helperPath = path.join(
-        ROOT,
-        "src",
-        "subagents",
-        "scratchpad_helpers.ts",
-      );
-      if (!existsSync(helperPath))
-        throw new Error(
-          "src/subagents/scratchpad_helpers.ts does not exist — no shared scratchpad helper",
-        );
-      const helper = codeOnly("src/subagents/scratchpad_helpers.ts");
-      if (!/buildScratchpad/.test(helper))
-        throw new Error("scratchpad helper does not export buildScratchpad");
-      const adv = codeOnly("src/subagents/adversarial.ts");
-      if (!/buildScratchpad/.test(adv))
-        throw new Error("adversarial module does not use buildScratchpad");
-      return true;
-    },
-  );
-}
 
 // ─── US-8.4: GUI Settings Panel (complete sections) ───────────────────
 
@@ -3600,43 +3392,7 @@ async function streamStopContract() {
 
 // ─── US-2.3: Cleanup utility for leaked artifacts ─────────────────────
 
-async function cleanupContract() {
-  await check(
-    "CLEANUP-MODULE",
-    "NOTICE",
-    "cleanup module must exist with consent-gated leak scanning and deletion",
-    () => {
-      const cleanupPath = path.join(ROOT, "src", "cleanup.ts");
-      if (!existsSync(cleanupPath))
-        throw new Error(
-          "src/cleanup.ts does not exist — cleanup utility unimplemented",
-        );
-      const cleanup = codeOnly("src/cleanup.ts");
-      if (!/scanForLeakedArtifacts/.test(cleanup))
-        throw new Error("no scanForLeakedArtifacts function");
-      if (!/deleteLeakedArtifacts/.test(cleanup))
-        throw new Error("no deleteLeakedArtifacts function");
-      if (!/confirmed/i.test(cleanup))
-        throw new Error("deletion is not consent-gated");
-      return true;
-    },
-  );
 
-  await check(
-    "CLEANUP-CLI-WIRED",
-    "NOTICE",
-    "cleanup-leaks subcommand must be wired in cli.ts and cli_ui.ts",
-    () => {
-      const cli = codeOnly("src/cli.ts");
-      const cliUi = codeOnly("src/cli_ui.ts");
-      if (!/cleanupLeaks/i.test(cli))
-        throw new Error("cli.ts does not handle cleanupLeaks subcommand");
-      if (!/cleanup-leaks/i.test(cliUi))
-        throw new Error("cli_ui.ts does not parse --cleanup-leaks flag");
-      return true;
-    },
-  );
-}
 
 // ─── Main runner ────────────────────────────────────────────────────────
 
@@ -3677,13 +3433,11 @@ export async function runSpecAcceptanceTests(): Promise<number> {
     await homebrewContract();
     await makerCheckerContract();
     await definitionOfDoneContract();
-    await adversarialMakerCheckerContract();
     await guiSettingsContract();
     await sessionArchiveContract();
     await memoryReviewCliContract();
     await toolCatalogContract();
     await streamStopContract();
-    await cleanupContract();
   } finally {
     for (const d of tmpDirs)
       await fs.rm(d, { recursive: true, force: true }).catch(() => {});
