@@ -3,6 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import { execFileSync } from "child_process";
 import { config } from "./config.js";
+import { findBinary } from "./utils/find_binary.js";
 
 export interface OllamaIdentity {
   /** true if the `ollama` binary is installed on this machine */
@@ -42,19 +43,9 @@ function findOllamaBinary(): string | null {
     if (existsSync(c)) return c;
   }
 
-  // Try PATH lookup
-  try {
-    const which = process.platform === "win32" ? "where" : "which";
-    const result = execFileSync(which, ["ollama"], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 2000,
-    });
-    const found = result.trim().split("\n")[0].trim();
-    if (found && existsSync(found)) return found;
-  } catch {
-    // not on PATH
-  }
+  // Try PATH lookup (cross-platform via findBinary)
+  const found = findBinary("ollama");
+  if (found && existsSync(found)) return found;
 
   return null;
 }
