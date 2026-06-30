@@ -139,11 +139,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   "src/context/budget.ts": ["BUDGET-85-THRESHOLD", "WIRE-TOKEN-BUDGET"],
   // Tool sandbox
   "src/tools/sandbox.ts": ["TOOL-SANDBOX-MANIFEST"],
-  // Subagent pool
-  "src/subagents/pool.ts": [
-    "SUBAGENT-RECURSION-LIMIT",
-    "SUBAGENT-COW-SCRATCHPAD",
-  ],
+  // (subagent pool removed — dead code)
   // Diagnostics
   "src/diagnostics.ts": ["DIAGNOSTICS-FAILURE-LOOP", "WIRE-DIAGNOSTICS"],
   // Logger / audit
@@ -199,8 +195,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   ],
   // Registry
   "src/registry.ts": ["TOOL-SCAN-NO-INFRA-WARNINGS"],
-  // Tool selector
-  "src/tool_selector.ts": [],
+  // (tool selector removed — dead code)
   // Lifecycle
   "src/lifecycle.ts": ["WIRE-LIFECYCLE-HOOKS", "MAKER-CHECKER-MODULE"],
   // Agent
@@ -233,21 +228,12 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "MAKER-CHECKER-AUDIT-OVERRIDE",
   ],
   "src/subagents/scratchpad_helpers.ts": ["MAKER-CHECKER-SCRATCHPAD"],
-  // Adversarial
-  "src/subagents/adversarial.ts": [
-    "ADVERSARIAL-MODULE",
-    "ADVERSARIAL-ORCHESTRATOR",
-    "ADVERSARIAL-PROTOCOL",
-    "ADVERSARIAL-TEST-GEN",
-    "ADVERSARIAL-AUDIT",
-    "ADVERSARIAL-SCRATCHPAD",
-  ],
+  // (adversarial removed — dead code)
   // GUI settings
   "ui/settings.ts": ["GUI-SETTINGS-SECTIONS"],
   // Memory review queue
   "src/memory/review_queue.ts": ["MEMORY-REVIEW-QUEUE-MODULE"],
-  // Cleanup
-  "src/cleanup.ts": ["CLEANUP-MODULE"],
+  // (cleanup removed — dead code)
   // Project
   "src/project.ts": ["PROJECT-JSON-SCHEMA"],
   // Slash commands

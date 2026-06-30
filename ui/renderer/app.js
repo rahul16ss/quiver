@@ -611,11 +611,9 @@ window.quiver.onAgentEvent((msg) => {
   }
 });
 
-window.quiver.onAgentRaw((_line) => {
-  // In JSON mode, all legitimate model output arrives as JSON events (token,
-  // tool_call, tool_result, done, etc.). Non-JSON lines on stdout are console
-  // noise (status messages, permission boxes) that should NOT be appended to
-  // the chat as model output. Silently ignore them to prevent duplication.
+window.quiver.onAgentRaw((line) => {
+  try { const p = JSON.parse(line); if (p.type) return; } catch {}
+  appendToken(line);
 });
 
 window.quiver.onAgentStderr((data) => {

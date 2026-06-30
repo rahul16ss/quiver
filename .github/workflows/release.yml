@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build changelog from commits
+        id: changelog
+        run: |
+          # Get commits since last tag (or all if first release)
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"- %s" "$PREV_TAG"..HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"- %s" HEAD)
+          fi
+          # Escape newlines for GitHub Actions output
+          COMMITS="${COMMITS//'%'/'%25'}"
+          COMMITS="${COMMITS//$'\n'/'%0A'}"
+          COMMITS="${COMMITS//$'\r'/'%0D'}"
+          echo "changelog=$COMMITS" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Quiver ${{ github.ref_name }}
+          body: |
+            ## Quiver ${{ github.ref_name }}
+
+            **Open harness for open models** — a self-evolving coding and research agent for the terminal, with a desktop app.
+
+            ### Changes
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### Install
+
+            **Homebrew:**
+            ```
+            brew tap rahul16ss/quiver
+            brew install quiver
+            ```
+
+            **From source:**
+            ```
+            git clone https://github.com/rahul16ss/quiver.git
+            cd quiver
+            npm install
+            npm run build
+            ```
+
+            **License:** Apache-2.0
+          generate_release_notes: true
+          draft: false
+          prerelease: false
