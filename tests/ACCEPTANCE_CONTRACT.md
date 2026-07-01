@@ -113,8 +113,8 @@ theater).
 **Approved user-facing env variable set (project-owner directive).** `.env.example`
 and the codebase's user-facing env surface may use **only**:
 - Core (10): `LLM_API_BASE_URL`, `LLM_MODEL_NAME`, `OLLAMA_API_KEY`,
-  `VISION_MODEL_NAME`, `VISION_MODEL_BASE_URL`, `REQUIRE_APPROVAL_FOR`,
-  `QUIVER_MAX_CONTEXT_TOKENS`, `BROWSER_HEADLESS`, `QUIVER_SESSION_LOG`,
+  `VISION_MODEL_NAME`, `VISION_MODEL_BASE_URL`, `QUIVER_AUTONOMY`,
+  `QUIVER_MAX_CONTEXT_TOKENS`, `QUIVER_AUTONOMY (browser:visible)`, `QUIVER_SESSION_LOG`,
   `QUIVER_SESSION_LOG_MAX_CHARS`.
 - Optional: `PARALLEL_API_KEY`, `GITHUB_TOKEN` (developers only).
 - Retired (must not appear): `LLM_API_KEY`, `VISION_MODEL_API_KEY`,
@@ -124,8 +124,8 @@ and the codebase's user-facing env surface may use **only**:
 **Approved user-facing env variable set (project-owner directive).** `.env.example`
 and the codebase's user-facing env surface may use **only**:
 - Core (10): `LLM_API_BASE_URL`, `LLM_MODEL_NAME`, `OLLAMA_API_KEY`,
-  `VISION_MODEL_NAME`, `VISION_MODEL_BASE_URL`, `REQUIRE_APPROVAL_FOR`,
-  `QUIVER_MAX_CONTEXT_TOKENS`, `BROWSER_HEADLESS`, `QUIVER_SESSION_LOG`,
+  `VISION_MODEL_NAME`, `VISION_MODEL_BASE_URL`, `QUIVER_AUTONOMY`,
+  `QUIVER_MAX_CONTEXT_TOKENS`, `QUIVER_AUTONOMY (browser:visible)`, `QUIVER_SESSION_LOG`,
   `QUIVER_SESSION_LOG_MAX_CHARS`.
 - Optional: `PARALLEL_API_KEY`, `GITHUB_TOKEN` (developers only).
 - Retired (must not appear): `LLM_API_KEY`, `VISION_MODEL_API_KEY`,

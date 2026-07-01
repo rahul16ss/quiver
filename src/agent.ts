@@ -3,7 +3,7 @@ import * as fsSync from "fs";
 import * as path from "path";
 import picocolors from "picocolors";
 import readline from "readline";
-import { config } from "./config.js";
+import { config, needsApprovalFor } from "./config.js";
 import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
 import { statusLine, theme } from "./cli_ui.js";
@@ -545,10 +545,14 @@ async function askUserApproval(
   // In JSON mode, the approval UI is rendered by the GUI via the "approval" event.
   // Suppress the text-based permission box to avoid non-JSON output on stdout.
   if (config.outputMode === "interactive") {
-    console.log(picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`));
+    console.log(
+      picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`),
+    );
     console.log(picocolors.yellow(`│  Quiver wants to:`));
     console.log(picocolors.yellow(`│  `));
-    console.log(picocolors.yellow(`│  Action: `) + picocolors.green(displayName));
+    console.log(
+      picocolors.yellow(`│  Action: `) + picocolors.green(displayName),
+    );
     console.log(picocolors.yellow(`│  Details:`));
     console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
     if (irreversible) {
@@ -2062,12 +2066,17 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         // not just the tool name — so `ls` runs freely while `rm -rf /` prompts.
         // YOLO mode bypasses BOTH layers — tool-level and command risk classifier.
         let isApproved = true;
-        const needsApproval =
-          !config.yoloMode &&
-          (config.requireApprovalFor.includes(toolName) ||
-            (toolName === "run_command" &&
-              typeof args.command === "string" &&
-              classifyCommand(args.command).requiresApproval));
+        // Classify command risk for run_command (US-6.2) — the classifier
+        // determines the risk band and requiresApproval flag. needsApprovalFor()
+        // then checks autonomy grants against the risk band.
+        let commandRisk: string | undefined;
+        let commandRequiresApproval = false;
+        if (toolName === "run_command" && typeof args.command === "string") {
+          const classification = classifyCommand(args.command);
+          commandRisk = classification.risk;
+          commandRequiresApproval = classification.requiresApproval;
+        }
+        const needsApproval = needsApprovalFor(toolName, commandRisk);
         if (config.dryRun) {
           isApproved = true;
         } else if (needsApproval) {

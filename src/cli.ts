@@ -7,6 +7,8 @@ import {
   printFirstRunWizard,
   runOnboardingHandshake,
   redactSecret,
+  ALL_GRANTS,
+  type AutonomyGrant,
 } from "./config.js";
 import {
   parseCliArgs,
@@ -21,7 +23,11 @@ import {
 import { runInitWizard } from "./init.js";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
-import { detectCrashedSession, archiveCrashedSession, discardCrashedSession } from "./session/checkpoint.js";
+import {
+  detectCrashedSession,
+  archiveCrashedSession,
+  discardCrashedSession,
+} from "./session/checkpoint.js";
 import { exportToAgentFile } from "./state.js";
 import {
   detectOllamaIdentity,
@@ -104,7 +110,10 @@ async function main() {
   }
 
   if (cliOpts.cleanupLeaks) {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
     try {
       await runCleanupLeaks(rl);
     } finally {
@@ -139,17 +148,22 @@ async function main() {
   // mode AND stdin/stdout being a TTY.
   const isInteractive =
     config.outputMode === "interactive" &&
-    process.stdin.isTTY && process.stdout.isTTY;
+    process.stdin.isTTY &&
+    process.stdout.isTTY;
 
   // ── Banner — one line, no noise ──
   if (isInteractive) {
     const cloudStatus = getCloudSyncStatus();
     console.log(
       t.cyan(t.bold(`\n  Quiver v${VERSION}`)) +
-      t.gray(` · ${getProjectName()}`) +
-      (cloudStatus.active ? t.gray(` · ${cloudStatus.provider} ✓`) : "") +
-      (config.dryRun ? t.yellow(` · dry-run`) : "") +
-      (config.yoloMode ? t.red(` · YOLO`) : ""),
+        t.gray(` · ${getProjectName()}`) +
+        (cloudStatus.active ? t.gray(` · ${cloudStatus.provider} ✓`) : "") +
+        (config.dryRun ? t.yellow(` · dry-run`) : "") +
+        (config.autonomyGrants.has("yolo")
+          ? t.red(` · YOLO`)
+          : config.autonomyGrants.size > 0
+            ? t.cyan(` · auto`)
+            : ""),
     );
   }
 
@@ -177,7 +191,11 @@ async function main() {
     const { loadMcpConfig } = await import("./mcp/config.js");
     const { mcpManager } = await import("./mcp/client.js");
     const mcpConfig = loadMcpConfig();
-    if (mcpConfig && mcpConfig.mcpServers && Object.keys(mcpConfig.mcpServers).length > 0) {
+    if (
+      mcpConfig &&
+      mcpConfig.mcpServers &&
+      Object.keys(mcpConfig.mcpServers).length > 0
+    ) {
       if (isInteractive) {
         console.log(t.gray(`  Connecting to MCP servers…`));
       }
@@ -196,7 +214,9 @@ async function main() {
   if (isInteractive) {
     const totalTools = tools.length + mcpToolCount;
     const mcpInfo = mcpToolCount > 0 ? ` · ${mcpToolCount} MCP` : "";
-    console.log(t.gray(`  ${totalTools} tools loaded${mcpInfo} · /help for commands\n`));
+    console.log(
+      t.gray(`  ${totalTools} tools loaded${mcpInfo} · /help for commands\n`),
+    );
   }
 
   // ── List sessions mode ──
@@ -251,14 +271,25 @@ async function main() {
           ),
         );
         console.log(
-          t.gray(`     This session was not properly closed. Choose an option:\n`),
+          t.gray(
+            `     This session was not properly closed. Choose an option:\n`,
+          ),
         );
-        console.log(`   ${t.green("[1]")} Resume  — continue from where it left off`);
-        console.log(`   ${t.green("[2]")} Archive — move to archived folder (keep but don't resume)`);
-        console.log(`   ${t.green("[3]")} Discard — delete the crashed session checkpoints`);
+        console.log(
+          `   ${t.green("[1]")} Resume  — continue from where it left off`,
+        );
+        console.log(
+          `   ${t.green("[2]")} Archive — move to archived folder (keep but don't resume)`,
+        );
+        console.log(
+          `   ${t.green("[3]")} Discard — delete the crashed session checkpoints`,
+        );
         console.log(`   ${t.gray("Enter to skip")}\n`);
 
-        const crashRl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const crashRl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
         const answer = await new Promise<string>((resolve) => {
           crashRl.question("   > ", (ans) => resolve(ans.trim()));
         });
@@ -271,8 +302,15 @@ async function main() {
           );
           if (loaded) {
             resumedSession = true;
-            statusLine("OK", `Resumed crashed session: ${agent.getSessionId()}`);
-            console.log(t.gray(`   ${agent.getMessageCount()} messages restored from checkpoint.\n`));
+            statusLine(
+              "OK",
+              `Resumed crashed session: ${agent.getSessionId()}`,
+            );
+            console.log(
+              t.gray(
+                `   ${agent.getMessageCount()} messages restored from checkpoint.\n`,
+              ),
+            );
           }
         } else if (answer === "2") {
           await archiveCrashedSession(crash.sessionId);
@@ -451,7 +489,9 @@ async function main() {
       console.log(t.gray(`   Session log: ${agent.getSessionLogRelPath()}\n`));
       rl.close();
       // Close MCP connections
-      import("./mcp/client.js").then(({ mcpManager }) => mcpManager.closeAll()).catch(() => {});
+      import("./mcp/client.js")
+        .then(({ mcpManager }) => mcpManager.closeAll())
+        .catch(() => {});
       process.exit(0);
     }
   });
@@ -464,7 +504,9 @@ async function main() {
     console.log(t.gray(`   Session log: ${agent.getSessionLogRelPath()}\n`));
     rl.close();
     // Close MCP connections
-    import("./mcp/client.js").then(({ mcpManager }) => mcpManager.closeAll()).catch(() => {});
+    import("./mcp/client.js")
+      .then(({ mcpManager }) => mcpManager.closeAll())
+      .catch(() => {});
     process.exit(0);
   });
 
@@ -597,9 +639,11 @@ async function main() {
             `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
           );
           console.log(
-            `   - Approvals:         ${config.requireApprovalFor.join(", ") || "None"}`,
+            `   - Autonomy:          ${config.autonomyGrants.size > 0 ? [...config.autonomyGrants].join(", ") : "ask (conservative)"}`,
           );
-          console.log(`   - YOLO Mode:        ${config.yoloMode ? "ON (all gates bypassed)" : "Off"}`);
+          console.log(
+            `   - Browser:           ${config.browserHeadless ? "headless" : "visible"}`,
+          );
           console.log(`   - Output Mode:       ${config.outputMode}`);
           console.log(
             `   - Dry Run:           ${config.dryRun ? "Yes" : "No"}\n`,
@@ -618,8 +662,8 @@ async function main() {
             console.log(
               picocolors.green(
                 `\n♻️  Compacted: ${result.removedCount} messages summarized.\n` +
-                `   ${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens.\n` +
-                `   Full conversation saved to: ${result.savedTo}\n`,
+                  `   ${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens.\n` +
+                  `   Full conversation saved to: ${result.savedTo}\n`,
               ),
             );
           } else {
@@ -689,9 +733,7 @@ async function main() {
           const projectName = getProjectName();
           const memDir = getProjectMemoryDir();
           const corePath = getCoreMemoryPath();
-          console.log(
-            picocolors.cyan(`\n  Memory — Project: ${projectName}`),
-          );
+          console.log(picocolors.cyan(`\n  Memory — Project: ${projectName}`));
           console.log(picocolors.gray(`  Project memory: ${memDir}`));
           console.log(picocolors.gray(`  Global core:    ${corePath}\n`));
           try {
@@ -751,7 +793,7 @@ async function main() {
             const msg = msgs[i];
             const role = msg.role.toUpperCase();
             const previewRaw = msg.content;
-            const fullText = (
+            const fullText =
               typeof previewRaw === "string"
                 ? previewRaw
                 : Array.isArray(previewRaw)
@@ -759,8 +801,7 @@ async function main() {
                       .filter((p: any) => p.type === "text")
                       .map((p: any) => p.text)
                       .join(" ")
-                  : ""
-            );
+                  : "";
             const preview = fullText.substring(0, 80);
             const truncated = fullText.length > 80;
             const toolCount = msg.tool_calls?.length || 0;
@@ -898,17 +939,28 @@ async function main() {
             try {
               const files = await import("fs/promises");
               const entries = await files.readdir(sessionsDir);
-              const logFiles = entries.filter((f) => f.endsWith(".log") || f.endsWith(".json") || f.endsWith(".state.json"));
+              const logFiles = entries.filter(
+                (f) =>
+                  f.endsWith(".log") ||
+                  f.endsWith(".json") ||
+                  f.endsWith(".state.json"),
+              );
               if (logFiles.length === 0) {
                 console.log(picocolors.gray("\n  No session logs found.\n"));
               } else {
-                console.log(picocolors.cyan(`\n  📋 Session Logs (${logFiles.length}):\n`));
+                console.log(
+                  picocolors.cyan(
+                    `\n  📋 Session Logs (${logFiles.length}):\n`,
+                  ),
+                );
                 for (const f of logFiles.sort().reverse().slice(0, 20)) {
                   const fpath = path.join(sessionsDir, f);
                   const stat = await files.stat(fpath);
                   const sizeKB = (stat.size / 1024).toFixed(1);
                   const mtime = stat.mtime.toISOString().substring(0, 19);
-                  console.log(`   ${f.padEnd(40)} ${sizeKB.padStart(8)} KB  ${mtime}`);
+                  console.log(
+                    `   ${f.padEnd(40)} ${sizeKB.padStart(8)} KB  ${mtime}`,
+                  );
                 }
                 console.log("");
               }
@@ -918,9 +970,14 @@ async function main() {
           } else if (subcommand === "purge") {
             // Purge old logs: /logs purge --older-than <days>
             const olderThanFlag = parts.indexOf("--older-than");
-            const days = olderThanFlag >= 0 ? parseInt(parts[olderThanFlag + 1], 10) : 30;
+            const days =
+              olderThanFlag >= 0 ? parseInt(parts[olderThanFlag + 1], 10) : 30;
             if (isNaN(days) || days <= 0) {
-              console.log(picocolors.red("\n  ❌ Invalid --older-than value. Usage: /logs purge --older-than 30\n"));
+              console.log(
+                picocolors.red(
+                  "\n  ❌ Invalid --older-than value. Usage: /logs purge --older-than 30\n",
+                ),
+              );
               continue;
             }
             const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -939,13 +996,18 @@ async function main() {
                   }
                 }
               }
-              console.log(picocolors.green(`\n  ✅ Purged ${purged} log file(s) older than ${days} day(s).\n`));
+              console.log(
+                picocolors.green(
+                  `\n  ✅ Purged ${purged} log file(s) older than ${days} day(s).\n`,
+                ),
+              );
             } catch {
               console.log(picocolors.yellow("\n  ⚠️  Could not purge logs.\n"));
             }
           } else if (subcommand === "export") {
             // Export logs to a file: /logs export <path>
-            const exportPath = parts[2] || path.resolve("quiver-logs-export.txt");
+            const exportPath =
+              parts[2] || path.resolve("quiver-logs-export.txt");
             const sessionsDir = getProjectSessionsDir();
             try {
               const files = await import("fs/promises");
@@ -958,12 +1020,22 @@ async function main() {
                 combined += `=== ${f} ===\n${content}\n\n`;
               }
               await files.writeFile(exportPath, combined, "utf8");
-              console.log(picocolors.green(`\n  ✅ Exported ${logFiles.length} log file(s) to ${exportPath}\n`));
+              console.log(
+                picocolors.green(
+                  `\n  ✅ Exported ${logFiles.length} log file(s) to ${exportPath}\n`,
+                ),
+              );
             } catch {
-              console.log(picocolors.yellow("\n  ⚠️  Could not export logs.\n"));
+              console.log(
+                picocolors.yellow("\n  ⚠️  Could not export logs.\n"),
+              );
             }
           } else {
-            console.log(picocolors.gray("\n  Usage: /logs list | /logs purge --older-than <days> | /logs export [path]\n"));
+            console.log(
+              picocolors.gray(
+                "\n  Usage: /logs list | /logs purge --older-than <days> | /logs export [path]\n",
+              ),
+            );
           }
           continue;
         }
@@ -978,7 +1050,11 @@ async function main() {
             try {
               const res = await rollbackLast();
               if (res) {
-                console.log(picocolors.green(`\n  ✅ Rolled back to: ${path.relative(process.cwd(), res.restored)}\n`));
+                console.log(
+                  picocolors.green(
+                    `\n  ✅ Rolled back to: ${path.relative(process.cwd(), res.restored)}\n`,
+                  ),
+                );
                 continue;
               }
             } catch {}
@@ -987,14 +1063,23 @@ async function main() {
             const workspaceRoot = process.cwd();
             try {
               const fsPromises = await import("fs/promises");
-              const findBackups = async (dir: string): Promise<{ path: string; mtimeMs: number }[]> => {
+              const findBackups = async (
+                dir: string,
+              ): Promise<{ path: string; mtimeMs: number }[]> => {
                 let results: { path: string; mtimeMs: number }[] = [];
                 try {
-                  const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+                  const entries = await fsPromises.readdir(dir, {
+                    withFileTypes: true,
+                  });
                   for (const entry of entries) {
                     const fullPath = path.join(dir, entry.name);
                     if (entry.isDirectory()) {
-                      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".sessions" || entry.name === ".quiver") {
+                      if (
+                        entry.name === "node_modules" ||
+                        entry.name === ".git" ||
+                        entry.name === ".sessions" ||
+                        entry.name === ".quiver"
+                      ) {
                         continue;
                       }
                       if (entry.name === ".quiver-backups") {
@@ -1004,7 +1089,10 @@ async function main() {
                             if (bak.endsWith(".bak")) {
                               const bakPath = path.join(fullPath, bak);
                               const stat = await fsPromises.stat(bakPath);
-                              results.push({ path: bakPath, mtimeMs: stat.mtimeMs });
+                              results.push({
+                                path: bakPath,
+                                mtimeMs: stat.mtimeMs,
+                              });
                             }
                           }
                         } catch {}
@@ -1019,7 +1107,11 @@ async function main() {
 
               const backups = await findBackups(workspaceRoot);
               if (backups.length === 0) {
-                console.log(picocolors.yellow("\n  ⚠️  No backups found to rollback to.\n"));
+                console.log(
+                  picocolors.yellow(
+                    "\n  ⚠️  No backups found to rollback to.\n",
+                  ),
+                );
                 continue;
               }
               backups.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -1033,9 +1125,15 @@ async function main() {
 
               await fsPromises.copyFile(latest.path, originalPath);
               await fsPromises.unlink(latest.path);
-              console.log(picocolors.green(`\n  ✅ Rolled back to: ${path.relative(workspaceRoot, originalPath)}\n`));
+              console.log(
+                picocolors.green(
+                  `\n  ✅ Rolled back to: ${path.relative(workspaceRoot, originalPath)}\n`,
+                ),
+              );
             } catch {
-              console.log(picocolors.yellow("\n  ⚠️  No backups found to rollback to.\n"));
+              console.log(
+                picocolors.yellow("\n  ⚠️  No backups found to rollback to.\n"),
+              );
             }
           } else {
             console.log(picocolors.gray("\n  Usage: /rollback last\n"));
@@ -1045,19 +1143,29 @@ async function main() {
 
         // ── /self-heal subcommand handling ──
         if (resolved === "/self-heal") {
-          console.log(picocolors.cyan("\n🛠️  Initiating Self-Healing Routine..."));
-          console.log(picocolors.gray("   Running compilation and test checks..."));
+          console.log(
+            picocolors.cyan("\n🛠️  Initiating Self-Healing Routine..."),
+          );
+          console.log(
+            picocolors.gray("   Running compilation and test checks..."),
+          );
 
-          const runCmd = (command: string): Promise<{ stdout: string; stderr: string; code: number }> => {
+          const runCmd = (
+            command: string,
+          ): Promise<{ stdout: string; stderr: string; code: number }> => {
             return new Promise((resolve) => {
               import("child_process").then(({ exec }) => {
-                exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
-                  resolve({
-                    stdout: stdout ? stdout.toString() : "",
-                    stderr: stderr ? stderr.toString() : "",
-                    code: error ? (error.code || 1) : 0
-                  });
-                });
+                exec(
+                  command,
+                  { cwd: process.cwd() },
+                  (error, stdout, stderr) => {
+                    resolve({
+                      stdout: stdout ? stdout.toString() : "",
+                      stderr: stderr ? stderr.toString() : "",
+                      code: error ? error.code || 1 : 0,
+                    });
+                  },
+                );
               });
             });
           };
@@ -1069,14 +1177,16 @@ async function main() {
             console.log(
               picocolors.green(
                 `\n  ✅ Codebase is completely healthy!\n` +
-                `     TypeScript compilation: PASS\n` +
-                `     Spec acceptance tests:  PASS (all checks met)\n`
-              )
+                  `     TypeScript compilation: PASS\n` +
+                  `     Spec acceptance tests:  PASS (all checks met)\n`,
+              ),
             );
             continue;
           }
 
-          console.log(picocolors.yellow("\n⚠️  Failures detected in the codebase:"));
+          console.log(
+            picocolors.yellow("\n⚠️  Failures detected in the codebase:"),
+          );
           if (tscResult.code !== 0) {
             console.log(picocolors.red(`\n   [TypeScript Compiler Errors]:`));
             console.log(picocolors.red(tscResult.stdout || tscResult.stderr));
@@ -1084,14 +1194,20 @@ async function main() {
           if (testResult.code !== 0) {
             console.log(picocolors.red(`\n   [Test Failures]:`));
             const lines = (testResult.stdout || testResult.stderr).split("\n");
-            const brief = lines.filter(l => l.includes("FAIL") || l.includes("FAILED") || l.includes("•")).slice(0, 10).join("\n");
+            const brief = lines
+              .filter(
+                (l) =>
+                  l.includes("FAIL") || l.includes("FAILED") || l.includes("•"),
+              )
+              .slice(0, 10)
+              .join("\n");
             console.log(picocolors.red(brief || lines.slice(-20).join("\n")));
           }
 
           console.log(
             picocolors.yellow(
-              `\n🛠️  Handing off diagnostics to the Quiver Agent for self-healing...\n`
-            )
+              `\n🛠️  Handing off diagnostics to the Quiver Agent for self-healing...\n`,
+            ),
           );
 
           cleanInput = `System Request: The user has initiated a codebase self-healing sweep because compilation or tests are failing. Please examine the diagnostic information below, find the root cause, modify the source code as needed to resolve all issues, and verify that the tests and compilation pass cleanly. Do not stop until the codebase is fully healthy.
@@ -1113,8 +1229,16 @@ ${testResult.stderr || ""}
           const confirmation = parts.slice(2).join(" ");
 
           if (!changeHash || !confirmation) {
-            console.log(picocolors.gray("\n  Usage: /override <changeHash> <confirmation text>\n"));
-            console.log(picocolors.gray("  Example: /override abc12345 I confirm this change is safe\n"));
+            console.log(
+              picocolors.gray(
+                "\n  Usage: /override <changeHash> <confirmation text>\n",
+              ),
+            );
+            console.log(
+              picocolors.gray(
+                "  Example: /override abc12345 I confirm this change is safe\n",
+              ),
+            );
             continue;
           }
 
@@ -1123,9 +1247,17 @@ ${testResult.stderr || ""}
             const result = await overrideVerdict(changeHash, confirmation);
             if (result.overridden) {
               console.log(picocolors.green(`\n  ✅ ${result.reason}\n`));
-              console.log(picocolors.gray("  The maker-checker verdict has been overridden and logged to the audit chain.\n"));
+              console.log(
+                picocolors.gray(
+                  "  The maker-checker verdict has been overridden and logged to the audit chain.\n",
+                ),
+              );
             } else {
-              console.log(picocolors.yellow(`\n  ⚠️  Override failed: ${result.reason}\n`));
+              console.log(
+                picocolors.yellow(
+                  `\n  ⚠️  Override failed: ${result.reason}\n`,
+                ),
+              );
             }
           } catch (error: any) {
             console.log(picocolors.red(`\n  ❌ Error: ${error.message}\n`));
@@ -1140,12 +1272,22 @@ ${testResult.stderr || ""}
             const status = mcpManager.getStatus();
             if (status.length === 0) {
               console.log(picocolors.gray("\n  No MCP servers connected.\n"));
-              console.log(picocolors.gray("  Configure servers in .quiver/mcp.json:\n"));
-              console.log(picocolors.gray('  { "mcpServers": { "name": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] } } }\n'));
+              console.log(
+                picocolors.gray("  Configure servers in .quiver/mcp.json:\n"),
+              );
+              console.log(
+                picocolors.gray(
+                  '  { "mcpServers": { "name": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] } } }\n',
+                ),
+              );
             } else {
-              console.log(picocolors.cyan(`\n  MCP Servers (${status.length}):\n`));
+              console.log(
+                picocolors.cyan(`\n  MCP Servers (${status.length}):\n`),
+              );
               for (const s of status) {
-                const state = s.connected ? picocolors.green("✓") : picocolors.red("✗");
+                const state = s.connected
+                  ? picocolors.green("✓")
+                  : picocolors.red("✗");
                 console.log(`  ${state} ${s.name} — ${s.tools} tools`);
               }
               console.log();
@@ -1156,143 +1298,266 @@ ${testResult.stderr || ""}
           continue;
         }
 
-        // ── /yolo subcommand handling ──
-        if (resolved === "/yolo") {
-          if (config.yoloMode) {
-            config.yoloMode = false;
-            console.log(picocolors.yellow("\n  🔒 YOLO mode OFF. Approval gates re-enabled.\n"));
-            try { agent.logEvent("yolo_mode_disabled", { source: "slash_command" }); } catch (e) {}
-          } else {
-            console.log(picocolors.red("\n  ⚠️  YOLO MODE WARNING ⚠️"));
-            console.log(picocolors.red("  ─────────────────────────────────────"));
-            console.log(picocolors.yellow("  This will bypass ALL approval gates:"));
-            console.log(picocolors.yellow("    • Tool-level approvals (write_file, replace_content, etc.)"));
-            console.log(picocolors.yellow("    • Command risk classifier (rm -rf, sudo, chmod, curl, etc.)"));
-            console.log(picocolors.yellow("    • No confirmation prompts for any action"));
-            console.log(picocolors.yellow(""));
-            console.log(picocolors.yellow("  The agent will be able to execute ANY tool or command"));
-            console.log(picocolors.yellow("  without asking for your permission."));
-            console.log(picocolors.yellow(""));
-            console.log(picocolors.red("  Use at your own risk. All actions are still logged to the audit trail.\n"));
-
-            const yoloRl = readline.createInterface({ input: process.stdin, output: process.stdout });
-            const answer = await new Promise<string>((resolve) => {
-              yoloRl.question(picocolors.cyan("  Type 'I understand' to enable YOLO mode: "), (ans) => resolve(ans));
-            });
-            yoloRl.close();
-
-            if (answer.trim() === "I understand") {
-              config.yoloMode = true;
-              config.requireApprovalFor = [];
-              console.log(picocolors.green("\n  ✅ YOLO mode ON. All approval gates bypassed for this session."));
-              console.log(picocolors.gray("  Toggle off with /yolo again. All actions remain in the audit trail.\n"));
-              try { agent.logEvent("yolo_mode_enabled", { source: "slash_command" }); } catch (e) {}
-            } else {
-              console.log(picocolors.gray("\n  YOLO mode not enabled. Approval gates remain active.\n"));
-            }
-          }
-          continue;
-        }
-
-        // ── /approvals subcommand handling ──
-        if (resolved === "/approvals") {
+        // ── /autonomy subcommand handling ──
+        if (
+          resolved === "/autonomy" ||
+          resolved === "/yolo" ||
+          resolved === "/approvals"
+        ) {
           const parts = cleanInput.split(/\s+/);
           const subcommand = parts[1];
           const argsStr = parts.slice(2).join(" ");
-
-          if (!subcommand) {
-            console.log(picocolors.cyan(`\n🔒 Security Approvals Config:`));
-            console.log(
-              `   - Current List: ${config.requireApprovalFor.length > 0 ? picocolors.green(config.requireApprovalFor.join(", ")) : picocolors.yellow("None")}`,
-            );
-            console.log(`   - YOLO Mode:        ${config.yoloMode ? picocolors.red("ON (all gates bypassed)") : picocolors.gray("Off")}`);
-            console.log(picocolors.gray(`   - Commands:`));
-            console.log(picocolors.gray(`     ├─ /approvals set tool1,tool2`));
-            console.log(picocolors.gray(`     ├─ /approvals add toolName`));
-            console.log(picocolors.gray(`     ├─ /approvals remove toolName`));
-            console.log(picocolors.gray(`     ├─ /approvals clear`));
-            console.log(picocolors.gray(`     └─ /yolo (bypass ALL gates)\n`));
-            continue;
+          let effectiveSub = subcommand;
+          if (resolved === "/yolo") effectiveSub = "yolo";
+          if (resolved === "/approvals") {
+            if (!subcommand) effectiveSub = "show";
+            else if (subcommand === "clear") effectiveSub = "clear";
+            else if (subcommand === "set") effectiveSub = "set";
+            else if (subcommand === "add") effectiveSub = "add";
+            else if (subcommand === "remove") effectiveSub = "remove";
+            else effectiveSub = "show";
           }
-
-          switch (subcommand.toLowerCase()) {
-            case "set": {
-              const list = argsStr
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              config.requireApprovalFor = list;
+          if (!effectiveSub || effectiveSub === "show") {
+            console.log(picocolors.cyan("\n🔓 Autonomy Grants:"));
+            const grants = [...config.autonomyGrants];
+            if (grants.length > 0) {
+              console.log(picocolors.green("   Active: " + grants.join(", ")));
+            } else {
               console.log(
-                picocolors.green(
-                  `✅ Approvals set to: ${list.join(", ") || "None"}\n`,
+                picocolors.yellow(
+                  "   Active: none (conservative — ask for everything)",
                 ),
               );
-              break;
             }
+            console.log(picocolors.gray("\n   Available grants:"));
+            console.log(
+              picocolors.gray(
+                "     write_file       — file creation/overwrite",
+              ),
+            );
+            console.log(
+              picocolors.gray("     replace_content  — targeted string edits"),
+            );
+            console.log(
+              picocolors.gray("     apply_patch      — unified diff patches"),
+            );
+            console.log(
+              picocolors.gray(
+                "     run_command      — shell commands (safe + moderate)",
+              ),
+            );
+            console.log(
+              picocolors.gray(
+                "     destructive      — rm -rf, git reset --hard, shred",
+              ),
+            );
+            console.log(
+              picocolors.gray("     privileged       — sudo, chmod, chown"),
+            );
+            console.log(
+              picocolors.gray("     network          — curl, wget, ssh"),
+            );
+            console.log(
+              picocolors.gray("     secrets          — cat .env, printenv"),
+            );
+            console.log(
+              picocolors.gray(
+                "     exfiltration      — piping data to remote endpoints",
+              ),
+            );
+            console.log(
+              picocolors.gray(
+                "     browser          — browser control (headless)",
+              ),
+            );
+            console.log(
+              picocolors.gray(
+                "     browser:visible  — browser control (visible window)",
+              ),
+            );
+            console.log(
+              picocolors.gray("     create_tool      — dynamic tool creation"),
+            );
+            console.log(
+              picocolors.red(
+                "     yolo             — ALL of the above (no prompts ever)",
+              ),
+            );
+            console.log(picocolors.gray("\n   Commands:"));
+            console.log(picocolors.gray("     ├─ /autonomy add grant1,grant2"));
+            console.log(picocolors.gray("     ├─ /autonomy remove grant"));
+            console.log(
+              picocolors.gray(
+                "     ├─ /autonomy set grant1,grant2  (replaces all)",
+              ),
+            );
+            console.log(picocolors.gray("     ├─ /autonomy clear"));
+            console.log(picocolors.gray("     └─ /autonomy yolo\n"));
+            continue;
+          }
+          switch (effectiveSub.toLowerCase()) {
             case "add": {
-              const toolName = argsStr.trim();
-              if (!toolName) {
-                console.log(
-                  picocolors.red(
-                    `❌ Please specify a tool name to add. Example: /approvals add run_command\n`,
-                  ),
-                );
-              } else if (config.requireApprovalFor.includes(toolName)) {
-                console.log(
-                  picocolors.yellow(
-                    `ℹ️  Tool '${toolName}' is already in the approval list.\n`,
-                  ),
-                );
-              } else {
-                config.requireApprovalFor.push(toolName);
-                console.log(
-                  picocolors.green(
-                    `✅ Tool '${toolName}' added to approvals list. Current list: ${config.requireApprovalFor.join(", ")}\n`,
-                  ),
-                );
+              const list = argsStr
+                .split(",")
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean) as AutonomyGrant[];
+              for (const g of list) {
+                config.autonomyGrants.add(g);
+                if (g === "yolo") {
+                  for (const ag of ALL_GRANTS) config.autonomyGrants.add(ag);
+                }
               }
+              config.browserHeadless =
+                !config.autonomyGrants.has("browser:visible");
+              console.log(
+                picocolors.green("\n✅ Grants added: " + list.join(", ")),
+              );
+              console.log(
+                picocolors.gray(
+                  "   Active: " + [...config.autonomyGrants].join(", ") + "\n",
+                ),
+              );
               break;
             }
             case "remove": {
-              const toolName = argsStr.trim();
-              if (!toolName) {
-                console.log(
-                  picocolors.red(
-                    `❌ Please specify a tool name to remove. Example: /approvals remove run_command\n`,
-                  ),
-                );
-              } else {
-                const idx = config.requireApprovalFor.indexOf(toolName);
-                if (idx === -1) {
-                  console.log(
-                    picocolors.yellow(
-                      `ℹ️  Tool '${toolName}' is not in the approval list.\n`,
-                    ),
-                  );
-                } else {
-                  config.requireApprovalFor.splice(idx, 1);
-                  console.log(
-                    picocolors.green(
-                      `✅ Tool '${toolName}' removed from approvals list. Current list: ${config.requireApprovalFor.join(", ") || "None"}\n`,
-                    ),
-                  );
-                }
+              const g = argsStr.trim().toLowerCase() as AutonomyGrant;
+              config.autonomyGrants.delete(g);
+              if (g === "yolo") {
+                for (const ag of ALL_GRANTS) config.autonomyGrants.delete(ag);
               }
+              config.browserHeadless =
+                !config.autonomyGrants.has("browser:visible");
+              console.log(picocolors.green("\n✅ Removed: " + g));
+              console.log(
+                picocolors.gray(
+                  "   Active: " +
+                    (config.autonomyGrants.size > 0
+                      ? [...config.autonomyGrants].join(", ")
+                      : "none") +
+                    "\n",
+                ),
+              );
+              break;
+            }
+            case "set": {
+              const list = argsStr
+                .split(",")
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean) as AutonomyGrant[];
+              config.autonomyGrants = new Set(list);
+              if (config.autonomyGrants.has("yolo")) {
+                for (const ag of ALL_GRANTS) config.autonomyGrants.add(ag);
+              }
+              config.browserHeadless =
+                !config.autonomyGrants.has("browser:visible");
+              console.log(
+                picocolors.green(
+                  "\n✅ Grants set to: " +
+                    [...config.autonomyGrants].join(", ") +
+                    "\n",
+                ),
+              );
               break;
             }
             case "clear": {
-              config.requireApprovalFor = [];
+              config.autonomyGrants.clear();
+              config.browserHeadless = true;
               console.log(
                 picocolors.green(
-                  `✅ All tool approvals cleared. Tool execution is now fully automatic.\n`,
+                  "\n✅ All grants cleared. Conservative mode active.\n",
                 ),
               );
+              break;
+            }
+            case "yolo": {
+              if (config.autonomyGrants.has("yolo")) {
+                config.autonomyGrants.clear();
+                config.browserHeadless = true;
+                console.log(
+                  picocolors.yellow(
+                    "\n🔒 YOLO mode OFF. All approval gates re-enabled.\n",
+                  ),
+                );
+                try {
+                  agent.logEvent("yolo_mode_disabled", {
+                    source: "slash_command",
+                  });
+                } catch (e) {}
+              } else {
+                console.log(picocolors.red("\n  ⚠️  YOLO MODE WARNING ⚠️"));
+                console.log(
+                  picocolors.red("  ─────────────────────────────────────"),
+                );
+                console.log(
+                  picocolors.yellow("  This will bypass ALL approval gates:"),
+                );
+                console.log(
+                  picocolors.yellow("    • File writes, edits, patches"),
+                );
+                console.log(
+                  picocolors.yellow(
+                    "    • Shell commands (including rm -rf, sudo)",
+                  ),
+                );
+                console.log(
+                  picocolors.yellow("    • Browser control, tool creation"),
+                );
+                console.log(
+                  picocolors.yellow(
+                    "    • Network, secret access, exfiltration",
+                  ),
+                );
+                console.log(
+                  picocolors.yellow(
+                    "  The agent will execute ANY action without asking.",
+                  ),
+                );
+                console.log(
+                  picocolors.red("  All actions remain in the audit trail.\n"),
+                );
+                const yoloRl = readline.createInterface({
+                  input: process.stdin,
+                  output: process.stdout,
+                });
+                const answer = await new Promise<string>((resolve) => {
+                  yoloRl.question(
+                    picocolors.cyan(
+                      "  Type 'I understand' to enable YOLO mode: ",
+                    ),
+                    (ans) => resolve(ans),
+                  );
+                });
+                yoloRl.close();
+                if (answer.trim() === "I understand") {
+                  for (const g of ALL_GRANTS) config.autonomyGrants.add(g);
+                  config.browserHeadless = false;
+                  console.log(
+                    picocolors.green(
+                      "\n  ✅ YOLO mode ON. All gates bypassed for this session.",
+                    ),
+                  );
+                  console.log(
+                    picocolors.gray(
+                      "  Toggle off with /autonomy yolo or /yolo again.\n",
+                    ),
+                  );
+                  try {
+                    agent.logEvent("yolo_mode_enabled", {
+                      source: "slash_command",
+                    });
+                  } catch (e) {}
+                } else {
+                  console.log(picocolors.gray("\n  YOLO mode not enabled.\n"));
+                }
+              }
               break;
             }
             default: {
               console.log(
                 picocolors.red(
-                  `❌ Unknown approvals command '${subcommand}'. Use set, add, remove, or clear.\n`,
+                  "\n❌ Unknown subcommand '" +
+                    effectiveSub +
+                    "'. Use: show, add, remove, set, clear, yolo\n",
                 ),
               );
             }
