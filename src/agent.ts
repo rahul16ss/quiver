@@ -1276,6 +1276,19 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       }
     }
 
+    // Append MCP server instructions (if any MCP servers are connected)
+    let mcpInstructions = "";
+    try {
+      // Synchronous require — MCP manager is already loaded at startup
+      const { mcpManager } = require("./mcp/client.js");
+      const mcpInstr = mcpManager.getInstructions();
+      if (mcpInstr) {
+        mcpInstructions = `--- MCP SERVER INSTRUCTIONS ---\n${mcpInstr}\n\n`;
+      }
+    } catch {
+      // MCP not loaded — skip
+    }
+
     const modelInfo: ModelInfo = {
       id: config.llmModelName,
       displayName: config.llmModelName,
@@ -1293,7 +1306,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         identity: systemPrompt,
         safetyPolicy: SECURITY_PREAMBLE,
         adapterInstructions: "",
-        toolInstructions,
+        toolInstructions: toolInstructions + mcpInstructions,
         memoryContext,
         projectContext,
         conversationSummary: "",
@@ -1491,6 +1504,16 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     parts.push(`${memories.length} memory`);
     if (skills.length > 0) parts.push(`${skills.length} skills`);
     parts.push(`${this.registry.getAllTools().length} tools`);
+    // Show MCP server count if any are connected
+    let mcpCount = 0;
+    try {
+      const { mcpManager } = require("./mcp/client.js");
+      const status = mcpManager.getStatus();
+      mcpCount = status.filter((s: any) => s.connected).length;
+      if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
+    } catch {
+      // MCP not loaded
+    }
     if (imageCount > 0)
       parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
     parts.push(config.llmModelName);
