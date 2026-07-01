@@ -67,6 +67,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: [],
     desc: "Show MCP server connections and tools",
   },
+  {
+    name: "/yolo",
+    aliases: [],
+    desc: "Toggle YOLO mode (bypass ALL approval gates)",
+  },
 ];
 
 export function resolveSlashCommand(input: string): string | null {

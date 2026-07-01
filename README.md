@@ -102,6 +102,8 @@ MCP tools appear as `mcp_<server>_<tool>` and are transparent in the audit trail
 | `/resume` | Resume a previous session |
 | `/exit` | End session (auto-saves) |
 | `/mcp` | Show MCP server connections |
+| `/yolo` | Toggle YOLO mode (bypass ALL approval gates) |
+| `/approvals` | Manage per-tool approval gates |
 
 ## CLI Flags
 
