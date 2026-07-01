@@ -1040,6 +1040,7 @@ async function configStartupUXContract() {
     "QUIVER_SESSION_LOG_MAX_CHARS",
     "PARALLEL_API_KEY",
     "GITHUB_TOKEN",
+    "QUIVER_YOLO",
   ]);
   const RETIRED_ENV = [
     "LLM_API_KEY",

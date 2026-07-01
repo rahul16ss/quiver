@@ -987,6 +987,11 @@ export class Agent {
     return this.logger.getSessionLogRelPath();
   }
 
+  /** Delegate to SessionLogger so CLI slash commands can log events. */
+  public logEvent(type: string, data: any): void {
+    this.logger.logEvent(type, data);
+  }
+
   /** Share the CLI readline so approval prompts don't open a second listener on stdin. */
   public setSessionReadline(rl: readline.Interface): void {
     this.sessionReadline = rl;
@@ -2055,12 +2060,14 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         // US-6.2: for run_command, approval is bound to the command's risk band
         // (destructive / privileged / network / secret-risk / exfiltration),
         // not just the tool name — so `ls` runs freely while `rm -rf /` prompts.
+        // YOLO mode bypasses BOTH layers — tool-level and command risk classifier.
         let isApproved = true;
         const needsApproval =
-          config.requireApprovalFor.includes(toolName) ||
-          (toolName === "run_command" &&
-            typeof args.command === "string" &&
-            classifyCommand(args.command).requiresApproval);
+          !config.yoloMode &&
+          (config.requireApprovalFor.includes(toolName) ||
+            (toolName === "run_command" &&
+              typeof args.command === "string" &&
+              classifyCommand(args.command).requiresApproval));
         if (config.dryRun) {
           isApproved = true;
         } else if (needsApproval) {

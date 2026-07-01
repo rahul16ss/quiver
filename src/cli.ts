@@ -148,7 +148,8 @@ async function main() {
       t.cyan(t.bold(`\n  Quiver v${VERSION}`)) +
       t.gray(` · ${getProjectName()}`) +
       (cloudStatus.active ? t.gray(` · ${cloudStatus.provider} ✓`) : "") +
-      (config.dryRun ? t.yellow(` · dry-run`) : ""),
+      (config.dryRun ? t.yellow(` · dry-run`) : "") +
+      (config.yoloMode ? t.red(` · YOLO`) : ""),
     );
   }
 
@@ -598,6 +599,7 @@ async function main() {
           console.log(
             `   - Approvals:         ${config.requireApprovalFor.join(", ") || "None"}`,
           );
+          console.log(`   - YOLO Mode:        ${config.yoloMode ? "ON (all gates bypassed)" : "Off"}`);
           console.log(`   - Output Mode:       ${config.outputMode}`);
           console.log(
             `   - Dry Run:           ${config.dryRun ? "Yes" : "No"}\n`,
@@ -1154,6 +1156,44 @@ ${testResult.stderr || ""}
           continue;
         }
 
+        // ── /yolo subcommand handling ──
+        if (resolved === "/yolo") {
+          if (config.yoloMode) {
+            config.yoloMode = false;
+            console.log(picocolors.yellow("\n  🔒 YOLO mode OFF. Approval gates re-enabled.\n"));
+            try { agent.logEvent("yolo_mode_disabled", { source: "slash_command" }); } catch (e) {}
+          } else {
+            console.log(picocolors.red("\n  ⚠️  YOLO MODE WARNING ⚠️"));
+            console.log(picocolors.red("  ─────────────────────────────────────"));
+            console.log(picocolors.yellow("  This will bypass ALL approval gates:"));
+            console.log(picocolors.yellow("    • Tool-level approvals (write_file, replace_content, etc.)"));
+            console.log(picocolors.yellow("    • Command risk classifier (rm -rf, sudo, chmod, curl, etc.)"));
+            console.log(picocolors.yellow("    • No confirmation prompts for any action"));
+            console.log(picocolors.yellow(""));
+            console.log(picocolors.yellow("  The agent will be able to execute ANY tool or command"));
+            console.log(picocolors.yellow("  without asking for your permission."));
+            console.log(picocolors.yellow(""));
+            console.log(picocolors.red("  Use at your own risk. All actions are still logged to the audit trail.\n"));
+
+            const yoloRl = readline.createInterface({ input: process.stdin, output: process.stdout });
+            const answer = await new Promise<string>((resolve) => {
+              yoloRl.question(picocolors.cyan("  Type 'I understand' to enable YOLO mode: "), (ans) => resolve(ans));
+            });
+            yoloRl.close();
+
+            if (answer.trim() === "I understand") {
+              config.yoloMode = true;
+              config.requireApprovalFor = [];
+              console.log(picocolors.green("\n  ✅ YOLO mode ON. All approval gates bypassed for this session."));
+              console.log(picocolors.gray("  Toggle off with /yolo again. All actions remain in the audit trail.\n"));
+              try { agent.logEvent("yolo_mode_enabled", { source: "slash_command" }); } catch (e) {}
+            } else {
+              console.log(picocolors.gray("\n  YOLO mode not enabled. Approval gates remain active.\n"));
+            }
+          }
+          continue;
+        }
+
         // ── /approvals subcommand handling ──
         if (resolved === "/approvals") {
           const parts = cleanInput.split(/\s+/);
@@ -1165,11 +1205,13 @@ ${testResult.stderr || ""}
             console.log(
               `   - Current List: ${config.requireApprovalFor.length > 0 ? picocolors.green(config.requireApprovalFor.join(", ")) : picocolors.yellow("None")}`,
             );
+            console.log(`   - YOLO Mode:        ${config.yoloMode ? picocolors.red("ON (all gates bypassed)") : picocolors.gray("Off")}`);
             console.log(picocolors.gray(`   - Commands:`));
             console.log(picocolors.gray(`     ├─ /approvals set tool1,tool2`));
             console.log(picocolors.gray(`     ├─ /approvals add toolName`));
             console.log(picocolors.gray(`     ├─ /approvals remove toolName`));
-            console.log(picocolors.gray(`     └─ /approvals clear\n`));
+            console.log(picocolors.gray(`     ├─ /approvals clear`));
+            console.log(picocolors.gray(`     └─ /yolo (bypass ALL gates)\n`));
             continue;
           }
 

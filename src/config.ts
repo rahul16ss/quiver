@@ -45,6 +45,9 @@ export const config: Config = {
   // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
   // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
   visionModelApiKey: process.env.OLLAMA_API_KEY || "",
+  // YOLO mode — bypasses ALL approval gates (tool-level + command risk classifier).
+  // Can be enabled via /yolo command or QUIVER_YOLO=1 env var. Off by default.
+  yoloMode: process.env.QUIVER_YOLO === "1",
 };
 
 // Config shape is declared after the config object so the source-controlled
@@ -70,6 +73,7 @@ export interface Config {
   visionModelName: string;
   visionModelBaseUrl: string;
   visionModelApiKey: string;
+  yoloMode: boolean;
 }
 
 export function redactSecret(value: string): string {
