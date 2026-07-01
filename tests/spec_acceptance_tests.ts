@@ -1019,13 +1019,14 @@ async function onboardingContract() {
 
 async function configStartupUXContract() {
   // ── Approved user-facing env variable set (project-owner directive) ──
-  // Core (10): LLM_API_BASE_URL, LLM_MODEL_NAME, OLLAMA_API_KEY, VISION_MODEL_NAME,
-  //   VISION_MODEL_BASE_URL, REQUIRE_APPROVAL_FOR, QUIVER_MAX_CONTEXT_TOKENS,
-  //   BROWSER_HEADLESS, QUIVER_SESSION_LOG, QUIVER_SESSION_LOG_MAX_CHARS.
+  // Core (9): LLM_API_BASE_URL, LLM_MODEL_NAME, OLLAMA_API_KEY, VISION_MODEL_NAME,
+  //   VISION_MODEL_BASE_URL, QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS,
+  //   QUIVER_SESSION_LOG, QUIVER_SESSION_LOG_MAX_CHARS.
   // Optional: PARALLEL_API_KEY, GITHUB_TOKEN (developers only).
   // Retired from the user-facing surface: LLM_API_KEY, VISION_MODEL_API_KEY,
-  //   CONTEXT7_API_KEY (and any other legacy var). The single API key is
-  //   OLLAMA_API_KEY, which powers the LLM, Ollama, and vision adapters.
+  //   CONTEXT7_API_KEY, BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by
+  //   QUIVER_AUTONOMY). The single API key is OLLAMA_API_KEY, which powers
+  //   the LLM, Ollama, and vision adapters.
   // Internal feature flags (e.g. QUIVER_CLOUD_SYNC_*) are out of scope here.
   const ALLOWED_ENV = new Set([
     "LLM_API_BASE_URL",
@@ -1044,6 +1045,8 @@ async function configStartupUXContract() {
     "LLM_API_KEY",
     "VISION_MODEL_API_KEY",
     "CONTEXT7_API_KEY",
+    "BROWSER_HEADLESS",
+    "REQUIRE_APPROVAL_FOR",
   ];
 
   await check(
@@ -1086,7 +1089,7 @@ async function configStartupUXContract() {
   await check(
     "CONFIG-ENV-ALLOWLIST",
     "US-1.3",
-    "the user-facing env surface (.env.example + the codebase) must be limited to the approved variable set — LLM_API_KEY, VISION_MODEL_API_KEY, and CONTEXT7_API_KEY are retired and must not appear",
+    "the user-facing env surface (.env.example + the codebase) must be limited to the approved variable set — LLM_API_KEY, VISION_MODEL_API_KEY, CONTEXT7_API_KEY, BROWSER_HEADLESS, and REQUIRE_APPROVAL_FOR are retired and must not appear",
     () => {
       // .env.example: every uncommented assignment must be an approved variable.
       const ex = srcText(".env.example");

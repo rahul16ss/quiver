@@ -42,8 +42,8 @@ interface QuiverConfig {
   parallelApiKey: string;
   ollamaApiKey: string;
   githubToken: string;
-  browserHeadless: boolean;
-  requireApprovalFor: string[];
+  /** Comma-separated autonomy grants (e.g. "write_file,run_command" or "yolo"). */
+  autonomyGrants: string;
   maxContextTokens: number;
   memoryDir: string;
   skillsDir: string;
@@ -73,8 +73,8 @@ const DEFAULT_CONFIG: QuiverConfig = {
   parallelApiKey: "",
   ollamaApiKey: "",
   githubToken: "",
-  browserHeadless: true,
-  requireApprovalFor: ["run_command", "write_file", "replace_content", "browser_control", "create_tool"],
+  // Empty = conservative (ask for everything). "yolo" = bypass ALL gates.
+  autonomyGrants: "",
   maxContextTokens: config.maxContextTokens,
   memoryDir: "./memory",
   skillsDir: "./skills",
@@ -170,8 +170,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
       OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
       GITHUB_TOKEN: config.githubToken,
-      BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
-      REQUIRE_APPROVAL_FOR: config.requireApprovalFor.join(","),
+      QUIVER_AUTONOMY: config.autonomyGrants || "",
       QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     };
 
@@ -237,8 +236,7 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
     GITHUB_TOKEN: config.githubToken,
-    BROWSER_HEADLESS: config.browserHeadless ? "true" : "false",
-    REQUIRE_APPROVAL_FOR: config.requireApprovalFor.join(","),
+    QUIVER_AUTONOMY: config.autonomyGrants || "",
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     QUIVER_CLOUD_SYNC_PATH: config.cloudSyncPath || "",
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
@@ -684,8 +682,8 @@ function registerIpcHandlers(): void {
     } else if (section === "vision") {
       config.visionModelName = values.visionModelName || config.visionModelName;
       config.visionModelBaseUrl = values.visionModelBaseUrl || config.visionModelBaseUrl;
-    } else if (section === "approvals") {
-      config.requireApprovalFor = values.approvals || [];
+    } else if (section === "autonomy") {
+      config.autonomyGrants = values.grants || "";
     } else if (section === "sync") {
       config.cloudSyncPath = values.syncPath || "";
     } else if (section === "memory") {
