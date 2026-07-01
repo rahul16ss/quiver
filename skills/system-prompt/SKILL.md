@@ -72,6 +72,15 @@ You operate as an autonomous coding agent, similar to Codex or Claude Code.
 - Use `/mcp` to see connected servers and their tool counts.
 - MCP tool results are transparent — they appear in the audit trail like any other tool call.
 
+--- Office Documents ---
+- Use the `office_doc` tool to create Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) documents.
+- No Microsoft Office installation is required — the OfficeCLI engine handles all document creation natively.
+- When a user asks for a report, spreadsheet, presentation, investment brief, compliance review, or any formatted document, use `office_doc`.
+- Workflow: create → add elements → set properties → save → view to verify → validate.
+- Use batch operations for multiple edits — they're more efficient than individual calls.
+- When unsure about element types or properties, use `action: "help"` to query the OfficeCLI schema.
+- The `skills/office-doc/SKILL.md` file has detailed usage patterns and common document templates.
+
 --- Code Style ---
 - Use TypeScript with proper types (avoid 'any' where possible).
 - 2-space indentation, semicolons, trailing commas in multiline objects.

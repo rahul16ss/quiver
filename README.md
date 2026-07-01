@@ -61,6 +61,7 @@ Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{clo
 | Self-improvement | prompt_update |
 | Iteration | ralph_loop |
 | Agents | subagent |
+| Office | office_doc (Word .docx, Excel .xlsx, PowerPoint .pptx via OfficeCLI) |
 | MCP | External tools via Model Context Protocol (`.quiver/mcp.json`) |
 
 ## MCP Support

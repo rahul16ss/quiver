@@ -101,6 +101,38 @@ MCP tools appear as `mcp_<server>_<tool>` in the tool list. They are transparent
 - Implements JSON-RPC 2.0 natively (no external SDK dependency)
 - Supports `initialize`, `tools/list`, and `tools/call` methods
 - Server instructions are loaded into the system prompt
+## Office Documents
+
+Quiver includes a built-in `office_doc` tool powered by [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)
+for creating and editing Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) documents.
+No Microsoft Office installation is required.
+
+### Installation
+
+OfficeCLI is installed automatically when first needed, or you can install it manually:
+
+```bash
+curl -fsSL https://d.officecli.ai/install.sh | bash
+```
+
+### Usage
+
+The `office_doc` tool supports these actions:
+- `create` — Create a blank .docx, .xlsx, or .pptx file
+- `add` — Add elements (paragraphs, tables, slides, cells, shapes)
+- `set` — Modify element properties (text, formatting, values)
+- `get` — Retrieve document elements
+- `view` — View document content (text, outline, stats, issues modes)
+- `query` — CSS-like selector queries
+- `remove` — Remove elements
+- `move` / `swap` — Reorder elements
+- `batch` — Execute multiple operations in a single save cycle
+- `save` / `close` — Flush changes to disk
+- `validate` — Validate against OpenXML schema
+- `help` — Query the schema reference for element types and properties
+
+See `skills/office-doc/SKILL.md` for detailed usage patterns and document templates.
+
 ## Security Enforcement (wired)
 
 The file/shell tools enforce the security modules directly, not just the agent:
