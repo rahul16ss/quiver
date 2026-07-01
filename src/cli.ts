@@ -634,15 +634,11 @@ async function main() {
           );
           console.log(`   - Skills Dir:        ${getSkillsDir()}`);
           console.log(`   - Memory Dir:        ${getProjectMemoryDir()}`);
-          console.log(`   - Browser Headless:  ${config.browserHeadless}`);
           console.log(
             `   - Max Context Tokens: ${config.maxContextTokens.toLocaleString()}`,
           );
           console.log(
             `   - Autonomy:          ${config.autonomyGrants.size > 0 ? [...config.autonomyGrants].join(", ") : "ask (conservative)"}`,
-          );
-          console.log(
-            `   - Browser:           ${config.browserHeadless ? "headless" : "visible"}`,
           );
           console.log(`   - Output Mode:       ${config.outputMode}`);
           console.log(
