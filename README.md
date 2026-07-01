@@ -102,8 +102,8 @@ MCP tools appear as `mcp_<server>_<tool>` and are transparent in the audit trail
 | `/resume` | Resume a previous session |
 | `/exit` | End session (auto-saves) |
 | `/mcp` | Show MCP server connections |
-| `/yolo` | Toggle YOLO mode (bypass ALL approval gates) |
-| `/approvals` | Manage per-tool approval gates |
+| `/yolo` | Alias for /autonomy yolo — bypass ALL approval gates |
+| `/autonomy` | Manage autonomy grants (write_file, run_command, destructive, yolo, etc.) |
 
 ## CLI Flags
 
@@ -131,9 +131,9 @@ adapter — no separate LLM/vision keys are required. `LLM_API_KEY`,
 | `LLM_MODEL_NAME` | no | Primary model — source-controlled default, override only |
 | `VISION_MODEL_NAME` | no | Vision model — source-controlled default, override only |
 | `VISION_MODEL_BASE_URL` | no | Vision adapter base URL |
-| `REQUIRE_APPROVAL_FOR` | no | Comma-separated tools needing approval |
+| `QUIVER_AUTONOMY` | no | Comma-separated autonomy grants (write_file, run_command, destructive, yolo, etc.) |
 | `QUIVER_MAX_CONTEXT_TOKENS` | no | Context window limit (default `120000`) |
-| `BROWSER_HEADLESS` | no | `true`/`false` — show browser window for sign-in |
+| | | (browser visibility is now controlled via `QUIVER_AUTONOMY=browser:visible`) |
 | `QUIVER_SESSION_LOG` | no | `0` to disable session logging |
 | `QUIVER_SESSION_LOG_MAX_CHARS` | no | Max chars logged per session message |
 | `PARALLEL_API_KEY` | optional | Powers web search, scrape, deep research, find_all |

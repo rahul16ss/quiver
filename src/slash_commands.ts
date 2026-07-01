@@ -10,7 +10,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/exit", aliases: ["/quit", "/q"], desc: "End session" },
   { name: "/help", aliases: ["/h", "/?"], desc: "Show this help" },
   { name: "/tools", aliases: ["/t"], desc: "List available tools" },
-  { name: "/approvals", aliases: ["/a"], desc: "Manage approval gates" },
+  {
+    name: "/autonomy",
+    aliases: ["/a"],
+    desc: "Manage autonomy grants (write_file, run_command, destructive, yolo, etc.)",
+  },
   { name: "/session", aliases: ["/s"], desc: "Show session details" },
   { name: "/version", aliases: ["/v"], desc: "Show Quiver version" },
   { name: "/config", aliases: ["/c"], desc: "Show configuration" },
@@ -18,7 +22,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/compact", aliases: ["/co"], desc: "Compact conversation history" },
   { name: "/reset", aliases: ["/r"], desc: "Reset conversation (keep memory)" },
   { name: "/cost", aliases: [], desc: "Show token usage stats" },
-  { name: "/memory", aliases: ["/mem"], desc: "View loaded memory (/memory review for pending facts)" },
+  {
+    name: "/memory",
+    aliases: ["/mem"],
+    desc: "View loaded memory (/memory review for pending facts)",
+  },
   { name: "/model", aliases: ["/m"], desc: "Show or change model" },
   {
     name: "/history",
@@ -70,7 +78,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/yolo",
     aliases: [],
-    desc: "Toggle YOLO mode (bypass ALL approval gates)",
+    desc: "Alias for /autonomy yolo — bypass ALL approval gates",
   },
 ];
 

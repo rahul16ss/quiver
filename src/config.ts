@@ -14,40 +14,141 @@ function parseOutputMode(): OutputMode {
 }
 
 function parseDryRun(): boolean {
-  return process.argv.slice(2).includes("--dry-run") || process.argv.slice(2).includes("-n");
+  return (
+    process.argv.slice(2).includes("--dry-run") ||
+    process.argv.slice(2).includes("-n")
+  );
 }
 
-const DEFAULT_APPROVALS = "run_command,write_file,replace_content,browser_control,create_tool";
+// ─── Autonomy System ─────────────────────────────────────────────────
+// QUIVER_AUTONOMY is a single comma-separated env var that controls which
+// actions the agent can take without asking for user approval.
+//
+// Permission grants (each auto-approves a specific capability):
+//   write_file       — file creation/overwrite
+//   replace_content  — targeted string edits
+//   apply_patch      — unified diff patches
+//   run_command      — shell commands (safe + moderate risk)
+//   destructive      — rm -rf, git reset --hard, shred, etc.
+//   privileged       — sudo, chmod, chown, etc.
+//   network          — curl, wget, ssh, etc.
+//   secrets          — cat .env, printenv, etc.
+//   exfiltration      — piping data to remote endpoints
+//   browser          — browser control (headless)
+//   browser:visible  — browser control (visible window)
+//   create_tool      — dynamic tool creation
+//   yolo             — shorthand for ALL of the above
+//
+// Unset/empty = conservative default (ask for everything risky).
+// Also settable at runtime via /autonomy command.
 
-function parseApprovals(): string[] {
-  const raw = process.env.REQUIRE_APPROVAL_FOR;
-  const source = raw === undefined ? DEFAULT_APPROVALS : raw;
-  return source.split(",").map((s) => s.trim()).filter(Boolean);
+export type AutonomyGrant =
+  | "write_file"
+  | "replace_content"
+  | "apply_patch"
+  | "run_command"
+  | "destructive"
+  | "privileged"
+  | "network"
+  | "secrets"
+  | "exfiltration"
+  | "browser"
+  | "browser:visible"
+  | "create_tool"
+  | "yolo";
+
+export const ALL_GRANTS: AutonomyGrant[] = [
+  "write_file",
+  "replace_content",
+  "apply_patch",
+  "run_command",
+  "destructive",
+  "privileged",
+  "network",
+  "secrets",
+  "exfiltration",
+  "browser",
+  "browser:visible",
+  "create_tool",
+  "yolo",
+];
+
+function parseAutonomy(): Set<AutonomyGrant> {
+  const raw = process.env.QUIVER_AUTONOMY || "";
+  const parts = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean) as AutonomyGrant[];
+  const grants = new Set<AutonomyGrant>(parts);
+  if (grants.has("yolo")) {
+    for (const g of ALL_GRANTS) grants.add(g);
+  }
+  return grants;
 }
+
+/** Check if a specific autonomy grant is active. */
+export function hasGrant(grant: AutonomyGrant): boolean {
+  return config.autonomyGrants.has(grant) || config.autonomyGrants.has("yolo");
+}
+
+/** Check if the agent should prompt for approval before a tool call. */
+export function needsApprovalFor(
+  toolName: string,
+  commandRisk?: string,
+): boolean {
+  if (hasGrant("yolo")) return false;
+  if (toolName === "write_file" && hasGrant("write_file")) return false;
+  if (toolName === "replace_content" && hasGrant("replace_content"))
+    return false;
+  if (toolName === "apply_patch" && hasGrant("apply_patch")) return false;
+  if (
+    toolName === "browser_control" &&
+    (hasGrant("browser") || hasGrant("browser:visible"))
+  )
+    return false;
+  if (toolName === "create_tool" && hasGrant("create_tool")) return false;
+  if (toolName === "run_command") {
+    if (commandRisk === "safe" || commandRisk === "moderate")
+      return !hasGrant("run_command");
+    if (commandRisk === "destructive") return !hasGrant("destructive");
+    if (commandRisk === "privileged") return !hasGrant("privileged");
+    if (commandRisk === "network") return !hasGrant("network");
+    if (commandRisk === "secret-risk") return !hasGrant("secrets");
+    if (commandRisk === "exfiltration-risk") return !hasGrant("exfiltration");
+    return !hasGrant("run_command");
+  }
+  return true;
+}
+
+const _parsedAutonomy = parseAutonomy();
 
 export const config: Config = {
   llmBaseUrl: process.env.LLM_API_BASE_URL || "https://ollama.com/v1",
   llmModelName: process.env.LLM_MODEL_NAME || "glm-5.2:cloud",
   llmApiKey: process.env.OLLAMA_API_KEY || "",
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
-  browserHeadless: process.env.BROWSER_HEADLESS !== "false",
-  requireApprovalFor: parseApprovals(),
+  browserHeadless: !_parsedAutonomy.has("browser:visible"),
+  autonomyGrants: _parsedAutonomy,
   githubToken: process.env.GITHUB_TOKEN || "",
   ollamaApiKey: process.env.OLLAMA_API_KEY || "",
   cloudSyncPath: process.env.QUIVER_CLOUD_SYNC_PATH || "",
-  maxContextTokens: parseInt(process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000", 10),
+  maxContextTokens: parseInt(
+    process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
+    10,
+  ),
   outputMode: parseOutputMode(),
   sessionLogEnabled: process.env.QUIVER_SESSION_LOG !== "0",
-  sessionLogMaxChars: parseInt(process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512", 10),
+  sessionLogMaxChars: parseInt(
+    process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512",
+    10,
+  ),
   dryRun: parseDryRun(),
   visionModelName: process.env.VISION_MODEL_NAME || "gemma3:4b",
-  visionModelBaseUrl: process.env.VISION_MODEL_BASE_URL || "http://localhost:11434/v1",
+  visionModelBaseUrl:
+    process.env.VISION_MODEL_BASE_URL || "http://localhost:11434/v1",
   // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
   // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
   visionModelApiKey: process.env.OLLAMA_API_KEY || "",
-  // YOLO mode — bypasses ALL approval gates (tool-level + command risk classifier).
-  // Can be enabled via /yolo command or QUIVER_YOLO=1 env var. Off by default.
-  yoloMode: process.env.QUIVER_YOLO === "1",
 };
 
 // Config shape is declared after the config object so the source-controlled
@@ -60,7 +161,7 @@ export interface Config {
   llmApiKey: string;
   parallelApiKey: string;
   browserHeadless: boolean;
-  requireApprovalFor: string[];
+  autonomyGrants: Set<AutonomyGrant>;
   githubToken: string;
   ollamaApiKey: string;
   cloudSyncPath: string;
@@ -73,7 +174,6 @@ export interface Config {
   visionModelName: string;
   visionModelBaseUrl: string;
   visionModelApiKey: string;
-  yoloMode: boolean;
 }
 
 export function redactSecret(value: string): string {
@@ -106,23 +206,43 @@ export function isFirstRun(): boolean {
  */
 export async function runOnboardingHandshake(): Promise<void> {
   const readline = await import("readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q: string) => new Promise<string>((resolve) => rl.question(q, (a) => resolve(a.trim())));
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const ask = (q: string) =>
+    new Promise<string>((resolve) => rl.question(q, (a) => resolve(a.trim())));
 
-  console.log(picocolors.cyan("\n  ⚡ Welcome to Quiver! Let's get you set up.\n"));
-  console.log(picocolors.gray("  Quiver runs on Ollama and uses a single OLLAMA_API_KEY for the LLM, Ollama, and vision adapters.\n"));
+  console.log(
+    picocolors.cyan("\n  ⚡ Welcome to Quiver! Let's get you set up.\n"),
+  );
+  console.log(
+    picocolors.gray(
+      "  Quiver runs on Ollama and uses a single OLLAMA_API_KEY for the LLM, Ollama, and vision adapters.\n",
+    ),
+  );
 
-  const key = await ask(picocolors.cyan("  Enter your Ollama API key (or press Enter to skip and configure .env later): "));
+  const key = await ask(
+    picocolors.cyan(
+      "  Enter your Ollama API key (or press Enter to skip and configure .env later): ",
+    ),
+  );
   if (key) {
     try {
       // US-1.3: try the OS keychain first; fall back to .env with a warning
       // that it is a plaintext fallback (not as secure as the keychain).
-      const { setCredential, isKeychainAvailable } = await import("./secrets/keychain.js");
-      const keychainOk = isKeychainAvailable() && await setCredential("OLLAMA_API_KEY", key);
+      const { setCredential, isKeychainAvailable } =
+        await import("./secrets/keychain.js");
+      const keychainOk =
+        isKeychainAvailable() && (await setCredential("OLLAMA_API_KEY", key));
       if (keychainOk) {
         config.ollamaApiKey = key;
         config.llmApiKey = key;
-        console.log(picocolors.green("\n  ✅ Saved to OS keychain. You're ready to go!\n"));
+        console.log(
+          picocolors.green(
+            "\n  ✅ Saved to OS keychain. You're ready to go!\n",
+          ),
+        );
       } else {
         // Plaintext .env fallback — warn the user (US-1.3)
         const fs = await import("fs/promises");
@@ -130,13 +250,25 @@ export async function runOnboardingHandshake(): Promise<void> {
         await fs.writeFile(envPath, `OLLAMA_API_KEY=${key}\n`, { mode: 0o600 });
         config.ollamaApiKey = key;
         config.llmApiKey = key;
-        console.log(picocolors.yellow("\n  ⚠️  Saved to .env (plaintext fallback, 0600). Consider using the OS keychain for better security.\n"));
+        console.log(
+          picocolors.yellow(
+            "\n  ⚠️  Saved to .env (plaintext fallback, 0600). Consider using the OS keychain for better security.\n",
+          ),
+        );
       }
     } catch {
-      console.log(picocolors.yellow("\n  ⚠️  Could not save API key — add OLLAMA_API_KEY manually later.\n"));
+      console.log(
+        picocolors.yellow(
+          "\n  ⚠️  Could not save API key — add OLLAMA_API_KEY manually later.\n",
+        ),
+      );
     }
   } else {
-    console.log(picocolors.gray("\n  No problem — add OLLAMA_API_KEY to .env when ready, then run quiver again.\n"));
+    console.log(
+      picocolors.gray(
+        "\n  No problem — add OLLAMA_API_KEY to .env when ready, then run quiver again.\n",
+      ),
+    );
   }
   rl.close();
 }
@@ -152,10 +284,16 @@ export function printConfig(): void {
   const c = picocolors.gray;
   const v = picocolors.white;
   console.log(
-    c("  ") + v(config.llmModelName) + c(" · ") +
-    v(redactSecret(config.llmApiKey)) + c(" · ") +
-    (config.parallelApiKey ? v("web ✓") : c("web —")) + c(" · ") +
-    (config.githubToken ? v("github ✓") : c("github —")) + c(" · ") +
-    v(config.maxContextTokens.toLocaleString("en-US")) + c(" ctx"),
+    c("  ") +
+      v(config.llmModelName) +
+      c(" · ") +
+      v(redactSecret(config.llmApiKey)) +
+      c(" · ") +
+      (config.parallelApiKey ? v("web ✓") : c("web —")) +
+      c(" · ") +
+      (config.githubToken ? v("github ✓") : c("github —")) +
+      c(" · ") +
+      v(config.maxContextTokens.toLocaleString("en-US")) +
+      c(" ctx"),
   );
 }

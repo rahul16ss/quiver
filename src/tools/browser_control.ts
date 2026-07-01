@@ -37,7 +37,7 @@ function isPrivateUrl(urlStr: string): boolean {
 export const tool: Tool = {
   name: "browser_control",
   description:
-    "Controls a persistent browser session to navigate, click, type, screenshot, or extract content. Pass headless: false to show the browser window (e.g. for manual sign-in). Defaults to headless mode via BROWSER_HEADLESS env var.",
+    "Controls a persistent browser session to navigate, click, type, screenshot, or extract content. Pass headless: false to show the browser window (e.g. for manual sign-in). Defaults to headless mode unless browser:visible autonomy grant is active.",
   parameters: z.object({
     action: z
       .enum(["navigate", "click", "type", "screenshot", "get_content", "close"])
@@ -64,7 +64,7 @@ export const tool: Tool = {
       .boolean()
       .optional()
       .describe(
-        "Override headless mode for this session. Set to false to show the browser window (e.g. for manual sign-in). If omitted, uses BROWSER_HEADLESS env var.",
+        "Override headless mode for this session. Set to false to show the browser window (e.g. for manual sign-in). If omitted, uses the autonomy config (browser:visible grant).",
       ),
   }),
   execute: async ({
