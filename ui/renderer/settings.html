@@ -148,30 +148,25 @@
         <div class="hint" style="margin-top:-4px;">Allow sending images to a remote vision model. Off by default for privacy.</div>
       </div>
 
-      <!-- US-8.4: Approvals -->
+      <!-- US-8.4: Approvals & Autonomy -->
       <div class="settings-section">
-        <h3>Approvals</h3>
-        <div class="hint" style="margin-bottom:8px;">Tools that require explicit approval before execution:</div>
-        <div class="toggle-row">
-          <label>run_command (shell execution)</label>
-          <div class="toggle active" id="apprRunCommand" onclick="this.classList.toggle('active')"></div>
+        <h3>Approvals & Autonomy</h3>
+        <div class="hint" style="margin-bottom:8px;">Control how much the agent can do without asking:</div>
+        <div class="settings-row">
+          <label>Autonomy Mode</label>
+          <select id="autonomyMode">
+            <option value="">Conservative (ask for everything)</option>
+            <option value="write_file,replace_content,apply_patch,run_command">Standard (auto-write + safe commands)</option>
+            <option value="write_file,replace_content,apply_patch,run_command,destructive,network,browser">Advanced (adds destructive, network, browser)</option>
+            <option value="yolo">YOLO (no prompts ever)</option>
+          </select>
+          <div class="hint">YOLO bypasses ALL approval gates including destructive commands.</div>
         </div>
         <div class="toggle-row">
-          <label>write_file (file creation)</label>
-          <div class="toggle active" id="apprWriteFile" onclick="this.classList.toggle('active')"></div>
+          <label>Show browser window (for manual sign-in)</label>
+          <div class="toggle" id="browserVisible" onclick="this.classList.toggle('active')"></div>
         </div>
-        <div class="toggle-row">
-          <label>replace_content (file editing)</label>
-          <div class="toggle active" id="apprReplaceContent" onclick="this.classList.toggle('active')"></div>
-        </div>
-        <div class="toggle-row">
-          <label>browser_control (browser automation)</label>
-          <div class="toggle active" id="apprBrowser" onclick="this.classList.toggle('active')"></div>
-        </div>
-        <div class="toggle-row">
-          <label>create_tool (runtime tool synthesis)</label>
-          <div class="toggle active" id="apprCreateTool" onclick="this.classList.toggle('active')"></div>
-        </div>
+        <div class="hint" style="margin-top:-4px;">When off, browser runs headless. When on, a visible browser window appears for interactive sign-in.</div>
       </div>
 
       <!-- US-8.4: Cloud Sync -->
@@ -210,13 +205,7 @@
           <label>Session Log Max Chars</label>
           <input id="sessionLogMaxChars" type="number" placeholder="512" min="0" max="10000">
         </div>
-        <div class="settings-row">
-          <label>Browser Mode</label>
-          <select id="browserHeadless">
-            <option value="true">Headless (recommended)</option>
-            <option value="false">Visible window</option>
-          </select>
-        </div>
+
       </div>
 
       <div class="form-group" style="margin-top:20px;">
@@ -251,20 +240,16 @@
       // Vision Model
       document.getElementById("visionModelName").value = currentConfig.visionModelName || "";
       document.getElementById("visionModelBaseUrl").value = currentConfig.visionModelBaseUrl || "";
-      // Approvals — populate from config
-      const approvals = currentConfig.requireApprovalFor || [];
-      setToggle("apprRunCommand", approvals.includes("run_command"));
-      setToggle("apprWriteFile", approvals.includes("write_file"));
-      setToggle("apprReplaceContent", approvals.includes("replace_content"));
-      setToggle("apprBrowser", approvals.includes("browser_control"));
-      setToggle("apprCreateTool", approvals.includes("create_tool"));
+      // Autonomy — populate from config
+      const grants = currentConfig.autonomyGrants || "";
+      document.getElementById("autonomyMode").value = grants.includes("yolo") ? "yolo" : grants;
+      setToggle("browserVisible", grants.includes("browser:visible"));
       // Cloud Sync
       setToggle("syncEnabled", !!(currentConfig.cloudSyncPath && currentConfig.cloudSyncPath.length > 0));
       document.getElementById("syncPath").value = currentConfig.cloudSyncPath || "";
       // Memory
       setToggle("sessionLogEnabled", currentConfig.sessionLogEnabled !== false);
       document.getElementById("sessionLogMaxChars").value = currentConfig.sessionLogMaxChars || 512;
-      document.getElementById("browserHeadless").value = currentConfig.browserHeadless ? "true" : "false";
       // Load memory stats
       try {
         const stats = await window.quiver.memory?.reviewList?.();
@@ -297,13 +282,11 @@
     }
 
     async function saveSettings() {
-      // Build approvals list from toggles
-      const approvals = [];
-      if (isToggleActive("apprRunCommand")) approvals.push("run_command");
-      if (isToggleActive("apprWriteFile")) approvals.push("write_file");
-      if (isToggleActive("apprReplaceContent")) approvals.push("replace_content");
-      if (isToggleActive("apprBrowser")) approvals.push("browser_control");
-      if (isToggleActive("apprCreateTool")) approvals.push("create_tool");
+      // Build autonomy grants string
+      let grants = document.getElementById("autonomyMode").value;
+      if (isToggleActive("browserVisible")) {
+        grants = grants ? grants + ",browser:visible" : "browser:visible";
+      }
 
       const syncPath = document.getElementById("syncPath").value.trim();
       const syncOn = isToggleActive("syncEnabled");
@@ -323,11 +306,10 @@
         visionModelName: document.getElementById("visionModelName").value.trim(),
         visionModelBaseUrl: document.getElementById("visionModelBaseUrl").value.trim(),
         maxContextTokens: parseInt(document.getElementById("maxContextTokens").value) || 120000,
-        requireApprovalFor: approvals,
+        autonomyGrants: grants,
         cloudSyncPath: syncOn ? syncPath : "",
         sessionLogEnabled: isToggleActive("sessionLogEnabled"),
         sessionLogMaxChars: parseInt(document.getElementById("sessionLogMaxChars").value) || 512,
-        browserHeadless: document.getElementById("browserHeadless").value === "true",
       });
       await window.quiver.loadMain();
     }
