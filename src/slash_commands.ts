@@ -62,6 +62,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ["/ov"],
     desc: "Override the last maker-checker verdict (US-15.4)",
   },
+  {
+    name: "/mcp",
+    aliases: [],
+    desc: "Show MCP server connections and tools",
+  },
 ];
 
 export function resolveSlashCommand(input: string): string | null {

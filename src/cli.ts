@@ -169,8 +169,33 @@ async function main() {
   // Load tools — silent
   await globalRegistry.loadAll();
   const tools = globalRegistry.getAllTools();
+
+  // Load MCP servers (if configured)
+  let mcpToolCount = 0;
+  try {
+    const { loadMcpConfig } = await import("./mcp/config.js");
+    const { mcpManager } = await import("./mcp/client.js");
+    const mcpConfig = loadMcpConfig();
+    if (mcpConfig && mcpConfig.mcpServers && Object.keys(mcpConfig.mcpServers).length > 0) {
+      if (isInteractive) {
+        console.log(t.gray(`  Connecting to MCP servers…`));
+      }
+      const mcpTools = await mcpManager.connectAll(mcpConfig.mcpServers);
+      for (const mcpTool of mcpTools) {
+        globalRegistry["tools"].set(mcpTool.name, mcpTool);
+      }
+      mcpToolCount = mcpTools.length;
+    }
+  } catch (err: any) {
+    if (isInteractive) {
+      console.log(t.gray(`  MCP: ${err.message}`));
+    }
+  }
+
   if (isInteractive) {
-    console.log(t.gray(`  ${tools.length} tools loaded · /help for commands\n`));
+    const totalTools = tools.length + mcpToolCount;
+    const mcpInfo = mcpToolCount > 0 ? ` · ${mcpToolCount} MCP` : "";
+    console.log(t.gray(`  ${totalTools} tools loaded${mcpInfo} · /help for commands\n`));
   }
 
   // ── List sessions mode ──
@@ -424,6 +449,8 @@ async function main() {
       console.log(t.gray(`   Session saved. Resume with: quiver --continue`));
       console.log(t.gray(`   Session log: ${agent.getSessionLogRelPath()}\n`));
       rl.close();
+      // Close MCP connections
+      import("./mcp/client.js").then(({ mcpManager }) => mcpManager.closeAll()).catch(() => {});
       process.exit(0);
     }
   });
@@ -435,6 +462,8 @@ async function main() {
     console.log(t.gray(`   Session saved. Resume with: quiver --continue`));
     console.log(t.gray(`   Session log: ${agent.getSessionLogRelPath()}\n`));
     rl.close();
+    // Close MCP connections
+    import("./mcp/client.js").then(({ mcpManager }) => mcpManager.closeAll()).catch(() => {});
     process.exit(0);
   });
 
@@ -1098,6 +1127,29 @@ ${testResult.stderr || ""}
             }
           } catch (error: any) {
             console.log(picocolors.red(`\n  ❌ Error: ${error.message}\n`));
+          }
+          continue;
+        }
+
+        // ── /mcp subcommand handling ──
+        if (resolved === "/mcp") {
+          try {
+            const { mcpManager } = await import("./mcp/client.js");
+            const status = mcpManager.getStatus();
+            if (status.length === 0) {
+              console.log(picocolors.gray("\n  No MCP servers connected.\n"));
+              console.log(picocolors.gray("  Configure servers in .quiver/mcp.json:\n"));
+              console.log(picocolors.gray('  { "mcpServers": { "name": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] } } }\n'));
+            } else {
+              console.log(picocolors.cyan(`\n  MCP Servers (${status.length}):\n`));
+              for (const s of status) {
+                const state = s.connected ? picocolors.green("✓") : picocolors.red("✗");
+                console.log(`  ${state} ${s.name} — ${s.tools} tools`);
+              }
+              console.log();
+            }
+          } catch (err: any) {
+            console.log(picocolors.red(`\n  ❌ ${err.message}\n`));
           }
           continue;
         }
