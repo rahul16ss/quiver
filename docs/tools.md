@@ -71,6 +71,36 @@ Dynamically generated tools execute in isolated worker threads with:
 ## Tool Registry
 
 The `ToolRegistry` class manages tool loading, hot-reloading, and OpenAI function-calling schema serialization. Tools are loaded from `src/tools/` at startup and can be dynamically created via `create_tool`.
+
+## MCP (Model Context Protocol)
+
+Quiver supports MCP servers as external tool providers. Configure servers in `.quiver/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    "remote-api": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer token" }
+    }
+  }
+}
+```
+
+MCP tools appear as `mcp_<server>_<tool>` in the tool list. They are transparent — calls appear in the audit trail like any built-in tool. Use `/mcp` to see connected servers.
+
+### Supported transports:
+- **stdio** — spawns a local process, communicates over stdin/stdout
+- **Streamable HTTP** — POST requests to a remote MCP endpoint
+
+### Protocol:
+- Implements JSON-RPC 2.0 natively (no external SDK dependency)
+- Supports `initialize`, `tools/list`, and `tools/call` methods
+- Server instructions are loaded into the system prompt
 ## Security Enforcement (wired)
 
 The file/shell tools enforce the security modules directly, not just the agent:

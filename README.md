@@ -61,6 +61,24 @@ Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{clo
 | Self-improvement | prompt_update |
 | Iteration | ralph_loop |
 | Agents | subagent |
+| MCP | External tools via Model Context Protocol (`.quiver/mcp.json`) |
+
+## MCP Support
+
+Quiver supports MCP servers as external tool providers. Configure servers in `.quiver/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    }
+  }
+}
+```
+
+MCP tools appear as `mcp_<server>_<tool>` and are transparent in the audit trail. Use `/mcp` to see connected servers. See `.quiver/mcp.example.json` for a sample config.
 
 ## Principles
 
@@ -82,6 +100,7 @@ Cloud sync: auto-detects Google Drive, OneDrive, Dropbox, iCloud. Syncs to `{clo
 | `/reset` | Reset conversation (keeps memory) |
 | `/resume` | Resume a previous session |
 | `/exit` | End session (auto-saves) |
+| `/mcp` | Show MCP server connections |
 
 ## CLI Flags
 
