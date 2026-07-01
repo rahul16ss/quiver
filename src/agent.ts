@@ -2267,7 +2267,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
                 if (config.outputMode === "interactive") {
                   process.stdout.write(
-                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.slice(0, 60))}\n`,
+                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message)}\n`,
                   );
                   if (stuck) {
                     console.warn(
