@@ -76,3 +76,8 @@ gitignore and remember.rtf
 # ─── Private vendor blueprint (not part of the open-source release) ───
 .spec-swimlane.md
 docs/ICP.md
+
+# ─── GitHub Actions (requires workflow scope on PAT) ───────────────────
+# Remove this line once your GitHub PAT has the 'workflow' scope added,
+# then: git add .github/ && git commit && git push
+.github/workflows/release.yml
