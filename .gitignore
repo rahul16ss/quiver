@@ -75,3 +75,4 @@ gitignore and remember.rtf
 
 # ─── Private vendor blueprint (not part of the open-source release) ───
 .spec-swimlane.md
+docs/ICP.md
