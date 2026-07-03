@@ -55,7 +55,42 @@ export type AutonomyGrant =
   | "browser"
   | "browser:visible"
   | "create_tool"
+  | "web"
+  | "memory"
+  | "todo"
   | "yolo";
+
+// ─── Trust Tiers (US-6.4): incremental permission ladder ───────────
+// A trust tier is a named, cumulative bundle of autonomy grants plus a
+// filesystem read-scope and a sandbox policy. Tiers climb from the most
+// restrictive (observe) to the fully unrestricted (yolo). Setting a tier
+// applies its grant superset to config.autonomyGrants, sets config.readScope,
+// and (for yolo) disables the path sandbox so the agent can write anywhere.
+//
+//   observe   — workspace reads only, no writes/commands/network tools.
+//                Every state-changing action prompts.
+//   propose   — + workspace file writes (write_file/replace_content/apply_patch)
+//                + benign state tools (todo_write, memory_*, log_tokens).
+//   build     — + run_command (safe+moderate) + web tools (web_search,
+//                scrape_url, deep_research, entity_search).
+//   operate   — + destructive + privileged + shell network + browser.
+//   yolo      — everything above + sandbox OFF (agent can write anywhere on
+//                the machine). Single combined unlock.
+//
+// A null tier (the default) preserves the legacy "ask for everything risky"
+// behaviour with today's read-anywhere (minus blocked globs) semantics, so
+// existing sessions and tests are not regressed.
+
+export type ReadScope = "workspace" | "home" | "filesystem";
+
+export type TrustTier = "observe" | "propose" | "build" | "operate" | "yolo";
+
+export interface TrustTierSpec {
+  tier: TrustTier;
+  grants: AutonomyGrant[];
+  readScope: ReadScope;
+  sandboxOff: boolean;
+}
 
 export const ALL_GRANTS: AutonomyGrant[] = [
   "write_file",
@@ -70,16 +105,123 @@ export const ALL_GRANTS: AutonomyGrant[] = [
   "browser",
   "browser:visible",
   "create_tool",
+  "web",
+  "memory",
+  "todo",
   "yolo",
 ];
+
+export const TRUST_TIERS: TrustTierSpec[] = [
+  {
+    tier: "observe",
+    grants: [],
+    readScope: "workspace",
+    sandboxOff: false,
+  },
+  {
+    tier: "propose",
+    grants: ["write_file", "replace_content", "apply_patch", "todo", "memory"],
+    readScope: "workspace",
+    sandboxOff: false,
+  },
+  {
+    tier: "build",
+    grants: [
+      "write_file",
+      "replace_content",
+      "apply_patch",
+      "todo",
+      "memory",
+      "run_command",
+      "web",
+    ],
+    readScope: "home",
+    sandboxOff: false,
+  },
+  {
+    tier: "operate",
+    grants: [
+      "write_file",
+      "replace_content",
+      "apply_patch",
+      "todo",
+      "memory",
+      "run_command",
+      "web",
+      "destructive",
+      "privileged",
+      "network",
+      "secrets",
+      "browser",
+    ],
+    readScope: "filesystem",
+    sandboxOff: false,
+  },
+  {
+    tier: "yolo",
+    grants: [...ALL_GRANTS],
+    readScope: "filesystem",
+    sandboxOff: true,
+  },
+];
+
+export function getTierSpec(tier: TrustTier): TrustTierSpec {
+  return TRUST_TIERS.find((t) => t.tier === tier) ?? TRUST_TIERS[0];
+}
+
+/**
+ * Apply a trust tier to the live config: set the autonomy grants, read scope,
+ * and sandbox state. Called by `/autonomy tier <name>` and at startup when a
+ * persisted tier is loaded from core.json. Passing null clears all grants and
+ * restores conservative defaults (legacy behaviour).
+ */
+export function applyTrustTier(tier: TrustTier | null): void {
+  if (tier === null) {
+    config.autonomyGrants.clear();
+    config.trustTier = null;
+    config.readScope = "filesystem";
+    config.sandboxDisabled = false;
+    config.browserHeadless = true;
+    return;
+  }
+  const spec = getTierSpec(tier);
+  config.autonomyGrants = new Set(spec.grants);
+  if (spec.grants.includes("yolo")) {
+    for (const g of ALL_GRANTS) config.autonomyGrants.add(g);
+  }
+  config.trustTier = tier;
+  config.readScope = spec.readScope;
+  config.sandboxDisabled = spec.sandboxOff;
+  config.browserHeadless = !config.autonomyGrants.has("browser:visible");
+}
+
+
+// If QUIVER_AUTONOMY contains a `tier:<name>` token, the chosen tier is
+// stashed here and applied to config after the config object is constructed
+// (applyTrustTier references `config`, which is not yet defined at parse time).
+let _envTier: TrustTier | null = null;
 
 function parseAutonomy(): Set<AutonomyGrant> {
   const raw = process.env.QUIVER_AUTONOMY || "";
   const parts = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
-    .filter(Boolean) as AutonomyGrant[];
-  const grants = new Set<AutonomyGrant>(parts);
+    .filter(Boolean);
+  const grants = new Set<AutonomyGrant>();
+  for (const part of parts) {
+    // `tier:<name>` expands to that tier's cumulative grant bundle.
+    const tierMatch = part.match(/^tier:(observe|propose|build|operate|yolo)$/);
+    if (tierMatch) {
+      _envTier = tierMatch[1] as TrustTier;
+      const spec = getTierSpec(_envTier);
+      for (const g of spec.grants) grants.add(g);
+      if (spec.grants.includes("yolo")) {
+        for (const g of ALL_GRANTS) grants.add(g);
+      }
+      continue;
+    }
+    grants.add(part as AutonomyGrant);
+  }
   if (grants.has("yolo")) {
     for (const g of ALL_GRANTS) grants.add(g);
   }
@@ -97,16 +239,41 @@ export function needsApprovalFor(
   commandRisk?: string,
 ): boolean {
   if (hasGrant("yolo")) return false;
-  if (toolName === "write_file" && hasGrant("write_file")) return false;
-  if (toolName === "replace_content" && hasGrant("replace_content"))
-    return false;
-  if (toolName === "apply_patch" && hasGrant("apply_patch")) return false;
+
+  // ── File-mutation tools (workspace writes) ──
+  if (toolName === "write_file") return !hasGrant("write_file");
+  if (toolName === "replace_content") return !hasGrant("replace_content");
+  if (toolName === "apply_patch") return !hasGrant("apply_patch");
+
+  // ── Benign state tools (no external side effects) ──
+  if (toolName === "todo_write") return !hasGrant("todo");
+  if (
+    toolName === "memory_append" ||
+    toolName === "memory_replace" ||
+    toolName === "log_tokens"
+  )
+    return !hasGrant("memory");
+
+  // ── Web/network egress tools (search, scrape, research) ──
+  if (
+    toolName === "web_search" ||
+    toolName === "scrape_url" ||
+    toolName === "deep_research" ||
+    toolName === "entity_search"
+  )
+    return !hasGrant("web");
+
+  // ── Browser control ──
   if (
     toolName === "browser_control" &&
     (hasGrant("browser") || hasGrant("browser:visible"))
   )
     return false;
-  if (toolName === "create_tool" && hasGrant("create_tool")) return false;
+
+  // ── Dynamic tool creation ──
+  if (toolName === "create_tool") return !hasGrant("create_tool");
+
+  // ── Shell commands: risk-band gated (US-6.2) ──
   if (toolName === "run_command") {
     if (commandRisk === "safe" || commandRisk === "moderate")
       return !hasGrant("run_command");
@@ -117,6 +284,14 @@ export function needsApprovalFor(
     if (commandRisk === "exfiltration-risk") return !hasGrant("exfiltration");
     return !hasGrant("run_command");
   }
+
+  // ── Tools that internally execute commands: treat like run_command ──
+  if (toolName === "run_tests" || toolName === "format_code") {
+    return !hasGrant("run_command");
+  }
+
+  // Everything else (subagent, prompt_update, ralph_loop, continual_learning,
+  // office_doc, etc.) defaults to requiring approval unless YOLO.
   return true;
 }
 
@@ -143,6 +318,35 @@ export const config: Config = {
     10,
   ),
   dryRun: parseDryRun(),
+  // Path sandbox (US-9.2). When false (default), file tools enforce
+  // workspace-boundary checks and blocked-glob protection. When true,
+  // toggled via /sandbox off in YOLO mode, the agent can write anywhere.
+  sandboxDisabled: false,
+  // ── Trust tier + read scope (US-6.4) ──
+  // trustTier is null by default (legacy conservative behaviour). Setting a
+  // tier via /autonomy tier <name> applies its grant bundle + read scope +
+  // sandbox policy. readScope controls how far file *reads* may reach:
+  //   "workspace"  — only the project workspace
+  //   "home"       — workspace + user home (non-sensitive)
+  //   "filesystem" — anywhere except blocked globs (legacy default)
+  trustTier: null as TrustTier | null,
+  readScope: "filesystem" as ReadScope,
+  // ── Ambient self-heal + goal-loop (US-AMBIENT) ──
+  // On by default: when the agent finishes a file-mutating task, the harness
+  // verifies (tsc + tests) and auto-heals+continues until healthy. Set
+  // QUIVER_AMBIENT=0 to disable for latency-sensitive one-shot runs.
+  ambientEnabled: process.env.QUIVER_AMBIENT !== "0",
+  ambientMaxHealRounds: parseInt(
+    process.env.QUIVER_AMBIENT_MAX_ROUNDS || "5",
+    10,
+  ),
+  // Ambient log retention (US-AMBIENT): old session logs are auto-purged once
+  // per session startup so non-technical users never manage log disk usage.
+  // Default 30 days; 0 = keep forever. Set via QUIVER_LOG_RETENTION_DAYS.
+  logRetentionDays: parseInt(
+    process.env.QUIVER_LOG_RETENTION_DAYS || "30",
+    10,
+  ),
   visionModelName: process.env.VISION_MODEL_NAME || "gemma3:4b",
   visionModelBaseUrl:
     process.env.VISION_MODEL_BASE_URL || "http://localhost:11434/v1",
@@ -150,6 +354,10 @@ export const config: Config = {
   // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
   visionModelApiKey: process.env.OLLAMA_API_KEY || "",
 };
+
+// Apply the env-specified trust tier AFTER config is fully initialized
+// (applyTrustTier references `config`, which is not yet defined at parse time).
+if (_envTier) applyTrustTier(_envTier);
 
 // Config shape is declared after the config object so the source-controlled
 // value assignments below are the first textual occurrence of each key —
@@ -170,6 +378,16 @@ export interface Config {
   sessionLogEnabled: boolean;
   sessionLogMaxChars: number;
   dryRun: boolean;
+  // Path sandbox toggle (US-9.2). When true, file tools skip boundary checks.
+  sandboxDisabled: boolean;
+  // Trust tier + read scope (US-6.4).
+  trustTier: TrustTier | null;
+  readScope: ReadScope;
+  // Ambient self-heal + goal-loop (US-AMBIENT).
+  ambientEnabled: boolean;
+  ambientMaxHealRounds: number;
+  // Ambient log retention (days; 0 = keep forever).
+  logRetentionDays: number;
   // Vision fallback (US-5.4) — populated from VISION_MODEL_NAME/BASE_URL/API_KEY
   visionModelName: string;
   visionModelBaseUrl: string;

@@ -15,11 +15,25 @@ import { realpathSync, existsSync } from "fs";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
+export type ReadScope = "workspace" | "home" | "filesystem";
+
 export interface PathPolicy {
   workspaceRoot: string;
+  /** Whether reads/writes may reach outside the workspace root. */
   allowOutsideWorkspace: boolean;
+  /**
+   * Filesystem read scope (US-6.4). Controls how far *reads* may reach:
+   *   "workspace"  — only the project workspace
+   *   "home"       — workspace + user home (non-sensitive paths)
+   *   "filesystem" — anywhere except blocked globs (legacy default)
+   * Writes are always confined to the workspace (or ~/.quiver) unless the
+   * sandbox is disabled, regardless of read scope.
+   */
+  readScope: ReadScope;
   blockedGlobs: string[];
+  /** Whitelist globs for reads inside the workspace (empty = allow all). */
   readAllowGlobs: string[];
+  /** Whitelist globs for writes inside the workspace (empty = allow all). */
   writeAllowGlobs: string[];
 }
 
@@ -207,21 +221,56 @@ export function resolveAndAssertPathAllowed(
     );
   }
 
-  // Check workspace boundary
-  if (!inside && !policy.allowOutsideWorkspace) {
-    throw new Error(
-      `Path '${inputPath}' resolves outside the workspace root '${policy.workspaceRoot}'. ` +
-      `Set allowOutsideWorkspace=true in PathPolicy to permit this.`,
-    );
+  // ── Workspace boundary + read-scope enforcement (US-6.4) ──
+  // Reads are gated by policy.readScope; writes are always confined to the
+  // workspace (the tool_paths layer additionally permits ~/.quiver writes and
+  // the YOLO sandbox-off bypass).
+  if (!inside) {
+    if (operation === "read") {
+      const scope = policy.readScope ?? "filesystem";
+      if (scope === "workspace") {
+        throw new Error(
+          `Path '${inputPath}' resolves outside the workspace root ` +
+            `'${policy.workspaceRoot}'. Read scope is 'workspace' — reads are ` +
+            `confined to the project. Raise the trust tier to broaden read scope.`,
+        );
+      }
+      if (scope === "home") {
+        const home = os.homedir();
+        const relHome = path.relative(home, realPath);
+        const insideHome =
+          !relHome.startsWith("..") && !path.isAbsolute(relHome);
+        if (!insideHome) {
+          throw new Error(
+            `Path '${inputPath}' resolves outside the workspace and outside the ` +
+              `user home directory. Read scope is 'home' — reads are confined to ` +
+              `the project + home. Raise the trust tier to broaden read scope.`,
+          );
+        }
+      }
+      // "filesystem" → allow (subject to blocked globs + home-blocked paths above)
+    } else if (!policy.allowOutsideWorkspace) {
+      // write/delete outside workspace without explicit allowance
+      throw new Error(
+        `Path '${inputPath}' resolves outside the workspace root ` +
+          `'${policy.workspaceRoot}'. Set allowOutsideWorkspace=true in ` +
+          `PathPolicy to permit this.`,
+      );
+    }
   }
 
-  // Check operation-specific allow globs
+  // Check operation-specific allow globs (US-6.4: now ENFORCED, not decorative).
+  // When a non-empty allow list is set, paths inside the workspace that do NOT
+  // match any glob are refused — this is the fine-grained "writes only under
+  // src/" granularity. An empty list means "allow all inside the workspace".
   const allowGlobs = operation === "read" ? policy.readAllowGlobs : policy.writeAllowGlobs;
   if (allowGlobs.length > 0 && inside) {
-    // If allow globs are specified, the path must match one
     if (!matchesGlob(relativeToWorkspace, allowGlobs) && !matchesGlob(basename, allowGlobs)) {
-      // Allow globs are a whitelist — if specified, non-matching paths are blocked
-      // But only enforce if the list is non-empty (empty = allow all inside workspace)
+      throw new Error(
+        `Path '${inputPath}' is outside the ${operation} allow-list for this ` +
+        `policy (allowed globs: ${allowGlobs.join(", ")}). ` +
+        `Add the path to the allow list or clear it to permit all workspace paths.`,
+      );
     }
   }
 
@@ -240,6 +289,7 @@ export function createDefaultPolicy(workspaceRoot: string): PathPolicy {
   return {
     workspaceRoot: path.resolve(workspaceRoot),
     allowOutsideWorkspace: false,
+    readScope: "workspace",
     blockedGlobs: [...DEFAULT_BLOCKED_PATHS],
     readAllowGlobs: [],
     writeAllowGlobs: [],

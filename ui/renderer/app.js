@@ -287,7 +287,16 @@ function renderHistory(messages) {
 async function sendPrompt() {
   const text = promptInput.value.trim();
   if (!text && pendingImages.length === 0) return;
-  if (agentRunning) return;
+
+  // If agent is running, send as a mid-run steering message instead of blocking.
+  if (agentRunning) {
+    if (!text) return;
+    addMessage("user", text);
+    promptInput.value = "";
+    promptInput.style.height = "auto";
+    await window.quiver.sendToAgent(text);
+    return;
+  }
 
   emptyState.style.display = "none";
 
@@ -304,10 +313,12 @@ async function sendPrompt() {
   promptInput.style.height = "auto";
 
   agentRunning = true;
-  sendBtn.disabled = true;
+  sendBtn.disabled = false;  // Keep enabled for mid-run steering
   sendBtn.style.display = "none";
   stopBtn.style.display = "inline-block";
   statusDot.className = "status-dot live";
+  promptInput.placeholder = "Steer Quiver mid-run…";
+  promptInput.disabled = false;
 
   const config = await window.quiver.loadConfig();
   if (currentSessionPath) {
@@ -399,7 +410,9 @@ function showToolResult(toolDiv, result) {
   const iconSpan = toolDiv.querySelector(".tool-icon");
   if (iconSpan) iconSpan.textContent = "✓";
   const resultEl = toolDiv.querySelector(".tool-result");
-  resultEl.innerHTML = `<pre>${escapeHtml(result)}</pre>`;
+  const toolName = toolDiv.querySelector(".tool-name")?.textContent || "";
+  const chips = renderFileChips(toolName, result);
+  resultEl.innerHTML = `<pre>${escapeHtml(result)}</pre>${chips}`;
   resultEl.style.display = "block";
   chatArea.scrollTop = chatArea.scrollHeight;
 }
@@ -437,8 +450,8 @@ function addApproval(toolName, toolArgs) {
     : "";
 
   div.innerHTML = `
-    <div class="approval-title">Permission required</div>
-    <div class="approval-desc">Quiver wants to run: <strong>${formatToolName(toolName)}</strong><pre>${argsStr}</pre></div>
+    <div class="approval-title">Quiver needs your approval</div>
+    <div class="approval-desc">Quiver wants to: <strong>${formatToolName(toolName)}</strong><pre>${argsStr}</pre></div>
     ${diffHtml}
     <div class="approval-actions">
       <button class="btn-yes" onclick="approveAction(true,this)">Approve</button>
@@ -474,6 +487,111 @@ async function approveAction(approve, btn) {
       `<span style="color:${approve ? "var(--success)" : "var(--danger)"};font-size:12px;font-weight:500;">${approve ? "✓ Approved" : "✗ Denied"}</span>`;
   }
   await window.quiver.approveToolCall(approve);
+}
+
+// ── Preview Panel ─────────────────────────────────────────────────────
+
+let currentPreviewPath = "";
+
+/**
+ * Open the preview panel for a file.
+ * Calls the preview:file IPC handler to get content/type.
+ */
+async function openPreview(filePath) {
+  currentPreviewPath = filePath;
+  const overlay = document.getElementById("previewOverlay");
+  const body = document.getElementById("previewBody");
+  const title = document.getElementById("previewTitle");
+
+  const fileName = filePath.split("/").pop().split("\\").pop();
+  title.textContent = fileName;
+  body.innerHTML = '<div class="preview-loading">Loading…</div>';
+  overlay.style.display = "flex";
+
+  try {
+    const result = await window.quiver.previewFile(filePath);
+
+    if (result.error) {
+      body.innerHTML = `<div class="preview-error">${escapeHtml(result.error)}</div>`;
+      return;
+    }
+
+    if (result.isImage && result.imageUrl) {
+      body.innerHTML = `<img src="${result.imageUrl}" class="preview-image" alt="${escapeHtml(fileName)}">`;
+    } else if (result.isPdf && result.pdfUrl) {
+      body.innerHTML = `<iframe src="${result.pdfUrl}" class="preview-pdf" allow="fullscreen"></iframe>`;
+    } else if (result.officeDoc) {
+      body.innerHTML = `<div class="preview-office-meta">📄 Office document — text extraction view</div><pre class="preview-text">${escapeHtml(result.content)}</pre>`;
+    } else if (result.content) {
+      // Render markdown files with basic formatting
+      if (result.type === ".md") {
+        body.innerHTML = `<div class="preview-text">${renderMarkdown(result.content)}</div>`;
+      } else {
+        body.innerHTML = `<pre class="preview-text">${escapeHtml(result.content)}</pre>`;
+      }
+    } else {
+      body.innerHTML = '<div class="preview-error">No preview available</div>';
+    }
+  } catch (err) {
+    body.innerHTML = `<div class="preview-error">Failed to load: ${escapeHtml(err.message || err)}</div>`;
+  }
+}
+
+function closePreview(event) {
+  if (event && event.target !== document.getElementById("previewOverlay")) return;
+  document.getElementById("previewOverlay").style.display = "none";
+  currentPreviewPath = "";
+}
+
+function openInDefault() {
+  if (currentPreviewPath) {
+    // Use a hidden link to open the file in the OS default app
+    const a = document.createElement("a");
+    a.href = `file://${currentPreviewPath}`;
+    a.target = "_blank";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
+/**
+ * Detect file paths in tool results and render them as clickable chips.
+ * When the agent creates a file (e.g., report.docx), show a chip that
+ * opens the preview panel when clicked.
+ */
+function extractFilePaths(toolName, result) {
+  const paths = [];
+  // Match file paths in tool results — look for common patterns
+  const pathRegex = /(?:\/[\w\-./]+|[\w:\\-]+)\.\w{2,5}/g;
+  const matches = (result || "").match(pathRegex) || [];
+  for (const m of matches) {
+    // Only include if it looks like a real file path (has an extension we can preview)
+    const ext = m.split(".").pop().toLowerCase();
+    const previewable = ["docx", "xlsx", "pptx", "pdf", "md", "txt", "json",
+      "csv", "png", "jpg", "jpeg", "gif", "webp", "svg", "html", "js", "ts",
+      "py", "sql", "xml", "yaml", "yml"].includes(ext);
+    if (previewable && !paths.includes(m)) {
+      paths.push(m);
+    }
+  }
+  return paths;
+}
+
+/**
+ * Render file chips for previewable files in a tool result.
+ */
+function renderFileChips(toolName, result) {
+  const paths = extractFilePaths(toolName, result);
+  if (paths.length === 0) return "";
+  return paths.map(p => {
+    const name = p.split("/").pop().split("\\").pop();
+    const ext = name.split(".").pop().toUpperCase();
+    return `<div class="file-chip" onclick="openPreview('${p.replace(/'/g, "\\'")}')">
+      <span>📎 ${ext}</span>
+      <span>${escapeHtml(name)}</span>
+    </div>`;
+  }).join("");
 }
 
 // ── Markdown ──────────────────────────────────────────────────────────
@@ -526,6 +644,8 @@ function setIdle() {
   sendBtn.style.display = "inline-block";
   stopBtn.style.display = "none";
   statusDot.className = "status-dot idle";
+  promptInput.placeholder = "Ask Quiver…";
+  promptInput.disabled = false;
   currentAgentMsg = null;
 }
 
@@ -680,3 +800,50 @@ async function handleDrop(e) {
 
 loadSessionsList();
 promptInput.focus();
+// ── Event listener bindings (CSP-safe: no inline handlers) ───────────
+// All inline onclick/onchange/ondrop attributes removed from index.html
+// for strict CSP compliance (script-src 'self', no unsafe-inline).
+
+document.getElementById("newChatBtn").addEventListener("click", () => startNewChat());
+document.getElementById("sendBtn").addEventListener("click", () => sendPrompt());
+document.getElementById("stopBtn").addEventListener("click", () => stopAgent());
+document.getElementById("contextToggleBtn").addEventListener("click", () => toggleContextPanel());
+document.getElementById("contextExpandBtn").addEventListener("click", () => toggleContextPanel());
+
+// Settings button
+document.querySelector(".settings-btn").addEventListener("click", () => window.quiver.loadSettings());
+
+// Memory editor buttons
+document.querySelector(".ctx-add-btn").addEventListener("click", () => openMemoryEditor(""));
+
+// Core memory textareas — save on change
+document.getElementById("ctxIdentity").addEventListener("change", () => saveCoreMemory());
+document.getElementById("ctxHuman").addEventListener("change", () => saveCoreMemory());
+document.getElementById("ctxProject").addEventListener("change", () => saveCoreMemory());
+
+// Preview panel
+document.getElementById("previewOverlay").addEventListener("click", (e) => closePreview(e));
+document.querySelector(".preview-panel").addEventListener("click", (e) => e.stopPropagation());
+document.querySelector(".preview-btn").addEventListener("click", () => openInDefault());
+document.querySelector(".preview-close").addEventListener("click", () => closePreview());
+
+// Memory editor modal
+document.getElementById("memEditorOverlay").addEventListener("click", (e) => closeMemoryEditor(e));
+document.querySelector("#memEditorOverlay .modal-card").addEventListener("click", (e) => e.stopPropagation());
+document.querySelector("#memEditorOverlay .modal-close").addEventListener("click", () => closeMemoryEditor());
+document.querySelector("#memEditorOverlay .btn-primary").addEventListener("click", () => saveMemoryFile());
+document.querySelector("#memEditorOverlay .btn-secondary").addEventListener("click", () => closeMemoryEditor());
+document.getElementById("memDeleteBtn").addEventListener("click", () => deleteMemoryFile());
+
+// Skill viewer modal
+document.getElementById("skillViewerOverlay").addEventListener("click", (e) => closeSkillViewer(e));
+document.querySelector("#skillViewerOverlay .modal-card").addEventListener("click", (e) => e.stopPropagation());
+document.querySelector("#skillViewerOverlay .modal-close").addEventListener("click", () => closeSkillViewer());
+document.querySelector("#skillViewerOverlay .btn-primary").addEventListener("click", () => saveSkillFile());
+document.querySelector("#skillViewerOverlay .btn-secondary").addEventListener("click", () => closeSkillViewer());
+
+// Input area drag & drop
+const inputBar = document.getElementById("inputBar");
+inputBar.addEventListener("drop", (e) => handleDrop(e));
+inputBar.addEventListener("dragover", (e) => handleDragOver(e));
+inputBar.addEventListener("dragleave", (e) => handleDragLeave(e));

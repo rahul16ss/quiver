@@ -43,6 +43,10 @@ const RISK_PATTERNS: RiskPattern[] = [
     patterns: [
       /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+|--force\s+)/i,
       /\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+/i,
+      /\brm\s+--recursive\b/i,
+      /\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+.*--force\b/i,
+      /\brm\s+--recursive\s+.*--force\b/i,
+      /\brm\s+(-r\s+--force|--force\s+-r)\b/i,
       /\bgit\s+reset\s+--hard\b/i,
       /\bgit\s+clean\s+-[a-zA-Z]*f/i,
       /\bdd\s+if=/i,
@@ -93,6 +97,17 @@ const RISK_PATTERNS: RiskPattern[] = [
       /\bgrep\s+.*\.env\b/i,
       /\bprintenv\b/i,
       /\benv\b(?!\s*$)/i, // env with args (not just env alone)
+      /^env\s*$/i, // bare env prints all env vars incl. secrets
+      /\bcp\s+.*~\/\.ssh\b/i,
+      /\bcp\s+.*id_rsa\b/i,
+      /\bcp\s+.*\.pem\b/i,
+      /\bcp\s+.*\.key\b/i,
+      /\bcp\s+.*~\/\.aws\b/i,
+      /\bmv\s+.*~\/\.ssh\b/i,
+      /\bmv\s+.*id_rsa\b/i,
+      /\bmv\s+.*~\/\.aws\b/i,
+      /\bcat\s+\/etc\/passwd\b/i,
+      /\bcat\s+.*~\/\.ssh\/id_/i,
     ],
     reason: "Secret-risk command — may expose credentials or private keys",
   },
@@ -182,7 +197,8 @@ export function classifyCommand(
   const normalized = trimmed
     .replace(/\$'([^']*)'/g, "$1")   // $'rm' -> rm (ANSI-C quoting)
     .replace(/'([^']*)'/g, "$1")    // r'm' -> rm (single-quote splitting)
-    .replace(/""/g, "");              // r""m -> rm (double-quote splitting)
+    .replace(/"([^"]*)"/g, "$1")    // r"m" -> rm (double-quote splitting, non-empty)
+    .replace(/""/g, "");              // r""m -> rm (empty double-quote splitting)
 
   // Check for hard-blocked patterns first (against both raw and normalized)
   for (const blocked of DEFAULT_BLOCKED_PATTERNS) {

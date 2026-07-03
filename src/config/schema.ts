@@ -66,7 +66,7 @@ export function getDefaultConfig(): ConfigSchema {
       base_url: config.llmBaseUrl,
       api_key_ref: "OLLAMA_API_KEY",
       max_context_tokens: config.maxContextTokens,
-      max_output_tokens: 8192,
+      max_output_tokens: 16384,
       temperature: 0.7,
     },
     vision: {

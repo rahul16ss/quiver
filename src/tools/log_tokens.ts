@@ -2,7 +2,8 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import picocolors from "picocolors";
-import { Tool } from "../registry.js";
+import { Tool } from "../registry.js"
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { getProjectSessionsDir } from "../paths.js";
 
 interface SessionEvent {
@@ -224,6 +225,12 @@ export const tool: Tool = {
       .describe("Optional: specific session log file path to parse. Defaults to the latest session in .sessions/."),
   }),
   execute: async ({ sessionFile }) => {
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try {
+      if (sessionFile) assertToolPathAllowed(sessionFile, "read");
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
     const sessionsDir = getProjectSessionsDir();
 
     // Determine which file to parse

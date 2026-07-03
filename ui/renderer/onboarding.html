@@ -11,26 +11,26 @@
     <div class="form-card">
       <img src="assets/logo.png" class="form-logo" alt="Quiver">
       <h1>Quiver</h1>
-      <p class="subtitle">Self-evolving AI coding & research agent</p>
+      <p class="subtitle">Your AI analyst, researcher, and writer</p>
 
       <div class="form-group">
-        <label>Workspace</label>
+        <label>Project Folder</label>
         <div class="dir-picker-row">
-          <input id="workspacePath" type="text" placeholder="Select workspace folder" readonly>
+          <input id="workspacePath" type="text" placeholder="Choose where to save your work" readonly>
           <button class="btn-browse" onclick="browseWorkspace()">Browse</button>
         </div>
       </div>
 
       <div class="form-group">
-        <label>API Key</label>
-        <input id="apiKey" type="password" placeholder="Your Ollama API key" autofocus>
+        <label>AI Model Key</label>
+        <input id="apiKey" type="password" placeholder="Your API key" autofocus>
         <div class="hint">Get your key at <a href="https://ollama.com" target="_blank" style="color:var(--accent);text-decoration:none;">ollama.com</a></div>
       </div>
 
       <div class="form-group">
-        <label>Parallel API Key <span style="font-weight:400;text-transform:none;color:var(--text-faint);">(optional)</span></label>
-        <input id="parallelApiKey" type="password" placeholder="For web search & deep research">
-        <div class="hint"><a href="https://platform.parallel.ai" target="_blank" style="color:var(--accent);text-decoration:none;">parallel.ai</a></div>
+        <label>Web Research Key <span style="font-weight:400;text-transform:none;color:var(--text-faint);">(optional)</span></label>
+        <input id="parallelApiKey" type="password" placeholder="For web search and deep research">
+        <div class="hint">Enables cited web research — <a href="https://platform.parallel.ai" target="_blank" style="color:var(--accent);text-decoration:none;">parallel.ai</a></div>
       </div>
 
       <div class="form-actions">

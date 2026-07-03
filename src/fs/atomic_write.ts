@@ -76,6 +76,14 @@ export const sessionBackups = new BackupHistory();
 // ─── Atomic Write ────────────────────────────────────────────────────
 
 /**
+ * fsync a file descriptor for durability (US-10.2).
+ * Wraps fsSync.fsyncSync so callers can use a named fsync() call.
+ */
+function fsync(fd: number): void {
+  fsSync.fsyncSync(fd);
+}
+
+/**
  * Perform an atomic write:
  * 1. If file exists, create a backup copy
  * 2. Write content to a temp file
@@ -111,10 +119,29 @@ export async function atomicWrite(
   // Write to temp file
   const tempPath = `${resolvedPath}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   try {
-    await fs.writeFile(tempPath, content, "utf8");
+    const fh = await fs.open(tempPath, "w", 0o644);
+    try {
+      await fh.writeFile(content, "utf8");
+      // Durability: fsync the temp file before rename (US-10.2).
+      fsync(fh.fd);
+    } finally {
+      await fh.close();
+    }
 
     // Atomic rename
     await fs.rename(tempPath, resolvedPath);
+
+    // Durability: fsync the parent directory so the rename is durable.
+    try {
+      const dirFd = await fs.open(dir, "r");
+      try {
+        fsync(dirFd.fd);
+      } finally {
+        await dirFd.close();
+      }
+    } catch {
+      // Best-effort (not supported on all platforms)
+    }
   } catch (error) {
     // Clean up temp file on failure
     try {

@@ -40,7 +40,7 @@ export interface ToolDefinition {
 }
 
 export interface ParsedModelEvent {
-  type: "text" | "tool_call" | "error" | "done";
+  type: "text" | "tool_call" | "error" | "done" | "unsupported" | "reasoning";
   content?: string;
   toolCall?: {
     id: string;
@@ -48,6 +48,10 @@ export interface ParsedModelEvent {
     arguments: string;
   };
   error?: string;
+  rawEvent?: any;
+  rawDescription?: string;
+  /** For "reasoning" events: the reasoning content (not persisted). */
+  reasoning?: string;
 }
 
 export interface ParsedToolCall {
@@ -107,7 +111,7 @@ export class DefaultAdapter implements HarnessAdapter {
   getDefaults(model: ModelInfo): AdapterDefaults {
     return {
       maxContextTokens: model.contextWindowTokens || 120000,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
       connectionTimeoutMs: 30000,
       streamStallTimeoutMs: 60000,
       toolCallTimeoutMs: 120000,
@@ -154,6 +158,10 @@ export class DefaultAdapter implements HarnessAdapter {
     if (event.type === "text_delta") {
       return { type: "text", content: event.content };
     }
+    if (event.type === "reasoning_delta") {
+      // Chain-of-thought tokens — recognized but not persisted (US-2.2)
+      return { type: "reasoning", reasoning: event.reasoning };
+    }
     if (event.type === "tool_call_start") {
       return {
         type: "tool_call",
@@ -177,7 +185,23 @@ export class DefaultAdapter implements HarnessAdapter {
     if (event.type === "error") {
       return { type: "error", error: event.error };
     }
-    return { type: "done" };
+    if (event.type === "unsupported") {
+      return {
+        type: "unsupported",
+        rawEvent: event.rawEvent,
+        rawDescription: event.rawDescription || "Unknown event type",
+      };
+    }
+    // Only return 'done' for actual done events
+    if (event.type === "done") {
+      return { type: "done" };
+    }
+    // Unknown event types become 'unsupported' instead of silently becoming 'done'
+    return {
+      type: "unsupported",
+      rawEvent: event,
+      rawDescription: `Unrecognized event type: ${event.type || "undefined"}`,
+    };
   }
 
   parseToolCall(raw: unknown): ParsedToolCall | ToolCallParseError {
@@ -192,11 +216,15 @@ export class DefaultAdapter implements HarnessAdapter {
 
     let args: any;
     try {
-      args = typeof obj.function.arguments === "string"
-        ? JSON.parse(obj.function.arguments)
-        : obj.function.arguments || {};
+      args =
+        typeof obj.function.arguments === "string"
+          ? JSON.parse(obj.function.arguments)
+          : obj.function.arguments || {};
     } catch {
-      return { error: "Failed to parse tool arguments as JSON", raw: obj.function.arguments };
+      return {
+        error: "Failed to parse tool arguments as JSON",
+        raw: obj.function.arguments,
+      };
     }
 
     return {
@@ -219,7 +247,8 @@ export class DefaultAdapter implements HarnessAdapter {
   parseMemoryCitations(output: string): MemoryCitation[] {
     const results: MemoryCitation[] = [];
     // XML style: <memory-citation doc="file" section="section">text</memory-citation>
-    const xmlPattern = /<memory-citation\s+doc="([^"]*)"(?:\s+section="([^"]*)")?>([\s\S]*?)<\/memory-citation>/gi;
+    const xmlPattern =
+      /<memory-citation\s+doc="([^"]*)"(?:\s+section="([^"]*)")?>([\s\S]*?)<\/memory-citation>/gi;
     let match: RegExpExecArray | null;
     while ((match = xmlPattern.exec(output)) !== null) {
       results.push({
@@ -259,13 +288,16 @@ export class GLMAdapter extends DefaultAdapter {
   displayName = "GLM (GLM-5.2 compatible)";
 
   supports(model: ModelInfo): boolean {
-    return model.id.toLowerCase().includes("glm") || model.displayName.toLowerCase().includes("glm");
+    return (
+      model.id.toLowerCase().includes("glm") ||
+      model.displayName.toLowerCase().includes("glm")
+    );
   }
 
   getDefaults(model: ModelInfo): AdapterDefaults {
     return {
       maxContextTokens: model.contextWindowTokens || 128000,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
       connectionTimeoutMs: 30000,
       streamStallTimeoutMs: 60000,
       toolCallTimeoutMs: 120000,
@@ -286,13 +318,16 @@ export class ClaudeAdapter extends DefaultAdapter {
   displayName = "Claude (Anthropic)";
 
   supports(model: ModelInfo): boolean {
-    return model.id.toLowerCase().includes("claude") || model.displayName.toLowerCase().includes("claude");
+    return (
+      model.id.toLowerCase().includes("claude") ||
+      model.displayName.toLowerCase().includes("claude")
+    );
   }
 
   getDefaults(model: ModelInfo): AdapterDefaults {
     return {
       maxContextTokens: model.contextWindowTokens || 200000,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
       connectionTimeoutMs: 30000,
       streamStallTimeoutMs: 60000,
       toolCallTimeoutMs: 120000,

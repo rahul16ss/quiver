@@ -62,7 +62,11 @@ User Input
   → Context Compaction (if needed)
   → Session Checkpoint
   → Lifecycle Hooks (afterAgent)
+  → Ambient Verify (at completion, if the turn mutated files — US-13.5)
 ```
+
+> **Mid-run:** while the loop is running, `Esc` injects a steering user message
+> at the next iteration (US-2.3); `Ctrl+C` aborts the active stream.
 
 > **Implementation status.** Every stage above is the *live* agent loop in
 > `src/agent.ts`, not aspirational. The model call goes through
@@ -72,9 +76,12 @@ User Input
 > (`src/fs/atomic_write.ts`); read-before-write through `FileReadHistory`
 > (SHA-256 + mtimeMs compare-and-swap); tool calls through `wrapToolCall()`
 > (lifecycle `wrap_tool_call` hooks); and every turn writes a checkpoint via
-> `CheckpointManager` for crash recovery. The maker-checker gate and the
-> lifecycle hook trace are opt-in (see `README.md` → Feature Flags) so the
-> default interactive path stays responsive. The acceptance contract
+> `CheckpointManager` for crash recovery. The maker-checker gate is
+> **always-on and unconditional** for high-risk operations (US-15.1 forbids an
+> env opt-out); at task completion the AmbientEngine runs the same `runChecker`
+> once in full mode and auto-heals on `revise`/`reject` (US-13.5). Trust tiers
+> (`observe`→`yolo`) shape read scope + sandbox + approval grants (US-6.4).
+> The acceptance contract
 > (`tests/spec_acceptance_tests.ts`, `npm test`) verifies this wiring end-to-end
 > via its `WIRE-*` integration checks.
 
@@ -85,8 +92,12 @@ User Input
 3. **Secret Redaction** — Secrets detected and redacted before logging/transmission
 4. **Read-Before-Write** — SHA-256 hash verification prevents stale overwrites
 5. **Prompt Injection Defense** — Untrusted content wrapped in XML boundaries
-6. **Tool Sandbox** — Dynamic tools execute in isolated worker threads
+6. **Tool Sandbox** — Dynamic tools execute in isolated worker threads; the manifest's `fs` read/write globs are enforced via a permission-checking proxy (US-6.4)
 7. **Atomic Writes** — Temp-write-then-rename with backup and rollback
+8. **Trust Tiers** — Cumulative `observe`→`yolo` permission ladder with tier-driven read scope, enforced allow-globs, and per-project persistence (US-6.4)
+9. **Ambient Verification** — Self-heal + goal-loop driven by the single maker-checker primitive (US-13.5)
+10. **Mid-run Intervention** — `Esc` steers the agent while it runs (US-2.3)
+
 ## Maker-Checker Verification (Epic 15)
 
 Every unit of work is treated as a transaction that is *made* and then
@@ -112,12 +123,19 @@ diff approval) into one automatic verification discipline.
 - **Inspectable** — every verdict, its evidence, and any user override are
   appended to the tamper-evident audit chain, so verification decisions are
   greppable and reviewable.
-- **Configuration** — maker-checker is always on for high-risk operations
-  (filesystem mutations, destructive/privileged/network/exfiltration shell
-  bands, generated-tool activation) and opt-in for the full session
-  (`QUIVER_MAKER_CHECKER=on`). It degrades gracefully: if the checker cannot
-  run, the change falls back to the existing user-approval gate and is logged,
-  never silently applied.
+- **Configuration** — maker-checker is **always on and unconditional** for
+  high-risk operations (filesystem mutations, destructive/privileged/network/
+  exfiltration shell bands, generated-tool activation). Per the acceptance
+  contract (US-15.1) it is *not* gated behind an env flag — the maker cannot
+  self-certify, so there is no opt-out. It degrades gracefully: if the checker
+  cannot run, the change falls back to the existing user-approval gate and is
+  logged, never silently applied.
+- **Ambient completion check (US-13.5)** — the same `runChecker` primitive is
+  reused at task completion in full mode (no target filter) to catch
+  integration regressions the per-change targeted checks miss; a `revise`/
+  `reject` injects the evidence and continues the loop (self-heal) up to
+  `QUIVER_AMBIENT_MAX_ROUNDS` (default 5). There is no second `tsc`/`npm test`
+  pipeline — one primitive, two scopes (per-change targeted + completion full).
 
 This is the same maker-checker discipline used to accept the vendor's delivery:
 the checker owns the acceptance contract (`tests/spec_acceptance_tests.ts`) and

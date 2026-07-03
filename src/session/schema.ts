@@ -69,7 +69,7 @@ export class SessionManager {
    * Get the session file path.
    */
   getFilePath(): string {
-    return path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
+    return path.join(getProjectSessionsDir(), `${this.sessionId}.state.json`);
   }
 
   /**

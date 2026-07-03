@@ -81,3 +81,19 @@ docs/ICP.md
 # Remove this line once your GitHub PAT has the 'workflow' scope added,
 # then: git add .github/ && git commit && git push
 .github/workflows/release.yml
+
+# ─── Per-developer agent config (same class as .vscode/.idea/.cursor) ─
+.claude/
+.codex/
+
+# ─── Runtime backup directories (atomic-write helper writes *.bak beside ─
+# ─── every edited file; keep them out of the repo) ────────────────────
+.quiver-backups/
+
+# ─── Test / stress output ─────────────────────────────────────────────
+stress-test-results/
+review-tests/
+tests/owner_verification/
+
+# ─── Internal QA audit scratch (not part of the OSS release) ──────────
+.spec-audit-findings.md

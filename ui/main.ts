@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from "child_process";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { config } from "../src/config.ts";
+import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
 
 const execAsync = promisify(exec);
 
@@ -347,8 +348,13 @@ async function saveMemoryFile(name: string, content: string): Promise<boolean> {
     const config = await loadConfig();
     const fs = await import("fs/promises");
     const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
+    const targetFile = path.join(memDir, name);
+    // Path-policy guard (US-8.1): `name` comes from the renderer (untrusted
+    // model output). Confine writes to the memory dir via the real path policy
+    // so a traversal like "../../etc/cron.d/x" is rejected, not just "..".
+    resolveAndAssertPathAllowed(targetFile, "write", createDefaultPolicy(memDir));
     await fs.mkdir(memDir, { recursive: true });
-    await fs.writeFile(path.join(memDir, name), content, "utf8");
+    await fs.writeFile(targetFile, content, "utf8");
     return true;
   } catch {
     return false;
@@ -549,6 +555,28 @@ async function touchSessionFile(filePath: string): Promise<boolean> {
   }
 }
 
+// ─── OfficeCLI Binary Discovery ──────────────────────────────────────
+
+/**
+ * Find the OfficeCLI binary on PATH.
+ * Returns the path or null if not installed.
+ */
+async function findOfficeCliBinary(): Promise<string | null> {
+  try {
+    const { execFileSync } = await import("child_process");
+    const cmd = process.platform === "win32" ? "where" : "which";
+    const result = execFileSync(cmd, ["officecli"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 2000,
+    });
+    const found = result.trim().split("\n")[0].trim();
+    return found || null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Additional Context/Verification Helpers ─────────────────────────
 
 async function runWorkspaceTests(): Promise<{ success: boolean; output: string }> {
@@ -627,11 +655,37 @@ function registerIpcHandlers(): void {
     return true;
   });
 
+  // ── Path-policy guard for IPC handlers (US-8.1) ──
+  // Prevents the renderer (driven by untrusted model output) from reading
+  // sensitive paths (~/.ssh, ~/.aws, .env) or writing outside allowed roots.
+  function ipcPathGuard(filePath: string, op: "read" | "write"): string | null {
+    try {
+      const workspace = process.cwd();
+      const policy = createDefaultPolicy(workspace);
+      resolveAndAssertPathAllowed(filePath, op, policy);
+      return null; // allowed
+    } catch (e: any) {
+      return e.message;
+    }
+  }
+
   // Sessions
   ipcMain.handle("sessions:list", async () => listSessions());
-  ipcMain.handle("sessions:load", async (_evt, filePath: string) => loadSessionFile(filePath));
-  ipcMain.handle("sessions:delete", async (_evt, filePath: string, permanent: boolean = false) => deleteSessionFile(filePath, permanent));
-  ipcMain.handle("sessions:touch", async (_evt, filePath: string) => touchSessionFile(filePath));
+  ipcMain.handle("sessions:load", async (_evt, filePath: string) => {
+    const guardErr = ipcPathGuard(filePath, "read");
+    if (guardErr) return { error: guardErr };
+    return loadSessionFile(filePath);
+  });
+  ipcMain.handle("sessions:delete", async (_evt, filePath: string, permanent: boolean = false) => {
+    const guardErr = ipcPathGuard(filePath, "write");
+    if (guardErr) return { error: guardErr };
+    return deleteSessionFile(filePath, permanent);
+  });
+  ipcMain.handle("sessions:touch", async (_evt, filePath: string) => {
+    const guardErr = ipcPathGuard(filePath, "write");
+    if (guardErr) return { error: guardErr };
+    return touchSessionFile(filePath);
+  });
 
   // Memory
   ipcMain.handle("memory:list", async () => listMemoryFiles());
@@ -662,6 +716,9 @@ function registerIpcHandlers(): void {
     try {
       const fs = await import("fs/promises");
       await fs.mkdir(path.dirname(memoryFile), { recursive: true });
+      // Path-policy guard for the write
+      const guardErr = ipcPathGuard(memoryFile, "write");
+      if (guardErr) return false;
       await fs.writeFile(memoryFile, JSON.stringify(coreMemory, null, 2), "utf8");
       return true;
     } catch {
@@ -781,8 +838,15 @@ function registerIpcHandlers(): void {
     const globalSkillsDir = path.join(app.getPath("home"), ".quiver", "skills");
     const skillDir = path.join(globalSkillsDir, skillName);
     const skillFile = path.join(skillDir, "SKILL.md");
+    // Path-policy guard (US-8.1): reject traversal/double-quote escapes via the
+    // real path policy rooted at the skills dir — not a hand-rolled substring
+    // check. The renderer is driven by untrusted model output.
     try {
-      const fs = await import("fs/promises");
+      resolveAndAssertPathAllowed(skillFile, "write", createDefaultPolicy(globalSkillsDir));
+    } catch {
+      return false;
+    }
+    try {
       await fs.mkdir(skillDir, { recursive: true });
       await fs.writeFile(skillFile, content, "utf8");
       return true;
@@ -801,6 +865,65 @@ function registerIpcHandlers(): void {
       return null;
     }
     return result.filePaths[0];
+  });
+
+  // Preview — read a file and return its content + type for the preview panel
+  ipcMain.handle("preview:file", async (_evt, filePath: string) => {
+    try {
+      // Path-policy guard: reject sensitive paths
+      const guardErr = ipcPathGuard(filePath, "read");
+      if (guardErr) return { error: guardErr };
+      const fs = await import("fs/promises");
+      const ext = path.extname(filePath).toLowerCase();
+      const stat = await fs.stat(filePath);
+      if (stat.size > 10 * 1024 * 1024) {
+        return { error: "File too large to preview (>10MB)", type: ext };
+      }
+
+      // For Office documents, use OfficeCLI to extract text content
+      if (ext === ".docx" || ext === ".xlsx" || ext === ".pptx") {
+        try {
+          const { execFile } = await import("child_process");
+          const { promisify } = await import("util");
+          const execFileAsync = promisify(execFile);
+          const officecliBin = await findOfficeCliBinary();
+          if (officecliBin) {
+            const { stdout } = await execFileAsync(officecliBin, [
+              "view", filePath, "--mode", "text",
+            ], { timeout: 15000, maxBuffer: 5 * 1024 * 1024 });
+            return { content: stdout, type: ext, officeDoc: true };
+          }
+        } catch {
+          // OfficeCLI not available — fall through
+        }
+        return { error: "Cannot preview Office document (OfficeCLI not found)", type: ext };
+      }
+
+      // For text-based files, read as UTF-8
+      const textExts = [".md", ".txt", ".json", ".js", ".ts", ".tsx", ".jsx",
+        ".css", ".html", ".xml", ".yaml", ".yml", ".csv", ".tsv", ".py",
+        ".rs", ".go", ".java", ".c", ".cpp", ".h", ".sh", ".sql", ".env",
+        ".toml", ".ini", ".cfg", ".log", ".diff", ".patch"];
+      if (textExts.includes(ext) || ext === "") {
+        const content = await fs.readFile(filePath, "utf8");
+        return { content, type: ext || ".txt" };
+      }
+
+      // For images, return a file:// URL the renderer can load
+      const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico"];
+      if (imageExts.includes(ext)) {
+        return { imageUrl: `file://${filePath}`, type: ext, isImage: true };
+      }
+
+      // For PDFs, return a file:// URL for the embedded viewer
+      if (ext === ".pdf") {
+        return { pdfUrl: `file://${filePath}`, type: ext, isPdf: true };
+      }
+
+      return { error: `Cannot preview ${ext} files`, type: ext };
+    } catch (err: any) {
+      return { error: err.message || "Failed to read file", type: path.extname(filePath) };
+    }
   });
 
   // Navigation

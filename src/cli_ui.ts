@@ -31,6 +31,8 @@ const KNOWN_FLAGS = [
   "-r",
   "--list-sessions",
   "-ls",
+  "--model",
+  "--yolo",
 ];
 
 export interface CliOptions {
@@ -47,6 +49,8 @@ export interface CliOptions {
   continue?: boolean;
   resume?: boolean;
   listSessions?: boolean;
+  model?: string;
+  yolo?: boolean;
   unknownFlags: string[];
 }
 
@@ -55,6 +59,9 @@ type ColorFn = (s: string) => string;
 export interface QuiverTheme {
   bold: ColorFn;
   dim: ColorFn;
+  italic: ColorFn;
+  underline: ColorFn;
+  strikethrough: ColorFn;
   cyan: ColorFn;
   green: ColorFn;
   yellow: ColorFn;
@@ -80,6 +87,9 @@ export interface QuiverTheme {
 const identity = {
   bold: (s: string) => s,
   dim: (s: string) => s,
+  italic: (s: string) => s,
+  underline: (s: string) => s,
+  strikethrough: (s: string) => s,
   cyan: (s: string) => s,
   green: (s: string) => s,
   yellow: (s: string) => s,
@@ -127,7 +137,7 @@ export function theme(
     dry: pc.cyan,
     promptUser: () => pc.bold(pc.green("Q> ")),
     promptAgent: () =>
-      pc.bold(pc.cyan("Q> ")) +
+      pc.bold(pc.cyan("\u25c6 ")) +
       pc.gray(`[${config.llmModelName}] `),
     brandBorder: pc.gray,
     brandBar: pc.cyan,
@@ -188,6 +198,38 @@ export function renderProgressBar(
   return `[${bar}] ${pct}% (${current}/${total})${suffix}`;
 }
 
+/** Locale-stable integer formatter (en-US grouping) — single source of
+ *  truth so token counts never render as locale-dependent "1,20,000". */
+export function formatNum(n: number): string {
+  return Number(n || 0).toLocaleString("en-US");
+}
+
+/** Theme-aware inline diff renderer for the terminal approval gate.
+ *  Color is optional (respects NO_COLOR / non-TTY via theme()), so the
+ *  +/- structure is the source of truth, not color alone. */
+export function renderInlineDiff(
+  diff: string,
+  stream: NodeJS.WriteStream = process.stdout,
+  maxLines = 200,
+): string {
+  const t = theme(stream);
+  const allLines = diff.split("\n");
+  const lines = allLines.slice(0, maxLines);
+  const rendered = lines
+    .map((line) => {
+      if (line.startsWith("+++") || line.startsWith("---")) return t.info(line);
+      if (line.startsWith("@@")) return t.muted(line);
+      if (line.startsWith("+")) return t.success(line);
+      if (line.startsWith("-")) return t.danger(line);
+      return t.muted(line);
+    })
+    .join("\n");
+  if (allLines.length > maxLines) {
+    return rendered + "\n" + t.muted(`  \u2026 (${allLines.length - maxLines} more lines)`);
+  }
+  return rendered;
+}
+
 export function suggestFlag(input: string): string | null {
   let best = "";
   let bestDist = Infinity;
@@ -216,11 +258,34 @@ export function parseCliArgs(argv: string[]): CliOptions {
     continue: false,
     resume: false,
     listSessions: false,
+    model: undefined,
+    yolo: false,
     unknownFlags: [],
   };
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  // Normalize argv before dispatch so the parser supports two POSIX-isms the
+  // raw loop below does not:
+  //  - `--flag=value` (e.g. `--model=glm-5.2:cloud`, `--single-turn="hi there"`)
+  //    is split into `--flag` + `value` tokens so the value-flag branches below
+  //    consume the value via `argv[i + 1]` exactly as they would for a space.
+  //  - Combined boolean short flags (e.g. `-qc`) are split into `-q` `-c`.
+  //    Multi-char shorts that are themselves known flags (`-ls` = --list-sessions)
+  //    are left intact so they keep their special meaning.
+  const expanded: string[] = [];
+  for (const a of argv) {
+    if (a.startsWith("--") && a.includes("=")) {
+      const eq = a.indexOf("=");
+      expanded.push(a.slice(0, eq));
+      expanded.push(a.slice(eq + 1));
+    } else if (/^-[A-Za-z]{2,}$/.test(a) && !KNOWN_FLAGS.includes(a)) {
+      for (const ch of a.slice(1)) expanded.push("-" + ch);
+    } else {
+      expanded.push(a);
+    }
+  }
+
+  for (let i = 0; i < expanded.length; i++) {
+    const arg = expanded[i];
 
     if (arg === "--help" || arg === "-h") {
       opts.help = true;
@@ -259,12 +324,25 @@ export function parseCliArgs(argv: string[]): CliOptions {
       continue;
     }
     if (arg === "--single-turn") {
-      const next = argv[i + 1];
+      const next = expanded[i + 1];
       if (!next || next.startsWith("-")) {
         throw new UsageError("--single-turn requires a prompt string.");
       }
       opts.singleTurn = next;
       i++;
+      continue;
+    }
+    if (arg === "--model") {
+      const next = expanded[i + 1];
+      if (!next || next.startsWith("-")) {
+        throw new UsageError("--model requires a model name.");
+      }
+      opts.model = next;
+      i++;
+      continue;
+    }
+    if (arg === "--yolo") {
+      opts.yolo = true;
       continue;
     }
     if (arg === "--continue" || arg === "-c") {

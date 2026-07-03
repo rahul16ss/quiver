@@ -4,6 +4,7 @@ import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
 import { hasBinary } from "../utils/find_binary.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 export const tool: Tool = {
   name: "grep_search",
@@ -41,6 +42,13 @@ export const tool: Tool = {
   execute: async ({ pattern, directory, glob, ignoreCase, maxResults }) => {
     const dir = path.resolve(directory || ".");
     const limit = maxResults || 50;
+
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try {
+      assertToolPathAllowed(dir, "read");
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
 
     // Validate directory exists and is a directory (prevents path injection)
     try {

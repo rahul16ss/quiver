@@ -3,7 +3,8 @@ import * as path from "path";
 import { exec, execFile } from "child_process";
 import { z } from "zod";
 import picocolors from "picocolors";
-import { Tool } from "../registry.js";
+import { Tool } from "../registry.js"
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 /**
  * Checks if prettier is available in the project.
@@ -167,6 +168,12 @@ export const tool: Tool = {
       ),
   }),
   execute: async ({ filePath }) => {
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try {
+      assertToolPathAllowed(filePath, "read");
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
     const resolvedPath = path.resolve(filePath);
 
     // Check file exists

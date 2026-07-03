@@ -12,7 +12,7 @@ import * as fs from "fs/promises";
 
 /**
  * Build an isolated copy-on-write scratchpad directory.
- * Copies src/, tests/, ui/ and config files, symlinks node_modules.
+ * Copies src/, tests/, ui/ and config files. Does not link external packages.
  *
  * @param workspaceRoot - The real workspace root to copy from
  * @returns The scratchpad directory path
@@ -25,7 +25,7 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   await fs.mkdir(scratchDir, { recursive: true });
 
   // Copy source, test, and ui directories (read-only inspection)
-  for (const dir of ["src", "tests", "ui", "docs", "Formula", "branding", "bin", "skills"]) {
+  for (const dir of ["src", "tests", "ui", "docs", "Formula", "branding", "bin", "skills", "templates"]) {
     try {
       await fs.cp(
         path.join(workspaceRoot, dir),
@@ -49,16 +49,11 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
     }
   }
 
-  // Symlink node_modules so tsx/tsc are available without a full install
-  try {
-    await fs.symlink(
-      path.join(workspaceRoot, "node_modules"),
-      path.join(scratchDir, "node_modules"),
-      "dir",
-    );
-  } catch {
-    /* best-effort — if this fails the spawn will error gracefully */
-  }
+  // Do NOT link the real project's node_modules into the scratchpad.
+  // A subagent or checker process could write to node_modules/<pkg>/index.js
+  // and mutate the real project's dependencies, breaking the "cannot write to
+  // the real workspace" guarantee (US-5.3). The checker uses `npx tsx` which
+  // resolves tsx from the global npx cache, not from the workspace.
 
   return scratchDir;
 }

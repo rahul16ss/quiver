@@ -219,7 +219,10 @@ export const tool: Tool = {
                 rlToUse.question(
                   "\n  Apply the edited version? (y/N): ",
                   async (applyAnswer: string) => {
-                    if (shouldClose) rlToUse.close();
+                    if (shouldClose) {
+                      rlToUse.removeAllListeners();
+                      process.stdin.resume();
+                    }
                     if (
                       applyAnswer.trim().toLowerCase() === "y" ||
                       applyAnswer.trim().toLowerCase() === "yes"
@@ -283,7 +286,8 @@ export const tool: Tool = {
 
       return new Promise((resolve) => {
         rl.question("  > ", async (answer) => {
-          rl.close();
+          rl.removeAllListeners();
+          process.stdin.resume();
           const choice = answer.trim();
           await handleChoice(choice, resolve);
         });

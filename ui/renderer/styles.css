@@ -949,3 +949,163 @@ body {
   transition: all 0.15s;
 }
 .btn-browse:hover { border-color: var(--text-faint); }
+
+/* ── Preview Panel ─────────────────────────────────────────────────── */
+
+.preview-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 50%;
+  min-width: 400px;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.preview-panel {
+  width: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.preview-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+}
+
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preview-btn:hover { color: var(--text); border-color: var(--text-faint); }
+
+.preview-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.preview-close:hover { color: var(--text); }
+
+.preview-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.preview-loading {
+  color: var(--text-faint);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px;
+}
+
+.preview-error {
+  color: var(--danger);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px;
+}
+
+.preview-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-text pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+.preview-pdf {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.preview-office-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-dim);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* File-attachment chip in chat (clickable to open preview) */
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin: 4px 0;
+}
+.file-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.file-chip-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}

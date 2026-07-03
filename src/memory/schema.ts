@@ -9,6 +9,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { getProjectMemoryDir } from "../paths.js";
+import { atomicWrite } from "../fs/atomic_write.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -140,7 +141,7 @@ export async function updateMemoryFact(
 
   const factsPath = getFactsPath();
   const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
-  await fs.writeFile(factsPath, content, "utf8");
+  await atomicWrite(factsPath, content);
 }
 
 /**
@@ -166,7 +167,7 @@ export async function deleteMemoryFact(factId: string): Promise<void> {
 
   const factsPath = getFactsPath();
   const content = filtered.map((f) => JSON.stringify(f)).join("\n");
-  await fs.writeFile(factsPath, content + (content ? "\n" : ""), "utf8");
+  await atomicWrite(factsPath, content + (content ? "\n" : ""));
 }
 
 /**
@@ -186,5 +187,5 @@ export async function touchMemoryFact(factId: string): Promise<void> {
 
   const factsPath = getFactsPath();
   const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
-  await fs.writeFile(factsPath, content, "utf8");
+  await atomicWrite(factsPath, content);
 }

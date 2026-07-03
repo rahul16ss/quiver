@@ -249,12 +249,31 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
         };
       }
 
-      // Session file exists — check if it's complete
-      // A complete session has a "session_end" event in metadata
+      // Session file exists — check if it's complete.
+      // The session .json file may be in one of two formats:
+      //   (a) A SessionFile object (with metadata.session_end) — written by
+      //       SessionManager.save()
+      //   (b) A JSON array of log events (each with type/data) — written by
+      //       SessionLogger.flush().  This is the common case.
+      // We handle both: for (a) check metadata.session_end; for (b) scan the
+      // log entries for a "session_end" event.
       const finalContent = await fs.readFile(sessionManager.getFilePath(), "utf8");
-      const finalSession = JSON.parse(finalContent) as SessionFile;
+      const parsed = JSON.parse(finalContent);
 
-      if (!finalSession.metadata?.session_end) {
+      let isComplete = false;
+      if (Array.isArray(parsed)) {
+        // Log-file format: look for a "session_end" event entry
+        isComplete = parsed.some(
+          (entry: any) =>
+            entry?.type === "session_end" ||
+            entry?.data?.type === "session_end",
+        );
+      } else if (parsed && typeof parsed === "object") {
+        // SessionFile format: check metadata.session_end
+        isComplete = !!parsed.metadata?.session_end;
+      }
+
+      if (!isComplete) {
         return {
           hasCrashedSession: true,
           sessionId: sessionFile.session_id,
@@ -276,7 +295,7 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
  * Check if a session file exists.
  */
 function sessionFileExists(sessionId: string): boolean {
-  const sessionPath = path.join(getProjectSessionsDir(), `${sessionId}.json`);
+  const sessionPath = path.join(getProjectSessionsDir(), `${sessionId}.state.json`);
   return fsSync.existsSync(sessionPath);
 }
 

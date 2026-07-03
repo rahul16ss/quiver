@@ -37,7 +37,7 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
   const corePath = getCoreMemoryPath();
   let globalMemory: { identity: string; human_context: string } = {
     identity:
-      "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
+      "You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.",
     human_context: "",
   };
 

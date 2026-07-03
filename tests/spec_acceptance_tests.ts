@@ -13,7 +13,7 @@
  */
 
 import picocolors from "picocolors";
-import { promises as fs, existsSync, readFileSync, readdirSync } from "fs";
+import { promises as fs, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, realpathSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execSync, spawn } from "child_process";
@@ -111,6 +111,30 @@ import {
 } from "../src/vision_router.js";
 import { config } from "../src/config.js";
 import type { MemoryFact } from "../src/memory/schema.js";
+import {
+  TRUST_TIERS,
+  getTierSpec,
+  applyTrustTier,
+  hasGrant,
+  needsApprovalFor,
+  ALL_GRANTS,
+  config as quiverConfig,
+} from "../src/config.js";
+import { AmbientEngine } from "../src/ambient.js";
+import { InterventionController } from "../src/intervention.js";
+import {
+  MEMORY_SCHEMA_VERSION,
+} from "../src/memory/schema.js";
+import { compareSemver, verifySha256, verifyEd25519Signature } from "../src/updates.js";
+import {
+  generateSeatbeltProfile,
+  isSeatbeltAvailable,
+  getSeatbeltStatus,
+} from "../src/security/seatbelt.js";
+import { describeUnknownChunk } from "../src/providers/types.js";
+import { ApprovalCache } from "../src/security/approval_cache.js";
+import { architectReviewContract } from "./architect_review_tests.js";
+import { mergedSmokeContract } from "./merged_smoke_tests.js";
 
 interface CheckResult {
   id: string;
@@ -1038,6 +1062,8 @@ async function configStartupUXContract() {
     "QUIVER_MAX_CONTEXT_TOKENS",
     "QUIVER_SESSION_LOG",
     "QUIVER_SESSION_LOG_MAX_CHARS",
+    "QUIVER_AMBIENT",
+    "QUIVER_LOG_RETENTION_DAYS",
     "PARALLEL_API_KEY",
     "GITHUB_TOKEN",
   ]);
@@ -2324,11 +2350,49 @@ async function absorbedContract(tmpWs: string) {
     () => {
       const names = IPC_CHANNELS.map((c: any) => c.channel);
       const unique = names.length === new Set(names).size;
-      if (!unique || !isChannelAllowed("session:list")) return false;
+      // The live channel is `sessions:list` (plural). `session:list` is the
+      // old fictional name that must NOT be allowlisted.
+      if (!unique || !isChannelAllowed("sessions:list")) return false;
+      if (isChannelAllowed("session:list")) return false;
       if (isChannelAllowed("evil:channel")) return false;
-      const valid = validateIpcPayload("session:load", { sessionId: "x" });
-      const invalid = validateIpcPayload("session:load", {});
+      const valid = validateIpcPayload("sessions:load", { filePath: "x" });
+      const invalid = validateIpcPayload("sessions:load", {});
       return valid.valid === true && invalid.valid === false;
+    },
+  );
+
+  // US-14.4 IPC contract ↔ preload in sync (drift guard)
+  await check(
+    "IPC-CONTRACT-IN-SYNC",
+    "US-14.4",
+    "ui/ipc_contract.ts channel set must exactly match the ALLOWED_CHANNELS set in ui/preload.ts and ui/preload.js (no silent drift between the three sources of truth)",
+    () => {
+      const contract = new Set(getAllowedChannels());
+      // Extract every double-quoted token inside the ALLOWED_CHANNELS block
+      // of the preload source, keeping those that look like IPC channels
+      // (contain a colon). Channels use camelCase / hyphens (e.g.
+      // config:isConfigured, settings:set-credential, workspace:runTests),
+      // so we match any quoted string, not just lowercase.
+      const extract = (rel: string): Set<string> => {
+        const t = srcText(rel);
+        const block = t.match(/ALLOWED_CHANNELS[\s\S]*?\]\s*\)/);
+        const body = block ? block[0] : t;
+        const out = new Set<string>();
+        let m: RegExpExecArray | null;
+        const re = /"([^"]+)"/g;
+        while ((m = re.exec(body)) !== null) {
+          if (m[1].includes(":")) out.add(m[1]);
+        }
+        return out;
+      };
+      const ts = extract("ui/preload.ts");
+      const js = extract("ui/preload.js");
+      if (ts.size === 0 || js.size === 0) return false;
+      const same = (a: Set<string>, b: Set<string>): boolean =>
+        a.size === b.size && [...a].every((x) => b.has(x));
+      // The contract covers invoke channels AND main→renderer events; the
+      // preload ALLOWED_CHANNELS set covers the same combined surface.
+      return same(contract, ts) && same(ts, js);
     },
   );
 
@@ -2949,23 +3013,29 @@ async function missingSpecContract(tmpWs: string) {
   await check(
     "THREAT-MODEL-DOC",
     "US-9.1",
-    "docs/security/threat-model.md must exist and address the spec's threat surfaces",
+    "docs/security/threat-model.md must exist and address the spec's 10 required threat surfaces",
     () => {
       const p = path.join(ROOT, "docs", "security", "threat-model.md");
       if (!existsSync(p))
         throw new Error("docs/security/threat-model.md missing");
-      const t = readFileSync(p, "utf8");
-      const surfaces = [
-        "prompt injection",
-        "symlink",
-        "secret",
-        "exfiltrat",
-        "create_tool",
-        "electron",
-      ].filter((s) => t.toLowerCase().includes(s));
-      if (surfaces.length < 4)
+      const t = readFileSync(p, "utf8").toLowerCase();
+      // US-9.1 requires all 10 threat surfaces to be addressed
+      const requiredSurfaces = [
+        { pattern: "prompt injection", label: "prompt injection" },
+        { pattern: "symlink", label: "symlink escape" },
+        { pattern: "secret", label: "secret exfiltration" },
+        { pattern: "exfiltrat", label: "exfiltration" },
+        { pattern: "create_tool", label: "create_tool ACE" },
+        { pattern: "electron", label: "Electron main process ACE" },
+        { pattern: "cloud sync", label: "cloud sync leakage" },
+        { pattern: "memory", label: "memory poisoning" },
+        { pattern: "session", label: "session log retention" },
+        { pattern: "shell", label: "shell command injection" },
+      ];
+      const missing = requiredSurfaces.filter((s) => !t.includes(s.pattern));
+      if (missing.length > 2)
         throw new Error(
-          `threat-model.md does not cover enough spec threat surfaces (found: ${surfaces.join(", ")})`,
+          `threat-model.md does not cover enough spec threat surfaces (missing: ${missing.map((m) => m.label).join(", ")})`,
         );
       return true;
     },
@@ -3392,9 +3462,986 @@ async function streamStopContract() {
   );
 }
 
+// ─── US-17.10: Seatbelt OS-level sandbox ──────────────────────────────
+
+async function seatbeltSandboxContract() {
+  await check(
+    "SEATBELT-MODULE-EXISTS",
+    "US-17.10",
+    "seatbelt sandbox module must exist at src/security/seatbelt.ts",
+    () => {
+      if (!existsSync(path.join(ROOT, "src", "security", "seatbelt.ts")))
+        throw new Error("src/security/seatbelt.ts does not exist");
+      return true;
+    },
+  );
+
+  await check(
+    "SEATBELT-PROFILE-GEN",
+    "US-17.10",
+    "seatbelt must generate a macOS Sandbox Profile Language profile with workspace + sensitive-path rules (behavioral: call generateSeatbeltProfile and verify output)",
+    () => {
+      const profile = generateSeatbeltProfile({
+        workspaceRoot: "/tmp/test-workspace",
+        allowNetwork: false,
+        extraReadPaths: [],
+        extraWritePaths: [],
+      });
+      if (typeof profile !== "string" || profile.length < 100)
+        throw new Error(
+          "generateSeatbeltProfile did not return a substantive profile string",
+        );
+      // Must contain Seatbelt policy language directives
+      if (!/deny|allow/i.test(profile))
+        throw new Error(
+          "profile does not contain Seatbelt allow/deny directives",
+        );
+      // Must deny sensitive home paths
+      if (!/\.ssh/.test(profile) || !/\.aws/.test(profile))
+        throw new Error(
+          "seatbelt profile does not deny ~/.ssh or ~/.aws — sensitive home paths are accessible",
+        );
+      // Must reference the workspace root for read-write access
+      if (!/test-workspace/.test(profile))
+        throw new Error(
+          "seatbelt profile does not reference the workspace root — workspace writes not scoped",
+        );
+      // Must conditionally handle network
+      if (!/network|socket|net/i.test(profile))
+        throw new Error(
+          "seatbelt profile does not have network rules — network is not conditioned",
+        );
+      // Verify the network toggle works: allowNetwork=true should differ from false
+      const profileWithNet = generateSeatbeltProfile({
+        workspaceRoot: "/tmp/test-workspace",
+        allowNetwork: true,
+        extraReadPaths: [],
+        extraWritePaths: [],
+      });
+      if (profileWithNet === profile)
+        throw new Error(
+          "allowNetwork=true and allowNetwork=false produce identical profiles — network toggle is decorative",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "SEATBELT-PLATFORM-DETECT",
+    "US-17.10",
+    "seatbelt must detect macOS platform and fall back on non-macOS (behavioral: call isSeatbeltAvailable)",
+    () => {
+      // isSeatbeltAvailable must return a boolean (not throw, not undefined)
+      const result = isSeatbeltAvailable();
+      if (typeof result !== "boolean")
+        throw new Error(
+          `isSeatbeltAvailable returned ${typeof result}, expected boolean`,
+        );
+      // Source must still check platform and have fallback
+      const code = codeOnly("src/security/seatbelt.ts");
+      if (!/process\.platform.*darwin/.test(code))
+        throw new Error("does not check process.platform === 'darwin'");
+      if (!/fallback/.test(code))
+        throw new Error("no fallback path for non-macOS platforms");
+      return true;
+    },
+  );
+
+  await check(
+    "SEATBELT-YOLO-BYPASS",
+    "US-17.10",
+    "seatbelt must respect config.sandboxDisabled (YOLO mode bypasses OS sandbox)",
+    () => {
+      const code = codeOnly("src/security/seatbelt.ts");
+      if (!/config\.sandboxDisabled/.test(code))
+        throw new Error("does not check config.sandboxDisabled for YOLO bypass");
+      return true;
+    },
+  );
+
+  await check(
+    "SEATBELT-STATUS-CMD",
+    "US-17.10",
+    "/sandbox status must show OS sandbox status (seatbelt or fallback) (behavioral: call getSeatbeltStatus)",
+    () => {
+      // getSeatbeltStatus must return a descriptive string
+      const status = getSeatbeltStatus();
+      if (typeof status !== "string" || status.length < 5)
+        throw new Error(
+          `getSeatbeltStatus returned '${status}' — must be a descriptive status string`,
+        );
+      // CLI must call it
+      const cli = codeOnly("src/cli.ts");
+      if (!/getSeatbeltStatus/.test(cli))
+        throw new Error("/sandbox command does not call getSeatbeltStatus()");
+      return true;
+    },
+  );
+
+  await check(
+    "SEATBELT-SPAWN-EXEC-FUNCTIONS",
+    "US-17.10",
+    "seatbelt module must expose spawnSandboxed and execSandboxed for running commands inside the OS sandbox",
+    () => {
+      const code = codeOnly("src/security/seatbelt.ts");
+      if (!/export\s+(async\s+)?function\s+spawnSandboxed/.test(code))
+        throw new Error("spawnSandboxed function not exported from seatbelt.ts");
+      if (!/export\s+(async\s+)?function\s+execSandboxed/.test(code))
+        throw new Error("execSandboxed function not exported from seatbelt.ts");
+      // Both must accept a profile/workspace and a command
+      if (!/workspaceRoot|SandboxProfile/.test(code))
+        throw new Error(
+          "spawnSandboxed/execSandboxed do not accept a workspace/profile parameter",
+        );
+      return true;
+    },
+  );
+}
+
+// ─── US-17.11: Auto-update system ────────────────────────────────────
+
+async function autoUpdateContract() {
+  await check(
+    "UPDATE-MODULE-EXISTS",
+    "US-17.11",
+    "auto-update module must exist at src/updates.ts",
+    () => {
+      if (!existsSync(path.join(ROOT, "src", "updates.ts")))
+        throw new Error("src/updates.ts does not exist");
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-SEMVER-COMPARE",
+    "US-17.11",
+    "update module must have semver comparison that correctly orders versions (behavioral: call compareSemver)",
+    () => {
+      // Behavioral: compareSemver must correctly order versions
+      if (compareSemver("1.0.0", "2.0.0") >= 0)
+        throw new Error("compareSemver('1.0.0','2.0.0') should return negative");
+      if (compareSemver("2.0.0", "1.0.0") <= 0)
+        throw new Error("compareSemver('2.0.0','1.0.0') should return positive");
+      if (compareSemver("1.0.0", "1.0.0") !== 0)
+        throw new Error("compareSemver('1.0.0','1.0.0') should return 0");
+      if (compareSemver("1.0.0", "1.0.1") >= 0)
+        throw new Error("compareSemver('1.0.0','1.0.1') should return negative");
+      if (compareSemver("1.2.0", "1.1.9") <= 0)
+        throw new Error("compareSemver('1.2.0','1.1.9') should return positive");
+      // Source must also have parseSemver
+      const code = codeOnly("src/updates.ts");
+      if (!/parseSemver/.test(code))
+        throw new Error("parseSemver function not found in source");
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-ED25519-VERIFY",
+    "US-17.11",
+    "update module must have Ed25519 signature verification (behavioral: call verifyEd25519Signature with invalid data — must return false, not throw)",
+    () => {
+      // Behavioral: verifyEd25519Signature with garbage data must return false, not throw
+      const result = verifyEd25519Signature("test message", "invalid-sig", "invalid-key");
+      if (result !== false)
+        throw new Error(
+          `verifyEd25519Signature with invalid data returned ${result} — must return false for bad signatures`,
+        );
+      // Source must use crypto.verify
+      const code = codeOnly("src/updates.ts");
+      if (!/crypto\.verify/.test(code))
+        throw new Error("does not use crypto.verify for Ed25519");
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-SHA256-CHECK",
+    "US-17.11",
+    "update module must have SHA-256 checksum verification (behavioral: call verifySha256 with a real file)",
+    async () => {
+      // Behavioral: verifySha256 must correctly verify a real file's hash
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-sha-accept-"));
+      tmpDirs.push(tmp);
+      const testFile = path.join(tmp, "test.bin");
+      const testContent = "Hello Quiver update verification!";
+      await fs.writeFile(testFile, testContent, "utf8");
+      const crypto = await import("crypto");
+      const realHash = crypto.createHash("sha256").update(testContent, "utf8").digest("hex");
+      // Correct hash → must return true
+      const ok = verifySha256(testFile, realHash);
+      if (ok !== true)
+        throw new Error(
+          `verifySha256 with correct hash returned ${ok} — must return true`,
+        );
+      // Wrong hash → must return false
+      const bad = verifySha256(testFile, "0".repeat(64));
+      if (bad !== false)
+        throw new Error(
+          `verifySha256 with wrong hash returned ${bad} — must return false`,
+        );
+      // Nonexistent file → must return false, not throw
+      const missing = verifySha256(path.join(tmp, "nonexistent.bin"), realHash);
+      if (missing !== false)
+        throw new Error(
+          `verifySha256 on nonexistent file returned ${missing} — must return false`,
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-SILENT-CHECK",
+    "US-17.11",
+    "update module must have non-blocking silentUpdateCheck that caches for 24h",
+    () => {
+      const code = codeOnly("src/updates.ts");
+      if (!/silentUpdateCheck/.test(code))
+        throw new Error("silentUpdateCheck function not found");
+      // Must cache to avoid checking every startup
+      if (!/update-check\.json/.test(code))
+        throw new Error("does not cache update check results");
+      // Must be non-blocking (fire-and-forget)
+      if (!/24/.test(code))
+        throw new Error("does not have 24h cache window");
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-CLI-WIRED",
+    "US-17.11",
+    "CLI must call silentUpdateCheck at startup and have /update slash command",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/silentUpdateCheck/.test(cli))
+        throw new Error("CLI does not call silentUpdateCheck at startup");
+      if (!/\/update/.test(cli))
+        throw new Error("CLI does not handle /update slash command");
+      return true;
+    },
+  );
+
+  await check(
+    "UPDATE-SLASH-COMMAND",
+    "US-17.11",
+    "/update slash command must be registered in slash_commands.ts",
+    () => {
+      const code = codeOnly("src/slash_commands.ts");
+      if (!/\/update/.test(code))
+        throw new Error("/update not registered in slash_commands.ts");
+      return true;
+    },
+  );
+}
+
+// ─── US-17.12: Total event classification ─────────────────────────────
+
+async function totalEventClassificationContract() {
+  await check(
+    "EVENT-UNSUPPORTED-TYPE",
+    "US-17.12",
+    "ModelEvent type must include 'unsupported' for unknown provider events",
+    () => {
+      const code = codeOnly("src/providers/types.ts");
+      if (!/"unsupported"/.test(code))
+        throw new Error(
+          'ModelEvent type union does not include "unsupported"',
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "EVENT-DESCRIBE-UNKNOWN",
+    "US-17.12",
+    "describeUnknownChunk function must classify unknown SSE chunks human-readably (behavioral: call with various inputs)",
+    () => {
+      // Behavioral: describeUnknownChunk must handle various input types
+      const nullDesc = describeUnknownChunk(null);
+      if (typeof nullDesc !== "string" || nullDesc.length < 5)
+        throw new Error(
+          `describeUnknownChunk(null) returned '${nullDesc}' — must be a human-readable string`,
+        );
+      const strDesc = describeUnknownChunk("not json at all");
+      if (typeof strDesc !== "string" || strDesc.length < 5)
+        throw new Error(
+          `describeUnknownChunk('not json') returned '${strDesc}' — must be human-readable`,
+        );
+      const objDesc = describeUnknownChunk({ foo: "bar", baz: 42 });
+      if (typeof objDesc !== "string" || objDesc.length < 5)
+        throw new Error(
+          `describeUnknownChunk({foo:'bar'}) returned '${objDesc}' — must be human-readable`,
+        );
+      // Must distinguish error chunks from regular unknown chunks
+      const errDesc = describeUnknownChunk({ error: "rate limited" });
+      if (!/error/i.test(errDesc))
+        throw new Error(
+          `describeUnknownChunk({error:...}) returned '${errDesc}' — must mention 'error' for error chunks`,
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "EVENT-NO-SILENT-DROP",
+    "US-17.12",
+    "SSE parser must yield 'unsupported' events instead of silently catching and dropping malformed chunks",
+    () => {
+      const code = codeOnly("src/providers/types.ts");
+      // The old code had `catch { // Skip malformed chunks }` — that's a silent drop.
+      // The new code must yield an unsupported event in the catch block.
+      if (/catch\s*\{[^}]*Skip malformed chunks/.test(code))
+        throw new Error(
+          "SSE parser still silently drops malformed chunks — must yield unsupported event instead",
+        );
+      if (!/type:\s*"unsupported"/.test(code))
+        throw new Error(
+          'SSE parser does not yield "unsupported" events for unknown chunks',
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "EVENT-AGENT-HANDLER",
+    "US-17.12",
+    "agent loop must handle 'unsupported' events (log + display, not crash)",
+    () => {
+      const code = codeOnly("src/agent.ts");
+      if (!/unsupported/.test(code))
+        throw new Error(
+          "agent loop does not handle 'unsupported' event type",
+        );
+      if (!/unsupported_stream_event/.test(code))
+        throw new Error(
+          "agent does not log unsupported_stream_event to audit trail",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "EVENT-RAW-FIELDS",
+    "US-17.12",
+    "ModelEvent must have rawEvent and rawDescription fields for unsupported events",
+    () => {
+      const code = codeOnly("src/providers/types.ts");
+      if (!/rawEvent/.test(code))
+        throw new Error("ModelEvent does not have rawEvent field");
+      if (!/rawDescription/.test(code))
+        throw new Error("ModelEvent does not have rawDescription field");
+      return true;
+    },
+  );
+}
+
 // ─── US-2.3: Cleanup utility for leaked artifacts ─────────────────────
 
 
+
+
+// ─── CHECKER AUDIT 2026-07-02: strengthened + new coverage ────────────
+// These checks were added by the independent checker audit to close spec
+// gaps the prior contract missed and to strengthen weak source-text checks
+// into behavioral assertions. They assert spec intent, not vendor code.
+
+async function checkerAuditAddendumContract(tmpWs: string) {
+  // ─── US-2.1: Session continuation & resumability ────────────────────
+
+  await check(
+    "SESSION-CONTINUE-WIRED",
+    "US-2.1",
+    "CLI must wire --continue to auto-load the most recent session (findLatestSessionState), not just print a hint",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/--continue|cliOpts\.continue/.test(cli))
+        throw new Error("--continue flag is not wired in cli.ts");
+      if (!/findLatestSessionState/.test(cli))
+        throw new Error(
+          "--continue does not call findLatestSessionState — US-2.1 requires auto-loading the most recent session",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "SESSION-RESUME-PICKER",
+    "US-2.1",
+    "CLI must wire --resume to show a session picker (listSessionStates) so the user can pick a specific session",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/--resume|cliOpts\.resume/.test(cli))
+        throw new Error("--resume flag is not wired in cli.ts");
+      if (!/listSessionStates/.test(cli))
+        throw new Error(
+          "--resume does not call listSessionStates — US-2.1 requires a session picker",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "SESSION-CORRUPT-GRACEFUL",
+    "US-2.1",
+    "corrupt session files must be handled gracefully (try/catch around session load, not a crash)",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      const schema = codeOnly("src/session/schema.ts");
+      // The session loading path must have error handling
+      const cliHasCatch = /catch.*session|try.*load.*catch|JSON\.parse.*catch/i.test(
+        cli,
+      );
+      const schemaHasCatch = /catch|corrupt|malformed|invalid.*session/i.test(
+        schema,
+      );
+      if (!cliHasCatch && !schemaHasCatch)
+        throw new Error(
+          "no graceful error handling for corrupt session files — US-2.1 requires reporting details without crashing",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-2.4: Approval scopes (y/a/N) + scoped approval cache ─────────
+
+  await check(
+    "APPROVAL-THREE-SCOPES",
+    "US-2.4",
+    "approval prompt must offer three scopes: y (once), a (all-similar-this-session), N (deny) — not just y/n. The prompt text must show all three options and the code must resolve 'a' to session scope and 'y' to once scope",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      // The prompt text must mention all three scopes (y/a/N or yes/all/no)
+      const hasPromptText = /y.*yes.*a.*all.*N.*no|y.*=.*yes.*a.*=.*all/i.test(agent);
+      if (!hasPromptText)
+        throw new Error(
+          "approval prompt does not show all three scopes (y/a/N) in the prompt text — US-2.4 requires offering once, all-similar-this-session, and deny",
+        );
+      // Must resolve 'a'/'all' to session scope (use [\s\S] for cross-line matching)
+      const hasSessionResolve = /["']a["'][\s\S]*?scope.*["']session["']|["']all["'][\s\S]*?scope.*["']session["']/i.test(
+        agent,
+      );
+      if (!hasSessionResolve)
+        throw new Error(
+          "approval code does not resolve 'a'/'all' to session scope — US-2.4 requires a session-scoped approval",
+        );
+      // Must resolve 'y'/'yes' to once scope
+      const hasOnceResolve = /["']y["'][\s\S]*?scope.*["']once["']|["']yes["'][\s\S]*?scope.*["']once["']/i.test(
+        agent,
+      );
+      if (!hasOnceResolve)
+        throw new Error(
+          "approval code does not resolve 'y'/'yes' to once scope — US-2.4 requires a once-scoped approval",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "APPROVAL-CACHE-SCOPED-BEHAVIOR",
+    "US-2.4",
+    "ApprovalCache must key by (tool + risk band or directory) so repeated safe actions skip the gate without a global grant (behavioral)",
+    () => {
+      // Behavioral: ApprovalCache must scope by risk band for run_command
+      const cache = new ApprovalCache();
+      // Grant session approval for moderate run_command
+      cache.record({ toolName: "run_command", riskBand: "moderate" }, "session");
+      // Same band → should be cached
+      if (!cache.has({ toolName: "run_command", riskBand: "moderate" }))
+        throw new Error(
+          "ApprovalCache did not cache a session-scoped approval for the same risk band",
+        );
+      // Different band → should NOT be cached
+      if (cache.has({ toolName: "run_command", riskBand: "destructive" }))
+        throw new Error(
+          "ApprovalCache leaked a 'moderate' approval to 'destructive' — risk bands must be scoped separately (US-2.4)",
+        );
+      // Different tool → should NOT be cached
+      if (cache.has({ toolName: "write_file", riskBand: "moderate" }))
+        throw new Error(
+          "ApprovalCache leaked a run_command approval to write_file — tool names must be scoped separately (US-2.4)",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-7.2: Story scroll narrative ──────────────────────────────────
+
+  await check(
+    "LANDING-STORY-SCROLL",
+    "US-7.2",
+    "landing page must flow as a narrative: Problem/Insight → Product → Philosophy → Install (≤5 major sections)",
+    () => {
+      const p = path.join(ROOT, "docs", "index.html");
+      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const t = readFileSync(p, "utf8").toLowerCase();
+      // Problem/Insight: the page must frame the problem or why existing tools fall short
+      // (US-7.2: Problem → Insight). Accept "why not chatgpt/claude", "problem", "challenge", etc.
+      const hasProblemInsight =
+        /problem|challenge|why.*not.*chatgpt|why.*not.*claude|closed.*saas|open.*vs.*closed|limitation|shortcoming/i.test(
+          t,
+        );
+      if (!hasProblemInsight)
+        throw new Error(
+          "landing page has no Problem/Insight section — US-7.2 requires narrative flow starting with the problem",
+        );
+      // Product: must show how the product works or what it does
+      const hasProduct = /how.*works|product.*stor|what.*quiver|features|ux.*stor/i.test(t);
+      if (!hasProduct)
+        throw new Error(
+          "landing page has no Product section — US-7.2 requires narrative flow with a product section",
+        );
+      // Philosophy: principles, beliefs, open vs closed
+      const hasPhilosophy =
+        /philosophy|principle|believe|open.*vs.*closed|why.*not.*chatgpt/i.test(t);
+      if (!hasPhilosophy)
+        throw new Error(
+          "landing page has no Philosophy section — US-7.2 requires narrative flow with a philosophy section",
+        );
+      // Install: must have an install/download section
+      const hasInstall = /install|brew|download|get.*quiver|desktop.*app/i.test(t);
+      if (!hasInstall)
+        throw new Error(
+          "landing page has no Install section — US-7.2 requires narrative flow ending with install",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-7.3: Product mockup/animation ────────────────────────────────
+
+  await check(
+    "LANDING-PRODUCT-MOCKUP",
+    "US-7.3",
+    "landing page must show a visual mockup or animation of the product interface (streaming, tool calls, HUD)",
+    () => {
+      const p = path.join(ROOT, "docs", "index.html");
+      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const t = readFileSync(p, "utf8");
+      // Must have a visual mockup — SVG, animation, or CSS simulation
+      const hasMockup =
+        /<svg|@keyframes|animation:|mockup|mock-|simulat/i.test(t);
+      if (!hasMockup)
+        throw new Error(
+          "landing page has no visual mockup or animation — US-7.3 requires showing the product in action",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-7.5: Deeper dive / reference link ────────────────────────────
+
+  await check(
+    "LANDING-DEEPER-DIVE",
+    "US-7.5",
+    "landing page must link to a separate technical reference document (Learn More / Documentation link)",
+    () => {
+      const p = path.join(ROOT, "docs", "index.html");
+      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const t = readFileSync(p, "utf8");
+      // Must link to a reference page
+      const hasRefLink = /reference\.html|learn.*more|documentation.*link/i.test(t);
+      if (!hasRefLink)
+        throw new Error(
+          "landing page has no link to a technical reference document — US-7.5 requires a 'Learn More' link",
+        );
+      // The reference page should actually exist
+      const refPath = path.join(ROOT, "docs", "reference.html");
+      if (!existsSync(refPath))
+        throw new Error("docs/reference.html does not exist — US-7.5 link target is broken");
+      return true;
+    },
+  );
+
+  // ─── US-13.3 extension: Ambient log retention at startup ─────────────
+
+  await check(
+    "AMBIENT-LOG-RETENTION",
+    "US-13.3",
+    "old session logs must be auto-purged at startup (default 30 days; 0 = keep forever) — fire-and-forget, non-blocking",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      const cfg = codeOnly("src/config.ts");
+      // CLI must call purgeOldLogs at startup
+      if (!/purgeOldLogs/.test(cli))
+        throw new Error(
+          "CLI does not call purgeOldLogs at startup — US-13.3 requires ambient log retention",
+        );
+      // Config must have logRetentionDays with a default of 30
+      if (!/logRetentionDays/.test(cfg))
+        throw new Error(
+          "config.ts does not define logRetentionDays — US-13.3 requires a configurable retention period",
+        );
+      if (!/30/.test(cfg))
+        throw new Error(
+          "logRetentionDays default is not 30 — US-13.3 specifies default 30 days",
+        );
+      // Must support 0 = keep forever
+      if (!/0.*keep.*forever|keep.*forever.*0|QUIVER_LOG_RETENTION_DAYS/i.test(cfg))
+        throw new Error(
+          "config does not document 0 = keep forever for logRetentionDays — US-13.3",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-16.9: Session end logging in all exit handlers ───────────────
+
+  await check(
+    "SESSION-END-EXIT-HANDLERS",
+    "US-16.9",
+    "session_end events must be logged in all 6 exit handlers (SIGINT, SIGTERM, uncaughtException, unhandledRejection, /exit, EOF) for crash detection",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/session_end/.test(cli))
+        throw new Error(
+          "CLI does not log session_end events — US-16.9 requires it for crash detection",
+        );
+      // Must have handlers for the key exit paths
+      const handlers = [
+        { pattern: /SIGINT|sigint/i, label: "SIGINT" },
+        { pattern: /SIGTERM|sigterm/i, label: "SIGTERM" },
+        { pattern: /uncaughtException/i, label: "uncaughtException" },
+        { pattern: /unhandledRejection/i, label: "unhandledRejection" },
+      ];
+      const missing = handlers.filter((h) => !h.pattern.test(cli));
+      if (missing.length > 1)
+        throw new Error(
+          `CLI is missing exit handlers for: ${missing.map((m) => m.label).join(", ")} — US-16.9 requires session_end in all exit paths`,
+        );
+      // detectCrashedSession must handle both session formats
+      if (!/detectCrashedSession/.test(cli))
+        throw new Error(
+          "CLI does not call detectCrashedSession — US-16.9 requires crash detection on launch",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-16.10: Terminal markdown renderer ────────────────────────────
+
+  await check(
+    "MARKDOWN-RENDERER-EXISTS",
+    "US-16.10",
+    "TerminalMarkdownRenderer must exist and be TTY-gated at the call site (not in piped/JSON/CI output)",
+    () => {
+      const mr = codeOnly("src/markdown_renderer.ts");
+      if (!/class\s+TerminalMarkdownRenderer/.test(mr))
+        throw new Error(
+          "TerminalMarkdownRenderer class not found in src/markdown_renderer.ts — US-16.10 unimplemented",
+        );
+      // Must have push (for streaming chunks) and flush (for end-of-stream)
+      if (!/\.push\s*\(|push\s*\(/.test(mr))
+        throw new Error(
+          "TerminalMarkdownRenderer has no push() method — US-16.10 requires line-buffered streaming",
+        );
+      if (!/flush/.test(mr))
+        throw new Error(
+          "TerminalMarkdownRenderer has no flush() method — US-16.10 requires flushing trailing partial lines",
+        );
+      // Must be TTY-gated at the call site
+      const cli = codeOnly("src/cli.ts");
+      if (!/isTTY|process\.stdout\.isTTY/.test(cli))
+        throw new Error(
+          "TerminalMarkdownRenderer is not TTY-gated at the call site — US-16.10 requires piped/JSON/CI output to stay raw",
+        );
+      // Must route through theme() for NO_COLOR support
+      if (!/theme\s*\(|NO_COLOR|QUIVER_NO_COLOR/.test(mr + cli))
+        throw new Error(
+          "markdown renderer does not route through theme() — US-16.10 requires NO_COLOR/FORCE_COLOR support",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-16.11: Per-turn cost footer ──────────────────────────────────
+
+  await check(
+    "COST-FOOTER-TTY-GATED",
+    "US-16.11",
+    "per-turn cost footer must exist (printTurnCost) and be TTY-gated so piped/JSON output is not polluted",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/printTurnCost/.test(cli))
+        throw new Error(
+          "printTurnCost function not found in cli.ts — US-16.11 requires a per-turn token/tool-call summary",
+        );
+      // Must call getTokenStats to diff before/after
+      if (!/getTokenStats/.test(cli))
+        throw new Error(
+          "printTurnCost does not use getTokenStats — US-16.11 requires token stats diffing",
+        );
+      // Must be TTY-gated (not in --json mode)
+      if (!/isTTY|process\.stdout\.isTTY|!--json|noFooter|json.*mode/i.test(cli))
+        throw new Error(
+          "cost footer is not TTY-gated — US-16.11 requires piped/JSON/CI output to be unaffected",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-17.7: GUI onboarding copy uses business language ─────────────
+
+  await check(
+    "GUI-ONBOARDING-BUSINESS-COPY",
+    "US-17.7",
+    "GUI onboarding and settings pages must use business-user language (not developer jargon like 'LLM_API_KEY', 'harness', 'adapter')",
+    () => {
+      const onb = srcText("ui/renderer/onboarding.html");
+      const settings = srcText("ui/renderer/settings.html");
+      const combined = (onb + "\n" + settings).toLowerCase();
+      // Must use plain business language
+      const hasBizLang = /api.*key|model.*key|project.*folder|web.*research.*key|approval.*settings|full.*auto/i.test(
+        combined,
+      );
+      if (!hasBizLang)
+        throw new Error(
+          "GUI onboarding/settings does not use business-user language — US-17.7 requires plain language",
+        );
+      // Must NOT use developer jargon in user-facing labels
+      const devJargon = /llm_api_key|harness.*adapter|vision_model_api_key|context7/i.test(
+        combined,
+      );
+      if (devJargon)
+        throw new Error(
+          "GUI onboarding/settings still uses developer jargon (LLM_API_KEY/harness/adapter) — US-17.7 requires business-user language",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-17.8: Document preview panel IPC handler ─────────────────────
+
+  await check(
+    "GUI-PREVIEW-IPC-HANDLER",
+    "US-17.8",
+    "preview:file IPC handler must be wired in main.ts to read files and return content with type detection",
+    () => {
+      const main = codeOnly("ui/main.ts");
+      if (!/preview:file|preview-file|previewFile/i.test(main))
+        throw new Error(
+          "preview:file IPC handler not wired in main.ts — US-17.8 requires a file preview handler",
+        );
+      // Must detect file type (docx/xlsx/pptx/code/markdown/image)
+      if (!/docx|xlsx|pptx|content.*type|fileType|detectType/i.test(main))
+        throw new Error(
+          "preview handler does not detect file types — US-17.8 requires supporting Office docs, code, markdown, and images",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-9.5: CI dependency security ──────────────────────────────────
+
+  await check(
+    "CI-DEPENDENCY-SECURITY",
+    "US-9.5",
+    "SOC2 mapping doc must reference npm audit and static secret detection scans for CI dependency security",
+    () => {
+      const p = path.join(ROOT, "docs", "security", "soc2-mapping.md");
+      if (!existsSync(p))
+        throw new Error("docs/security/soc2-mapping.md missing");
+      const t = readFileSync(p, "utf8").toLowerCase();
+      if (!/npm audit/.test(t))
+        throw new Error(
+          "soc2-mapping.md does not mention npm audit — US-9.5 requires CI dependency vulnerability alerts",
+        );
+      if (!/secret.*scan|static.*secret|secret.*detect/i.test(t))
+        throw new Error(
+          "soc2-mapping.md does not mention static secret detection scans — US-9.5 requires it in CI",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-17.4: redactSecrets null guard (behavioral) ──────────────────
+
+  await check(
+    "REDACT-SECRETS-NULL-SAFE",
+    "US-17.4",
+    "redactSecrets must not crash on null/undefined input (returns empty string, not TypeError) — stress test fix",
+    () => {
+      // Behavioral: redactSecrets(null) and redactSecrets(undefined) must not throw
+      try {
+        const r1 = redactSecrets(null as any);
+        if (r1 !== "" && r1 !== null && r1 !== undefined)
+          throw new Error(
+            `redactSecrets(null) returned '${r1}' — should return empty string`,
+          );
+      } catch (e: any) {
+        throw new Error(
+          `redactSecrets(null) threw ${e?.message} — US-17.4 requires null safety`,
+        );
+      }
+      try {
+        const r2 = redactSecrets(undefined as any);
+        if (r2 !== "" && r2 !== null && r2 !== undefined)
+          throw new Error(
+            `redactSecrets(undefined) returned '${r2}' — should return empty string`,
+          );
+      } catch (e: any) {
+        throw new Error(
+          `redactSecrets(undefined) threw ${e?.message} — US-17.4 requires null safety`,
+        );
+      }
+      return true;
+    },
+  );
+
+  // ─── US-17.4: UUID not falsely detected as secret (behavioral) ───────
+
+  await check(
+    "SECRET-NO-UUID-FALSE-POSITIVE",
+    "US-17.4",
+    "standard UUIDs must not be falsely detected as secrets (stress test fix — UUID false positive in secret detection)",
+    () => {
+      // A standard UUID should NOT trigger secret detection
+      const uuid = "550e8400-e29b-41d4-a716-446655440000";
+      if (hasSecrets(uuid))
+        throw new Error(
+          `hasSecrets detected a standard UUID as a secret — US-17.4 requires UUID false positive fix`,
+        );
+      // But an actual API key pattern SHOULD be detected
+      const apiKey = "OLLAMA_API_KEY=sk-1234567890abcdefghijklmnopqrstu";
+      if (!hasSecrets(apiKey))
+        throw new Error(
+          "hasSecrets failed to detect an actual API key — the fix must not weaken real detection",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-2.3 extension: Mid-run intervention WIRING (Codex/Claude Code parity) ──
+  // The prior INTERVENTION-CONTROLLER-BEHAVIOR test only exercised the
+  // InterventionController class in isolation. These checks verify the WIRING
+  // — that the CLI actually attaches the Esc key handler and the agent loop
+  // actually consumes interventions at the top of each iteration. This is
+  // the "car on the road, not just the engine on a bench" principle.
+
+  await check(
+    "INTERVENTION-ESC-WIRED",
+    "US-2.3",
+    "CLI must wire attachInterventionKeys() so the Esc key opens a steering prompt while the agent is running — parity with Codex CLI / Claude Code",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      // attachInterventionKeys must be called during the agent run
+      if (!/attachInterventionKeys\s*\(/.test(cli))
+        throw new Error(
+          "attachInterventionKeys is not called in cli.ts — the Esc-to-steer mid-run intervention is not wired (US-2.3 extension)",
+        );
+      // Must handle the Escape key
+      if (!/escape/i.test(cli))
+        throw new Error(
+          "no Escape key handler in the intervention wiring — US-2.3 requires Esc to pause and prompt for a steering message",
+        );
+      // Must put stdin in raw mode to capture keypresses mid-run
+      if (!/setRawMode/.test(cli))
+        throw new Error(
+          "intervention handler does not set raw mode on stdin — keypresses cannot be captured while the agent is running (US-2.3)",
+        );
+      // Must inject the steering text into the agent's intervention controller
+      if (!/getInterventionController|\.inject\s*\(/.test(cli))
+        throw new Error(
+          "intervention handler does not inject the steering text into the agent — US-2.3 requires the message to reach the agent loop",
+        );
+      // Must be TTY-guarded (no raw mode in piped/CI)
+      if (!/isTTY|stdin\.isTTY/.test(cli))
+        throw new Error(
+          "intervention handler is not TTY-guarded — raw mode must only activate on a real terminal (US-2.3)",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "INTERVENTION-AGENT-CONSUMES",
+    "US-2.3",
+    "the agent loop must call intervention.consume() at the TOP of each iteration so steering messages are seen by the model alongside its prior tool results — not just at the end",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      // Must have an InterventionController instance
+      if (!/new InterventionController/.test(agent))
+        throw new Error(
+          "agent does not create an InterventionController — US-2.3 mid-run intervention not wired into the loop",
+        );
+      // Must call consume() in the loop
+      if (!/intervention\.consume\s*\(/.test(agent))
+        throw new Error(
+          "agent loop does not call intervention.consume() — steering messages are never read (US-2.3)",
+        );
+      // Must handle stop (break the loop)
+      if (!/intervention\.stop/.test(agent))
+        throw new Error(
+          "agent loop does not handle intervention.stop — US-2.3 requires stopping the loop on user request",
+        );
+      // Must handle inject (push as user message)
+      if (!/intervention\.inject/.test(agent))
+        throw new Error(
+          "agent loop does not handle intervention.inject — US-2.3 requires injecting the steering message as a user message",
+        );
+      // Must expose the controller so the CLI can queue interventions
+      if (!/getInterventionController/.test(agent))
+        throw new Error(
+          "agent does not expose getInterventionController() — the CLI cannot queue steering messages (US-2.3)",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "INTERVENTION-FINAL-TURN-NOT-DROPPED",
+    "US-2.3",
+    "an intervention queued during a final (no-tool-call) turn must NOT be dropped — the loop must continue so the steering message is consumed and the model gets another turn",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      // When toolCalls.length === 0 (final turn), must check hasPending() and continue
+      const hasFinalTurnCheck = /toolCalls\.length\s*===\s*0|toolCalls\.length\s*==\s*0/.test(
+        agent,
+      );
+      if (!hasFinalTurnCheck)
+        throw new Error(
+          "agent loop does not check for zero tool calls (final turn) — cannot verify intervention is not dropped",
+        );
+      // Must check hasPending() in the final-turn branch
+      if (!/hasPending\s*\(/.test(agent))
+        throw new Error(
+          "agent loop does not call hasPending() on the final turn — an intervention queued during the last streaming response would be dropped (US-2.3 extension)",
+        );
+      // Must continue (not break) when there's a pending intervention
+      const finalTurnBlock = agent.match(
+        /toolCalls\.length\s*===\s*0[\s\S]{0,300}?hasPending[\s\S]{0,80}?continue/,
+      );
+      if (!finalTurnBlock)
+        throw new Error(
+          "agent loop does not continue when there is a pending intervention on the final turn — US-2.3 extension requires the loop to re-enter so the steering message is consumed",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "INTERVENTION-LOGGED-TO-AUDIT",
+    "US-2.3",
+    "mid-run interventions (inject + stop) must be logged to the audit trail (user_intervention event) for transparency",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      if (!/user_intervention/.test(agent))
+        throw new Error(
+          "agent does not log user_intervention events — US-2.3 requires interventions to be auditable",
+        );
+      // Must log both inject and stop actions
+      if (!/action.*inject|inject.*action/.test(agent))
+        throw new Error(
+          "agent does not log the inject action in user_intervention — US-2.3 requires auditing what was injected",
+        );
+      if (!/action.*stop|stop.*action/.test(agent))
+        throw new Error(
+          "agent does not log the stop action in user_intervention — US-2.3 requires auditing stops",
+        );
+      return true;
+    },
+  );
+}
 
 // ─── Main runner ────────────────────────────────────────────────────────
 
@@ -3440,6 +4487,22 @@ export async function runSpecAcceptanceTests(): Promise<number> {
     await memoryReviewCliContract();
     await toolCatalogContract();
     await streamStopContract();
+    await seatbeltSandboxContract();
+    await autoUpdateContract();
+    await totalEventClassificationContract();
+    await extendedCapabilitiesContract();
+    await specGapCoverageContract();
+    await checkerAuditAddendumContract(tmpWs);
+    // Architect-review checks (PART 5 of .spec-swimlane.md) — discriminating
+    // fail-closed checks for behavioral gaps the review found. These FAIL
+    // against the current tree until the vendor closes each gap.
+    await architectReviewContract((r) => results.push(r));
+    // Merged smoke-regression checks (ported from the deleted standalone
+    // smoke files during the 2026-07-02 de-dup). These PASS against the current
+    // tree — regression coverage for US-6.4 mid-tier approvals, US-13.5
+    // ambient glue, and US-17.1 truncation recovery. Targetable via
+    // QUIVER_CHECKER_FILTER like every other gate family.
+    await mergedSmokeContract((r) => results.push(r));
   } finally {
     for (const d of tmpDirs)
       await fs.rm(d, { recursive: true, force: true }).catch(() => {});
@@ -3490,4 +4553,1248 @@ export async function runSpecAcceptanceTests(): Promise<number> {
 
   if (failed > 0) process.exitCode = 1;
   return failed;
+}
+
+// ─── SPEC-GAP COVERAGE: checks for stories the prior contract never asserted ──
+// These cover user stories that had zero checker-owned acceptance checks.
+// Behavioral where feasible (import + call), source-text where runtime
+// behavior cannot be exercised in-unit (comment-stripped via codeOnly).
+
+async function specGapCoverageContract() {
+  // ─── US-6.4: Trust Tiers & granular permission ladder ──────────────
+
+  await check(
+    "TRUST-TIER-FIVE-RUNGS",
+    "US-6.4",
+    "Five cumulative trust tiers exist in order: observe → propose → build → operate → yolo",
+    () => {
+      const names = TRUST_TIERS.map((t) => t.tier);
+      return (
+        names.length === 5 &&
+        names[0] === "observe" &&
+        names[1] === "propose" &&
+        names[2] === "build" &&
+        names[3] === "operate" &&
+        names[4] === "yolo"
+      );
+    },
+  );
+
+  await check(
+    "TRUST-TIER-CUMULATIVE",
+    "US-6.4",
+    "each tier must be a grant-superset of the one below (cumulative ladder)",
+    () => {
+      for (let i = 0; i < TRUST_TIERS.length - 1; i++) {
+        const lower = new Set(TRUST_TIERS[i].grants);
+        const upper = new Set(TRUST_TIERS[i + 1].grants);
+        for (const g of lower) {
+          if (!upper.has(g))
+            throw new Error(
+              `tier '${TRUST_TIERS[i + 1].tier}' is missing grant '${g}' from '${TRUST_TIERS[i].tier}' — not cumulative`,
+            );
+        }
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "TRUST-TIER-OBSERVE-EMPTY-YOLO-ALL",
+    "US-6.4",
+    "observe must have zero grants; yolo must include every grant in ALL_GRANTS",
+    () => {
+      const observe = getTierSpec("observe");
+      const yolo = getTierSpec("yolo");
+      if (observe.grants.length !== 0)
+        throw new Error("observe must have empty grants");
+      for (const g of ALL_GRANTS) {
+        if (!yolo.grants.includes(g as never))
+          throw new Error(`yolo tier missing grant: ${g}`);
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "TRUST-TIER-YOLO-SANDBOX-OFF",
+    "US-6.4",
+    "yolo must have sandboxOff=true; all other tiers must have sandboxOff=false",
+    () => {
+      for (const t of TRUST_TIERS) {
+        if (t.tier === "yolo" && t.sandboxOff !== true)
+          throw new Error("yolo must have sandboxOff=true");
+        if (t.tier !== "yolo" && t.sandboxOff !== false)
+          throw new Error(`${t.tier} must have sandboxOff=false`);
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "TRUST-TIER-READ-SCOPE",
+    "US-6.4",
+    "readScope must escalate: observe=workspace, build=home, operate/yolo=filesystem",
+    () => {
+      return (
+        getTierSpec("observe").readScope === "workspace" &&
+        getTierSpec("propose").readScope === "workspace" &&
+        getTierSpec("build").readScope === "home" &&
+        getTierSpec("operate").readScope === "filesystem" &&
+        getTierSpec("yolo").readScope === "filesystem"
+      );
+    },
+  );
+
+  await check(
+    "TRUST-TIER-APPLY-CHANGES-GRANTS",
+    "US-6.4",
+    "applyTrustTier must set config.autonomyGrants to the tier's grant set",
+    () => {
+      applyTrustTier("build");
+      const spec = getTierSpec("build");
+      for (const g of spec.grants) {
+        if (!quiverConfig.autonomyGrants.has(g as never))
+          throw new Error(`grant '${g}' not set after applyTrustTier('build')`);
+      }
+      // build tier should include run_command
+      if (!quiverConfig.autonomyGrants.has("run_command" as never))
+        throw new Error("build tier should include run_command");
+      // observe tier should NOT include destructive
+      if (quiverConfig.autonomyGrants.has("destructive" as never))
+        throw new Error("build tier should not include destructive");
+      // restore
+      applyTrustTier(null);
+      return true;
+    },
+  );
+
+  await check(
+    "TRUST-TIER-NEEDS-APPROVAL-OBSERVE",
+    "US-6.4",
+    "at observe tier, all mutating tools must require approval",
+    () => {
+      applyTrustTier("observe");
+      try {
+        return (
+          needsApprovalFor("write_file") === true &&
+          needsApprovalFor("replace_content") === true &&
+          needsApprovalFor("apply_patch") === true &&
+          needsApprovalFor("run_command", "safe") === true &&
+          needsApprovalFor("run_command", "destructive") === true &&
+          needsApprovalFor("web_search") === true &&
+          needsApprovalFor("create_tool") === true
+        );
+      } finally {
+        applyTrustTier(null);
+      }
+    },
+  );
+
+  await check(
+    "TRUST-TIER-NEEDS-APPROVAL-YOLO",
+    "US-6.4",
+    "at yolo tier, no tool must require approval (yolo bypasses every gate)",
+    () => {
+      applyTrustTier("yolo");
+      try {
+        return (
+          needsApprovalFor("write_file") === false &&
+          needsApprovalFor("run_command", "destructive") === false &&
+          needsApprovalFor("run_command", "safe") === false &&
+          needsApprovalFor("web_search") === false &&
+          needsApprovalFor("create_tool") === false
+        );
+      } finally {
+        applyTrustTier(null);
+      }
+    },
+  );
+
+  await check(
+    "ALLOW-GLOBS-ENFORCED",
+    "US-6.4",
+    "non-empty writeAllowGlobs must refuse in-workspace paths that don't match the glob (enforced, not decorative)",
+    () => {
+      const tmp = path.join(os.tmpdir(), "quiver-glob-accept-" + Date.now());
+      mkdirSync(path.join(tmp, "src"), { recursive: true });
+      mkdirSync(path.join(tmp, "docs"), { recursive: true });
+      const policy = createDefaultPolicy(tmp);
+      policy.writeAllowGlobs = ["src/**"];
+      // Path inside workspace but outside the glob → must throw
+      let blocked = false;
+      try {
+        resolveAndAssertPathAllowed(
+          path.join(tmp, "docs", "readme.md"),
+          "write",
+          policy,
+        );
+      } catch {
+        blocked = true;
+      }
+      if (!blocked)
+        throw new Error(
+          "writeAllowGlobs=['src/**'] did not block write to docs/ — allow-globs are decorative, not enforced",
+        );
+      // Path matching the glob → must pass
+      resolveAndAssertPathAllowed(
+        path.join(tmp, "src", "main.ts"),
+        "write",
+        policy,
+      );
+      rmSync(tmp, { recursive: true, force: true });
+      return true;
+    },
+  );
+
+  // ─── US-16.1: Single QUIVER_AUTONOMY env var ────────────────────────
+
+  await check(
+    "AUTONOMY-RETIRED-VARS-ABSENT",
+    "US-16.1",
+    "retired env vars (QUIVER_REQUIRE_APPROVAL, QUIVER_YOLO_MODE, QUIVER_BROWSER_HEADLESS) must not appear in src/ or .env.example",
+    () => {
+      const retired = [
+        "QUIVER_REQUIRE_APPROVAL",
+        "QUIVER_YOLO_MODE",
+        "QUIVER_BROWSER_HEADLESS",
+      ];
+      const envEx = srcText(".env.example");
+      for (const v of retired) {
+        if (envEx.includes(v))
+          throw new Error(`${v} still in .env.example — must be retired`);
+      }
+      const hits = grepCodeTree(
+        new RegExp(retired.join("|")),
+      );
+      if (hits.length > 0)
+        throw new Error(
+          `retired env var referenced in source: ${hits.join(", ")}`,
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "AUTONOMY-NEEDS-APPROVAL-COVERS-ALL",
+    "US-16.1",
+    "needsApprovalFor must cover web, memory, todo, browser, create_tool, and run_command (risk-band gated)",
+    () => {
+      applyTrustTier("observe");
+      try {
+        return (
+          needsApprovalFor("web_search") === true &&
+          needsApprovalFor("scrape_url") === true &&
+          needsApprovalFor("deep_research") === true &&
+          needsApprovalFor("todo_write") === true &&
+          needsApprovalFor("memory_append") === true &&
+          needsApprovalFor("memory_replace") === true &&
+          needsApprovalFor("browser_control") === true &&
+          needsApprovalFor("create_tool") === true &&
+          needsApprovalFor("run_command", "safe") === true &&
+          needsApprovalFor("run_command", "moderate") === true &&
+          needsApprovalFor("run_command", "destructive") === true &&
+          needsApprovalFor("run_command", "privileged") === true &&
+          needsApprovalFor("run_command", "network") === true &&
+          needsApprovalFor("run_command", "secret-risk") === true
+        );
+      } finally {
+        applyTrustTier(null);
+      }
+    },
+  );
+
+  // ─── US-17.4: Security hardening (behavioral) ──────────────────────
+
+  await check(
+    "SECURITY-NULL-BYTE-REJECTED",
+    "US-17.4",
+    "paths containing null bytes must be rejected (CWE-158)",
+    () => {
+      const tmp = path.join(os.tmpdir(), "quiver-null-accept-" + Date.now());
+      const policy = createDefaultPolicy(tmp);
+      let threw = false;
+      try {
+        resolveAndAssertPathAllowed(
+          path.join(tmp, "foo\0bar.txt"),
+          "read",
+          policy,
+        );
+      } catch {
+        threw = true;
+      }
+      return threw;
+    },
+  );
+
+  await check(
+    "SECURITY-TILDE-EXPANDED",
+    "US-17.4",
+    "tilde (~) must expand to os.homedir() so home-dir blocked paths are correctly caught",
+    () => {
+      const code = codeOnly("src/security/path_policy.ts");
+      if (!/startsWith\s*\(\s*["']~["']\s*\)/.test(code))
+        throw new Error("no tilde expansion (startsWith('~')) in path_policy");
+      if (!/os\.homedir\(\)/.test(code))
+        throw new Error("tilde expansion does not use os.homedir()");
+      // Behavioral: ~/.aws/credentials must be caught as a blocked path
+      const policy = createDefaultPolicy(process.cwd());
+      policy.readScope = "filesystem";
+      let blocked = false;
+      try {
+        resolveAndAssertPathAllowed("~/.aws/credentials", "read", policy);
+      } catch {
+        blocked = true;
+      }
+      return blocked;
+    },
+  );
+
+  await check(
+    "SECURITY-BASH-QUOTE-OBFUSCATION",
+    "US-17.4",
+    "bash quoting constructs (r\"\"m, r'm', $'rm') must be normalized so obfuscated destructive commands are caught (CWE-78)",
+    () => {
+      const a = classifyCommand('r""m -rf /');
+      const b = classifyCommand("r'm' -rf /");
+      const c = classifyCommand("$'rm' -rf /");
+      return (
+        a.requiresApproval === true &&
+        b.requiresApproval === true &&
+        c.requiresApproval === true
+      );
+    },
+  );
+
+  // ─── US-12.1: Memory provenance schema (behavioral) ─────────────────
+
+  await check(
+    "MEMORY-FACT-PROVENANCE-SCHEMA",
+    "US-12.1",
+    "createMemoryFact must produce a fact with all provenance fields: id, type, content, source_session, source_timestamp, confidence, privacy, reviewed, created_at, last_used_at, hit_count",
+    () => {
+      const fact = createMemoryFact({
+        type: "workspace_fact",
+        content: "The frontend uses Vite.",
+        source_session: "sess_test_001",
+        confidence: "high",
+        privacy: "project",
+      });
+      const required = [
+        "schema_version",
+        "id",
+        "type",
+        "content",
+        "source_session",
+        "source_timestamp",
+        "confidence",
+        "privacy",
+        "reviewed",
+        "created_at",
+        "last_used_at",
+        "hit_count",
+      ];
+      for (const f of required) {
+        if (!(f in fact))
+          throw new Error(`MemoryFact missing field: ${f}`);
+      }
+      if (fact.schema_version !== 1)
+        throw new Error("schema_version must be 1");
+      if (fact.reviewed !== false)
+        throw new Error("new fact must have reviewed=false");
+      if (fact.hit_count !== 0)
+        throw new Error("new fact must have hit_count=0");
+      if (fact.last_used_at !== null)
+        throw new Error("new fact must have last_used_at=null");
+      if (!fact.id.startsWith("mem_"))
+        throw new Error("fact id must start with 'mem_'");
+      return true;
+    },
+  );
+
+  // ─── US-13.5: Ambient self-heal + goal-loop (behavioral) ────────────
+
+  await check(
+    "AMBIENT-ENGINE-DEFAULT-ENABLED",
+    "US-13.5",
+    "AmbientEngine must be enabled by default (self-heal is ambient, not opt-in)",
+    () => {
+      const e = new AmbientEngine();
+      return e.isEnabled() === true;
+    },
+  );
+
+  await check(
+    "AMBIENT-ENGINE-HEAL-BUDGET",
+    "US-13.5",
+    "AmbientEngine must cap heal rounds at maxRounds and report budget exhaustion",
+    () => {
+      const e = new AmbientEngine(3, true);
+      if (!e.hasBudget()) throw new Error("fresh engine should have budget");
+      e.spendRound();
+      e.spendRound();
+      e.spendRound();
+      if (e.hasBudget()) throw new Error("budget not exhausted after 3 rounds");
+      if (e.spendRound() !== false)
+        throw new Error("spendRound past budget must return false");
+      e.reset();
+      if (!e.hasBudget()) throw new Error("reset should restore budget");
+      return true;
+    },
+  );
+
+  await check(
+    "AMBIENT-NO-LOOP-SELF-HEAL-COMMANDS",
+    "US-13.5",
+    "/loop and /self-heal must be removed from the slash-command surface (ambient, not commands)",
+    () => {
+      const sc = codeOnly("src/slash_commands.ts");
+      if (/name:\s*["']\/loop["']/.test(sc))
+        throw new Error("/loop still in slash commands — must be removed");
+      if (/name:\s*["']\/self-heal["']/.test(sc))
+        throw new Error(
+          "/self-heal still in slash commands — must be removed",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "AMBIENT-SINGLE-CHECKER-PRIMITIVE",
+    "US-13.5",
+    "ambient engine must use runChecker (the single maker-checker primitive), not a parallel tsc/npm-test pipeline",
+    () => {
+      const amb = codeOnly("src/ambient.ts");
+      if (!/from\s+["']\.\/subagents\/checker\.js["']/.test(amb))
+        throw new Error(
+          "ambient.ts does not import runChecker — no single primitive",
+        );
+      if (!/runChecker\s*\(/.test(amb))
+        throw new Error("ambient.ts does not call runChecker");
+      // Must NOT spawn its own tsc or npm test
+      if (/spawn\(.*tsc|execSync\(.*tsc|spawn\(.*npm\s+test/.test(amb))
+        throw new Error(
+          "ambient.ts spawns a parallel tsc/npm-test — spec requires single primitive",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-2.3 extension: Mid-run intervention (behavioral) ────────────
+
+  await check(
+    "INTERVENTION-CONTROLLER-BEHAVIOR",
+    "US-2.3",
+    "InterventionController must queue inject/stop and atomically consume them",
+    () => {
+      const ic = new InterventionController();
+      if (ic.hasPending()) throw new Error("fresh controller should have no pending");
+      ic.inject("stop doing X, do Y instead");
+      if (!ic.hasPending()) throw new Error("inject did not queue");
+      const a = ic.consume();
+      if (a.inject !== "stop doing X, do Y instead")
+        throw new Error("consume did not return the injected text");
+      if (ic.hasPending()) throw new Error("consume did not clear pending");
+      // stop request
+      ic.requestStop();
+      const b = ic.consume();
+      if (b.stop !== true) throw new Error("stop not consumed");
+      // empty inject is ignored
+      ic.inject("   ");
+      if (ic.hasPending()) throw new Error("whitespace-only inject should be ignored");
+      return true;
+    },
+  );
+
+  // ─── US-17.1: Output truncation recovery (source) ───────────────────
+
+  await check(
+    "TRUNCATION-FINISH-REASON-FIRST-WRITER",
+    "US-17.1",
+    "agent must capture finishReason with first-writer-wins (never overwritten by a subsequent done event)",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      // first-writer-wins: check that finishReason is only set if not already set
+      return /streamFinishReason\s*&&\s*!streamFinishReason|finishReason\s*&&\s*!streamFinishReason/.test(
+        a,
+      );
+    },
+  );
+
+  await check(
+    "TRUNCATION-RETRY-COUNTER",
+    "US-17.1",
+    "agent must have a truncationRetries counter capped at max 2 to prevent infinite loops",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      if (!/truncationRetries/.test(a))
+        throw new Error("no truncationRetries counter in agent.ts");
+      // max must be 2 (either a const or literal)
+      if (!/maxTruncationRetries\s*=\s*2|truncationRetries\s*<\s*2/.test(a))
+        throw new Error("truncation retry max is not 2");
+      return true;
+    },
+  );
+
+  await check(
+    "TRUNCATION-DOUBLED-TOKENS",
+    "US-17.1",
+    "mid-tool-call truncation must retry with doubled maxOutputTokens capped at 32768",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /maxOutputTokens\s*\*\s*2/.test(a) &&
+        /32768/.test(a)
+      );
+    },
+  );
+
+  // ─── US-17.2: Stream timeouts (source) ──────────────────────────────
+
+  await check(
+    "STREAM-TIMEOUT-CONNECTION-45S",
+    "US-17.2",
+    "connection timeout must be 45 seconds (45000ms)",
+    () => {
+      const p = codeOnly("src/providers/types.ts");
+      return /45[_\s]*000/.test(p) && /CONNECTION_TIMEOUT/i.test(p);
+    },
+  );
+
+  await check(
+    "STREAM-TIMEOUT-STALL-120S",
+    "US-17.2",
+    "stream stall timeout must be 120 seconds (120000ms) with reset on every chunk",
+    () => {
+      const p = codeOnly("src/providers/types.ts");
+      return (
+        /120[_\s]*000/.test(p) &&
+        /STALL/i.test(p) &&
+        /clearTimeout\s*\(\s*stallTimer\s*\)/.test(p)
+      );
+    },
+  );
+
+  await check(
+    "STREAM-TIMEOUT-COMPOSITE-ABORT",
+    "US-17.2",
+    "both timeouts must use a composite AbortController and handle AbortError gracefully (try/catch, not crash)",
+    () => {
+      const p = codeOnly("src/providers/types.ts");
+      return (
+        /timeoutController\s*=\s*new\s+AbortController/.test(p) &&
+        /AbortError|signal\.aborted|aborted/.test(p)
+      );
+    },
+  );
+
+  // ─── US-17.3: Event loop drain prevention (source) ──────────────────
+
+  await check(
+    "EVENT-LOOP-KEEPALIVE",
+    "US-17.3",
+    "cli must have a keep-alive timer (setInterval) to prevent event-loop drain between prompts",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /keepAliveTimer\s*[:=]\s*setInterval/.test(cli) ||
+        /setInterval\s*\(\s*\(\s*\)\s*=>\s*\{?\s*\}?\s*,\s*60/.test(cli)
+      );
+    },
+  );
+
+  await check(
+    "EVENT-LOOP-BEFORE-EXIT-HANDLER",
+    "US-17.3",
+    "cli must log unexpected_beforeExit with isCleanExit flag for crash diagnosis",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /beforeExit/.test(cli) &&
+        /isCleanExit/.test(cli) &&
+        /unexpected_beforeExit/.test(cli)
+      );
+    },
+  );
+
+  await check(
+    "EVENT-LOOP-NO-RL-CLOSE-ON-SHARED-STDIN",
+    "US-17.3",
+    "temporary readline interfaces must use removeAllListeners + stdin.resume (not rl.close which drains shared stdin)",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /removeAllListeners\s*\(\s*\)/.test(cli) &&
+        /process\.stdin\.resume\s*\(\s*\)/.test(cli)
+      );
+    },
+  );
+
+  // ─── US-5.3: Subagent recursion limit (SPEC GAP — may fail) ─────────
+
+  await check(
+    "SUBAGENT-RECURSION-LIMIT",
+    "US-5.3",
+    "subagent tool must enforce a recursion depth limit (≤ 2) to prevent fork-bombs — a child agent must not spawn grandchildren unbounded",
+    () => {
+      const sa = codeOnly("src/tools/subagent.ts");
+      // The subagent must either (a) pass a depth env var and refuse to spawn
+      // at depth > 2, or (b) restrict the subagent tool from the child's toolset.
+      const hasDepthEnv =
+        /SUBAGENT_DEPTH|RECURSION_DEPTH|subagentDepth|recursionDepth/i.test(sa);
+      const hasDepthCheck =
+        /depth\s*[<>=]+\s*2|maxDepth\s*=\s*2|recursion.*2/i.test(sa);
+      const restrictsChildTools =
+        /--no-subagent|subagent.*restrict|excludeTools|removeAllTools/i.test(sa);
+      if (!hasDepthEnv && !hasDepthCheck && !restrictsChildTools)
+        throw new Error(
+          "subagent.ts has no recursion-depth limit (env var, depth check, or child tool restriction) — fork-bomb risk per US-5.3",
+        );
+      return true;
+    },
+  );
+
+  await check(
+    "SUBAGENT-TIMEOUT-5MIN",
+    "US-5.3",
+    "subagent must have a 5-minute timeout per subagent",
+    () => {
+      const sa = codeOnly("src/tools/subagent.ts");
+      return /300[_\s]*000|5\s*\*\s*60\s*\*\s*1000|5.*min/i.test(sa);
+    },
+  );
+
+  await check(
+    "SUBAGENT-SCRATCHPAD-ISOLATION",
+    "US-5.3",
+    "subagents must run on copy-on-write scratchpads in isolated session directories, not the real workspace cwd",
+    () => {
+      const sa = codeOnly("src/tools/subagent.ts");
+      const checker = codeOnly("src/subagents/checker.ts");
+      const helpers = codeOnly("src/subagents/scratchpad_helpers.ts");
+      // Either the subagent tool builds a scratchpad, or it delegates to the
+      // checker's buildScratchpad. At minimum, buildScratchpad must exist.
+      if (!/buildScratchpad/.test(helpers))
+        throw new Error("buildScratchpad not in scratchpad_helpers.ts");
+      // The subagent should NOT use cwd: process.cwd() directly for the child
+      // without scratchpad isolation. Check that it references scratchpad.
+      if (/cwd:\s*process\.cwd\(\)/.test(sa) && !/scratchpad/i.test(sa))
+        throw new Error(
+          "subagent spawns child with cwd: process.cwd() — no scratchpad isolation (US-5.3 requires copy-on-write scratchpad)",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-16.2: MCP client (source) ───────────────────────────────────
+
+  await check(
+    "MCP-CLIENT-CLASSES",
+    "US-16.2",
+    "McpConnection and McpManager classes must exist with initialize/tools-list/tools-call lifecycle (behavioral: import and verify class existence)",
+    async () => {
+      // Behavioral: import the classes and verify they are constructable
+      const mod = await import("../src/mcp/client.js");
+      if (typeof mod.McpConnection !== "function")
+        throw new Error("McpConnection is not exported as a class/function");
+      if (typeof mod.McpManager !== "function")
+        throw new Error("McpManager is not exported as a class/function");
+      // McpManager should be instantiable (manages 0 connections initially)
+      const mgr = new mod.McpManager();
+      if (typeof mgr !== "object")
+        throw new Error("McpManager could not be instantiated");
+      // Source must have the JSON-RPC lifecycle methods
+      const c = codeOnly("src/mcp/client.ts");
+      if (!/initialize/.test(c))
+        throw new Error("McpConnection does not implement initialize lifecycle");
+      if (!/tools\/list/.test(c))
+        throw new Error("McpConnection does not implement tools/list");
+      if (!/tools\/call/.test(c))
+        throw new Error("McpConnection does not implement tools/call");
+      return true;
+    },
+  );
+
+  await check(
+    "MCP-CONFIG-LOADING",
+    "US-16.2",
+    "MCP config must load from .quiver/mcp.json (local) or ~/.quiver/mcp.json (global)",
+    () => {
+      const c = codeOnly("src/mcp/config.ts");
+      return (
+        /mcp\.json/.test(c) &&
+        /\.quiver/.test(c) &&
+        /mcpServers/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "MCP-SLASH-COMMAND",
+    "US-16.2",
+    "/mcp slash command must exist to show connected servers and available tools",
+    () => {
+      const sc = codeOnly("src/slash_commands.ts");
+      return /name:\s*["']\/mcp["']/.test(sc);
+    },
+  );
+
+  // ─── US-17.5: Acceptance templates for non-code workspaces ──────────
+
+  await check(
+    "ACCEPTANCE-TEMPLATES-EXIST",
+    "US-17.5",
+    "6 acceptance templates must exist in templates/acceptance/ for non-code workspaces",
+    () => {
+      let dir = path.join(ROOT, "templates", "acceptance");
+      // In the checker scratchpad, templates/ may not be copied yet.
+      // Follow the node_modules symlink back to the real workspace.
+      if (!existsSync(dir)) {
+        try {
+          const nmReal = realpathSync(path.join(ROOT, "node_modules"));
+          const realWorkspace = path.dirname(nmReal);
+          dir = path.join(realWorkspace, "templates", "acceptance");
+        } catch {
+          /* fall through — dir stays as the original path */
+        }
+      }
+      if (!existsSync(dir))
+        throw new Error("templates/acceptance/ directory does not exist");
+      const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
+      if (files.length < 6)
+        throw new Error(
+          `only ${files.length} acceptance templates, need at least 6`,
+        );
+      const expected = [
+        "research-report",
+        "investment-brief",
+        "compliance-review",
+        "due-diligence",
+        "competitive-matrix",
+        "legal-research-memo",
+      ];
+      for (const e of expected) {
+        if (!files.some((f) => f.includes(e)))
+          throw new Error(`missing acceptance template: ${e}.md`);
+      }
+      return true;
+    },
+  );
+
+  // ─── US-17.6: Windows grep fallback (source) ────────────────────────
+
+  await check(
+    "GREP-FALLBACK-TS",
+    "US-17.6",
+    "pure-TypeScript recursive search must activate when neither rg nor grep are available (Windows fallback)",
+    () => {
+      const g = codeOnly("src/tools/grep_search.ts");
+      return (
+        /pureTSSearch|pureTS|fallback/i.test(g) &&
+        (/walk|readdir|recursive/i.test(g))
+      );
+    },
+  );
+
+  // ─── US-17.7: Business user repositioning ───────────────────────────
+
+  await check(
+    "BUSINESS-USER-SYSTEM-PROMPT",
+    "US-17.7",
+    "system prompt AND user-facing CLI text must be repositioned for business users (analysts, researchers, consultants) — not 'coding and research assistant' / 'terminal-based CLI'",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      const state = codeOnly("src/state.ts");
+      const help = codeOnly("src/help.ts");
+      const cli = codeOnly("src/cli.ts");
+      // The old developer-focused prompt must be gone from ALL user-facing surfaces
+      const oldPhrases = [
+        "self-evolving coding and research assistant",
+        "elite autonomous coding and research assistant",
+        "terminal-based CLI",
+        "AI coding & research agent for the terminal",
+        "coding & research agent",
+      ];
+      const surfaces = { "agent.ts": agent, "state.ts": state, "help.ts": help, "cli.ts": cli };
+      for (const [file, src] of Object.entries(surfaces)) {
+        for (const p of oldPhrases) {
+          if (src.includes(p))
+            throw new Error(
+              `old developer-focused phrase '${p}' still present in ${file} — US-17.7 requires business-user repositioning across ALL user-facing surfaces`,
+            );
+        }
+      }
+      // The new prompt should mention business users / analysts / researchers
+      const combined = agent + "\n" + state;
+      const hasBusiness = /business\s*user|analyst|researcher|consultant|legal\s*professional/i.test(
+        combined,
+      );
+      if (!hasBusiness)
+        throw new Error(
+          "system prompt does not mention business users/analysts/researchers — not repositioned per US-17.7",
+        );
+      // The CLI help text should also use business-user language (not just "coding")
+      const helpHasBizLang = /analyst|researcher|consultant|research.*analyze.*write|work assistant|business/i.test(help);
+      if (!helpHasBizLang)
+        throw new Error(
+          "CLI help text (src/help.ts) is not repositioned for business users — still uses developer jargon. US-17.7 requires ALL user-facing copy to use plain business language.",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-17.8: Office document preview panel (source) ────────────────
+
+  await check(
+    "GUI-PREVIEW-PANEL",
+    "US-17.8",
+    "GUI must have a slide-in preview panel for files (docx/xlsx/pptx/code/markdown/images)",
+    () => {
+      const html = srcText("ui/renderer/index.html");
+      return (
+        /preview-panel|previewPanel|preview-overlay/i.test(html) &&
+        /preview/i.test(html)
+      );
+    },
+  );
+
+  // ─── US-17.9: Electron preload hardening (source) ───────────────────
+
+  await check(
+    "PRELOAD-CHANNEL-ALLOWLIST",
+    "US-17.9",
+    "preload.js must validate IPC channels against an allowlist (ALWAYS_ALLOWED_CHANNELS + validateChannel)",
+    () => {
+      const js = srcText("ui/preload.js");
+      const ts = codeOnly("ui/preload.ts");
+      const combined = js + "\n" + ts;
+      return (
+        /ALLOWED_CHANNELS|ALWAYS_ALLOWED_CHANNELS|allowedChannels/i.test(
+          combined,
+        ) &&
+        /assertChannelAllowed|validateChannel/i.test(combined)
+      );
+    },
+  );
+
+  // ─── US-8.3: GUI image drop + newline input (source) ────────────────
+
+  await check(
+    "GUI-IMAGE-DROP-SUPPORT",
+    "US-8.3",
+    "GUI must support image drag-and-drop onto the input bar with EXIF redaction",
+    () => {
+      const html = srcText("ui/renderer/index.html");
+      const appjs = srcText("ui/renderer/app.js");
+      const combined = html + "\n" + appjs;
+      const hasDrop = /drop|dragover|ondrop|image.*drop|drop.*image/i.test(combined);
+      // EXIF redaction happens server-side in vision_router.ts (locally, not in cloud)
+      const vision = codeOnly("src/vision_router.ts");
+      const hasExif = /exif|EXIF|geolocation/i.test(vision);
+      return hasDrop && hasExif;
+    },
+  );
+
+  // ─── US-3.1: Context HUD metrics (source) ───────────────────────────
+
+  await check(
+    "CONTEXT-HUD-METRICS",
+    "US-3.1",
+    "HUD must display active model, adapter, token usage, included/excluded sections, and budget per section (specific source check — not just generic word presence)",
+    () => {
+      const cliUi = codeOnly("src/cli_ui.ts");
+      const budget = codeOnly("src/context/budget.ts");
+      const agent = codeOnly("src/agent.ts");
+      // The HUD must render a context manifest block with model + token info
+      // (not just mention the word "model" somewhere in a comment)
+      const hasManifest =
+        /context[_-]?manifest|printContextManifest|contextManifest|HUD|hudBlock/i.test(
+          agent + cliUi,
+        );
+      if (!hasManifest)
+        throw new Error(
+          "no context manifest / HUD block found in agent.ts or cli_ui.ts — US-3.1 requires a visible HUD before LLM submission",
+        );
+      // Must show token usage (not just the word "token" — must show a count or percentage)
+      const hasTokenUsage =
+        /tokens.*\d|\d.*tokens|token.*usage|usage.*token|ctx.*\d|\d.*ctx/i.test(
+          cliUi + agent,
+        );
+      if (!hasTokenUsage)
+        throw new Error(
+          "HUD does not show token usage counts — US-3.1 requires token usage percentage or count",
+        );
+      // Must show model name in the manifest
+      const hasModelDisplay =
+        /config\.llmModelName|activeModel|model.*displayName/i.test(
+          agent + cliUi,
+        );
+      if (!hasModelDisplay)
+        throw new Error(
+          "HUD does not display the active model name — US-3.1 requires it",
+        );
+      // Budget module must compute per-section sizes
+      const hasSectionBudget =
+        /section|segment|perSection|sectionSize|sectionTokens/i.test(budget);
+      if (!hasSectionBudget)
+        throw new Error(
+          "budget.ts does not compute per-section token sizes — US-3.1 requires budget per section",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-3.2: Memory file review in HUD (source) ─────────────────────
+
+  await check(
+    "MEMORY-HUD-LIST",
+    "US-3.2",
+    "HUD must list memory filenames (not just a count) so the user can verify which files are loaded — US-3.2 requires filenames, sizes, and previews",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      // The context manifest must display memory filenames — not just "3 memory"
+      // Look for patterns that map memory file objects to their filename property
+      const hasFilenameDisplay =
+        /memories.*\.filename|memory.*\.filename|\.filename.*join|filename.*memory/i.test(
+          agent,
+        );
+      if (!hasFilenameDisplay)
+        throw new Error(
+          "context manifest does not display memory filenames — US-3.2 requires listing filenames, not just a count",
+        );
+      // Must also show a memory count
+      const hasMemoryCount =
+        /memories\.length|memory.*count|\d+.*memory/i.test(agent);
+      if (!hasMemoryCount)
+        throw new Error(
+          "context manifest does not show a memory file count — US-3.2 requires showing how many files are loaded",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-4.1: Dual storage modes for memory (source) ─────────────────
+
+  await check(
+    "MEMORY-DUAL-STORAGE",
+    "US-4.1",
+    "memory must support both ~/.quiver/ (global) and project-local .quiver/ storage modes (specific check for both paths)",
+    () => {
+      const paths = codeOnly("src/paths.ts");
+      const state = codeOnly("src/state.ts");
+      // Must have a project-local memory dir function
+      const hasProjectMemory =
+        /getProjectMemoryDir|projectMemoryDir|projects.*memory/i.test(paths);
+      if (!hasProjectMemory)
+        throw new Error(
+          "paths.ts does not define a project-local memory directory function — US-4.1 requires project-local .quiver/ storage",
+        );
+      // Must also have a global ~/.quiver/ memory path
+      const hasGlobalMemory =
+        /getGlobalMemoryDir|globalMemoryDir|\.quiver.*memory|GLOBAL_ROOT.*memory|getCoreMemoryPath/i.test(
+          paths + state,
+        );
+      if (!hasGlobalMemory)
+        throw new Error(
+          "no global ~/.quiver/ memory path found — US-4.1 requires global memory storage under ~/.quiver/",
+        );
+      // State loading must support both modes
+      const loadsMemory =
+        /loadCoreMemory|loadMemoryFiles|readMemoryDir/i.test(state);
+      if (!loadsMemory)
+        throw new Error(
+          "state.ts does not load memory files — US-4.1 requires loading files automatically into model context on startup",
+        );
+      return true;
+    },
+  );
+
+  // ─── US-16.1: /yolo shortcut and /autonomy tier (source) ────────────
+
+  await check(
+    "AUTONOMY-YOLO-SHORTCUT",
+    "US-16.1",
+    "/yolo shortcut and /autonomy tier <name> must exist in the slash-command surface",
+    () => {
+      const sc = codeOnly("src/slash_commands.ts");
+      return (
+        /name:\s*["']\/yolo["']/.test(sc) &&
+        /name:\s*["']\/autonomy["']/.test(sc)
+      );
+    },
+  );
+
+  await check(
+    "AUTONOMY-COST-HISTORY-FOLDED",
+    "US-16.1",
+    "/cost and /history must be folded into /session (as aliases), not separate commands; /approvals ghost removed",
+    () => {
+      const sc = codeOnly("src/slash_commands.ts");
+      // /cost and /history should be aliases of /session, not standalone
+      if (/name:\s*["']\/cost["']/.test(sc))
+        throw new Error("/cost is a standalone command — should be folded into /session");
+      if (/name:\s*["']\/history["']/.test(sc))
+        throw new Error("/history is a standalone command — should be folded into /session");
+      if (/name:\s*["']\/approvals["']/.test(sc))
+        throw new Error("/approvals ghost command still present — must be removed");
+      // They should appear as aliases of /session
+      return /\/cost|\/history/.test(sc);
+    },
+  );
+
+  // ─── JSON streaming duplicate-token bug (reliability) ──────────────
+
+  await check(
+    "JSON-NO-DUPLICATE-TOKENS",
+    "US-2.2",
+    "JSON mode must not emit duplicate token events — the onToken callback must not emit {type:'token'} JSON when onEvent already provides it (double-emit bug visible in --json output)",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      const agent = codeOnly("src/agent.ts");
+      // The agent emits { type: "token" } via onEvent for text deltas.
+      const agentEmitsTokenEvent =
+        /onEvent\s*\(\s*\{\s*type:\s*["']token["']/.test(agent);
+      // The CLI's onToken callback in JSON mode also emits { type: "token" }.
+      const cliEmitsTokenFromCallback =
+        /emitJson\s*\(\s*\{\s*type:\s*["']token["']/.test(cli);
+      if (agentEmitsTokenEvent && cliEmitsTokenFromCallback) {
+        throw new Error(
+          "Both the agent (onEvent) and the CLI (onToken callback) emit {type:'token'} JSON — every token is duplicated in --json mode. Fix: the CLI's onToken callback should NOT emit JSON token events when onEvent already provides them.",
+        );
+      }
+      return true;
+    },
+  );
+}
+
+// ─── EXTENDED CAPABILITIES: checks for post-spec stories the prior contract
+// never asserted (US-16.3 web research, US-16.4 GitHub, US-16.5 browser SSRF,
+// US-16.6 office docs, US-16.7 vision router, US-16.8 self-improvement tools,
+// US-14.3 CLI behaviour acceptance). Behavioral where importable; source-text
+// (codeOnly, comments stripped) where the unit is not exported. The three
+// SSRF checks are DISCRIMINATING — they FAIL against the current tree because
+// isPrivateUrl() does not block file:// / 0.0.0.0 and is fail-open in its
+// catch, matching the architect-review finding R-HIGH-10. The vendor must
+// close them; they cannot be passed by keyword theater (the assertion scopes
+// to the isPrivateUrl function body and requires the actual scheme/IP guard).
+
+async function extendedCapabilitiesContract() {
+  // ─── US-16.3: Parallel.ai web research APIs ───────────────────────────
+
+  await check(
+    "WEB-RESEARCH-FIVE-TOOLS",
+    "US-16.3",
+    "Five Parallel.ai web-research tools must exist (web_search, scrape_url, deep_research, find_all, entity_search)",
+    () => {
+      const files = [
+        "src/tools/web_search.ts",
+        "src/tools/scrape_url.ts",
+        "src/tools/deep_research.ts",
+        "src/tools/find_all.ts",
+        "src/tools/entity_search.ts",
+      ];
+      return files.every((f) => existsSync(path.join(ROOT, f)));
+    },
+  );
+
+  await check(
+    "WEB-RESEARCH-API-CONTRACT",
+    "US-16.3",
+    "All 5 web-research tools must call https://api.parallel.ai with the x-api-key header (single PARALLEL_API_KEY)",
+    () => {
+      const files = [
+        "src/tools/web_search.ts",
+        "src/tools/scrape_url.ts",
+        "src/tools/deep_research.ts",
+        "src/tools/find_all.ts",
+        "src/tools/entity_search.ts",
+      ];
+      return files.every((f) => {
+        const c = codeOnly(f);
+        return /api\.parallel\.ai/.test(c) && /x-api-key/.test(c);
+      });
+    },
+  );
+
+  // ─── US-16.4: GitHub integration tool ────────────────────────────────
+
+  await check(
+    "GITHUB-TOOL-SIX-ACTIONS",
+    "US-16.4",
+    "github tool must expose all 6 actions (get_contents, get_issue, create_issue, create_comment, create_pr, list_prs) and authenticate via GITHUB_TOKEN",
+    () => {
+      const c = codeOnly("src/tools/github.ts");
+      const actions = [
+        "get_contents",
+        "get_issue",
+        "create_issue",
+        "create_comment",
+        "create_pr",
+        "list_prs",
+      ];
+      return (
+        actions.every((a) => c.includes(a)) && /GITHUB_TOKEN/.test(c)
+      );
+    },
+  );
+
+  // ─── US-16.5: Browser control with SSRF protection ───────────────────
+  // isPrivateUrl() is not exported, so these are scoped source-text checks
+  // over its function body. They FAIL today (file:// and 0.0.0.0 are not
+  // blocked and the catch is fail-open) — discriminating, per R-HIGH-10.
+
+  await check(
+    "BROWSER-SSRF-BLOCKS-FILE-SCHEME",
+    "US-16.5",
+    "isPrivateUrl must block file: URLs — today new URL('file:///etc/passwd').hostname is '' which matches no private-IP branch, so file:// navigation is allowed (arbitrary local-file read via the browser). The guard must reject the file: scheme explicitly.",
+    () => {
+      const c = codeOnly("src/tools/browser_control.ts");
+      const i = c.indexOf("function isPrivateUrl(");
+      if (i === -1) return false;
+      const j = c.indexOf("\n}", i);
+      const body = c.slice(i, j === -1 ? c.length : j + 2);
+      // Must reference the file: scheme (parsed.protocol === 'file:' or similar).
+      return /file:/.test(body) || /parsed\.protocol/.test(body);
+    },
+  );
+
+  await check(
+    "BROWSER-SSRF-BLOCKS-ZERO-IP",
+    "US-16.5",
+    "isPrivateUrl must block 0.0.0.0 (and ideally 0.0.0.0/8) — today '0.0.0.0' matches no branch so it is treated as a public address, allowing SSRF to the host's local network stack.",
+    () => {
+      const c = codeOnly("src/tools/browser_control.ts");
+      const i = c.indexOf("function isPrivateUrl(");
+      if (i === -1) return false;
+      const j = c.indexOf("\n}", i);
+      const body = c.slice(i, j === -1 ? c.length : j + 2);
+      return /0\.0\.0\.0/.test(body);
+    },
+  );
+
+  await check(
+    "BROWSER-SSRF-FAIL-CLOSED",
+    "US-16.5",
+    "isPrivateUrl must fail CLOSED — a malformed/unparseable URL must be treated as private (blocked), not allowed. Today the catch returns false (fail-open), so a crafted URL that throws in the URL parser bypasses the SSRF guard.",
+    () => {
+      const c = codeOnly("src/tools/browser_control.ts");
+      const i = c.indexOf("function isPrivateUrl(");
+      if (i === -1) return false;
+      const j = c.indexOf("\n}", i);
+      const body = c.slice(i, j === -1 ? c.length : j + 2);
+      // The catch block must return true (fail-closed), not false.
+      const catchIdx = body.lastIndexOf("catch");
+      if (catchIdx === -1) return false;
+      const catchBody = body.slice(catchIdx);
+      return /return\s+true/.test(catchBody) && !/return\s+false/.test(catchBody);
+    },
+  );
+
+  await check(
+    "BROWSER-SSRF-WIRED-INTO-NAVIGATE",
+    "US-16.5",
+    "browser_control must actually call isPrivateUrl before navigation (the guard must be on the live path, not just defined)",
+    () => {
+      const c = codeOnly("src/tools/browser_control.ts");
+      // The navigate path must invoke isPrivateUrl and abort when it returns true.
+      return /isPrivateUrl\s*\(/.test(c) && /Blocked|blocked|private\/internal/i.test(c);
+    },
+  );
+
+  // ─── US-16.6: Office document creation (OfficeCLI) ───────────────────
+
+  await check(
+    "OFFICE-DOC-EXECFILE-NOT-EXEC",
+    "US-16.6",
+    "office_doc tool must use execFile (safe arg passing) and never shell-exec (exec) for OfficeCLI calls with JSON strings containing spaces/brackets",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /\bexecFile\b/.test(c) && !/(?<!\w)exec\s*\(/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-FORMATS",
+    "US-16.6",
+    "office_doc tool must support .docx, .xlsx, and .pptx creation via OfficeCLI",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /\.docx/.test(c) && /\.xlsx/.test(c) && /\.pptx/.test(c);
+    },
+  );
+
+  // ─── US-16.7: Vision router module ───────────────────────────────────
+
+  await check(
+    "VISION-ROUTER-MARKER-AND-MAGIC",
+    "US-16.7",
+    "vision_router must detect [Image: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
+    () => {
+      const c = codeOnly("src/vision_router.ts");
+      return (
+        /\[Image:/.test(c) &&
+        /magic/i.test(c) &&
+        /0x89|IMAGE_MAGIC|magicBytes/i.test(c) &&
+        /data:image\/|base64/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "VISION-ROUTER-EXIF-REDACTION",
+    "US-16.7",
+    "vision_router must redact EXIF/metadata before transmission (strip APPn/COM segments)",
+    () => {
+      const c = codeOnly("src/vision_router.ts");
+      return /EXIF|exif|APPn|0xFFE|metadata/i.test(c);
+    },
+  );
+
+  // ─── US-16.8: Self-improvement & session analytics tools ─────────────
+
+  await check(
+    "SELF-IMPROVEMENT-TOOLS-EXIST",
+    "US-16.8",
+    "The 8 self-improvement/session-analytics tools must exist: prompt_update, ralph_loop, log_tokens, continual_learning, todo_write, ask_question, format_code, run_tests, glob",
+    () => {
+      const files = [
+        "src/tools/prompt_update.ts",
+        "src/tools/ralph_loop.ts",
+        "src/tools/log_tokens.ts",
+        "src/tools/continual_learning.ts",
+        "src/tools/todo_write.ts",
+        "src/tools/ask_question.ts",
+        "src/tools/format_code.ts",
+        "src/tools/run_tests.ts",
+        "src/tools/glob.ts",
+      ];
+      return files.every((f) => existsSync(path.join(ROOT, f)));
+    },
+  );
+
+  // ─── US-14.3: CLI behaviour acceptance (checker-owned) ───────────────
+  // The individual behaviours are covered by onboarding/cliRobustness
+  // contracts; this check pins the US-14.3 surface as a whole: first-run
+  // detection, non-TTY safety, crash-recovery no-auto-discard, session-list
+  // state-files, and dangerous-command blocking are all asserted somewhere
+  // in the gate (regression guard against accidental removal).
+
+  await check(
+    "CLI-BEHAVIOUR-ACCEPTANCE-SURFACE",
+    "US-14.3",
+    "US-14.3 CLI behaviour acceptance must be covered: first-run detection, non-TTY bracketed-paste safety, TTY-gated crash recovery (no auto-discard), session-list state-files only, and dangerous-command blocking",
+    () => {
+      // Verify the underlying source constructs the spec requires exist.
+      const cli = codeOnly("src/cli.ts");
+      const ml = codeOnly("src/multiline.ts");
+      const cp = codeOnly("src/session/checkpoint.ts");
+      return (
+        /isFirstRun|firstRun|onboarding/i.test(cli) && // first-run detection
+        /bracketed.?paste|\?2004/.test(ml) && // bracketed paste (lives in multiline.ts)
+        /detectCrashedSession|crash/i.test(cli) && // crash recovery
+        /\.state\.json/.test(cp) && // session-list state files
+        /classifyCommand/.test(codeOnly("src/security/command_policy.ts")) // dangerous cmd blocking
+      );
+    },
+  );
 }

@@ -85,7 +85,15 @@ export class McpConnection {
 
   private async connectStdio(cfg: StdioServerConfig): Promise<void> {
     return new Promise((resolve, reject) => {
-      const env = { ...process.env, ...cfg.env };
+      // Do NOT spread process.env — MCP servers are third-party binaries and
+      // must not receive OLLAMA_API_KEY, GITHUB_TOKEN, or other Quiver secrets.
+      // Only pass the server's explicitly configured env vars plus PATH (needed
+      // for the server to find its own executables).
+      const env: Record<string, string> = {
+        PATH: process.env.PATH || "",
+        HOME: process.env.HOME || "",
+        ...cfg.env,
+      };
       this.proc = spawn(cfg.command, cfg.args || [], {
         env,
         stdio: ["pipe", "pipe", "pipe"],

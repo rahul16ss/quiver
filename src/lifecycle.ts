@@ -210,7 +210,22 @@ export class LifecycleHookRegistry {
           };
         }
       } catch (error: any) {
-        // Hooks must never crash the agent — log and continue
+        // Security-critical hooks (maker-checker gate) must fail closed:
+        // a transient checker failure must NOT silently skip the gate and
+        // commit the high-risk write unverified. Non-security hooks fail
+        // open (log and continue).
+        const isSecurityCritical = entry.id.includes("checker") || entry.id.includes("security");
+        if (isSecurityCritical) {
+          process.stderr.write(
+            picocolors.red(
+              `  ✗ Security hook '${entry.id}' at ${stage} threw: ${error.message} — ABORTING (fail-closed)\n`,
+            ),
+          );
+          throw new Error(
+            `Security-critical hook '${entry.id}' failed at ${stage}: ${error.message}`,
+          );
+        }
+        // Non-security hooks: log and continue
         if (config.outputMode === "interactive") {
           process.stderr.write(
             picocolors.yellow(
@@ -324,11 +339,12 @@ export function registerBuiltinHooks(
     "wrap_tool_call",
     "builtin.maker-checker-gate",
     async (ctx) => {
-      // US-15.1: high-risk ops are always verified by default — the maker
-      // cannot self-certify. The checker runs the acceptance contract against
-      // a copy-on-write scratchpad before a high-risk change is committed.
-      // The user may opt out via QUIVER_MAKER_CHECKER=0 for latency-sensitive
-      // workflows, but the default is always-on.
+      // US-15.1: high-risk ops are ALWAYS verified — the maker cannot
+      // self-certify, so the checker runs the acceptance contract against a
+      // copy-on-write scratchpad before a high-risk change is committed. This
+      // is an ambient characteristic of the harness (on every run, no opt-out)
+      // per the user's maker-checker-for-every-run vision and the acceptance
+      // contract (US-15.1 forbids gating it behind an env flag).
       if (ctx.toolCall && isHighRisk(ctx.toolCall.name, ctx.toolCall.args)) {
         const changeHash = String(
           ctx.metadata?.changeHash ??
@@ -456,9 +472,17 @@ export async function wrapToolCall(
   if (wrapResult.abort) {
     // If validation fails (rejected or revise), rollback the last file write (US-10.2)
     const { rollbackLast } = await import("./fs/atomic_write.js");
-    await rollbackLast().catch(() => {});
+    let rollbackError: string | null = null;
+    try {
+      await rollbackLast();
+    } catch (rbErr: any) {
+      // Rollback failure must propagate — do not swallow it.
+      // A rejected destructive edit left on disk is a safety violation.
+      rollbackError = rbErr.message;
+    }
     throw new Error(
-      `Pipeline aborted at wrap_tool_call: ${wrapResult.abortReason}`,
+      `Pipeline aborted at wrap_tool_call: ${wrapResult.abortReason}` +
+      (rollbackError ? ` (rollback also failed: ${rollbackError})` : ""),
     );
   }
 

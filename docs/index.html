@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiver — Open Inspectable Harness for Open Models</title>
-  <meta name="description" content="A local-first, inspectable agent harness. Own agent memory in plain text files, swap models freely, attach visual context, and run agents with total context transparency—on the CLI or a native desktop app.">
+  <title>Quiver — AI Work Assistant for Business Users</title>
+  <meta name="description" content="A local-first AI work assistant for analysts, researchers, and consultants. Research, analyze, and produce professional documents — with source citations, verification gates, and complete transparency. Your data stays on your machine.">
   <link rel="icon" href="assets/logo.png" type="image/png">
   <link rel="apple-touch-icon" href="assets/logo.png">
   
@@ -821,9 +821,10 @@
       <span>Quiver</span>
     </div>
     <div class="nav-links">
-      <a href="#stories">UX Stories</a>
+      <a href="#stories">How It Works</a>
       <a href="#principles">Principles</a>
-      <a href="#tools">Tools</a>
+      <a href="#tools">Capabilities</a>
+      <a href="#install">Get Started</a>
       <a href="https://github.com/rahul16ss/quiver" target="_blank">GitHub</a>
     </div>
   </div>
@@ -832,12 +833,12 @@
 <div class="container">
   <!-- Hero Section -->
   <header class="hero">
-    <h1>An open inspectable harness<br>for open models.</h1>
-    <p>Quiver is a local-first development runtime. Own your agent's memory stack in plain text files, swap model providers instantly, and run cycles with complete context transparency.</p>
+    <h1>Your AI analyst,<br>researcher, and writer.</h1>
+    <p>Quiver is a local-first AI work assistant for business users. Research companies, analyze markets, produce investment briefs and compliance reviews — with cited sources, verification gates, and professional Office documents. Your data never leaves your machine.</p>
     <div class="hero-buttons">
-      <a href="#install" class="btn primary">Install CLI</a>
-      <a href="#install" class="btn" onclick="showInstall('desktop')">Desktop App</a>
-      <a href="#stories" class="btn">Explore the UX</a>
+      <a href="#install" class="btn primary" onclick="showInstall('desktop')">Get the Desktop App</a>
+      <a href="#install" class="btn" onclick="showInstall('brew')">Install CLI</a>
+      <a href="#stories" class="btn">See How It Works</a>
     </div>
   </header>
 
@@ -845,8 +846,8 @@
   <section id="stories">
     <div class="section-header">
       <span class="story-meta">Product Design</span>
-      <h2>Designed for Complete Control</h2>
-      <p class="lead">The UX of an agent harness shouldn't be a mystery. We design for absolute inspectability, transparency, and freedom.</p>
+      <h2>Built for Business Work</h2>
+      <p class="lead">Research, analyze, and produce — with transparency at every step. See exactly what the AI reads, what it does, and where every fact comes from.</p>
     </div>
 
     <div class="story-grid">
@@ -854,17 +855,17 @@
       <div class="story-row">
         <div class="story-content">
           <span class="story-meta">Story 01</span>
-          <h3 class="story-title">The Context Transparency Panel</h3>
-          <p class="story-desc">Telemetry belongs to you. Quiver shows you the exact, character-level prompt construction before sending it to the model. See what facts, preferences, and files go in—no hidden injections.</p>
+          <h3 class="story-title">See Exactly What the AI Knows</h3>
+          <p class="story-desc">No black boxes. Quiver shows you the exact context entering each AI call — what memory files, preferences, and skills are loaded. You control what the AI sees before it starts working.</p>
           
           <div class="user-story-card">
             <h5>User Story Details</h5>
-            <p><strong>As a</strong> developer pair-programming with local models,</p>
-            <p><strong>I want</strong> to view a formatted context drawer listing files and active prompt sizes,</p>
-            <p><strong>So that</strong> I know exactly what instructions and context enter the model on every turn.</p>
+            <p><strong>As an</strong> analyst preparing an investment brief,</p>
+            <p><strong>I want</strong> to see what context and memory the AI is using for each turn,</p>
+            <p><strong>So that</strong> I can trust the output is grounded in the right sources, not hallucinated.</p>
             <ul>
-              <li>Visual byte-size and token count breakdown.</li>
-              <li>Tactile folders (`~/.quiver/projects/name/memory`) represent data.</li>
+              <li>Editable memory files — correct outdated facts inline.</li>
+              <li>Token usage bar shows how much context capacity remains.</li>
             </ul>
           </div>
         </div>
@@ -912,17 +913,17 @@
         </div>
         <div class="story-content">
           <span class="story-meta">Story 02</span>
-          <h3 class="story-title">Zero-Friction Lens Swapping</h3>
-          <p class="story-desc">Intelligence is a layer, not a lock-in. Switch model providers, base URLs, or local endpoints on the fly. The harness maintains the session context and memory files seamlessly across compute layers.</p>
+          <h3 class="story-title">Deep Research with Cited Sources</h3>
+          <p class="story-desc">Every fact comes with a source. Quiver's deep research engine performs multi-hop web research — SEC filings, earnings calls, regulatory databases, news — and cites every claim. No hallucinated numbers, no invented sources.</p>
           
           <div class="user-story-card">
             <h5>User Story Details</h5>
-            <p><strong>As a</strong> researcher running expensive runs,</p>
-            <p><strong>I want</strong> to toggle active endpoints instantly via the `/model` CLI command,</p>
-            <p><strong>So that</strong> I can offload complex reasoning to cloud gates and swap back to local models for quick edits.</p>
+            <p><strong>As a</strong> consultant building a competitive matrix,</p>
+            <p><strong>I want</strong> the AI to research multiple companies with cited sources for each data point,</p>
+            <p><strong>So that</strong> I can defend every claim in my deliverable with a traceable source URL.</p>
             <ul>
-              <li>Real-time status transitions.</li>
-              <li>Seamless continuation of session memories.</li>
+              <li>Multi-hop research across primary and secondary sources.</li>
+              <li>Inline citations: "Revenue $42.3M [Source: 10-K, https://sec.gov/...]".</li>
             </ul>
           </div>
         </div>
@@ -932,17 +933,17 @@
       <div class="story-row">
         <div class="story-content">
           <span class="story-meta">Story 03</span>
-          <h3 class="story-title">Session Audit Timeline</h3>
-          <p class="story-desc">Debugging shouldn't involve raw console logs. Quiver records every model inference, prompt payload, tool run, and verification check inside clean, structured JSON session states, rendering a timeline.</p>
+          <h3 class="story-title">Audit Trail for Every Action</h3>
+          <p class="story-desc">Compliance-ready by design. Quiver records every AI inference, web search, tool execution, and verification check in a tamper-evident hash-chained audit log. When your compliance team asks "how did the AI reach this conclusion?", you have the answer.</p>
           
           <div class="user-story-card">
             <h5>User Story Details</h5>
-            <p><strong>As an</strong> engineer verifying code correctness,</p>
-            <p><strong>I want</strong> to browse a chronological timeline of completed loops,</p>
-            <p><strong>So that</strong> I can audit tool parameters, stdout results, and compiler errors in sequence.</p>
+            <p><strong>As a</strong> compliance officer reviewing an AI-generated regulatory summary,</p>
+            <p><strong>I want</strong> a chronological audit trail of every source consulted and claim made,</p>
+            <p><strong>So that</strong> I can verify the analysis is defensible and traceable.</p>
             <ul>
-              <li>Clear chronological trace structure.</li>
-              <li>Tool execution vs. Model inference tracking.</li>
+              <li>Hash-chained audit log — tamper-evident by design.</li>
+              <li>Every web search, tool call, and model inference logged.</li>
             </ul>
           </div>
         </div>
@@ -1003,17 +1004,17 @@
         </div>
         <div class="story-content">
           <span class="story-meta">Story 04</span>
-          <h3 class="story-title">A Native Desktop App</h3>
-          <p class="story-desc">The full harness, windowed. A dark, hardened Electron surface with a session sidebar, live context drawer, and side-by-side diff approvals—every CLI capability, plus drag-and-drop images and secure OS keychain storage. Sandbox-isolated, strict CSP, no node integration.</p>
+          <h3 class="story-title">A Native Desktop App for Business Users</h3>
+          <p class="story-desc">No terminal required. The Quiver desktop app gives you a clean chat interface, session history sidebar, context transparency panel, and document preview — all the power of the AI harness, designed for people who don't write code. Drag-and-drop images, secure credential storage, and one-click document preview.</p>
           <div class="user-story-card">
             <h5>User Story Details</h5>
-            <p><strong>As a</strong> developer who lives in the GUI,</p>
-            <p><strong>I want</strong> a hardened desktop window with a context drawer and diff approvals,</p>
-            <p><strong>So that</strong> I can drive the agent visually without leaving my editor.</p>
+            <p><strong>As an</strong> investment manager who doesn't use command-line tools,</p>
+            <p><strong>I want</strong> a desktop app where I can chat with the AI, review its work, and preview documents,</p>
+            <p><strong>So that</strong> I can get professional analysis without learning developer tools.</p>
             <ul>
-              <li>Hardened Electron: sandbox, CSP, context isolation.</li>
-              <li>Side-by-side diff approvals with Request revision.</li>
-              <li>Drop images; secrets stay in the OS keychain.</li>
+              <li>Chat interface — no terminal, no commands needed.</li>
+              <li>Document preview panel — see Word/Excel/PPT the AI creates.</li>
+              <li>Session history — pick up where you left off.</li>
             </ul>
           </div>
         </div>
@@ -1023,17 +1024,17 @@
       <div class="story-row">
         <div class="story-content">
           <span class="story-meta">Story 05</span>
-          <h3 class="story-title">Visual Context Routing</h3>
-          <p class="story-desc">Drop a screenshot, paste a mockup, or point at a design file. Quiver strips EXIF and geolocation locally, downscales the image, and routes it to a multimodal model—only with your explicit consent. The agent reads your UI the way you do.</p>
+          <h3 class="story-title">Drop Images, Get Analysis</h3>
+          <p class="story-desc">Drop a chart, a competitor's landing page screenshot, or a regulatory form. Quiver strips EXIF and geolocation locally, downscales the image, and routes it to a vision model — only with your explicit consent. The AI reads tables, charts, and documents the way you do.</p>
           <div class="user-story-card">
             <h5>User Story Details</h5>
-            <p><strong>As a</strong> developer debugging UI code,</p>
-            <p><strong>I want</strong> to attach screenshots so the agent can analyze visual changes,</p>
-            <p><strong>So that</strong> layout and styling feedback is grounded in what I actually see.</p>
+            <p><strong>As a</strong> analyst comparing competitor pricing pages,</p>
+            <p><strong>I want</strong> to drop screenshots of pricing tables and have the AI extract the data,</p>
+            <p><strong>So that</strong> I can build a competitive matrix without manually retyping numbers.</p>
             <ul>
-              <li>EXIF and location metadata redacted locally.</li>
-              <li>Automatic downscaling before upload.</li>
-              <li>Remote vision routed only on explicit opt-in.</li>
+              <li>EXIF and location metadata stripped locally for privacy.</li>
+              <li>Automatic downscaling before processing.</li>
+              <li>Remote vision routing only on explicit opt-in.</li>
             </ul>
           </div>
         </div>
@@ -1064,28 +1065,30 @@
   <!-- Open vs Closed Comparison -->
   <section id="comparison">
     <div class="section-header">
-      <h2>Open vs. Closed Harnesses</h2>
-      <p class="lead">Stop letting closed SaaS layers gatekeep your agent's memory and execution steps.</p>
+      <h2>Why Not Just Use ChatGPT or Claude?</h2>
+      <p class="lead">Closed SaaS AI tools are great for quick questions. But when you're producing deliverables for clients, regulators, or your board, you need more.</p>
     </div>
 
     <div class="comparison-grid">
       <div class="comp-card closed">
-        <h3>Proprietary Wrappers</h3>
+        <h3>Closed SaaS AI Tools</h3>
         <ul>
-          <li>Trapped in a single closed provider ecosystem.</li>
-          <li>Prompt context and agent histories locked in private databases.</li>
-          <li>System prompts are assembly lines hidden from developers.</li>
-          <li>Custom tools require proprietary JSON platform APIs.</li>
+          <li>Your data and conversation history live on their servers.</li>
+          <li>No audit trail — can't trace how the AI reached a conclusion.</li>
+          <li>No verification gates — the AI can state wrong facts with confidence.</li>
+          <li>No local document creation — you copy-paste and reformat manually.</li>
+          <li>Vendor lock-in: switch providers, lose your history.</li>
         </ul>
       </div>
       
       <div class="comp-card open">
-        <h3>Quiver open harness</h3>
+        <h3>Quiver</h3>
         <ul>
-          <li>Model sovereignty: swap local or cloud providers instantly.</li>
-          <li>Memory is local Markdown files under your version control.</li>
-          <li>Prompt structure fully detailed before execution.</li>
-          <li>Dynamic tools are simple TypeScript files.</li>
+          <li>Your data stays on your machine — nothing sent to third-party servers.</li>
+          <li>Tamper-evident audit trail — every source, tool call, and inference logged.</li>
+          <li>Maker-checker verification — high-risk outputs are validated before delivery.</li>
+          <li>Native Office documents — .docx, .xlsx, .pptx created directly, no reformatting.</li>
+          <li>Model-agnostic — swap AI providers without losing your work history.</li>
         </ul>
       </div>
     </div>
@@ -1094,57 +1097,57 @@
   <!-- System Principles -->
   <section id="principles">
     <div class="section-header">
-      <h2>Harness Principles</h2>
-      <p class="lead">We align Quiver's architecture with clean, code-enforced rules of control and explainability.</p>
+      <h2>Principles</h2>
+      <p class="lead">Quiver is built on simple, code-enforced rules that put you in control of your AI work.</p>
     </div>
 
     <div class="principles-grid">
       <div class="principle-card">
         <div class="num">01</div>
-        <h4>Local Context Control</h4>
-        <p>Your agent's memory, persona, and logs live in directories on your drive, sync naturally through your local folders, and belong completely to you.</p>
+        <h4>Your Data Stays Local</h4>
+        <p>Your research, memory, and conversation history live in files on your machine. Nothing is sent to third-party servers unless you explicitly use a web research tool.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">02</div>
         <h4>Context Transparency</h4>
-        <p>No secret prompts. The resolved context bundle entering the model call is logged openly before every turn.</p>
+        <p>No black boxes. Before every AI call, Quiver shows you what memory, skills, and context are being sent. You see and edit exactly what the AI knows.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">03</div>
-        <h4>Total Explainability</h4>
-        <p>Chronological trace logs record exactly what prompts caused tool actions and the stdout returned by the OS.</p>
+        <h4>Every Claim Has a Source</h4>
+        <p>The AI cites its sources inline. Every number, every fact, every claim — traceable to a URL or document. No hallucinated data, no invented references.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">04</div>
-        <h4>Low-Level Primitives</h4>
-        <p>When tool capabilities are missing, the agent doesn't compromise—it builds the TypeScript code wrapper it needs at runtime.</p>
+        <h4>Verification Before Delivery</h4>
+        <p>High-risk outputs are validated by a maker-checker system before they reach you. The AI verifies its own work — and you see the verification results.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">05</div>
-        <h4>Maker-Checker Sandbox</h4>
-        <p>High-risk code changes are executed in isolated copy-on-write scratchpads, validated by checker subagents, and subject to automatic rollback on failures.</p>
+        <h4>Audit Trail</h4>
+        <p>Every action — web searches, tool calls, AI inferences — is logged in a tamper-evident hash-chained audit log. Compliance-ready by design.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">06</div>
-        <h4>Hardened Credentials</h4>
-        <p>API keys are isolated from child processes, redacted in session logs, and securely resolved from macOS, Linux, or Windows keychains.</p>
+        <h4>Professional Documents</h4>
+        <p>Word, Excel, PowerPoint — created natively, no Microsoft Office needed. Investment briefs, financial models, pitch decks, compliance reviews, all through natural language.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">07</div>
-        <h4>MCP Extensible</h4>
-        <p>Connect any MCP server (GitHub, databases, browsers, file systems) via <code>.quiver/mcp.json</code>. Tools appear as <code>mcp_server_tool</code> and are transparent in the audit trail.</p>
+        <h4>Model Independence</h4>
+        <p>Not locked into one AI provider. Swap between local and cloud models instantly — your work history and memory carry over seamlessly.</p>
       </div>
 
       <div class="principle-card">
         <div class="num">08</div>
-        <h4>Office Documents</h4>
-        <p>Create Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) documents natively — no Microsoft Office needed. Investment briefs, financial models, pitch decks, compliance reviews, all through natural language.</p>
+        <h4>Extensible</h4>
+        <p>Connect external tools via MCP (GitHub, databases, browsers). The AI can even build new tools at runtime when it needs a capability that doesn't exist yet.</p>
       </div>
     </div>
   </section>
@@ -1152,8 +1155,8 @@
   <!-- Installation -->
   <section id="install">
     <div class="section-header" style="text-align: center; margin-bottom: 40px; margin-left: auto; margin-right: auto;">
-      <h2>Start Pairing Immediately</h2>
-      <p class="lead">Install the open harness via your preferred package manager—or grab the native desktop app.</p>
+      <h2>Get Started</h2>
+      <p class="lead">Download the desktop app — no terminal needed. Or install the CLI if you prefer.</p>
     </div>
 
     <div class="install-box">
@@ -1186,8 +1189,8 @@ cd quiver && npm install -g .</code>
   <!-- Atomic Tool Catalog -->
   <section id="tools">
     <div class="section-header">
-      <h2>Atomic Tool Catalog</h2>
-      <p class="lead">Every tool is a single-purpose script. The agent composes these dynamically in a loop.</p>
+      <h2>What Quiver Can Do</h2>
+      <p class="lead">The AI has access to a toolkit of research, analysis, and document production capabilities. It picks the right tool for each step of your task — automatically.</p>
     </div>
 
     <div class="tools-search-bar">

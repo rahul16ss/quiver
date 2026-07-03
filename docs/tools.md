@@ -54,14 +54,14 @@ export interface Tool {
 
 ### Agent Orchestration
 - `subagent` — Spawn isolated agent processes
-- `ralph_loop` — Iterative self-referential development loop
+- `ralph_loop` — Iterative self-referential development loop (still available for explicit persistent goals; ambient goal-seeking is now the default harness behavior — see US-13.5)
 - `todo_write` — Manage task checklists
 - `ask_question` — Ask user clarifying questions
 
 ## Tool Sandbox
 
 Dynamically generated tools execute in isolated worker threads with:
-- Least-privilege filesystem access (glob patterns)
+- Least-privilege filesystem access (glob patterns) — **enforced** via a permission-checking `fs` proxy inside the worker (US-6.4); the manifest globs are no longer advisory
 - Network access control
 - Shell access control
 - Environment variable filtering

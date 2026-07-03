@@ -3,159 +3,199 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Quiver</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="app">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-top">
-        <img src="assets/logo.png" class="sidebar-logo" alt="Quiver">
+    <!-- ── Left: Sessions ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <img src="assets/logo.png" class="sidebar-logo" alt="Quiver">
+          <span class="sidebar-name">Quiver</span>
+        </div>
+        <button class="icon-btn" id="newChatBtn" title="New chat">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
       </div>
-
-      <button class="new-chat" onclick="startNewChat()">
-        <span>+</span> New Chat
-      </button>
-
       <div class="sessions" id="sessionsList"></div>
-
-      <button class="settings-btn" onclick="window.quiver.loadSettings()">
-        <img src="assets/icon-settings.png" class="btn-icon" alt=""> Settings
+      <button class="settings-btn">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5A5.5 5.5 0 0 0 1.5 7 5.5 5.5 0 0 0 7 12.5 5.5 5.5 0 0 0 12.5 7 5.5 5.5 0 0 0 7 1.5zm0 2.5a3 3 0 0 1 3 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3z" stroke="currentColor" stroke-width="1" fill="none"/></svg>
+        <span>Settings</span>
       </button>
     </aside>
 
-    <!-- Main -->
-    <main class="main">
-      <header class="header">
-        <span class="session-title" id="activeSessionTitle">New Chat</span>
-        <div class="header-right">
-          <button class="header-btn" id="contextBtn" onclick="toggleContext()" title="Context — see and control what the AI sees">
-            <img src="assets/icon-database.png" class="btn-icon" alt=""> Context
-          </button>
+    <!-- ── Center: Chat ── -->
+    <main class="chat-pane">
+      <header class="chat-header">
+        <div class="chat-header-left">
+          <span class="chat-title" id="activeSessionTitle">New Chat</span>
+        </div>
+        <div class="chat-header-right">
+          <span class="model-badge" id="modelBadge" title="Active model">—</span>
+          <span class="autonomy-badge" id="autonomyBadge" title="Autonomy level">Ask</span>
           <span class="status-dot idle" id="statusDot"></span>
         </div>
       </header>
 
-      <!-- Context transparency sidebar (slide-out) -->
-      <aside class="context-sidebar" id="contextSidebar" style="display:none;">
-        <div class="context-header">
-          <span>Context</span>
-          <button class="context-close" onclick="toggleContext()">×</button>
-        </div>
-
-        <div class="context-body" id="contextBody">
-          <!-- Model -->
-          <div class="ctx-group">
-            <div class="ctx-group-label">Model</div>
-            <div class="ctx-group-value" id="ctxModel">—</div>
-          </div>
-
-          <!-- Core Memory (editable) -->
-          <div class="ctx-group">
-            <div class="ctx-group-label">Core Memory</div>
-            <div class="ctx-memory-fields">
-              <div class="ctx-mem-field">
-                <span class="ctx-mem-key">Identity</span>
-                <textarea class="ctx-mem-input" id="ctxIdentity" rows="2" onchange="saveCoreMemory()"></textarea>
-              </div>
-              <div class="ctx-mem-field">
-                <span class="ctx-mem-key">Human Context</span>
-                <textarea class="ctx-mem-input" id="ctxHuman" rows="2" onchange="saveCoreMemory()"></textarea>
-              </div>
-              <div class="ctx-mem-field">
-                <span class="ctx-mem-key">Project Context</span>
-                <textarea class="ctx-mem-input" id="ctxProject" rows="2" onchange="saveCoreMemory()"></textarea>
-              </div>
-            </div>
-          </div>
-          <!-- Persistent Memory Files -->
-          <div class="ctx-group">
-            <div class="ctx-group-label">Memory Files</div>
-            <div class="ctx-mem-list" id="ctxMemList">
-              <div class="ctx-loading">Loading…</div>
-            </div>
-            <button class="ctx-add-btn" onclick="openMemoryEditor('')">+ New memory file</button>
-          </div>
-
-          <!-- Skills -->
-          <div class="ctx-group">
-            <div class="ctx-group-label">Skills</div>
-            <div class="ctx-skills-list" id="ctxSkillsList">
-              <div class="ctx-loading">Loading…</div>
-            </div>
-          </div>
-
-          <!-- Stats -->
-          <div class="ctx-group">
-            <div class="ctx-group-label">Stats</div>
-            <div class="ctx-stats">
-              <div class="ctx-stat"><span class="ctx-stat-label">Tools</span><span class="ctx-stat-val" id="ctxTools">—</span></div>
-              <div class="ctx-stat"><span class="ctx-stat-label">Tokens</span><span class="ctx-stat-val" id="ctxTokens">—</span></div>
-            </div>
-            <div class="ctx-token-bar-wrap" id="ctxTokenBarWrap" style="display:none;">
-              <div class="ctx-token-bar" id="ctxTokenBar"></div>
-              <span class="ctx-token-bar-label" id="ctxTokenBarLabel"></span>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Memory file editor modal -->
-      <div class="modal-overlay" id="memEditorOverlay" style="display:none;" onclick="closeMemoryEditor(event)">
-        <div class="modal-card" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <span id="memEditorTitle">Edit Memory File</span>
-            <button class="context-close" onclick="closeMemoryEditor()">×</button>
-          </div>
-          <div class="modal-body">
-            <input id="memEditorName" class="modal-input" placeholder="filename.md">
-            <textarea id="memEditorContent" class="modal-textarea" placeholder="Memory content…"></textarea>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-primary" onclick="saveMemoryFile()">Save</button>
-            <button class="btn-secondary" onclick="closeMemoryEditor()">Cancel</button>
-            <button class="btn-danger" id="memDeleteBtn" onclick="deleteMemoryFile()" style="display:none;">Delete</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Skill viewer modal -->
-      <div class="modal-overlay" id="skillViewerOverlay" style="display:none;" onclick="closeSkillViewer(event)">
-        <div class="modal-card" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <span id="skillViewerTitle">Skill</span>
-            <button class="context-close" onclick="closeSkillViewer()">×</button>
-          </div>
-          <div class="modal-body">
-            <textarea id="skillViewerContent" class="modal-textarea" placeholder="Skill content…"></textarea>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-primary" onclick="saveSkillFile()">Save</button>
-            <button class="btn-secondary" onclick="closeSkillViewer()">Close</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Chat -->
-      <div class="chat" id="chatArea">
-        <div class="empty" id="emptyState">
+      <!-- Chat messages -->
+      <div class="chat-scroll" id="chatArea">
+        <div class="empty-state" id="emptyState">
           <img src="assets/logo.png" class="empty-logo" alt="Quiver">
-          <p class="empty-subtitle">Ask me to code, research, or analyze.</p>
+          <p class="empty-title">Ask Quiver</p>
+          <p class="empty-hint">Research, analyze, write — or drop an image to analyze.</p>
         </div>
       </div>
 
       <!-- Input -->
-      <div class="input-bar" id="inputBar" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-        <textarea id="promptInput" placeholder="Ask Quiver…" rows="1"></textarea>
-        <button id="sendBtn" onclick="sendPrompt()">Send</button>
-        <button id="stopBtn" onclick="stopAgent()" style="display:none;">Stop</button>
+      <div class="input-area" id="inputBar">
+        <div class="input-wrap">
+          <textarea id="promptInput" placeholder="Ask Quiver…" rows="1"></textarea>
+          <button id="sendBtn" class="send-btn" title="Send (Enter)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>
+          </button>
+          <button id="stopBtn" class="stop-btn" style="display:none;" title="Stop">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <div class="input-hint" id="inputHint">Enter to send · Shift+Enter for new line</div>
         <div id="dropOverlay" class="drop-overlay" style="display:none;">
           <span>Drop images to attach</span>
         </div>
       </div>
     </main>
+
+    <!-- ── Right: Context Panel (always visible) ── -->
+    <aside class="context-panel" id="contextPanel">
+      <div class="context-panel-header">
+        <span>Context</span>
+        <button class="icon-btn-sm" id="contextToggleBtn" title="Collapse panel">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2L8 6L4 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="context-panel-body" id="contextBody">
+        <!-- Model -->
+        <div class="ctx-section">
+          <div class="ctx-label">Model</div>
+          <div class="ctx-value" id="ctxModel">—</div>
+        </div>
+
+        <!-- Core Memory (editable inline) -->
+        <div class="ctx-section">
+          <div class="ctx-label">Core Memory</div>
+          <div class="ctx-fields">
+            <div class="ctx-field">
+              <span class="ctx-field-key">Identity</span>
+              <textarea class="ctx-field-input" id="ctxIdentity" rows="2"></textarea>
+            </div>
+            <div class="ctx-field">
+              <span class="ctx-field-key">Human</span>
+              <textarea class="ctx-field-input" id="ctxHuman" rows="2"></textarea>
+            </div>
+            <div class="ctx-field">
+              <span class="ctx-field-key">Project</span>
+              <textarea class="ctx-field-input" id="ctxProject" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Memory Files -->
+        <div class="ctx-section">
+          <div class="ctx-label">Memory Files</div>
+          <div class="ctx-mem-list" id="ctxMemList">
+            <div class="ctx-loading">Loading…</div>
+          </div>
+          <button class="ctx-add-btn">+ New file</button>
+        </div>
+
+        <!-- Skills -->
+        <div class="ctx-section">
+          <div class="ctx-label">Skills</div>
+          <div class="ctx-skills-list" id="ctxSkillsList">
+            <div class="ctx-loading">Loading…</div>
+          </div>
+        </div>
+
+        <!-- Token Usage -->
+        <div class="ctx-section">
+          <div class="ctx-label">Tokens</div>
+          <div class="ctx-token-row">
+            <span class="ctx-token-val" id="ctxTokens">—</span>
+          </div>
+          <div class="ctx-token-bar-wrap" id="ctxTokenBarWrap" style="display:none;">
+            <div class="ctx-token-bar" id="ctxTokenBar"></div>
+            <span class="ctx-token-bar-label" id="ctxTokenBarLabel"></span>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="ctx-section">
+          <div class="ctx-label">Stats</div>
+          <div class="ctx-stats-row">
+            <span class="ctx-stat-item">Tools <strong id="ctxTools">—</strong></span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Collapsed context panel toggle (floating) -->
+    <button class="context-expand-btn" id="contextExpandBtn" style="display:none;" title="Show context panel">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L4 6L8 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+    </button>
+
+    <!-- ── Preview Panel (slides over chat when a file is opened) ── -->
+    <div class="preview-overlay" id="previewOverlay" style="display:none;">
+      <div class="preview-panel">
+        <div class="preview-header">
+          <span class="preview-title" id="previewTitle">Preview</span>
+          <div class="preview-actions">
+            <button class="preview-btn" title="Open in default app">Open ↗</button>
+            <button class="preview-close">×</button>
+          </div>
+        </div>
+        <div class="preview-body" id="previewBody">
+          <div class="preview-loading">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory file editor modal -->
+    <div class="modal-overlay" id="memEditorOverlay" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span id="memEditorTitle">Edit Memory File</span>
+          <button class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <input id="memEditorName" class="modal-input" placeholder="filename.md">
+          <textarea id="memEditorContent" class="modal-textarea" placeholder="Memory content…"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary">Save</button>
+          <button class="btn-secondary">Cancel</button>
+          <button class="btn-danger" id="memDeleteBtn" style="display:none;">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skill viewer modal -->
+    <div class="modal-overlay" id="skillViewerOverlay" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span id="skillViewerTitle">Skill</span>
+          <button class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <textarea id="skillViewerContent" class="modal-textarea" placeholder="Skill content…"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary">Save</button>
+          <button class="btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
   <script src="app.js"></script>
 </body>

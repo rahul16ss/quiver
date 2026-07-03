@@ -1,7 +1,8 @@
 import { execFile } from "child_process";
 import * as path from "path";
 import { z } from "zod";
-import { Tool } from "../registry.js";
+import { Tool } from "../registry.js"
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { findBinary } from "../utils/find_binary.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -197,6 +198,13 @@ export const tool: Tool = {
   }),
 
   execute: async (args: any) => {
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try {
+      const _checkPath = args.filePath || args.directory || args.path || args.file || "";
+      if (_checkPath) assertToolPathAllowed(_checkPath, "read");
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
     const {
       action,
       file,

@@ -11,7 +11,7 @@
  *       │   └── .sessions/      ← Project session logs + state
  *
  * The project name is derived from the current working directory's
- * basename (e.g. /Users/rahul/ValuClaw → "ValuClaw").
+ * basename (e.g. ~/projects/my-app → "my-app").
  * Override with QUIVER_PROJECT_NAME env var.
  *
  * For backwards compatibility, if ~/.quiver/ doesn't exist but

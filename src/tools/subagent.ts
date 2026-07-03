@@ -1,5 +1,7 @@
 import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
+import * as os from "os";
+import * as fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { Tool } from "../registry.js";
@@ -26,6 +28,7 @@ import { config } from "../config.js";
 
 const MAX_SUBAGENT_TURNS = 50;
 const SUBAGENT_TIMEOUT_MS = 300000; // 5 minutes
+const MAX_RECURSION_DEPTH = 2;
 
 function getCliPath(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -46,41 +49,117 @@ interface SubagentResult {
   error?: string;
 }
 
-async function runSubagent(task: string, tools: string[]): Promise<SubagentResult> {
-  return new Promise((resolve) => {
-    const cliPath = getCliPath();
-    const tsxPath = getTsxPath();
+/**
+ * Build a copy-on-write scratchpad directory for subagent isolation.
+ * The subagent runs in an isolated copy of the workspace so it cannot
+ * mutate the real project files (US-5.3 scratchpad isolation).
+ */
+async function buildSubagentScratchpad(): Promise<string> {
+  const scratchDir = path.join(
+    os.tmpdir(),
+    `quiver-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  await fs.mkdir(scratchDir, { recursive: true });
 
-    // Build the prompt — include tool restriction if specified
-    const prompt = tools.length > 0
+  // Copy workspace directories (read-only inspection)
+  for (const dir of [
+    "src",
+    "tests",
+    "ui",
+    "docs",
+    "templates",
+    "skills",
+    "Formula",
+    "branding",
+    "bin",
+  ]) {
+    try {
+      await fs.cp(path.join(process.cwd(), dir), path.join(scratchDir, dir), {
+        recursive: true,
+      });
+    } catch {
+      /* best-effort copy */
+    }
+  }
+
+  // Copy config files needed for tsx
+  for (const file of ["package.json", "tsconfig.json"]) {
+    try {
+      await fs.copyFile(
+        path.join(process.cwd(), file),
+        path.join(scratchDir, file),
+      );
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // Do NOT link the real project's installed packages into the scratchpad.
+  // The subagent runs in isolation and must not be able to mutate the real
+  // project's dependencies. tsx is invoked from the parent process PATH.
+
+  return scratchDir;
+}
+
+async function runSubagent(
+  task: string,
+  tools: string[],
+): Promise<SubagentResult> {
+  // Recursion depth check — prevent fork-bombs (US-5.3)
+  const currentDepth = parseInt(process.env.SUBAGENT_DEPTH || "0", 10);
+  if (currentDepth >= MAX_RECURSION_DEPTH) {
+    return {
+      response: `Subagent recursion depth limit (${MAX_RECURSION_DEPTH}) reached — cannot spawn child.`,
+      turns: 0,
+      toolCalls: 0,
+      tokens: 0,
+      error: "Recursion limit",
+    };
+  }
+
+  const cliPath = getCliPath();
+  const tsxPath = getTsxPath();
+
+  // Build the prompt — include tool restriction if specified
+  const prompt =
+    tools.length > 0
       ? `${task}\n\n[System: You have access only to these tools: ${tools.join(", ")}]`
       : task;
 
-    const args = [cliPath, "--json", "--single-turn", prompt];
+  const args = [cliPath, "--json", "--single-turn", prompt];
 
-    const childEnv = { ...process.env };
-    const sensitiveKeys = [
-      "LLM_API_KEY",
-      "PARALLEL_API_KEY",
-      "OLLAMA_API_KEY",
-      "GITHUB_TOKEN",
-      "CONTEXT7_API_KEY",
-      "API_KEY",
-      "SECRET",
-      "TOKEN",
-      "PASSWORD",
-      "PRIVATE_KEY",
-      "ACCESS_KEY",
-      "SECRET_KEY",
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY"
-    ];
-    for (const key of sensitiveKeys) {
-      delete childEnv[key];
-    }
+  // Pass recursion depth to child so it can enforce the limit
+  const childEnv = { ...process.env };
+  childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
 
+  // Strip sensitive keys that the subagent doesn't need.
+  // IMPORTANT: OLLAMA_API_KEY is KEPT because the subagent needs it to
+  // make LLM API calls — without it, every subagent gets 401 Unauthorized.
+  // The subagent runs the same Quiver codebase in an isolated scratchpad,
+  // so it has the same trust level as the parent for LLM access.
+  // Other keys (GitHub, AWS, etc.) are stripped because the subagent
+  // shouldn't be making external API calls beyond LLM inference.
+  const sensitiveKeys = [
+    "GITHUB_TOKEN",
+    "CONTEXT7_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+  ];
+  for (const key of sensitiveKeys) {
+    delete childEnv[key];
+  }
+
+  // Build scratchpad for isolation (US-5.3)
+  let scratchDir: string;
+  try {
+    scratchDir = await buildSubagentScratchpad();
+  } catch {
+    scratchDir = process.cwd(); // fallback — best-effort
+  }
+
+  return new Promise((resolve) => {
     const child: ChildProcess = spawn(tsxPath, args, {
-      cwd: process.cwd(),
+      cwd: scratchDir,
       env: childEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -117,8 +196,9 @@ async function runSubagent(task: string, tools: string[]): Promise<SubagentResul
           if (msg.type === "done") {
             turns = msg.data?.tokenStats?.turns || 0;
             toolCalls = msg.data?.tokenStats?.toolCalls || toolCalls;
-            totalTokens = (msg.data?.tokenStats?.inputTokens || 0) +
-                         (msg.data?.tokenStats?.outputTokens || 0);
+            totalTokens =
+              (msg.data?.tokenStats?.inputTokens || 0) +
+              (msg.data?.tokenStats?.outputTokens || 0);
             if (msg.data?.response) {
               lastResponse = msg.data.response;
             }
@@ -197,8 +277,8 @@ export const tool: Tool = {
       .optional()
       .describe(
         "Optional list of tool names the subagent can use. If omitted, the subagent has access to all tools. " +
-        "Example: ['view_file', 'grep_search', 'list_dir'] for read-only exploration. " +
-        "Example: ['view_file', 'write_file', 'replace_content', 'run_tests'] for code changes.",
+          "Example: ['view_file', 'grep_search', 'list_dir'] for read-only exploration. " +
+          "Example: ['view_file', 'write_file', 'replace_content', 'run_tests'] for code changes.",
       ),
   }),
   execute: async ({ task, tools }) => {

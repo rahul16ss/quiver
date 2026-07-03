@@ -83,45 +83,47 @@
     <div class="form-card" style="max-width:640px;">
       <img src="assets/logo.png" class="form-logo" alt="Quiver">
       <h1>Settings</h1>
-      <p class="subtitle">Configure your Quiver instance</p>
+      <p class="subtitle">Configure your AI work assistant</p>
 
       <!-- US-8.4: Model Provider -->
       <div class="settings-section">
-        <h3>Model Provider</h3>
+        <h3>AI Model</h3>
         <div class="settings-row">
           <label>Provider</label>
           <select id="provider">
             <option value="ollama">Ollama (Local / Cloud)</option>
             <option value="custom">Custom OpenAI-compatible</option>
           </select>
-          <div class="hint">Choose your LLM backend. Ollama supports both local and cloud models.</div>
+          <div class="hint">Choose your AI model provider. Ollama supports both local and cloud models.</div>
         </div>
         <div class="settings-row">
           <label>Model Name</label>
           <input id="modelName" type="text" placeholder="glm-5.2:cloud">
-          <div class="hint">Source-controlled default. Override only if you know what you're doing.</div>
+          <div class="hint">Default is pre-configured. Change only if you want to use a different AI model.</div>
         </div>
         <div class="settings-row">
           <label>API Base URL</label>
           <input id="baseUrl" type="text" placeholder="https://ollama.com/v1">
         </div>
         <div class="settings-row">
-          <label>Max Context Tokens</label>
+          <label>Max Context (tokens)</label>
           <input id="maxContextTokens" type="number" placeholder="120000" min="8000" max="2000000">
+          <div class="hint">How much text the AI can process at once. Higher = more context, slower.</div>
         </div>
       </div>
 
       <!-- US-8.4: API Credentials -->
       <div class="settings-section">
-        <h3>API Credentials</h3>
+        <h3>API Keys</h3>
         <div class="settings-row">
-          <label>Ollama API Key</label>
-          <input id="apiKey" type="password" placeholder="Your Ollama API key">
-          <div class="hint">Single key powers LLM, Ollama, and vision. Stored in OS keychain.</div>
+          <label>AI Model Key</label>
+          <input id="apiKey" type="password" placeholder="Your API key">
+          <div class="hint">Powers the AI model. Stored securely in your OS keychain — never in plain text.</div>
         </div>
         <div class="settings-row">
-          <label>Parallel API Key <span style="font-weight:400;color:var(--text-faint);">(optional)</span></label>
-          <input id="parallelApiKey" type="password" placeholder="For web search & deep research">
+          <label>Web Research Key <span style="font-weight:400;color:var(--text-faint);">(optional)</span></label>
+          <input id="parallelApiKey" type="password" placeholder="For web search and deep research">
+          <div class="hint">Enables cited web research — company lookups, market data, regulatory filings.</div>
         </div>
         <div class="settings-row">
           <label>GitHub Token <span style="font-weight:400;color:var(--text-faint);">(optional, developers only)</span></label>
@@ -150,23 +152,23 @@
 
       <!-- US-8.4: Approvals & Autonomy -->
       <div class="settings-section">
-        <h3>Approvals & Autonomy</h3>
-        <div class="hint" style="margin-bottom:8px;">Control how much the agent can do without asking:</div>
+        <h3>Approval Settings</h3>
+        <div class="hint" style="margin-bottom:8px;">Control how much the AI can do without asking you first:</div>
         <div class="settings-row">
           <label>Autonomy Mode</label>
           <select id="autonomyMode">
-            <option value="">Conservative (ask for everything)</option>
-            <option value="write_file,replace_content,apply_patch,run_command">Standard (auto-write + safe commands)</option>
-            <option value="write_file,replace_content,apply_patch,run_command,destructive,network,browser">Advanced (adds destructive, network, browser)</option>
-            <option value="yolo">YOLO (no prompts ever)</option>
+            <option value="">Conservative (ask before everything)</option>
+            <option value="write_file,replace_content,apply_patch,run_command">Standard (auto-write files + safe commands)</option>
+            <option value="write_file,replace_content,apply_patch,run_command,destructive,network,browser">Advanced (adds network, browser, file deletion)</option>
+            <option value="yolo">Full Auto (no prompts ever)</option>
           </select>
-          <div class="hint">YOLO bypasses ALL approval gates including destructive commands.</div>
+          <div class="hint">Full Auto bypasses ALL approval gates including destructive actions. Use with caution.</div>
         </div>
         <div class="toggle-row">
           <label>Show browser window (for manual sign-in)</label>
           <div class="toggle" id="browserVisible" onclick="this.classList.toggle('active')"></div>
         </div>
-        <div class="hint" style="margin-top:-4px;">When off, browser runs headless. When on, a visible browser window appears for interactive sign-in.</div>
+        <div class="hint" style="margin-top:-4px;">When off, browser runs invisibly. When on, a browser window appears so you can sign in to websites manually.</div>
       </div>
 
       <!-- US-8.4: Cloud Sync -->
@@ -209,9 +211,9 @@
       </div>
 
       <div class="form-group" style="margin-top:20px;">
-        <label>Workspace</label>
+        <label>Project Folder</label>
         <div class="dir-picker-row">
-          <input id="workspacePath" type="text" placeholder="Workspace folder" readonly>
+          <input id="workspacePath" type="text" placeholder="Where your work is saved" readonly>
           <button class="btn-browse" onclick="browseWorkspace()">Browse</button>
         </div>
       </div>

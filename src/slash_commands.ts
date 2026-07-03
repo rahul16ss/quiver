@@ -12,27 +12,21 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/tools", aliases: ["/t"], desc: "List available tools" },
   {
     name: "/autonomy",
-    aliases: ["/a"],
-    desc: "Manage autonomy grants (write_file, run_command, destructive, yolo, etc.)",
+    aliases: ["/a", "/tier"],
+    desc: "Trust tiers & grants (tier observe→yolo, add/remove grants, sandbox)",
   },
-  { name: "/session", aliases: ["/s"], desc: "Show session details" },
+  { name: "/session", aliases: ["/s", "/cost", "/history", "/hi"], desc: "Show session stats (+ /session full for message history)" },
   { name: "/version", aliases: ["/v"], desc: "Show Quiver version" },
   { name: "/config", aliases: ["/c"], desc: "Show configuration" },
   { name: "/clear", aliases: [], desc: "Clear terminal screen" },
   { name: "/compact", aliases: ["/co"], desc: "Compact conversation history" },
   { name: "/reset", aliases: ["/r"], desc: "Reset conversation (keep memory)" },
-  { name: "/cost", aliases: [], desc: "Show token usage stats" },
   {
     name: "/memory",
     aliases: ["/mem"],
     desc: "View loaded memory (/memory review for pending facts)",
   },
   { name: "/model", aliases: ["/m"], desc: "Show or change model" },
-  {
-    name: "/history",
-    aliases: ["/hi"],
-    desc: "Show conversation message count",
-  },
   { name: "/export", aliases: [], desc: "Export session to .qf file" },
   {
     name: "/dry-run",
@@ -61,11 +55,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     desc: "Rollback to a previous backup (e.g. /rollback last)",
   },
   {
-    name: "/self-heal",
-    aliases: ["/heal", "/fix"],
-    desc: "Scan codebase for errors/failures and self-heal",
-  },
-  {
     name: "/override",
     aliases: ["/ov"],
     desc: "Override the last maker-checker verdict (US-15.4)",
@@ -78,7 +67,22 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/yolo",
     aliases: [],
-    desc: "Alias for /autonomy yolo — bypass ALL approval gates",
+    desc: "Top trust tier — bypass ALL gates + path sandbox off (anywhere)",
+  },
+  {
+    name: "/sandbox",
+    aliases: ["/sb"],
+    desc: "Toggle path sandbox on/off (requires YOLO mode to disable)",
+  },
+  {
+    name: "/editor",
+    aliases: ["/ed"],
+    desc: "Open $EDITOR to compose a multi-line prompt",
+  },
+  {
+    name: "/update",
+    aliases: ["/up"],
+    desc: "Check for Quiver updates",
   },
 ];
 

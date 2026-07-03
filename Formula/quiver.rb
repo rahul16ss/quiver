@@ -12,9 +12,7 @@
 class Quiver < Formula
   desc "Open harness for open models — self-evolving coding and research agent"
   homepage "https://github.com/rahul16ss/quiver"
-  url "https://github.com/rahul16ss/quiver/archive/refs/tags/v1.0.0.tar.gz"
-  # Real release artifact: the source archive for commit 0f7a4e4 (v1.0.0).
-  # sha256 computed from the GitHub-generated archive tarball (US-7.4).
+  # Release archive pinned to the v1.0.0 source commit.
   url "https://github.com/rahul16ss/quiver/archive/0f7a4e47382fbdb8ccd863f4e49348507c381329.tar.gz"
   sha256 "612bda74786026d4a6ea23f5df258bec7cbd26b59300edcf0eeef3817defdf75"
   license "Apache-2.0"

@@ -25,6 +25,7 @@ import {
   type PathPolicy,
   type ResolvedPath,
 } from "./path_policy.js";
+import { config } from "../config.js";
 
 const QUIVER_HOME = path.join(os.homedir(), ".quiver");
 
@@ -52,10 +53,25 @@ export function assertToolPathAllowed(
   operation: "read" | "write" | "delete",
   workspaceRoot: string = process.cwd(),
 ): ResolvedPath {
-  // Use the default policy but permit outside-workspace so the boundary check
-  // is handled below (this keeps the blocked-glob + home-path enforcement).
+  // Sandbox bypass: when the user has explicitly disabled the path sandbox
+  // via /sandbox off (requires YOLO mode), skip all boundary and blocked-glob
+  // checks. The agent can read/write anywhere on the filesystem.
+  if (config.sandboxDisabled) {
+    const absolutePath = path.resolve(filePath);
+    let realPath = absolutePath;
+    try { realPath = realpathSync(absolutePath); } catch {}
+    return { inputPath: filePath, absolutePath, realPath, insideWorkspace: false };
+  }
+  // Build the path policy. Reads are gated by the active trust tier's
+  // readScope (US-6.4): "workspace" confines reads to the project, "home"
+  // permits workspace + user home, "filesystem" allows anywhere (minus
+  // blocked globs + sensitive home paths). Writes are always workspace-
+  // confined here; the YOLO sandbox-off bypass returns early above.
   const policy: PathPolicy = createDefaultPolicy(workspaceRoot);
-  policy.allowOutsideWorkspace = true;
+  policy.readScope = (config.readScope ?? "filesystem") as any;
+  // allowOutsideWorkspace is only relevant for write/delete outside workspace;
+  // for reads the readScope gate in path_policy.ts handles the boundary.
+  policy.allowOutsideWorkspace = false;
 
   // resolveAndAssertPathAllowed throws on blocked globs / sensitive home paths.
   const resolved = resolveAndAssertPathAllowed(filePath, operation, policy);

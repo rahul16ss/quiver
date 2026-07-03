@@ -85,7 +85,8 @@ export const tool: Tool = {
 
       return new Promise((resolve) => {
         rl.question(`  > `, (answer) => {
-          rl.close();
+          rl.removeAllListeners();
+          process.stdin.resume();
           const trimmed = answer.trim();
           const choiceIdx = parseInt(trimmed, 10);
           if (
@@ -124,7 +125,8 @@ export const tool: Tool = {
 
       return new Promise((resolve) => {
         rl.question(`  > `, (answer) => {
-          rl.close();
+          rl.removeAllListeners();
+          process.stdin.resume();
           const trimmed = answer.trim();
           resolve(
             trimmed

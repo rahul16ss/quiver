@@ -6,7 +6,12 @@ import readline from "readline";
 import { config, needsApprovalFor } from "./config.js";
 import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
-import { statusLine, theme } from "./cli_ui.js";
+import { statusLine, theme, formatNum, renderInlineDiff } from "./cli_ui.js";
+import {
+  generateUnifiedDiff,
+  generateFileCreationDiff,
+  isRiskyFile,
+} from "./diff.js";
 import {
   compactWithSummarization,
   offloadLargeToolResults,
@@ -24,6 +29,13 @@ import {
   assemblePrompt,
 } from "./prompt/assembler.js";
 import { classifyCommand } from "./security/command_policy.js";
+import { InterventionController } from "./intervention.js";
+import {
+  ApprovalCache,
+  type ApprovalKey,
+  type ApprovalScope,
+} from "./security/approval_cache.js";
+import { AmbientEngine } from "./ambient.js";
 import { SECURITY_PREAMBLE } from "./prompts/security.js";
 import {
   FileReadHistory,
@@ -92,6 +104,26 @@ const RETRY_SAFE_TOOLS = new Set([
   "entity_search",
 ]);
 
+/**
+ * Truncate a tool arg hint (file path, URL, command…) to the terminal width
+ * with middle elision so the trailing filename / extension stays visible.
+ * Width-aware so long paths never blow out the tool-call line or leave stray
+ * characters after an in-place status rewrite. Falls back to 60 cols when the
+ * terminal width is unknown (non-TTY / CI).
+ */
+function truncateForDisplay(val: string): string {
+  const cols =
+    (process.stdout.columns && process.stdout.columns > 0
+      ? process.stdout.columns
+      : 80) - 2; // small right margin
+  const max = Math.min(60, Math.max(24, cols));
+  if (val.length <= max) return val;
+  // Keep the last ~40% (filename/ext) and the first ~60% (dir context).
+  const tailLen = Math.max(10, Math.floor(max * 0.4));
+  const headLen = max - tailLen - 1; // 1 char for the ellipsis
+  return `${val.substring(0, headLen)}…${val.substring(val.length - tailLen)}`;
+}
+
 /** A tool is retry-safe only if it is read-only and idempotent (US-6.3). */
 function isRetrySafe(toolName: string): boolean {
   return RETRY_SAFE_TOOLS.has(toolName);
@@ -144,7 +176,7 @@ async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
     if (stat.size > MAX_IMAGE_SIZE) {
       console.error(
         picocolors.yellow(
-          `   ⚠️  Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
+          `   ⚠ Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
         ),
       );
       return null;
@@ -155,7 +187,7 @@ async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
     if (!ext) {
       console.error(
         picocolors.yellow(
-          `   ⚠️  Not a valid image file (magic bytes mismatch): ${resolved}`,
+          `   ⚠ Not a valid image file (magic bytes mismatch): ${resolved}`,
         ),
       );
       return null;
@@ -269,7 +301,8 @@ export interface AgentEvent {
     | "approval"
     | "done"
     | "error"
-    | "context_manifest";
+    | "context_manifest"
+    | "intervention";
   data: {
     text?: string;
     toolName?: string;
@@ -536,11 +569,78 @@ async function askUserApproval(
   toolName: string,
   args: any,
   sessionRl?: readline.Interface,
-): Promise<{ approved: boolean; revisionNote?: string }> {
+): Promise<{
+  approved: boolean;
+  revisionNote?: string;
+  scope?: ApprovalScope;
+}> {
   const displayName = Agent.getToolDisplayName(toolName);
 
   // Detect irreversible actions for stronger warning (Principle: Reversibility Awareness)
   const irreversible = isIrreversibleAction(toolName, args);
+
+  // ── Inline diff preview for file-mutation tools (Principle: Seeing) ──
+  // Show the exact change before asking for consent, so the user reviews real
+  // +/- lines in the terminal (parity with the GUI diff) rather than a bare
+  // arg blob. Purely additive display; never alters the y/N consent flow.
+  if (config.outputMode === "interactive") {
+    try {
+      const rel = (fp: string) => {
+        try {
+          return path.relative(process.cwd(), path.resolve(fp));
+        } catch {
+          return fp;
+        }
+      };
+      let diffText: string | null = null;
+      if (toolName === "write_file" && typeof args.filePath === "string") {
+        const fp = path.resolve(args.filePath);
+        if (fsSync.existsSync(fp)) {
+          const old = fsSync.readFileSync(fp, "utf8");
+          diffText = generateUnifiedDiff(
+            old,
+            String(args.content ?? ""),
+            rel(args.filePath),
+          );
+        } else {
+          diffText = generateFileCreationDiff(
+            rel(args.filePath),
+            String(args.content ?? ""),
+          );
+        }
+      } else if (
+        toolName === "replace_content" &&
+        typeof args.filePath === "string"
+      ) {
+        const fp = path.resolve(args.filePath);
+        if (fsSync.existsSync(fp)) {
+          const old = fsSync.readFileSync(fp, "utf8");
+          const next = old
+            .split(args.targetContent ?? "")
+            .join(args.replacementContent ?? "");
+          diffText = generateUnifiedDiff(old, next, rel(args.filePath));
+        }
+      } else if (toolName === "apply_patch" && typeof args.patch === "string") {
+        // The patch is itself a unified diff — colorize it directly.
+        diffText = String(args.patch);
+      }
+      if (diffText) {
+        const t = theme();
+        const header = isRiskyFile(String(args.filePath ?? ""))
+          ? t.danger("  ⚠ risky file (lockfile/CI/config) — review carefully")
+          : "";
+        if (header) console.log(header);
+        console.log(
+          renderInlineDiff(diffText)
+            .split("\n")
+            .map((l) => `  ${l}`)
+            .join("\n"),
+        );
+      }
+    } catch {
+      // Diff preview must never block or break the approval gate.
+    }
+  }
 
   // In JSON mode, the approval UI is rendered by the GUI via the "approval" event.
   // Suppress the text-based permission box to avoid non-JSON output on stdout.
@@ -569,14 +669,21 @@ async function askUserApproval(
 
   const prompt = irreversible
     ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
-    : picocolors.bold(picocolors.cyan("Allow this action? (y/N): "));
+    : picocolors.bold(
+        picocolors.cyan(
+          "Allow this action? (y = yes / a = all similar / N = no): ",
+        ),
+      );
 
   if (sessionRl) {
     return new Promise((resolve) => {
       sessionRl.question(prompt, (answer) => {
         const cleanAnswer = answer.trim().toLowerCase();
+        if (cleanAnswer === "a" || cleanAnswer === "all") {
+          return resolve({ approved: true, scope: "session" });
+        }
         const approved = cleanAnswer === "y" || cleanAnswer === "yes";
-        if (approved) return resolve({ approved: true });
+        if (approved) return resolve({ approved: true, scope: "once" });
         // Deny — offer an optional revision note (US-2.4). In GUI mode the
         // note arrives as the next stdin line from the renderer.
         sessionRl.question(
@@ -598,18 +705,31 @@ async function askUserApproval(
     output: process.stdout,
   });
 
+  // Helper: instead of rl.close() (which pauses process.stdin and can kill
+  // the main readline interface), just remove listeners and resume stdin.
+  // This prevents the event loop from draining when a temporary readline
+  // is used for approval prompts.
+  const done = () => {
+    rl.removeAllListeners();
+    process.stdin.resume();
+  };
+
   return new Promise((resolve) => {
     rl.question(prompt, (answer) => {
       const cleanAnswer = answer.trim().toLowerCase();
+      if (cleanAnswer === "a" || cleanAnswer === "all") {
+        done();
+        return resolve({ approved: true, scope: "session" });
+      }
       const approved = cleanAnswer === "y" || cleanAnswer === "yes";
       if (approved) {
-        rl.close();
-        return resolve({ approved: true });
+        done();
+        return resolve({ approved: true, scope: "once" });
       }
       rl.question(
         picocolors.gray("Revision note (optional, press Enter to just deny): "),
         (note) => {
-          rl.close();
+          done();
           resolve({ approved: false, revisionNote: note.trim() || undefined });
         },
       );
@@ -636,11 +756,14 @@ function isIrreversibleAction(toolName: string, args: any): boolean {
 }
 
 // Simple spinner for streaming UX
+// Spinner for streaming UX. Shows elapsed seconds so a long think/tool run
+// is visibly alive instead of a frozen line (5-star "is it stuck?" feedback).
 class Spinner {
   private frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   private interval: ReturnType<typeof setInterval> | null = null;
   private message: string;
   private active = false;
+  private startedAt = 0;
 
   constructor(message: string) {
     this.message = message;
@@ -650,11 +773,14 @@ class Spinner {
     if (this.active || config.outputMode !== "interactive") return;
     if (!process.stdout.isTTY) return;
     this.active = true;
+    this.startedAt = Date.now();
     let i = 0;
     process.stdout.write("\r");
     this.interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - this.startedAt) / 1000);
+      const suffix = elapsed > 0 ? picocolors.gray(` ${elapsed}s`) : "";
       process.stdout.write(
-        `\r${picocolors.cyan(this.frames[i % this.frames.length])} ${picocolors.gray(this.message)}`,
+        `\r${picocolors.cyan(this.frames[i % this.frames.length])} ${picocolors.gray(this.message)}${suffix}   `,
       );
       i++;
     }, 80);
@@ -667,7 +793,9 @@ class Spinner {
       clearInterval(this.interval);
       this.interval = null;
     }
-    process.stdout.write("\r" + " ".repeat(this.message.length + 4) + "\r");
+    // Clear the whole line (frame + message + elapsed suffix) before the
+    // caller overwrites it with the ✓/✗ result line.
+    process.stdout.write("\r" + " ".repeat(this.message.length + 12) + "\r");
   }
 }
 
@@ -704,6 +832,18 @@ export class Agent {
   // US-2.3: Active stream abort controller — allows Ctrl+C / Stop to halt
   // the current LLM stream generation within 1-2 seconds.
   private activeAbortController: AbortController | null = null;
+  // Mid-run intervention: lets the user steer the agent while it is running
+  // (inject a steering message or request a stop at the next loop boundary).
+  private intervention = new InterventionController();
+  // Scoped approval cache: "approve all similar this session" so repeated
+  // safe actions don't re-prompt every call (US-6.4).
+  private approvalCache = new ApprovalCache();
+  // Ambient self-heal + goal-loop engine: verifies completed work (tsc+tests)
+  // and auto-continues the loop until healthy (US-AMBIENT). On by default.
+  private ambient = new AmbientEngine(
+    config.ambientMaxHealRounds,
+    config.ambientEnabled,
+  );
 
   constructor(registry: ToolRegistry) {
     this.registry = registry;
@@ -728,7 +868,7 @@ export class Agent {
     this.messages.push({
       role: "system",
       content:
-        "You are Quiver, a self-evolving coding and research assistant running in a terminal-based CLI.",
+        "You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.",
     });
   }
 
@@ -775,6 +915,21 @@ export class Agent {
       this.activeAbortController.abort();
       this.activeAbortController = null;
     }
+  }
+
+  /** Expose the intervention controller so the CLI can queue steering input. */
+  public getInterventionController(): InterventionController {
+    return this.intervention;
+  }
+
+  /** Expose the scoped approval cache for status/inspection. */
+  public getApprovalCache(): ApprovalCache {
+    return this.approvalCache;
+  }
+
+  /** Expose the ambient engine for /config status display. */
+  public getAmbientEngine(): AmbientEngine {
+    return this.ambient;
   }
 
   /** Synchronous version of saveSessionState for use in signal handlers. */
@@ -1232,10 +1387,9 @@ export class Agent {
       // Strip YAML frontmatter
       systemPrompt = rawContent.replace(/^---[\s\S]*?---\s*/, "");
       // Replace ${MODEL} placeholder
-      systemPrompt = systemPrompt.replace(/\$\{MODEL\}/g, config.llmModelName);
     } catch {
       // Fallback if skill file doesn't exist
-      systemPrompt = `You are Quiver, an elite autonomous coding and research assistant running in a terminal-based CLI.
+      systemPrompt = `You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.
 You are powered by model ${config.llmModelName} and have access to file operations, browser automation, shell command execution, web search, and more.
 
 --- Core Principles ---
@@ -1441,9 +1595,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     ];
     for (const field of fields) {
       if (args[field] && typeof args[field] === "string") {
-        // Truncate long values
-        const val = args[field];
-        return val.length > 60 ? `${val.substring(0, 57)}…` : val;
+        return truncateForDisplay(String(args[field]));
       }
     }
     return "";
@@ -1527,24 +1679,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
     parts.push(config.llmModelName);
 
-    console.log(dim(`  ┌ context: ${parts.join(" · ")}`));
-
-    // Show memory items (what the agent "remembers" about you)
-    if (memories.length > 0) {
-      const memNames = memories.map((m) => m.filename).join(", ");
-      console.log(dim(`  │ memory: ${memNames}`));
-    }
-
-    // Show active skills (versioned procedures)
-    if (skills.length > 0) {
-      const skillNames = skills.map((s) => `${s.id} v${s.version}`).join(", ");
-      console.log(dim(`  │ skills: ${skillNames}`));
-    }
-
-    // Show system prompt source (transparency)
-    console.log(dim(`  │ prompt: skills/system-prompt/SKILL.md`));
-
-    // Context window usage (Principle: Cost Awareness)
+    // Compact one-line manifest (Principle: Seeing — show what enters the model
+    // call before each prompt, but as a single dim line so a long session is
+    // not drowned in 5+ lines of chrome every turn). Memory names + skills are
+    // folded onto a second line only when present, keeping transparency high.
     const tokColor =
       pct < 60
         ? picocolors.gray
@@ -1552,14 +1690,27 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           ? picocolors.yellow
           : picocolors.red;
     console.log(
-      dim(`  │ tokens: `) +
+      dim(`  ctx: `) +
+        dim(parts.join(" · ")) +
+        dim(" · ") +
         tokColor(
-          `${estTokens.toLocaleString()} / ${maxTokens.toLocaleString()} (${pct}%)`,
+          `${formatNum(estTokens)} / ${formatNum(maxTokens)} (${pct}%)`,
         ) +
         dim(` ${usageBar}`),
     );
-
-    console.log(dim(`  └`));
+    if (memories.length > 0 || skills.length > 0) {
+      const bits: string[] = [];
+      if (memories.length > 0) {
+        bits.push(`memory: ${memories.map((m) => m.filename).join(", ")}`);
+      }
+      if (skills.length > 0) {
+        bits.push(
+          `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
+        );
+      }
+      bits.push(`prompt: skills/system-prompt/SKILL.md`);
+      console.log(dim(`  ${bits.join(" · ")}`));
+    }
   }
 
   /** Generate a compact progress bar for context usage. */
@@ -1660,13 +1811,56 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // Hardcoded safety net — the model decides when to stop (no tool calls = done).
     // This only catches pathological infinite loops, not normal work.
     const maxLoops = 1000;
+    // US-AMBIENT: each user goal gets a fresh self-heal budget, and we track
+    // whether this turn mutated files so the ambient verify gate only fires
+    // for doing-tasks (questions never trigger a verify loop).
+    this.ambient.reset();
+    let mutatedThisTurn = false;
 
     while (true) {
+      // ── Mid-run intervention (US-INT) ──
+      // Consume any steering message the user queued while the agent was
+      // running. The injection lands as a user message BEFORE the model call
+      // in this iteration, so the model sees the new instruction together
+      // with its prior tool results. A stop request halts the loop cleanly.
+      const intervention = this.intervention.consume();
+      if (intervention.stop) {
+        if (config.outputMode === "interactive") {
+          console.log(picocolors.yellow("\n⏹  Stopped by user intervention."));
+        }
+        await this.logger.logEvent("user_intervention", { action: "stop" });
+        if (onEvent) {
+          onEvent({ type: "intervention", data: { text: "stop" } });
+        }
+        break;
+      }
+      if (intervention.inject) {
+        this.messages.push({ role: "user", content: intervention.inject });
+        await this.logger.logEvent("user_intervention", {
+          action: "inject",
+          content: intervention.inject,
+        });
+        if (config.outputMode === "interactive") {
+          console.log(
+            picocolors.cyan(
+              `\n↳ Intervention injected: ${picocolors.gray(intervention.inject.slice(0, 120))}`,
+            ),
+          );
+        }
+        if (onEvent) {
+          onEvent({
+            type: "intervention",
+            data: { text: intervention.inject },
+          });
+        }
+        // Fall through: the model call below will see the injected message.
+      }
+
       if (loopCount >= maxLoops) {
         if (config.outputMode !== "json") {
           console.warn(
             picocolors.yellow(
-              `\n⚠️  Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
+              `\n⚠ Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
             ),
           );
         }
@@ -1855,9 +2049,37 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 // "length" means the model hit max_output_tokens and was
                 // truncated mid-generation — we handle this after the stream
                 // completes (below) to decide whether to continue or retry.
-                streamFinishReason = ev.finishReason;
+                // Only capture the FIRST non-null finishReason — the provider
+                // may emit a second "done" (e.g. from [DONE] marker) with
+                // finishReason "stop" which would overwrite a real "length".
+                if (ev.finishReason && !streamFinishReason) {
+                  streamFinishReason = ev.finishReason;
+                }
               } else if (ev.type === "error") {
                 throw new Error(ev.error || "Provider stream error");
+              } else if (ev.type === "reasoning_delta") {
+                // Chain-of-thought tokens from GLM-5.2 and similar models.
+                // Per US-2.2 (HIDDEN-COT-NOT-PERSISTED): do NOT accumulate
+                // into assistantContent, do NOT log to audit trail, do NOT
+                // display to user. Silently consume.
+              } else if (ev.type === "unsupported") {
+                // Total event classification: unknown provider events are
+                // surfaced to the user and logged, never silently dropped.
+                // This makes debugging provider issues much easier — the
+                // user can see exactly what the provider sent that Quiver
+                // didn't understand.
+                if (config.outputMode === "interactive") {
+                  console.log(
+                    picocolors.gray(
+                      `   ⚠ Unsupported event: ${ev.rawDescription || "unknown"}`,
+                    ),
+                  );
+                }
+                this.logger.logEvent("unsupported_stream_event", {
+                  description: ev.rawDescription,
+                  raw: ev.rawEvent,
+                  loopCount,
+                });
               }
             }
             return { assistantContent, accumulatedToolCalls };
@@ -1871,7 +2093,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             if (config.outputMode === "interactive") {
               console.log(
                 picocolors.yellow(
-                  `   ⚠️  Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
+                  `   ⚠ Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
                 ),
               );
             }
@@ -1903,7 +2125,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       //      the model picks up where it left off.
       //   2. Truncated mid-tool-call (partial JSON args): the tool call is
       //      malformed and cannot be executed. Retry the model call with
-      //      doubled maxOutputTokens (capped at 16384) so the model has room
+      //      doubled maxOutputTokens (capped at 32768) so the model has room
       //      to complete the tool call.
       if (
         streamFinishReason === "length" &&
@@ -1915,11 +2137,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
         if (hasPartialToolCalls) {
           // Case 2: truncated mid-tool-call. Retry with a larger output budget.
-          const newMax = Math.min(adapterDefaults.maxOutputTokens * 2, 16384);
+          const newMax = Math.min(adapterDefaults.maxOutputTokens * 2, 32768);
           if (config.outputMode === "interactive") {
             console.log(
               picocolors.yellow(
-                `   ⚠️  Output truncated mid-tool-call (max_tokens=${adapterDefaults.maxOutputTokens}). Retrying with ${newMax} tokens...`,
+                `   ⚠ Output truncated mid-tool-call (max_tokens=${adapterDefaults.maxOutputTokens}). Retrying with ${newMax} tokens...`,
               ),
             );
           }
@@ -1950,7 +2172,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           if (config.outputMode === "interactive") {
             console.log(
               picocolors.yellow(
-                `   ⚠️  Output truncated (max_tokens=${adapterDefaults.maxOutputTokens}). Continuing...`,
+                `   ⚠ Output truncated (max_tokens=${adapterDefaults.maxOutputTokens}). Continuing...`,
               ),
             );
           }
@@ -1986,7 +2208,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         if (config.outputMode === "interactive") {
           console.log(
             picocolors.yellow(
-              `   ⚠️  Output still truncated after ${maxTruncationRetries} retries. Proceeding with partial response.`,
+              `   ⚠ Output still truncated after ${maxTruncationRetries} retries. Proceeding with partial response.`,
             ),
           );
         }
@@ -2030,6 +2252,75 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       this.trackCitations(assistantContent).catch(() => {});
 
       if (toolCalls.length === 0) {
+        // No more tool calls — the agent thinks it is done. But if the user
+        // queued a mid-run intervention while this final answer was streaming,
+        // don't drop it: re-enter the loop so the steering message is consumed
+        // and the model gets another turn with the new instruction.
+        if (this.intervention.hasPending()) {
+          continue;
+        }
+        // US-AMBIENT: goal-loop + self-heal as a harness characteristic. When
+        // the agent finishes a file-mutating task, the harness independently
+        // verifies the codebase is healthy (tsc + tests). If it isn't, the
+        // harness injects a self-heal directive and continues the loop — the
+        // agent keeps working until the goal is genuinely verified complete,
+        // not just until it says it is. Capped at ambientMaxHealRounds; non-
+        // mutating turns (questions, read-only research) skip the gate.
+        if (
+          mutatedThisTurn &&
+          this.ambient.isEnabled() &&
+          this.ambient.hasBudget()
+        ) {
+          // Reuse the maker-checker primitive in FULL mode (single verification
+          // pipeline — no parallel tsc/npm-test). changeHash ties the audit
+          // entry to this completion check.
+          const verify = await this.ambient.verify({
+            changeHash: `${this.logger.getSessionId()}:ambient:${loopCount}`,
+          });
+          await this.logger.logEvent("ambient_verify", {
+            healthy: verify.healthy,
+            verdict: verify.verdict,
+            total: verify.total,
+            failed: verify.failed,
+            failedChecks: verify.failedChecks,
+            round: this.ambient.roundsUsed() + 1,
+          });
+          if (config.outputMode === "interactive") {
+            if (verify.healthy) {
+              console.log(
+                picocolors.green(
+                  `   ✓ Ambient verify: maker-checker APPROVED (${verify.total} acceptance criteria) — goal verified.`,
+                ),
+              );
+            } else {
+              console.log(
+                picocolors.yellow(
+                  `   ⚠ Ambient verify: maker-checker ${verify.verdict.toUpperCase()} (${verify.failed}/${verify.total} failed) — self-heal round ${this.ambient.roundsUsed() + 1}/${config.ambientMaxHealRounds}.`,
+                ),
+              );
+            }
+          }
+          if (!verify.healthy) {
+            this.ambient.spendRound();
+            const directive = this.ambient.makeHealDirective(
+              verify,
+              this.ambient.roundsUsed(),
+              config.ambientMaxHealRounds,
+            );
+            this.messages.push({ role: "user", content: directive });
+            await this.logger.logEvent("ambient_heal_inject", {
+              round: this.ambient.roundsUsed(),
+            });
+            if (onEvent) {
+              onEvent({
+                type: "intervention",
+                data: { text: "[ambient self-heal]" },
+              });
+            }
+            mutatedThisTurn = false; // re-earned by the heal turn's own edits
+            continue;
+          }
+        }
         break;
       }
 
@@ -2077,7 +2368,29 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           commandRequiresApproval = classification.requiresApproval;
         }
         const needsApproval = needsApprovalFor(toolName, commandRisk);
+        // Build the scoped approval-cache key for this action (US-6.4).
+        const approvalKey: ApprovalKey = { toolName };
+        if (toolName === "run_command" && commandRisk) {
+          approvalKey.riskBand = commandRisk;
+        } else if (
+          (toolName === "write_file" ||
+            toolName === "replace_content" ||
+            toolName === "apply_patch") &&
+          typeof args.filePath === "string"
+        ) {
+          // Cache by workspace-relative directory so "approve all writes under
+          // src/" is a single grant, not per-file.
+          try {
+            approvalKey.dir =
+              path.relative(process.cwd(), path.resolve(args.filePath)) || ".";
+          } catch {
+            approvalKey.dir = String(args.filePath);
+          }
+        }
         if (config.dryRun) {
+          isApproved = true;
+        } else if (needsApproval && this.approvalCache.has(approvalKey)) {
+          // Reuse a prior "all similar" approval — no re-prompt.
           isApproved = true;
         } else if (needsApproval) {
           // Emit approval event for GUI. For file-mutation tools, include the
@@ -2107,6 +2420,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           );
           isApproved = decision.approved;
           this.pendingRevisionNote = decision.revisionNote;
+          // Record a session-scoped approval so similar actions skip the gate.
+          if (isApproved && decision.scope === "session") {
+            this.approvalCache.record(approvalKey, "session");
+          }
         }
 
         let result: any;
@@ -2135,7 +2452,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           const resolvedPath = args.filePath ? path.resolve(args.filePath) : "";
           let writeBlockedReason: string | null = null;
           if (
-            (toolName === "write_file" || toolName === "replace_content") &&
+            (toolName === "write_file" ||
+              toolName === "replace_content" ||
+              toolName === "apply_patch") &&
             resolvedPath
           ) {
             try {
@@ -2156,129 +2475,149 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               );
             }
           } else {
-            if (config.outputMode === "interactive") {
-              process.stdout.write(
-                `  ⟳ ${picocolors.cyan(displayName)}${argHint}…`,
-              );
-            }
-            const tool = this.registry.getTool(toolName);
-            if (!tool) {
-              result = `Error: Action '${toolName}' is not available.`;
-              if (config.outputMode === "interactive") {
-                process.stdout.write(
-                  `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — not found\n`,
-                );
-              }
-            } else {
-              // US-6.3: only retry-safe (read-only/idempotent) tools are
-              // auto-retried on transient failure. Destructive/shell tools
-              // execute exactly once so a transient blip can never repeat a
-              // state-changing action.
-              const retrySafe = isRetrySafe(toolName);
-              const maxAttempts = retrySafe ? 3 : 1;
-              let attempt = 0;
-              let lastErr: any = null;
-              while (true) {
-                try {
-                  // US-9.4 / US-13.4: validate the model's tool-call arguments against
-                  // the tool's Zod schema BEFORE executing. Model text is unverified —
-                  // never run a tool on unvalidated args (a missing required field
-                  // previously produced "○ undefined" todo items). A validation
-                  // failure becomes a structured diagnostic returned to the model so
-                  // it can self-correct next turn, instead of executing with gaps.
-                  const parsedArgs = tool.parameters.safeParse(args);
-                  if (!parsedArgs.success) {
-                    const issues = parsedArgs.error.issues
-                      .map(
-                        (iss) =>
-                          `${iss.path.join(".") || "(root)"}: ${iss.message}`,
-                      )
-                      .join("; ");
-                    result = formatDiagnosticBlock(
-                      createDiagnosticBlock(
-                        toolName,
-                        args,
-                        new Error(`Invalid tool arguments: ${issues}`),
-                      ),
-                    );
-                    if (config.outputMode === "interactive") {
-                      statusLine(
-                        "ERROR",
-                        `${displayName} rejected invalid args — ${issues}`,
-                      );
-                    }
-                    break; // do not execute; do not retry a schema failure
-                  }
-                  args = parsedArgs.data; // apply defaults + strip unknown keys
-                  // US-15.1: route the tool call through the lifecycle interception
-                  // engine (wrap_tool_call) so the provenance audit hook — and the
-                  // opt-in maker-checker gate — actually fire in the real loop.
-                  const toolCtx: LifecycleContext = {
-                    ...lifecycleCtx,
-                    toolCall: { name: toolName, args },
-                    metadata: {
-                      changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
-                    },
-                  };
-                  result = await wrapToolCall(toolCtx, async () =>
-                    tool.execute(args),
-                  );
-                  this.tokenStats.toolCalls++;
-
-                  if (toolName === "view_file" && args.filePath) {
-                    // US-6.1: record canonical path + SHA-256 + mtimeMs for
-                    // compare-and-swap verification on the next write.
-                    await this.fileReadHistory
-                      .recordRead(path.resolve(args.filePath))
-                      .catch(() => {});
-                  }
-
-                  if (config.outputMode === "interactive") {
-                    process.stdout.write(
-                      `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
-                    );
-                    const preview = this.summarizeResult(result);
-                    if (preview) {
-                      console.log(picocolors.gray(`    → ${preview}`));
-                    }
-                  }
-                  // US-13.4: success resets the consecutive-failure loop detector.
-                  this.failureTracker.reset();
-                  lastErr = null;
-                  break;
-                } catch (error: any) {
-                  lastErr = error;
-                  attempt++;
-                  if (attempt >= maxAttempts || !retrySafe) break;
-                  await new Promise((r) =>
-                    setTimeout(r, calculateBackoffWithJitter(attempt - 1)),
-                  );
-                }
-              }
-              if (lastErr) {
-                // US-13.4: structured diagnostics + consecutive-failure loop
-                // detection. Three identical failures on the same tool pause and
-                // alert the user so the agent never silently thrashes.
-                const stuck = this.failureTracker.recordFailure(
-                  toolName,
-                  lastErr,
-                );
-                const diag = createDiagnosticBlock(toolName, args, lastErr);
-                result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
+            // Live progress for tool execution: replaces the old static ⟳
+            // marker so long-running tools (tests, browser, research) show
+            // elapsed time instead of a frozen line (Principle: Seeing).
+            const toolSpinner = new Spinner(
+              keyArg ? `${displayName} ${keyArg}` : displayName,
+            );
+            toolSpinner.start();
+            try {
+              const tool = this.registry.getTool(toolName);
+              if (!tool) {
+                result = `Error: Action '${toolName}' is not available.`;
+                toolSpinner.stop();
                 if (config.outputMode === "interactive") {
                   process.stdout.write(
-                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message)}\n`,
+                    `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — not found\n`,
                   );
-                  if (stuck) {
-                    console.warn(
-                      picocolors.yellow(
-                        `   ⚠️  Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
-                      ),
+                }
+              } else {
+                // US-6.3: only retry-safe (read-only/idempotent) tools are
+                // auto-retried on transient failure. Destructive/shell tools
+                // execute exactly once so a transient blip can never repeat a
+                // state-changing action.
+                const retrySafe = isRetrySafe(toolName);
+                const maxAttempts = retrySafe ? 3 : 1;
+                let attempt = 0;
+                let lastErr: any = null;
+                while (true) {
+                  try {
+                    // US-9.4 / US-13.4: validate the model's tool-call arguments against
+                    // the tool's Zod schema BEFORE executing. Model text is unverified —
+                    // never run a tool on unvalidated args (a missing required field
+                    // previously produced "○ undefined" todo items). A validation
+                    // failure becomes a structured diagnostic returned to the model so
+                    // it can self-correct next turn, instead of executing with gaps.
+                    const parsedArgs = tool.parameters.safeParse(args);
+                    if (!parsedArgs.success) {
+                      const issues = parsedArgs.error.issues
+                        .map(
+                          (iss) =>
+                            `${iss.path.join(".") || "(root)"}: ${iss.message}`,
+                        )
+                        .join("; ");
+                      result = formatDiagnosticBlock(
+                        createDiagnosticBlock(
+                          toolName,
+                          args,
+                          new Error(`Invalid tool arguments: ${issues}`),
+                        ),
+                      );
+                      if (config.outputMode === "interactive") {
+                        toolSpinner.stop();
+                        statusLine(
+                          "ERROR",
+                          `${displayName} rejected invalid args — ${issues}`,
+                        );
+                      }
+                      break; // do not execute; do not retry a schema failure
+                    }
+                    args = parsedArgs.data; // apply defaults + strip unknown keys
+                    // US-15.1: route the tool call through the lifecycle interception
+                    // engine (wrap_tool_call) so the provenance audit hook — and the
+                    // opt-in maker-checker gate — actually fire in the real loop.
+                    const toolCtx: LifecycleContext = {
+                      ...lifecycleCtx,
+                      toolCall: { name: toolName, args },
+                      metadata: {
+                        changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
+                      },
+                    };
+                    result = await wrapToolCall(toolCtx, async () =>
+                      tool.execute(args),
+                    );
+                    this.tokenStats.toolCalls++;
+                    // US-AMBIENT: remember that this turn changed files so the
+                    // completion-gate verifier knows to run a health check.
+                    if (
+                      toolName === "write_file" ||
+                      toolName === "replace_content" ||
+                      toolName === "apply_patch" ||
+                      toolName === "create_tool"
+                    ) {
+                      mutatedThisTurn = true;
+                    }
+
+                    if (toolName === "view_file" && args.filePath) {
+                      // US-6.1: record canonical path + SHA-256 + mtimeMs for
+                      // compare-and-swap verification on the next write.
+                      await this.fileReadHistory
+                        .recordRead(path.resolve(args.filePath))
+                        .catch(() => {});
+                    }
+
+                    toolSpinner.stop();
+                    if (config.outputMode === "interactive") {
+                      process.stdout.write(
+                        `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
+                      );
+                      const preview = this.summarizeResult(result);
+                      if (preview) {
+                        console.log(picocolors.gray(`    → ${preview}`));
+                      }
+                    }
+                    // US-13.4: success resets the consecutive-failure loop detector.
+                    this.failureTracker.reset();
+                    lastErr = null;
+                    break;
+                  } catch (error: any) {
+                    lastErr = error;
+                    attempt++;
+                    if (attempt >= maxAttempts || !retrySafe) break;
+                    await new Promise((r) =>
+                      setTimeout(r, calculateBackoffWithJitter(attempt - 1)),
                     );
                   }
                 }
-                await this.logger.logEvent("tool_failure_diagnostic", diag);
+                if (lastErr) {
+                  // US-13.4: structured diagnostics + consecutive-failure loop
+                  // detection. Three identical failures on the same tool pause and
+                  // alert the user so the agent never silently thrashes.
+                  const stuck = this.failureTracker.recordFailure(
+                    toolName,
+                    lastErr,
+                  );
+                  const diag = createDiagnosticBlock(toolName, args, lastErr);
+                  result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
+                  if (config.outputMode === "interactive") {
+                    toolSpinner.stop();
+                    process.stdout.write(
+                      `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message)}\n`,
+                    );
+                    if (stuck) {
+                      console.warn(
+                        picocolors.yellow(
+                          `   ⚠ Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
+                        ),
+                      );
+                    }
+                  }
+                  await this.logger.logEvent("tool_failure_diagnostic", diag);
+                }
               }
+            } finally {
+              toolSpinner.stop();
             }
           } // end destructive action guard
         }

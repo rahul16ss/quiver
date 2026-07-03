@@ -1,7 +1,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
-import { Tool } from "../registry.js";
+import { Tool } from "../registry.js"
+import { assertToolPathAllowed } from "../security/tool_paths.js";;
 
 export const tool: Tool = {
   name: "list_dir",
@@ -17,6 +18,9 @@ export const tool: Tool = {
       .default("."),
   }),
   execute: async ({ directoryPath }) => {
+
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try { assertToolPathAllowed(path.resolve(directoryPath || "."), "read"); } catch (e: any) { return `Error: ${e.message}`; }
     try {
       const resolvedPath = path.resolve(directoryPath || ".");
       const entries = await fs.readdir(resolvedPath, { withFileTypes: true });

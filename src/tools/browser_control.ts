@@ -14,9 +14,16 @@ function isPrivateUrl(urlStr: string): boolean {
   if (process.env.QUIVER_BLOCK_PRIVATE_IPS === "0") return false;
   try {
     const parsed = new URL(urlStr);
+    // Scheme allowlist: only http/https navigation is permitted. Non-web
+    // schemes (file:, data:, etc.) are blocked — file:// would otherwise read
+    // arbitrary local files via the browser (US-16.5 SSRF, R-HIGH-10).
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return true;
+    }
     const hostname = parsed.hostname;
     if (
       hostname === "localhost" ||
+      hostname === "0.0.0.0" ||
       hostname.startsWith("127.") ||
       hostname.startsWith("10.") ||
       hostname.startsWith("192.168.") ||
@@ -30,7 +37,9 @@ function isPrivateUrl(urlStr: string): boolean {
     }
     return false;
   } catch {
-    return false;
+    // Fail-closed: a malformed/unparseable URL is treated as private and
+    // blocked, never allowed through the SSRF guard (US-16.5, R-HIGH-10).
+    return true;
   }
 }
 

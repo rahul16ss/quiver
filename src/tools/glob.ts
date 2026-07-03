@@ -1,7 +1,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
-import { Tool } from "../registry.js";
+import { Tool } from "../registry.js"
+import { assertToolPathAllowed } from "../security/tool_paths.js";;
 
 /**
  * Glob — find files by name pattern.
@@ -219,6 +220,9 @@ export const tool: Tool = {
   }),
   execute: async ({ pattern, directory, maxResults }) => {
     const dir = path.resolve(directory || ".");
+
+    // Path-policy guard (US-9.2): reject sensitive paths
+    try { assertToolPathAllowed(dir, "read"); } catch (e: any) { return `Error: ${e.message}`; }
     const limit = maxResults || 100;
 
     // Validate directory exists
