@@ -109,7 +109,8 @@ No Microsoft Office installation is required.
 
 ### Installation
 
-OfficeCLI is installed automatically when first needed, or you can install it manually:
+OfficeCLI is an external binary. If it is not found on the PATH, the tool
+reports the install command rather than installing it silently:
 
 ```bash
 curl -fsSL https://d.officecli.ai/install.sh | bash

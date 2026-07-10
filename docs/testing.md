@@ -12,9 +12,10 @@ tests/
 └── ACCEPTANCE_CONTRACT.md     # Human-readable mirror of the contract
 ```
 
-Per `.spec-swimlane.md`, the maker does **not** ship a self-authored test
+The maker does **not** ship a self-authored test
 suite — a maker-authored suite is fitted to its own code and is not credible
-acceptance evidence. The contract asserts the spec (not the shipped code), and
+acceptance evidence. The contract asserts the spec
+(`spec-quiver-harness.md`, not the shipped code), and
 many checks are behavioral: they drive real code paths and assert outcomes, so
 keyword placement in comments will not pass them.
 
@@ -32,8 +33,8 @@ The gate exits non-zero while any check is unmet. A green run prints
 A user story is accepted when:
 - `npx tsc --noEmit` passes with no warnings or errors (`TSC-CLEAN`).
 - Every check in `tests/spec_acceptance_tests.ts` is met.
-- Security, local-first behavior, user data ownership, explicit consent, and
-  inspectable-state requirements are satisfied (non-negotiable per the spec).
+- Security, user data ownership, explicit consent, and inspectable-state
+  requirements are satisfied (non-negotiable per the spec).
 
 ## What the contract covers
 

@@ -4,6 +4,11 @@
 > measured against. It describes what a user *sees and does*, not the engine
 > internals (those live in `docs/architecture.md`). Update this doc as the design
 > hardens; do not let the implementation drift from it silently.
+>
+> **Implementation status:** the shipped app is a partial implementation of this
+> contract — see `spec-quiver-harness.md` §19 (Epic 2) and
+> `docs/qa/gui-qa-2026-07-10.md` for the current gap list. Where this document
+> and reality differ, this is the target, not a claim.
 
 ## 0. North Star
 
@@ -138,6 +143,6 @@ user.
 ## 7. Relationship to other docs (anti-redundancy)
 - This doc = **what the user sees and does** (the UX contract).
 - `docs/architecture.md` = **how the engine works** (internals).
-- `docs/ICP.md` = **who it's for and why it wins** (private, not in the OSS
-  release).
+- `docs/ICP.md` = **who it's for** (a pointer to `spec-quiver-harness.md` §1,
+  the authoritative buyer definition).
 - Do not duplicate engine internals here; reference them instead.

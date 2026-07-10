@@ -2,7 +2,7 @@
 
 ## Overview
 
-Quiver is a local-first, inspectable AI coding and research harness built around five primary architectural systems:
+Quiver is the open, inspectable agent harness behind controlled, source-backed document workflows in finance. This document describes the engine internals; it is built around five primary architectural systems:
 
 1. **Filesystem Context Manager** (`src/context_manager.ts`, `src/paths.ts`)
 2. **Harness-Adapter & Provider Split Engine** (`src/adapters/`, `src/providers/`)
@@ -17,28 +17,39 @@ quiver/
 ├── src/
 │   ├── agent.ts              # Core agent loop, approval gates, tool execution
 │   ├── cli.ts                # CLI entry point, slash commands
-│   ├── config.ts             # Configuration loading (.env + global config)
+│   ├── config.ts             # Configuration loading (.env + global config), trust tiers
 │   ├── context_manager.ts    # LLM summarization, context offloading, compaction
 │   ├── lifecycle.ts          # Lifecycle hooks (beforeAgent, beforeModel, etc.)
 │   ├── paths.ts              # Filesystem path resolution (~/.quiver/projects/)
 │   ├── registry.ts           # Tool registry, dynamic loading
 │   ├── state.ts              # Core memory load/save, agent file export
+│   ├── logger.ts             # Hash-chained tamper-evident audit log (AuditChain)
 │   ├── session_logger.ts     # Session logging with secret redaction
 │   ├── vision_router.ts      # Vision fallback routing for multimodal models
+│   ├── intervention.ts       # Mid-run steering (Esc injects a user message)
+│   ├── ambient.ts            # Ambient self-heal + goal loop at task completion
+│   ├── diagnostics.ts        # Structured diagnostic blocks, failure tracking
+│   ├── cloud_sync.ts         # Opt-in cloud-folder sync (legacy/advanced; off by default)
+│   ├── updates.ts            # Update checks
+│   ├── init.ts               # Project init / onboarding
 │   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
 │   ├── adapters/             # Harness adapter contract (Model-Harness-Fit)
-│   ├── providers/             # Model provider abstraction (transport layer)
-│   ├── security/              # Path policy, command classification, secrets
-│   ├── prompts/               # Security preamble, untrusted content wrapping
-│   ├── session/               # File access tracking, schema, checkpoints
-│   ├── memory/                # Schema, review queue, privacy, citations, decay
-│   ├── context/               # Token budgeting
-│   ├── prompt/                # Deterministic prompt assembly
-│   ├── fs/                    # Atomic writes with rollback
-│   ├── subagents/             # Maker-checker, targeted check filter, scratchpad helpers
-│   └── tools/                 # All tool implementations + sandbox
+│   ├── providers/            # Model provider abstraction (transport layer)
+│   ├── security/             # Path policy, command classification, secrets, seatbelt
+│   ├── secrets/              # OS keychain integration + .env fallback
+│   ├── prompts/              # Security preamble, untrusted content wrapping
+│   ├── session/              # File access tracking, schema, checkpoints
+│   ├── memory/               # Schema, review queue, privacy, citations, decay
+│   ├── context/              # Token budgeting
+│   ├── prompt/               # Deterministic prompt assembly
+│   ├── fs/                   # Atomic writes with rollback
+│   ├── mcp/                  # MCP client + server config (.quiver/mcp.json)
+│   ├── subagents/            # Maker-checker, targeted check filter, scratchpad helpers
+│   └── tools/                # All 29 tool implementations + sandbox
 ├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
+├── examples/                 # Flagship example: investment-committee-memo
+├── skills/                   # Skill files (investment-brief, due-diligence, …)
 ├── tests/                    # Checker-owned acceptance contract (spec_acceptance_tests.ts)
 └── Formula/                  # Homebrew formula
 ```
@@ -78,8 +89,12 @@ User Input
 > `CheckpointManager` for crash recovery. The maker-checker gate is
 > **always-on and unconditional** for high-risk operations (US-15.1 forbids an
 > env opt-out); at task completion the AmbientEngine runs the same `runChecker`
-> once in full mode and auto-heals on `revise`/`reject` (US-13.5). Trust tiers
-> (`observe`→`yolo`) shape read scope + sandbox + approval grants (US-6.4).
+> once in full mode and auto-heals on `revise`/`reject` (US-13.5). The internal
+> trust-tier ladder (`observe`→`propose`→`build`→`operate`, plus an
+> unrestricted top tier whose internal alias is `yolo`) shapes read scope +
+> sandbox + approval grants (US-6.4); it is developer-only and documented in
+> `docs/advanced.md` — business surfaces expose the tiers as **Draft only /
+> Draft and research / Assisted**.
 > The acceptance contract
 > (`tests/spec_acceptance_tests.ts`, `npm test`) verifies this wiring end-to-end
 > via its `WIRE-*` integration checks.
@@ -93,7 +108,7 @@ User Input
 5. **Prompt Injection Defense** — Untrusted content wrapped in XML boundaries
 6. **Tool Sandbox** — Dynamic tools execute in isolated worker threads; the manifest's `fs` read/write globs are enforced via a permission-checking proxy (US-6.4)
 7. **Atomic Writes** — Temp-write-then-rename with backup and rollback
-8. **Trust Tiers** — Cumulative `observe`→`yolo` permission ladder with tier-driven read scope, enforced allow-globs, and per-project persistence (US-6.4)
+8. **Trust Tiers** — Cumulative `observe`→`propose`→`build`→`operate`→top-tier permission ladder (developer-only; see `docs/advanced.md`) with tier-driven read scope, enforced allow-globs, and per-project persistence (US-6.4). Business surfaces name the tiers **Draft only / Draft and research / Assisted**.
 9. **Ambient Verification** — Self-heal + goal-loop driven by the single maker-checker primitive (US-13.5)
 10. **Mid-run Intervention** — `Esc` steers the agent while it runs (US-2.3)
 

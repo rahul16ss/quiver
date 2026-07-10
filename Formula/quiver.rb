@@ -10,7 +10,7 @@
 # This formula installs the Quiver CLI agent harness globally.
 
 class Quiver < Formula
-  desc "Open harness for open models — self-evolving coding and research agent"
+  desc "Open foundation for controlled, source-backed document workflows in finance"
   homepage "https://github.com/rahul16ss/quiver"
   # Release archive pinned to the v1.0.0 source commit.
   url "https://github.com/rahul16ss/quiver/archive/0f7a4e47382fbdb8ccd863f4e49348507c381329.tar.gz"

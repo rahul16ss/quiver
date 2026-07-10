@@ -58,6 +58,8 @@ following projects.
 - **picocolors** — ISC — Terminal colors
 - **puppeteer** — Apache 2.0 — Browser automation
 - **sharp** — Apache 2.0 — Image processing
+- **@clack/prompts** — MIT License — Interactive CLI prompts
+- **fastest-levenshtein** — MIT License — String distance (fuzzy matching)
 
 ---
 
@@ -90,7 +92,7 @@ gratefully acknowledge their influences below.
 - **Influence:** Stateful memory & context serialization.
 - **Contribution:** Letta's structured memory blocks (Persona/System identity,
   Human context, and Project context) inspired Quiver's memory layout
-  (`memory/core.json`). The serialization concept for porting agent sessions
+  (`~/.quiver/core.json`). The serialization concept for porting agent sessions
   is adapted from Letta's state management protocols.
 - **Project:** [https://github.com/letta-ai/letta](https://github.com/letta-ai/letta)
 - **License:** Apache License 2.0
@@ -109,8 +111,8 @@ gratefully acknowledge their influences below.
 
 - **Influence:** Git-integrated task version control.
 - **Contribution:** Beads' approach of storing state lists in git-versioned
-  structures inspired Quiver's goal-seeking harness layout (`goals.json`),
-  ensuring task histories are tracked cleanly and auditable in Git.
+  structures inspired Quiver's goal-seeking loop state layout
+  (`.sessions/ralph-loop.json`), keeping task histories inspectable plain files.
 - **Project:** [https://github.com/gastownhall/beads](https://github.com/gastownhall/beads)
 - **License:** MIT License
 
@@ -118,9 +120,9 @@ gratefully acknowledge their influences below.
 
 - **Influence:** Planning → Execution → Verification → Self-Correction.
 - **Contribution:** Dexter's validation assertion loops inspired Quiver's
-  goal-loop verification checks (e.g. running unit tests or file existence
-  assertions in `goals.json` and resetting status to `"failed"` on errors to
-  trigger self-correction).
+  goal-loop verification discipline: the ambient completion check runs the
+  maker-checker (`runChecker`) against the finished work and a `revise`/`reject`
+  verdict feeds the evidence back into the loop to trigger self-correction.
 - **Project:** [https://github.com/virattt/dexter](https://github.com/virattt/dexter)
 - **License:** MIT License
 

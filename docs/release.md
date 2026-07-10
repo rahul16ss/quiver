@@ -10,9 +10,11 @@ brew install quiver
 
 Formula: `Formula/quiver.rb`
 
-### npm
+### npm (global install from a clone)
 ```bash
-npm install -g quiver-agent
+git clone https://github.com/rahul16ss/quiver.git
+cd quiver
+npm install -g .
 ```
 
 ### Source
@@ -34,8 +36,9 @@ Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
 
 1. Update version in `package.json`
 2. Update session schema version if needed (`src/session/schema.ts`)
-3. Run acceptance contract: `npm test` (must be 266/266 green — asserts the SPEC + WIRE-* integration)
+3. Run acceptance contract: `npm test` (every check must pass — asserts the SPEC + WIRE-* integration; the count is whatever the gate prints)
 4. TypeScript compilation check: `npx tsc --noEmit`
+5. Run the flagship demo: `npm run demo:ic-memo` (all acceptance checks must pass)
 6. Update `docs/` if architecture changed
 7. Build/package Electron app: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)
 8. Create GitHub release with tagged binary
