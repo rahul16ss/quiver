@@ -44,15 +44,20 @@ is greyed out, nothing is spinning, nothing asks me to configure anything.
 - Acceptance moments: window opens → composer focused → one obvious primary
   action. No dashes, no empty progress bars, no jargon anywhere on screen.
 
-**S2. "I know exactly what it knows about my firm."**
+**S2. "I know exactly what it knows — and I can change it."**
 As Priya, I can see — in my language — what context Quiver will use: the
 firm's template, prior memos, my files, and where my prompts go (cloud/local),
-before I share anything sensitive.
-- 🟡 Partial: six-layer context rail exists with honest endpoint line.
+before I share anything sensitive. And it's a control, not a display: I can
+exclude a file or memory from this run in one click, and the exclusion is
+recorded.
+- 🟡 Partial: six-layer context rail exists with honest endpoint line; it is
+  read-only — the exclude-before-run gate does not exist (spec §6; build-order
+  #5).
 - Gap to Apple-grade: the rail reads like an inspector, not a sentence. The
   moment should be: one calm summary line ("Using your IC template, 2 memory
-  files, 28 tools · prompts go to ollama.com") that expands on demand.
-  Priya scans it in 3 seconds; the detail is one click deep, not default.
+  files, 28 tools · prompts go to ollama.com") that expands on demand into
+  items with exclude toggles. Priya scans it in 3 seconds; control is one
+  click deep, not buried.
 
 ## Moment 2 — Giving it the deal (Priya, Monday 8:05am)
 
@@ -76,13 +81,17 @@ follow-ups. I am never asked to approve something I cannot see.
 
 ## Moment 3 — Watching it work without babysitting (Priya, Monday, background)
 
-**S5. "I can glance and understand."**
+**S5. "I can glance, understand, and steer."**
 As Priya, mid-run I can glance at Quiver and know: what it's doing now, what
 it produced so far, and whether it's stuck — the way I'd glance at a junior
-across the desk.
-- 🟡 Partial: activity feed with timestamps exists; it's honest but reads
-  like a log. Gap: a single current-status line ("Reading RevenueBuild sheet…
-  3 of 6 sections drafted") above the feed; the feed itself is the detail.
+across the desk. When it verifies its own work I see that too ("Verifying…
+✓ 5 checks passed" / "Found an issue — fixing…"), never a stack trace. And I
+can interrupt: my typed message is queued and injected, Stop halts cleanly.
+- 🟡 Partial: activity feed with timestamps exists (honest, log-like); Stop
+  works; Esc-steering exists in the CLI path. Gaps: a single current-status
+  line above the feed ("Reading RevenueBuild sheet… 3 of 6 sections
+  drafted"); checker verification surfaced in plain language; queued-typing
+  steering in the GUI.
 
 **S6. "Closing my laptop costs nothing."**
 As Priya, I can close the window Monday evening and reopen Tuesday — the
@@ -154,6 +163,50 @@ lineage, and I know how to stop the workflow and report a defect.
 - ✅ Built (as service assets): runbook/training/handover templates, workflow
   artifact. Product affordances (template swap in-app) intentionally deferred.
 
+## Moment 7 — Trusting it with the firm (the differentiators, lived)
+
+These three stories ARE the moat. Every competitor demo can draft a memo;
+none of them can survive these three questions from Marcus. If a release
+strengthens features but not these, it strengthened the wrong thing.
+
+**S14. "The firm's memory is the firm's."**
+As Dana, everything Quiver has learned — house style, preferences, workspace
+facts, the persona — lives in plain files I can open, edit, and delete; a
+praised memo can be promoted into an example the next memo learns from; and
+none of it is hostage to a vendor. When we improve the instructions, the next
+quarter's memo is visibly better: institutional knowledge compounds.
+- 🟡 Partial: plain-file memory + review queue + GUI editing built; versioned
+  persona/skills with diff/rollback and the episodic examples store are not
+  (spec §7). The *ownership* is real today; the *compounding* is partial.
+- Acceptance moments: Dana opens memory as normal files; edits survive and
+  visibly shape the next run; promoting an example is one action.
+
+**S15. "Sensitive deals stay inside the line."**
+As Priya on a live deal, I mark the data room material sensitive; Quiver
+shows me — before running — what would leave the machine and what stays
+local, strips the names it was told to strip (and shows me the receipt), and
+refuses to send configured MNPI to any remote endpoint. When compliance asks,
+the run record answers.
+- 🔴 Gap: honest endpoint disclosure and the run-record exist; redaction,
+  sensitivity routing, and the receipt do NOT (spec §11.2, build-order #7 —
+  scheduled before the first engagement touching sensitive material). Until
+  built, the engagement-level answer is contractual/data-boundary docs, and
+  no marketing may imply otherwise.
+- Acceptance moments: mark-as-sensitive is one action; the pre-run summary
+  says "3 client names redacted, model note stays local"; an attempted
+  remote send of MNPI is refused and logged.
+
+**S16. "Never trapped."**
+As the firm, if we switch model providers next year, nothing that matters
+moves: memory, sessions, skills, templates, workflows, and the audit trail
+are ours in files; the model is a rented calculator we can swap.
+- 🟡 Partial: two adapters over one interface, source-controlled model
+  config, everything durable already in files. Not yet *demonstrated* as a
+  moment (a provider-swap walkthrough) — worth one runbook page and a demo
+  beat, since "never trapped" is a pitch line the truth table gates.
+- Acceptance moments: change provider in Settings → same session, same
+  memory, same workflows; the swap is boring.
+
 ---
 
 ## The screen inventory (everything else is cut)
@@ -177,14 +230,32 @@ surface at all).
 ## How this maps to build order
 
 Spec §19 build order, restated through stories: #3 live lineage = S8+S9,
-#4 scratch-area tier = S4 depth, #5 consent-gate v1 = S2/S11 depth,
-#6 connectors = S3 breadth, #7 redaction/routing = S11 depth. The next GUI
-cycle = Screen 3 (Deliverable view) designed from S7–S10 *before* code.
+#4 scratch-area tier = S4 depth, #5 consent-gate v1 = S2 (exclude-before-run)
++ S11, #6 connectors = S3 breadth, #7 redaction/routing = S15. Versioned
+memory / examples store (spec §7) = S14 and queues behind first-engagement
+evidence. S16 needs no new architecture — one provider-swap runbook page and
+a demo beat. The next GUI cycle = Screen 3 (Deliverable view) designed from
+S7–S10 *before* code.
+
+## How screens get designed from this (what this document is NOT)
+
+This document defines the moments and the cuts; it is deliberately not a
+pixel spec. When a screen's cycle starts, write its **screen brief** as a new
+subsection here (one page: purpose in one sentence, layout sketch, every
+state — empty/loading/error/success, exact copy, and which stories'
+acceptance moments it must satisfy), get it approved, then build. One
+document, growing per cycle — no separate design docs. The retired
+`docs/desktop-design.md` contract is absorbed here.
 
 ## Definition of "Apple-grade" for this product (so we stop hand-waving)
 
+0. **North Star:** a business user always knows two things without looking
+   for them — what the AI is seeing right now, and what it is doing right
+   now. In a chat app the box is the product and transparency is a settings
+   menu; in Quiver transparency is the product and the box is how you steer.
 1. Every screen answers one question a persona actually has, above the fold,
-   in their vocabulary.
+   in their vocabulary. The words *terminal*, *.env*, *endpoint*, *API*
+   never appear on buyer surfaces.
 2. Zero dead elements: no "—", no empty bars, no counts of nothing, no
    buttons that exist because the plumbing does.
 3. The dangerous moments (approvals) show content; the proud moments
