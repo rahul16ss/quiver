@@ -1,0 +1,79 @@
+# Illustrative workflow — synthetic data
+# Workflow definition for the investment-committee-memo demo.
+# The pipeline reads `name` and `version` for the run record; the rest of this
+# file is the human/machine-readable contract the acceptance checks enforce.
+
+name: investment-committee-memo
+version: 1.0.0
+
+business_purpose: >
+  Produce a first-pass investment committee memorandum for a target company
+  ("Project Alder", synthetic) in which every figure is registered in a source
+  registry, carries an explicit relationship (sourced / derived / estimate /
+  unresolved), and is machine-checked before the draft reaches a human
+  reviewer. This demo replays pre-drafted fixture content through the same
+  rendering, evidence, and acceptance pipeline used in live engagements; in an
+  engagement an AI model drafts the content under the same evidence rules.
+
+output_template: template/ic-memo-template.docx
+
+allowed_inputs:
+  - inputs/Model_v12.xlsx            # synthetic operating model (excel_model)
+  - inputs/10q-excerpt.md            # synthetic filing excerpt (filing)
+  - inputs/earnings-call-q2-transcript.md  # synthetic transcript (transcript)
+  - inputs/internal-model-note.md    # synthetic analyst note (internal_note)
+  - inputs/comps.csv                 # synthetic vendor export (vendor_export)
+
+retrieval:
+  mode: static          # none/static — all inputs are committed fixtures
+  network_access: none  # the demo makes no network calls and needs no credentials
+
+data_sensitivity: synthetic  # every input is fabricated; nothing is client or public-company data
+
+deliverable_sections:
+  - Executive summary
+  - Financial overview
+  - Key investment considerations
+  - Principal risks
+  - Open diligence items
+  - Review checklist reference
+
+review_role: >
+  Deal-team analyst. The pipeline emits a draft only ("draft_for_review");
+  reviewer_decision is null on every claim until a human reviewer signs off.
+  Items with review_status needs_analyst / flagged / unresolved are listed in
+  the review checklist and must be cleared by the reviewer.
+
+acceptance_checks: acceptance-checklist.yaml
+
+source_requirements:
+  registry: fixtures/sources.json
+  policy:
+    - Every quantitative claim must cite at least one approved source, or be
+      explicitly flagged/unresolved.
+    - Sources with approved: false are excluded from drafting; no claim may
+      cite them, and the run record must list them with the exclusion reason.
+    - Excel-sourced figures are referenced at sheet+cell level and are
+      re-read from the workbook by the acceptance checks (cell-level lineage).
+    - Filing, transcript, note, and CSV references are section- or page-level
+      only; the checks do not claim cell-level lineage for them.
+
+estimates_handling: >
+  Figures that are analyst readings rather than stated values use relationship
+  "derived" or "estimate" and review_status "needs_analyst"; they render in the
+  memo with that status and appear in the review checklist.
+
+unresolved_handling: >
+  Claims with relationship "unresolved" stay in the draft but must render with
+  status "Unresolved", appear in the review checklist, and be listed in the
+  run record's unresolved_items. The workflow never silently drops or silently
+  resolves them.
+
+outputs:
+  directory: output/
+  memo_docx: output/Project_Alder_IC_Memo.docx
+  evidence_json: output/Project_Alder_Evidence.json
+  evidence_html: output/Project_Alder_Evidence.html
+  review_checklist: output/Project_Alder_Review_Checklist.md
+  run_record: output/Project_Alder_Run_Record.json
+  screenshot: screenshots/evidence-report.png

@@ -1,0 +1,9 @@
+transaction_id,announced,target,acquirer,target_vertical,ev_usd_m,revenue_usd_m,ev_revenue_x,notes
+CT-2101,2024-02,Harborline Systems (synthetic),Meridian Partners (synthetic),freight workflow,310,52.5,5.9,illustrative row — synthetic data
+CT-2102,2024-04,Quaywork Labs (synthetic),Bluecrest Capital (synthetic),port logistics software,188,38.4,4.9,illustrative row — synthetic data
+CT-2103,2024-06,Palletiq (synthetic),Northgate Equity (synthetic),warehouse management,265,41.4,6.4,illustrative row — synthetic data
+CT-2104,2024-09,Routegrid (synthetic),Summit Ridge Holdings (synthetic),dispatch software,402,63.8,6.3,illustrative row — synthetic data
+CT-2105,2024-11,Cartonal (synthetic),Meridian Partners (synthetic),packaging ERP,150,27.8,5.4,illustrative row — synthetic data
+CT-2106,2025-01,Freightlens (synthetic),Harborview Capital (synthetic),freight analytics,231,34.0,6.8,illustrative row — synthetic data
+CT-2107,2025-03,Dockside Digital (synthetic),Bluecrest Capital (synthetic),marina management,96,18.5,5.2,illustrative row — synthetic data
+CT-2108,2025-05,Lanemetric (synthetic),Northgate Equity (synthetic),fleet compliance,178,31.2,5.7,illustrative row — synthetic data

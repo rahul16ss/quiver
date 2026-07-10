@@ -1,0 +1,118 @@
+{
+  "label": "Illustrative workflow — synthetic data",
+  "registry_version": "1.0.0",
+  "as_of": "2025-06-30",
+  "note": "All records below are synthetic fixtures. Timestamps are static strings so the demo is deterministic. No record refers to a real company.",
+  "sources": [
+    {
+      "source_id": "SRC-001",
+      "source_type": "excel_model",
+      "title": "Project Alder operating model v12 — revenue build",
+      "file": "inputs/Model_v12.xlsx",
+      "as_of": "2025-06-30",
+      "location": { "sheet": "RevenueBuild", "cell": "C8", "description": "FY2025 total revenue (SUM of product lines C4:C7)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "extracted_value": "48200000"
+    },
+    {
+      "source_id": "SRC-002",
+      "source_type": "excel_model",
+      "title": "Project Alder operating model v12 — P&L, FY2025 EBITDA",
+      "file": "inputs/Model_v12.xlsx",
+      "as_of": "2025-06-30",
+      "location": { "sheet": "P&L", "cell": "B8", "description": "FY2025 EBITDA (gross profit less operating expenses)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "extracted_value": "10796800"
+    },
+    {
+      "source_id": "SRC-003",
+      "source_type": "excel_model",
+      "title": "Project Alder operating model v12 — P&L, FY2025 revenue",
+      "file": "inputs/Model_v12.xlsx",
+      "as_of": "2025-06-30",
+      "location": { "sheet": "P&L", "cell": "B4", "description": "FY2025 revenue as carried into the P&L (links to RevenueBuild!C8)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "extracted_value": "48200000"
+    },
+    {
+      "source_id": "SRC-004",
+      "source_type": "filing",
+      "title": "Synthetic 10-Q excerpt — condensed income statement",
+      "file": "inputs/10q-excerpt.md",
+      "as_of": "2025-06-30",
+      "location": { "section": "Condensed income statement", "description": "Section-level reference (not cell-level)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "Revenue for the trailing twelve months was $48.2 million, an increase of 17.8% over the prior-year period ($40.9 million)."
+    },
+    {
+      "source_id": "SRC-005",
+      "source_type": "filing",
+      "title": "Synthetic 10-Q excerpt — MD&A",
+      "file": "inputs/10q-excerpt.md",
+      "as_of": "2025-06-30",
+      "location": { "section": "Management's discussion and analysis (MD&A)", "description": "Section-level reference (not cell-level)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "Management expects continued operating leverage as the payments and analytics modules scale, with adjusted EBITDA margin expected to improve modestly through fiscal 2027."
+    },
+    {
+      "source_id": "SRC-006",
+      "source_type": "transcript",
+      "title": "Synthetic Q2 FY2025 earnings-call transcript excerpt",
+      "file": "inputs/earnings-call-q2-transcript.md",
+      "as_of": "2025-05-14",
+      "location": { "section": "Section 7 — Q&A: customer base", "page": 7, "description": "Section/page-level reference (not cell-level)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "Our top ten customers together still represent a little over 40% of revenue, and we are working to broaden the mid-market base."
+    },
+    {
+      "source_id": "SRC-007",
+      "source_type": "internal_note",
+      "title": "Internal model note — leverage assumptions",
+      "file": "inputs/internal-model-note.md",
+      "as_of": "2025-06-24",
+      "location": { "section": "Financing assumptions", "description": "Analyst working note; assumption not yet confirmed" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "Base case assumes net leverage of 4.0x at close. Pending lender feedback — not yet confirmed. Do not treat as final."
+    },
+    {
+      "source_id": "SRC-008",
+      "source_type": "vendor_export",
+      "title": "Comparable transactions export (comps.csv)",
+      "file": "inputs/comps.csv",
+      "as_of": "2025-06-20",
+      "location": { "section": "rows 2-9", "description": "Vendor-style CSV export of eight synthetic vertical-software transactions" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "EV/Revenue multiples for the eight listed transactions range from 4.9x to 6.8x."
+    },
+    {
+      "source_id": "SRC-009",
+      "source_type": "transcript",
+      "title": "Synthetic Q2 FY2025 earnings-call transcript excerpt — retention",
+      "file": "inputs/earnings-call-q2-transcript.md",
+      "as_of": "2025-05-14",
+      "location": { "section": "Section 4 — CFO remarks: retention", "page": 4, "description": "Section/page-level reference (not cell-level)" },
+      "sensitivity": "synthetic",
+      "approved": true,
+      "excerpt": "Net revenue retention has remained above 108% in each of the last four quarters."
+    },
+    {
+      "source_id": "SRC-010",
+      "source_type": "web",
+      "title": "Unattributed industry blog post on vertical-software multiples",
+      "file": "(not retained — excluded before drafting)",
+      "as_of": "2025-06-18",
+      "location": { "section": "n/a", "description": "Candidate source rejected at registry review" },
+      "sensitivity": "synthetic",
+      "approved": false,
+      "exclusion_reason": "Unattributed source: no named author or publisher and no verifiable methodology. Fails the workflow source policy, so it was excluded from drafting and no claim may cite it."
+    }
+  ]
+}

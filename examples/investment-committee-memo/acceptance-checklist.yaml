@@ -1,0 +1,57 @@
+# Illustrative workflow — synthetic data
+# Machine-readable acceptance checks for the investment-committee-memo demo.
+# scripts/checks.ts implements one check per id; scripts/run-demo.ts fails the
+# run if any id here has no implementation or any check fails.
+
+checks:
+  - id: sections-present
+    name: Required sections present in generated docx
+    description: >
+      Read the generated .docx back via officecli (query, not the writer's own
+      bookkeeping) and confirm all six deliverable sections appear as
+      Heading 1 paragraphs in the required order.
+
+  - id: docx-validates
+    name: Document passes officecli validate
+    description: The generated .docx passes OpenXML schema validation.
+
+  - id: no-placeholder-text
+    name: No placeholder text in the docx
+    description: >
+      No {{...}} merge fields, TODO/TBD markers, or lorem-ipsum text anywhere
+      in the document body, tables, or footer.
+
+  - id: claims-have-sources
+    name: Every quantitative claim is sourced or flagged
+    description: >
+      Every claim marked quantitative cites at least one approved source, or
+      carries review_status flagged/unresolved. No claim cites an excluded
+      source.
+
+  - id: excel-cell-verification
+    name: Excel cell-level lineage verified
+    description: >
+      For each claim sourced from an Excel cell, read the actual cell value
+      from inputs/Model_v12.xlsx via officecli and compare it to the claimed
+      value. For the derived EBITDA margin, read both cells and recompute the
+      ratio. This is a genuine read of the workbook, not a fixture echo.
+
+  - id: table-matches-evidence
+    name: Financial table matches evidence map
+    description: >
+      Every figure in the docx financial-overview table appears in the
+      evidence map, and every table-bound claim in the evidence map appears in
+      the docx table (bidirectional).
+
+  - id: unresolved-in-checklist
+    name: Unresolved items appear in review checklist
+    description: >
+      Every claim with review_status unresolved is listed in the generated
+      review checklist with its claim id.
+
+  - id: run-record-complete
+    name: Run record lists inputs, hashes, and exclusions
+    description: >
+      The run record lists every allowed input with a SHA-256 hash that
+      matches the file on disk, records the excluded source with its reason,
+      and carries review_status draft_for_review.

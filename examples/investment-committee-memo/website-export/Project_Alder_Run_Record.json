@@ -1,0 +1,144 @@
+{
+  "label": "Illustrative workflow — synthetic data",
+  "workflow": "investment-committee-memo",
+  "workflow_version": "1.0.0",
+  "as_of": "2025-06-30",
+  "review_status": "draft_for_review",
+  "retrieval": {
+    "mode": "static",
+    "network_access": "none",
+    "credentials_required": false
+  },
+  "determinism_note": "All source data is committed fixture content with static as-of dates; no wall-clock timestamps are embedded, so re-runs produce identical JSON/HTML/Markdown artifacts. Tool versions below reflect the environment that produced this record.",
+  "inputs": [
+    {
+      "file": "inputs/Model_v12.xlsx",
+      "sha256": "b8cb4e064b9a65d9e064ae8074a8f93a51e56afbd55d4ea7534aecd221382baf"
+    },
+    {
+      "file": "inputs/10q-excerpt.md",
+      "sha256": "8f32dbde4eb5520eab361d6143bff40f8cac007a58f60fdb9d1778faee67713b"
+    },
+    {
+      "file": "inputs/earnings-call-q2-transcript.md",
+      "sha256": "2814d6e304e141ee472eb325292182b4736b630c5de484e9d6d5231e9b166430"
+    },
+    {
+      "file": "inputs/internal-model-note.md",
+      "sha256": "25d645788cb745891201c7d331be8cefe1c6bd245949a77a5c43429e872b4df5"
+    },
+    {
+      "file": "inputs/comps.csv",
+      "sha256": "3a23aeb65eccf86acbe5689e77030f465360697f7995a3fbe91a676d120902eb"
+    }
+  ],
+  "template": {
+    "file": "template/ic-memo-template.docx",
+    "sha256": "a8d37d1d6826391560d447c9ad3288ef81507f93ae2182f282cb933b20f8f20e"
+  },
+  "fixtures": [
+    {
+      "file": "fixtures/sources.json",
+      "sha256": "45296dc0a843fb7d48faf4e88253a32efd681eaf3fb108e4a22096a5c0a14842"
+    },
+    {
+      "file": "fixtures/memo-content.json",
+      "sha256": "d9bcc549fe72bfd23d6b22ffd6d68f9610caaa8aee557688dd91bd16bc3fdaf8"
+    }
+  ],
+  "sources_used": [
+    {
+      "source_id": "SRC-001",
+      "title": "Project Alder operating model v12 — revenue build",
+      "location": "RevenueBuild!C8",
+      "used": true
+    },
+    {
+      "source_id": "SRC-002",
+      "title": "Project Alder operating model v12 — P&L, FY2025 EBITDA",
+      "location": "P&L!B8",
+      "used": true
+    },
+    {
+      "source_id": "SRC-003",
+      "title": "Project Alder operating model v12 — P&L, FY2025 revenue",
+      "location": "P&L!B4",
+      "used": true
+    },
+    {
+      "source_id": "SRC-004",
+      "title": "Synthetic 10-Q excerpt — condensed income statement",
+      "location": "Condensed income statement",
+      "used": true
+    },
+    {
+      "source_id": "SRC-006",
+      "title": "Synthetic Q2 FY2025 earnings-call transcript excerpt",
+      "location": "Section 7 — Q&A: customer base, page 7",
+      "used": true
+    },
+    {
+      "source_id": "SRC-005",
+      "title": "Synthetic 10-Q excerpt — MD&A",
+      "location": "Management's discussion and analysis (MD&A)",
+      "used": true
+    },
+    {
+      "source_id": "SRC-007",
+      "title": "Internal model note — leverage assumptions",
+      "location": "Financing assumptions",
+      "used": true
+    },
+    {
+      "source_id": "SRC-008",
+      "title": "Comparable transactions export (comps.csv)",
+      "location": "rows 2-9",
+      "used": true
+    },
+    {
+      "source_id": "SRC-009",
+      "title": "Synthetic Q2 FY2025 earnings-call transcript excerpt — retention",
+      "location": "Section 4 — CFO remarks: retention, page 4",
+      "used": true
+    }
+  ],
+  "sources_excluded": [
+    {
+      "source_id": "SRC-010",
+      "title": "Unattributed industry blog post on vertical-software multiples",
+      "reason": "Unattributed source: no named author or publisher and no verifiable methodology. Fails the workflow source policy, so it was excluded from drafting and no claim may cite it."
+    }
+  ],
+  "figures_flagged": [
+    {
+      "claim_id": "CLM-005",
+      "review_status": "needs_analyst"
+    },
+    {
+      "claim_id": "CLM-006",
+      "review_status": "unresolved"
+    },
+    {
+      "claim_id": "CLM-007",
+      "review_status": "flagged"
+    }
+  ],
+  "unresolved_items": [
+    {
+      "claim_id": "CLM-006",
+      "rendered_text": "the base case assumes net leverage of 4.0x at close",
+      "note": "Assumption only. The internal model note states it is pending lender feedback and not yet confirmed. Must be resolved with financing counterparties before committee sign-off."
+    }
+  ],
+  "tool_versions": {
+    "officecli": "1.0.135",
+    "node": "v22.19.0"
+  },
+  "artifacts": [
+    "output/Project_Alder_IC_Memo.docx",
+    "output/Project_Alder_Evidence.json",
+    "output/Project_Alder_Evidence.html",
+    "output/Project_Alder_Review_Checklist.md",
+    "output/Project_Alder_Run_Record.json"
+  ]
+}

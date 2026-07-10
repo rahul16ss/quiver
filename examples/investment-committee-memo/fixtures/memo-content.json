@@ -1,0 +1,202 @@
+{
+  "label": "Illustrative workflow — synthetic data",
+  "workflow": "investment-committee-memo",
+  "workflow_version": "1.0.0",
+  "company": "Project Alder (synthetic company)",
+  "as_of": "2025-06-30",
+  "title": "Project Alder",
+  "subtitle": "Project Alder — first-pass review (synthetic company)",
+  "date_line": "As of 2025-06-30 · Illustrative workflow — synthetic data · Draft for review",
+  "claims": [
+    {
+      "claim_id": "CLM-001",
+      "rendered_text": "FY2025 revenue of $48.2 million",
+      "source_ids": ["SRC-001"],
+      "relationship": "sourced",
+      "review_status": "verified",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "verification": {
+        "type": "excel_cell",
+        "file": "inputs/Model_v12.xlsx",
+        "sheet": "RevenueBuild",
+        "cell": "C8",
+        "expected_raw": 48200000,
+        "rendered_value": "$48.2 million"
+      },
+      "table": {
+        "metric": "Revenue (FY2025)",
+        "value": "$48.2 million",
+        "source": "Model_v12.xlsx · RevenueBuild!C8",
+        "status": "Verified (cell-level)"
+      }
+    },
+    {
+      "claim_id": "CLM-002",
+      "rendered_text": "EBITDA margin of 22.4%",
+      "source_ids": ["SRC-002", "SRC-003"],
+      "relationship": "derived",
+      "review_status": "verified",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "verification": {
+        "type": "excel_derived",
+        "file": "inputs/Model_v12.xlsx",
+        "numerator": { "sheet": "P&L", "cell": "B8", "expected_raw": 10796800 },
+        "denominator": { "sheet": "P&L", "cell": "B4", "expected_raw": 48200000 },
+        "derivation": "EBITDA (P&L!B8) divided by revenue (P&L!B4)",
+        "expected_ratio_pct": "22.4",
+        "rendered_value": "22.4%"
+      },
+      "table": {
+        "metric": "EBITDA margin (FY2025)",
+        "value": "22.4%",
+        "source": "Model_v12.xlsx · P&L!B8 ÷ P&L!B4",
+        "status": "Verified (derived, cell-level)"
+      }
+    },
+    {
+      "claim_id": "CLM-003",
+      "rendered_text": "revenue growth of 17.8% year over year",
+      "source_ids": ["SRC-004"],
+      "relationship": "sourced",
+      "review_status": "verified",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "table": {
+        "metric": "Revenue growth (YoY)",
+        "value": "17.8%",
+        "source": "10-Q excerpt · Condensed income statement",
+        "status": "Verified (section-level)"
+      }
+    },
+    {
+      "claim_id": "CLM-004",
+      "rendered_text": "the top ten customers account for more than 40% of revenue",
+      "source_ids": ["SRC-006"],
+      "relationship": "sourced",
+      "review_status": "verified",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "table": {
+        "metric": "Top-10 customer concentration",
+        "value": "more than 40% of revenue",
+        "source": "Q2 call transcript · Section 7",
+        "status": "Verified (section-level)"
+      }
+    },
+    {
+      "claim_id": "CLM-005",
+      "rendered_text": "management guidance implies EBITDA margin expansion of roughly 150-200 bps by FY2027",
+      "source_ids": ["SRC-005"],
+      "relationship": "derived",
+      "review_status": "needs_analyst",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "review_note": "Derived from qualitative MD&A language; the 150-200 bps quantification is an analyst reading, not a stated figure. An analyst must confirm the margin bridge with management before the committee relies on it.",
+      "table": {
+        "metric": "Margin guidance (to FY2027)",
+        "value": "+150-200 bps",
+        "source": "10-Q excerpt · MD&A",
+        "status": "Needs analyst review"
+      }
+    },
+    {
+      "claim_id": "CLM-006",
+      "rendered_text": "the base case assumes net leverage of 4.0x at close",
+      "source_ids": ["SRC-007"],
+      "relationship": "unresolved",
+      "review_status": "unresolved",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "review_note": "Assumption only. The internal model note states it is pending lender feedback and not yet confirmed. Must be resolved with financing counterparties before committee sign-off.",
+      "table": {
+        "metric": "Net leverage at close",
+        "value": "4.0x (assumption)",
+        "source": "Internal model note · Financing assumptions",
+        "status": "Unresolved"
+      }
+    },
+    {
+      "claim_id": "CLM-007",
+      "rendered_text": "comparable vertical-software transactions cleared at 4.9x-6.8x EV/Revenue",
+      "source_ids": ["SRC-008"],
+      "relationship": "sourced",
+      "review_status": "flagged",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "review_note": "Verify comparability: the vendor export mixes deal sizes and end markets; confirm which transactions are genuinely comparable before quoting the range to the committee.",
+      "table": {
+        "metric": "Comparable transactions",
+        "value": "4.9x-6.8x EV/Revenue",
+        "source": "comps.csv · rows 2-9",
+        "status": "Flagged — verify comparability"
+      }
+    },
+    {
+      "claim_id": "CLM-008",
+      "rendered_text": "net revenue retention has remained above 108% in each of the last four quarters",
+      "source_ids": ["SRC-009"],
+      "relationship": "sourced",
+      "review_status": "verified",
+      "reviewer_decision": null,
+      "is_quantitative": true,
+      "table": {
+        "metric": "Net revenue retention",
+        "value": "above 108%",
+        "source": "Q2 call transcript · Section 4",
+        "status": "Verified (section-level)"
+      }
+    }
+  ],
+  "sections": [
+    {
+      "heading": "Executive summary",
+      "paragraphs": [
+        "Project Alder is a profitable vertical software business serving specialty logistics operators, with recurring revenue contracts, a concentrated customer base, and meaningful cross-sell potential across its payments and analytics modules. All company data in this memo is synthetic and illustrative.",
+        "The business generated FY2025 revenue of $48.2 million at an EBITDA margin of 22.4%, with revenue growth of 17.8% year over year. Net revenue retention has remained above 108% in each of the last four quarters.",
+        "The first-pass case is credible: durable revenue, healthy margins, and an identifiable cross-sell motion. It depends, however, on retention assumptions and margin progression that require diligence before the committee can rely on it. Three figures in this memo are flagged for verification."
+      ]
+    },
+    {
+      "heading": "Financial overview",
+      "paragraphs": [
+        "The table below lists every figure used in this memo together with its source and review status. Cell-level lineage is demonstrated only for the Excel-sourced figures; filing, transcript, note, and CSV references are section- or page-level."
+      ],
+      "table_claim_ids": ["CLM-001", "CLM-002", "CLM-003", "CLM-008", "CLM-004", "CLM-005", "CLM-006", "CLM-007"]
+    },
+    {
+      "heading": "Key investment considerations",
+      "bullets": [
+        "Recurring revenue: multi-year platform contracts with embedded workflow, giving high revenue visibility.",
+        "Retention: net revenue retention has remained above 108% in each of the last four quarters, indicating an expanding installed base.",
+        "Cross-sell potential: payments and analytics modules attach to the core platform and are early in their penetration curve.",
+        "Market pricing: comparable vertical-software transactions cleared at 4.9x-6.8x EV/Revenue per the vendor export; this range is flagged pending a comparability review."
+      ]
+    },
+    {
+      "heading": "Principal risks",
+      "bullets": [
+        "Customer concentration: the top ten customers account for more than 40% of revenue, so the loss of one or two anchor accounts would materially affect the plan.",
+        "Margin progression: management guidance implies EBITDA margin expansion of roughly 150-200 bps by FY2027, but this is derived from qualitative MD&A language and needs analyst confirmation.",
+        "Retention dependence: the base case assumes retention holds at recent levels; cohort-level evidence has not yet been reviewed.",
+        "Financing: the base case assumes net leverage of 4.0x at close, which is unresolved pending lender feedback."
+      ]
+    },
+    {
+      "heading": "Open diligence items",
+      "bullets": [
+        "Confirm the net leverage assumption (4.0x at close) with financing counterparties — currently unresolved.",
+        "Verify comparability of the comps.csv transaction set before quoting the 4.9x-6.8x range.",
+        "Obtain a management margin bridge supporting the implied 150-200 bps expansion to FY2027.",
+        "Run cohort-level retention analysis to substantiate the above-108% net revenue retention claim."
+      ]
+    },
+    {
+      "heading": "Review checklist reference",
+      "paragraphs": [
+        "A machine-generated review checklist accompanies this memo (Project_Alder_Review_Checklist.md). Nine approved sources were used; one candidate source was excluded under the source policy; three figures are flagged for verification. This memo is a draft for review and carries no reviewer sign-off."
+      ]
+    }
+  ]
+}

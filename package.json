@@ -1,7 +1,7 @@
 {
   "name": "quiver-agent",
   "version": "1.0.0",
-  "description": "Quiver: Open harness for open models — self-evolving coding and research agent for the terminal.",
+  "description": "Quiver: open foundation for controlled, source-backed document workflows in finance",
   "author": "rahul16ss",
   "license": "Apache-2.0",
   "type": "module",
@@ -13,6 +13,8 @@
     "start": "npx tsx src/cli.ts",
     "gui": "npx electron .",
     "test": "npx tsx tests/run_tests.ts",
+    "demo:ic-memo": "npx tsx examples/investment-committee-memo/scripts/run-demo.ts",
+    "export:website-demo": "npx tsx examples/investment-committee-memo/scripts/export-website-demo.ts",
     "dist": "electron-builder --mac --win --linux",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
