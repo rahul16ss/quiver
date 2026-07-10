@@ -3,7 +3,7 @@
 **Status: DRAFT for owner review. No GUI development proceeds until these
 stories are edited and approved by the owner.** This document owns the
 "Solution + User stories" stage of the cycle (Problem+ICP → Solution+Stories →
-Product+Marketing → Sales+CS). The technical spec (`spec-quiver-harness.md`)
+Product+Marketing → Sales+CS). The technical spec (`SPEC.md`, private on the owner's machine)
 owns architecture and status; this document owns *what it must feel like*.
 
 The quality bar, stated once: every story's acceptance criteria are

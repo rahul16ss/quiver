@@ -5,7 +5,7 @@ This document is retired. GUI design authority is consolidated in one place:
 - **`docs/product/user-stories.md`** — personas, journey, acceptance moments,
   screen inventory, per-screen briefs (added as each screen's cycle starts),
   the North Star, and the definition of "Apple-grade". **The design source.**
-- **`spec-quiver-harness.md`** Epic 2 (in §14) — the retained mechanical
+- **`SPEC.md`** (private, owner's machine) Epic 2 (in §14) — the retained mechanical
   contract (idle launch, approval previews, deliverable card, workspace
   safety, honest surfaces); §19 — implementation status.
 - **`docs/qa/`** — the visual verification method every release runs against.

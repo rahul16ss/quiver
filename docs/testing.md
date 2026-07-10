@@ -15,7 +15,7 @@ tests/
 The maker does **not** ship a self-authored test
 suite — a maker-authored suite is fitted to its own code and is not credible
 acceptance evidence. The contract asserts the spec
-(`spec-quiver-harness.md`, not the shipped code), and
+(`SPEC.md`, the private technical spec on the owner's machine — not the shipped code), and
 many checks are behavioral: they drive real code paths and assert outcomes, so
 keyword placement in comments will not pass them.
 

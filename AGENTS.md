@@ -10,7 +10,8 @@ Repo-local canon:
   acceptance moments, screen inventory, and the definition of "Apple-grade".
   No buyer-surface (GUI) work proceeds ahead of these stories; screens are
   designed from the storyboard, not from defect lists.
-- `spec-quiver-harness.md` — the technical spec (architecture + mechanism).
+- `SPEC.md` — the technical spec (architecture + mechanism). Private: it
+  lives on the owner's machine (gitignored), not in the public repo.
   **§19 "Current State & Build Order"** is the authoritative status table and
   the only section allowed to change with reality. Build in §19's order.
 - `docs/qa/` — GUI QA method. The desktop app is the one buyer surface.

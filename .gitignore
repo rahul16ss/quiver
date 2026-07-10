@@ -75,10 +75,10 @@ gitignore and remember.rtf
 
 # ─── Private vendor blueprint (not part of the open-source release) ───
 .spec-swimlane.md
-docs/ICP.md
 
 # ─── Commercial strategy & sensitive internal docs (not for public repo) ──
-spec-quiver-harness.md
+# Private technical spec — owner's machine only, referenced from PROJECTS.md
+SPEC.md
 docs/security/
 docs/qa/
 tests/ACCEPTANCE_CONTRACT.md
