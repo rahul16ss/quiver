@@ -4,9 +4,15 @@
  *
  *   npm run export:website-demo
  *
+ * The website links only the three business-readable HTML pages (Evidence,
+ * Reviewer checklist, Provenance). Evidence.json ships alongside them for
+ * transparency but is not linked. The machine artifacts (Markdown checklist,
+ * run record) stay in output/ and never reach the public site.
+ *
  * Before copying it verifies, and fails loudly if any exported file:
  *   1. contains an absolute local path ("/Users/") or a secret-looking string;
- *   2. (text artifacts) is missing the illustrative label.
+ *   2. (text artifacts) is missing the illustrative label;
+ *   3. (HTML pages) contains developer vocabulary a buyer should never see.
  *
  * Illustrative workflow — synthetic data.
  */
@@ -19,15 +25,18 @@ const EXPORT_DIR = p("website-export");
 interface ExportItem {
   src: string; // relative to example dir
   text: boolean; // text artifacts get label + secret-pattern checks
+  buyerPage?: boolean; // HTML pages a buyer opens: no developer vocabulary
 }
 
 const ITEMS: ExportItem[] = [
+  { src: OUTPUT.evidenceHtml, text: true, buyerPage: true },
+  { src: OUTPUT.reviewChecklistHtml, text: true, buyerPage: true },
+  { src: OUTPUT.provenanceHtml, text: true, buyerPage: true },
   { src: OUTPUT.evidenceJson, text: true },
-  { src: OUTPUT.evidenceHtml, text: true },
-  { src: OUTPUT.reviewChecklist, text: true },
-  { src: OUTPUT.runRecord, text: true },
-  { src: "screenshots/evidence-report.png", text: false },
 ];
+
+/** Words that mark a page as developer output rather than a business document. */
+const DEV_VOCABULARY = /\b(officecli|stdout|stderr|JSON|snake_case|npm|npx)\b/;
 
 const SECRET_PATTERNS: Array<[string, RegExp]> = [
   ["api key / token / password assignment", /\b(api[_-]?key|secret|token|password|passwd|credential)\b\s*[:=]\s*["']?[A-Za-z0-9_\-/+]{8,}/i],
@@ -60,8 +69,13 @@ function verify(item: ExportItem): void {
     }
     // 2. Illustrative label present.
     if (!text.includes(LABEL)) fail(`${item.src} is missing the label "${LABEL}"`);
+    // 3. Buyer-facing pages carry no developer vocabulary.
+    if (item.buyerPage) {
+      const m = text.match(DEV_VOCABULARY);
+      if (m) fail(`${item.src} contains developer vocabulary "${m[0]}" on a buyer-facing page`);
+    }
   }
-  console.log(`  verified ${item.src}${item.text ? " (paths, secrets, label)" : " (paths)"}`);
+  console.log(`  verified ${item.src}${item.text ? " (paths, secrets, label)" : " (paths)"}${item.buyerPage ? " + buyer language" : ""}`);
 }
 
 console.log("Website export — Illustrative workflow, synthetic data\n");

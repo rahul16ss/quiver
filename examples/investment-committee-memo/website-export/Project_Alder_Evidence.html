@@ -3,196 +3,177 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Alder (synthetic company) — Evidence Map</title>
+<title>Project Alder — Evidence report</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  body { font: 15px/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1e293b; margin: 0; background: #f8fafc; }
-  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
-  .label-banner { background: #1f3864; color: #fff; padding: 10px 24px; font-size: 13px; letter-spacing: 0.02em; }
-  h1 { font-size: 26px; margin: 24px 0 4px; color: #1f3864; }
-  .sub { color: #475569; margin: 0 0 20px; }
-  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 28px; }
-  .stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 18px; }
-  .stat .n { font-size: 22px; font-weight: 700; color: #1f3864; }
-  .stat .t { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-  .claim { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; margin-bottom: 14px; }
-  .claim header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .claim-id { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: #475569; font-weight: 600; }
-  .badge { display: inline-block; border: 1px solid; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 600; }
-  .rendered { font-size: 16px; margin: 4px 0 10px; }
-  .note { background: #fffbeb; border-left: 3px solid #b45309; padding: 8px 12px; font-size: 14px; }
-  .source { border-top: 1px dashed #e2e8f0; padding: 10px 0 2px; margin-top: 8px; }
-  .source-head { font-size: 14px; }
-  .source-meta { font-size: 13px; color: #64748b; }
-  .source.excluded { border-top: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; }
-  blockquote { margin: 6px 0 4px; padding-left: 12px; border-left: 3px solid #cbd5e1; color: #475569; font-size: 14px; }
-  code { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
-  h2 { font-size: 18px; color: #1f3864; margin: 32px 0 12px; }
-  .foot { margin-top: 32px; font-size: 13px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 16px; }
+  body { margin: 0; background: #fcfbf9; color: #1c1c1e;
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 56px 24px 48px; }
+  .eyebrow { margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+             text-transform: uppercase; color: #8a8478; }
+  h1 { margin: 0 0 14px; font-size: 30px; line-height: 1.2; font-weight: 700; color: #1b365d;
+       letter-spacing: -0.01em; }
+  .badge { display: inline-block; border: 1px solid #ddd5c2; background: #f4f0e5; color: #57513f;
+           border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 600;
+           letter-spacing: 0.01em; }
+  .lede { margin: 18px 0 0; font-size: 15.5px; color: #55534e; max-width: 640px; }
+  h2 { margin: 44px 0 16px; font-size: 19px; font-weight: 700; color: #1b365d; letter-spacing: -0.005em; }
+  .section-note { margin: -8px 0 16px; font-size: 14px; color: #6d6a63; max-width: 620px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 28px 0 8px; }
+  .stat { background: #fff; border: 1px solid #e8e3d8; border-radius: 12px; padding: 14px 16px; }
+  .stat .n { font-size: 24px; font-weight: 700; color: #1b365d; line-height: 1.2; }
+  .stat .t { margin-top: 3px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em;
+             text-transform: uppercase; color: #8a8478; }
+  .card { background: #fff; border: 1px solid #e8e3d8; border-radius: 12px;
+          padding: 18px 22px; margin: 0 0 12px; }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .claim-text { margin: 0; font-size: 16.5px; line-height: 1.5; font-weight: 600; color: #1c1c1e; }
+  .pill { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 12px;
+          font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; flex: none; margin-top: 2px; }
+  .pill.good { background: #e6f1e9; color: #1e6b41; }
+  .pill.warn { background: #f8efd9; color: #8a5a10; }
+  .pill.stop { background: #f9e7e5; color: #a02c22; }
+  .pill.navy { background: #e8edf4; color: #1b365d; }
+  .pill.mute { background: #f0ede4; color: #57513f; }
+  .src { margin: 10px 0 0; font-size: 14px; color: #55534e; }
+  .src strong { color: #1c1c1e; font-weight: 600; }
+  .quote { margin: 10px 0 0; padding: 8px 14px; border-left: 3px solid #d8d2c2;
+           font-size: 14px; color: #6d6a63; font-style: italic; }
+  .verify { margin: 12px 0 0; padding: 10px 14px; border-radius: 8px; background: #faf4e3;
+            border: 1px solid #ecdfba; font-size: 14px; color: #6b4f10; }
+  .verify strong { color: #58400a; }
+  .meta { margin: 12px 0 0; font-size: 11.5px; color: #a39d8f; }
+  .hash { margin: 8px 0 0; font-size: 11px; color: #a39d8f; word-break: break-all; }
+  .foot { margin-top: 52px; border-top: 1px solid #e8e3d8; padding-top: 18px;
+          font-size: 13px; color: #8a8478; }
+  .foot p { margin: 0 0 8px; }
+  @media (max-width: 620px) { .stats { grid-template-columns: repeat(2, 1fr); }
+    .card-top { flex-direction: column; gap: 8px; } }
 </style>
 </head>
 <body>
-<div class="label-banner">Illustrative workflow — synthetic data · Draft for review — no reviewer sign-off recorded</div>
 <div class="wrap">
-  <h1>Project Alder (synthetic company) — Evidence Map</h1>
-  <p class="sub">Workflow investment-committee-memo v1.0.0 · as of 2025-06-30</p>
+  <header>
+    <p class="eyebrow">Project Alder · Synthetic company · As of 2025-06-30</p>
+    <h1>Project Alder — Evidence report</h1>
+    <p><span class="badge">Illustrative workflow — synthetic data · Draft for review</span></p>
+    <p class="lede">Every key figure and claim in the draft memo, with its source and review status. A reviewer works through the flagged items before sign-off.</p>
+  </header>
+
   <div class="stats">
     <div class="stat"><div class="n">9</div><div class="t">Sources reviewed</div></div>
-    <div class="stat"><div class="n">3</div><div class="t">Figures to verify</div></div>
     <div class="stat"><div class="n">8</div><div class="t">Claims tracked</div></div>
-    <div class="stat"><div class="n">1</div><div class="t">Sources excluded</div></div>
+    <div class="stat"><div class="n">3</div><div class="t">Figures to verify</div></div>
+    <div class="stat"><div class="n">1</div><div class="t">Unresolved</div></div>
   </div>
-  
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-001</span>
-        <span class="badge" style="color:#166534;border-color:#166534">sourced</span>
-        <span class="badge" style="color:#166534;border-color:#166534">verified</span>
-      </header>
-      <p class="rendered">&ldquo;FY2025 revenue of $48.2 million&rdquo;</p>
+  <h2>Every claim, with its source</h2>
+  <p class="section-note">Each figure or statement used in the memo appears below with where it came
+  from and its review status. Nothing in the draft is unaccounted for.</p>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;FY2025 revenue of $48.2 million&rdquo;</p>
+      <span class="pill good">Sourced</span>
+    </div>
+      <p class="src"><strong>Excel model</strong> — Model_v12.xlsx · RevenueBuild sheet · cell C8 · value 48,200,000 <span style="color:#a39d8f">· as of 2025-06-30</span></p>
       
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-001</strong> · Project Alder operating model v12 — revenue build</div>
-          <div class="source-meta">excel_model · <code>inputs/Model_v12.xlsx</code> · location: <strong>RevenueBuild!C8</strong> · as of 2025-06-30</div>
-          <div class="source-meta">extracted value: <code>48200000</code></div>
-          
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-002</span>
-        <span class="badge" style="color:#1d4ed8;border-color:#1d4ed8">derived</span>
-        <span class="badge" style="color:#166534;border-color:#166534">verified</span>
-      </header>
-      <p class="rendered">&ldquo;EBITDA margin of 22.4%&rdquo;</p>
+      
+      <p class="meta">Reference CLM-001</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;EBITDA margin of 22.4%&rdquo;</p>
+      <span class="pill good">Derived — verified</span>
+    </div>
+      <p class="src"><strong>Excel model</strong> — Model_v12.xlsx · P&amp;L sheet · cell B8 · value 10,796,800 <span style="color:#a39d8f">· as of 2025-06-30</span></p>
+      <p class="src"><strong>Excel model</strong> — Model_v12.xlsx · P&amp;L sheet · cell B4 · value 48,200,000 <span style="color:#a39d8f">· as of 2025-06-30</span></p>
+      <p class="src">How it is derived: EBITDA (P&amp;L!B8) divided by revenue (P&amp;L!B4).</p>
       
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-002</strong> · Project Alder operating model v12 — P&amp;L, FY2025 EBITDA</div>
-          <div class="source-meta">excel_model · <code>inputs/Model_v12.xlsx</code> · location: <strong>P&amp;L!B8</strong> · as of 2025-06-30</div>
-          <div class="source-meta">extracted value: <code>10796800</code></div>
-          
-        </div>
-
-        <div class="source">
-          <div class="source-head"><strong>SRC-003</strong> · Project Alder operating model v12 — P&amp;L, FY2025 revenue</div>
-          <div class="source-meta">excel_model · <code>inputs/Model_v12.xlsx</code> · location: <strong>P&amp;L!B4</strong> · as of 2025-06-30</div>
-          <div class="source-meta">extracted value: <code>48200000</code></div>
-          
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-003</span>
-        <span class="badge" style="color:#166534;border-color:#166534">sourced</span>
-        <span class="badge" style="color:#166534;border-color:#166534">verified</span>
-      </header>
-      <p class="rendered">&ldquo;revenue growth of 17.8% year over year&rdquo;</p>
+      <p class="meta">Reference CLM-002</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;revenue growth of 17.8% year over year&rdquo;</p>
+      <span class="pill good">Sourced</span>
+    </div>
+      <p class="src"><strong>Public filing excerpt</strong> — Condensed income statement <span style="color:#a39d8f">· as of 2025-06-30</span></p>
       
+      <p class="quote">&ldquo;Revenue for the trailing twelve months was $48.2 million, an increase of 17.8% over the prior-year period ($40.9 million).&rdquo;</p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-004</strong> · Synthetic 10-Q excerpt — condensed income statement</div>
-          <div class="source-meta">filing · <code>inputs/10q-excerpt.md</code> · location: <strong>Condensed income statement</strong> · as of 2025-06-30</div>
-          
-          <blockquote>Revenue for the trailing twelve months was $48.2 million, an increase of 17.8% over the prior-year period ($40.9 million).</blockquote>
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-004</span>
-        <span class="badge" style="color:#166534;border-color:#166534">sourced</span>
-        <span class="badge" style="color:#166534;border-color:#166534">verified</span>
-      </header>
-      <p class="rendered">&ldquo;the top ten customers account for more than 40% of revenue&rdquo;</p>
+      <p class="meta">Reference CLM-003</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;the top ten customers account for more than 40% of revenue&rdquo;</p>
+      <span class="pill good">Sourced</span>
+    </div>
+      <p class="src"><strong>Earnings call transcript</strong> — Section 7 — Q&amp;A: customer base <span style="color:#a39d8f">· as of 2025-05-14</span></p>
       
+      <p class="quote">&ldquo;Our top ten customers together still represent a little over 40% of revenue, and we are working to broaden the mid-market base.&rdquo;</p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-006</strong> · Synthetic Q2 FY2025 earnings-call transcript excerpt</div>
-          <div class="source-meta">transcript · <code>inputs/earnings-call-q2-transcript.md</code> · location: <strong>Section 7 — Q&amp;A: customer base, page 7</strong> · as of 2025-05-14</div>
-          
-          <blockquote>Our top ten customers together still represent a little over 40% of revenue, and we are working to broaden the mid-market base.</blockquote>
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-005</span>
-        <span class="badge" style="color:#1d4ed8;border-color:#1d4ed8">derived</span>
-        <span class="badge" style="color:#92400e;border-color:#92400e">needs analyst</span>
-      </header>
-      <p class="rendered">&ldquo;management guidance implies EBITDA margin expansion of roughly 150-200 bps by FY2027&rdquo;</p>
-      <p class="note"><strong>Review note:</strong> Derived from qualitative MD&amp;A language; the 150-200 bps quantification is an analyst reading, not a stated figure. An analyst must confirm the margin bridge with management before the committee relies on it.</p>
+      <p class="meta">Reference CLM-004</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;management guidance implies EBITDA margin expansion of roughly 150-200 bps by FY2027&rdquo;</p>
+      <span class="pill warn">Derived — needs analyst</span>
+    </div>
+      <p class="src"><strong>Public filing excerpt</strong> — Management's discussion and analysis (MD&amp;A) <span style="color:#a39d8f">· as of 2025-06-30</span></p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-005</strong> · Synthetic 10-Q excerpt — MD&amp;A</div>
-          <div class="source-meta">filing · <code>inputs/10q-excerpt.md</code> · location: <strong>Management's discussion and analysis (MD&amp;A)</strong> · as of 2025-06-30</div>
-          
-          <blockquote>Management expects continued operating leverage as the payments and analytics modules scale, with adjusted EBITDA margin expected to improve modestly through fiscal 2027.</blockquote>
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-006</span>
-        <span class="badge" style="color:#991b1b;border-color:#991b1b">unresolved</span>
-        <span class="badge" style="color:#991b1b;border-color:#991b1b">unresolved</span>
-      </header>
-      <p class="rendered">&ldquo;the base case assumes net leverage of 4.0x at close&rdquo;</p>
-      <p class="note"><strong>Review note:</strong> Assumption only. The internal model note states it is pending lender feedback and not yet confirmed. Must be resolved with financing counterparties before committee sign-off.</p>
+      <p class="quote">&ldquo;Management expects continued operating leverage as the payments and analytics modules scale, with adjusted EBITDA margin expected to improve modestly through fiscal 2027.&rdquo;</p>
+      <p class="verify"><strong>What to verify:</strong> Derived from qualitative MD&amp;A language; the 150-200 bps quantification is an analyst reading, not a stated figure. An analyst must confirm the margin bridge with management before the committee relies on it.</p>
+      <p class="meta">Reference CLM-005</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;the base case assumes net leverage of 4.0x at close&rdquo;</p>
+      <span class="pill stop">Unresolved — escalate</span>
+    </div>
+      <p class="src"><strong>Internal note</strong> — Financing assumptions <span style="color:#a39d8f">· as of 2025-06-24</span></p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-007</strong> · Internal model note — leverage assumptions</div>
-          <div class="source-meta">internal_note · <code>inputs/internal-model-note.md</code> · location: <strong>Financing assumptions</strong> · as of 2025-06-24</div>
-          
-          <blockquote>Base case assumes net leverage of 4.0x at close. Pending lender feedback — not yet confirmed. Do not treat as final.</blockquote>
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-007</span>
-        <span class="badge" style="color:#166534;border-color:#166534">sourced</span>
-        <span class="badge" style="color:#b45309;border-color:#b45309">flagged</span>
-      </header>
-      <p class="rendered">&ldquo;comparable vertical-software transactions cleared at 4.9x-6.8x EV/Revenue&rdquo;</p>
-      <p class="note"><strong>Review note:</strong> Verify comparability: the vendor export mixes deal sizes and end markets; confirm which transactions are genuinely comparable before quoting the range to the committee.</p>
+      <p class="quote">&ldquo;Base case assumes net leverage of 4.0x at close. Pending lender feedback — not yet confirmed. Do not treat as final.&rdquo;</p>
+      <p class="verify"><strong>What to verify:</strong> Assumption only. The internal model note states it is pending lender feedback and not yet confirmed. Must be resolved with financing counterparties before committee sign-off.</p>
+      <p class="meta">Reference CLM-006</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;comparable vertical-software transactions cleared at 4.9x-6.8x EV/Revenue&rdquo;</p>
+      <span class="pill warn">Sourced — verify before use</span>
+    </div>
+      <p class="src"><strong>Data export</strong> — comps.csv · rows 2-9 <span style="color:#a39d8f">· as of 2025-06-20</span></p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-008</strong> · Comparable transactions export (comps.csv)</div>
-          <div class="source-meta">vendor_export · <code>inputs/comps.csv</code> · location: <strong>rows 2-9</strong> · as of 2025-06-20</div>
-          
-          <blockquote>EV/Revenue multiples for the eight listed transactions range from 4.9x to 6.8x.</blockquote>
-        </div>
-    </article>
-
-    <article class="claim">
-      <header>
-        <span class="claim-id">CLM-008</span>
-        <span class="badge" style="color:#166534;border-color:#166534">sourced</span>
-        <span class="badge" style="color:#166534;border-color:#166534">verified</span>
-      </header>
-      <p class="rendered">&ldquo;net revenue retention has remained above 108% in each of the last four quarters&rdquo;</p>
+      <p class="quote">&ldquo;EV/Revenue multiples for the eight listed transactions range from 4.9x to 6.8x.&rdquo;</p>
+      <p class="verify"><strong>What to verify:</strong> Verify comparability: the vendor export mixes deal sizes and end markets; confirm which transactions are genuinely comparable before quoting the range to the committee.</p>
+      <p class="meta">Reference CLM-007</p>
+  </article>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">&ldquo;net revenue retention has remained above 108% in each of the last four quarters&rdquo;</p>
+      <span class="pill good">Sourced</span>
+    </div>
+      <p class="src"><strong>Earnings call transcript</strong> — Section 4 — CFO remarks: retention <span style="color:#a39d8f">· as of 2025-05-14</span></p>
       
+      <p class="quote">&ldquo;Net revenue retention has remained above 108% in each of the last four quarters.&rdquo;</p>
       
-        <div class="source">
-          <div class="source-head"><strong>SRC-009</strong> · Synthetic Q2 FY2025 earnings-call transcript excerpt — retention</div>
-          <div class="source-meta">transcript · <code>inputs/earnings-call-q2-transcript.md</code> · location: <strong>Section 4 — CFO remarks: retention, page 4</strong> · as of 2025-05-14</div>
-          
-          <blockquote>Net revenue retention has remained above 108% in each of the last four quarters.</blockquote>
-        </div>
-    </article>
-  <h2>Excluded sources</h2>
-  
-      <div class="source excluded">
-        <div class="source-head"><strong>SRC-010</strong> · Unattributed industry blog post on vertical-software multiples <span class="badge" style="color:#991b1b;border-color:#991b1b">excluded</span></div>
-        <div class="source-meta">Unattributed source: no named author or publisher and no verifiable methodology. Fails the workflow source policy, so it was excluded from drafting and no claim may cite it.</div>
-      </div>
-  <p class="foot">Cell-level lineage is demonstrated only for Excel-sourced figures (sheet+cell re-read by the acceptance checks). Filing, transcript, note, and CSV references are section- or page-level. All data is synthetic; this page is generated by the demo pipeline and carries no reviewer sign-off.</p>
+      <p class="meta">Reference CLM-008</p>
+  </article>
+  <h2>Excluded from this draft</h2>
+  <p class="section-note">Candidate material rejected at source review. No claim in the memo relies on it.</p>
+  <article class="card">
+    <div class="card-top">
+      <p class="claim-text">Unattributed industry blog post on vertical-software multiples</p>
+      <span class="pill mute">Excluded — source policy</span>
+    </div>
+    <p class="src">Unattributed source: no named author or publisher and no verifiable methodology. Fails the workflow source policy, so it was excluded from drafting and no claim may cite it.</p>
+    <p class="meta">Reference SRC-010</p>
+  </article>
+  <footer class="foot">
+    <p>Cell-level tracing applies to the Excel-sourced figures, which are re-checked against the model's actual cells on every run. Filing, transcript, note, and CSV references are section- or page-level. All data on this page is synthetic and the draft carries no reviewer sign-off.</p>
+    <p>Illustrative workflow — synthetic data. Not client work. Generated by an open-source workflow foundation.</p>
+  </footer>
 </div>
 </body>
 </html>

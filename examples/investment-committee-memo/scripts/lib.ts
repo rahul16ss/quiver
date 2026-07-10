@@ -275,7 +275,9 @@ export const OUTPUT = {
   evidenceJson: "output/Project_Alder_Evidence.json",
   evidenceHtml: "output/Project_Alder_Evidence.html",
   reviewChecklist: "output/Project_Alder_Review_Checklist.md",
+  reviewChecklistHtml: "output/Project_Alder_Review_Checklist.html",
   runRecord: "output/Project_Alder_Run_Record.json",
+  provenanceHtml: "output/Project_Alder_Provenance.html",
 } as const;
 
 export const REQUIRED_SECTIONS = [

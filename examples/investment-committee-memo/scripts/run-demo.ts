@@ -26,7 +26,7 @@ import {
   p,
 } from "./lib.ts";
 import { CHECK_IMPLEMENTATIONS, CheckResult } from "./checks.ts";
-import { buildEvidenceMap, writeArtifacts } from "./artifacts.ts";
+import { buildEvidenceMap, writeArtifacts, writeProvenance } from "./artifacts.ts";
 
 // ---------------------------------------------------------------------------
 // Step 1 — validate fixtures
@@ -188,6 +188,7 @@ async function main(): Promise<void> {
   console.log(`  wrote ${OUTPUT.evidenceJson}`);
   console.log(`  wrote ${OUTPUT.evidenceHtml}`);
   console.log(`  wrote ${OUTPUT.reviewChecklist}`);
+  console.log(`  wrote ${OUTPUT.reviewChecklistHtml}`);
   console.log(`  wrote ${OUTPUT.runRecord}`);
 
   console.log("[4/5] Running acceptance checks");
@@ -206,10 +207,23 @@ async function main(): Promise<void> {
   }
   officecli(["close", p("inputs", "Model_v12.xlsx")], { allowFail: true });
 
+  // The provenance page carries the real pass state of each check, so it is
+  // written after the checks run.
+  writeProvenance(evidence, results.map((r) => ({ id: r.id, pass: r.pass })));
+  console.log(`  wrote ${OUTPUT.provenanceHtml}`);
+
   console.log("\n[5/5] Summary");
   const failed = results.filter((r) => !r.pass);
   console.log(`  checks: ${results.length - failed.length}/${results.length} passed`);
-  for (const f of [OUTPUT.docx, OUTPUT.evidenceJson, OUTPUT.evidenceHtml, OUTPUT.reviewChecklist, OUTPUT.runRecord]) {
+  for (const f of [
+    OUTPUT.docx,
+    OUTPUT.evidenceJson,
+    OUTPUT.evidenceHtml,
+    OUTPUT.reviewChecklist,
+    OUTPUT.reviewChecklistHtml,
+    OUTPUT.runRecord,
+    OUTPUT.provenanceHtml,
+  ]) {
     console.log(`  output: examples/investment-committee-memo/${f}`);
   }
 

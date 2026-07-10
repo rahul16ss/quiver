@@ -139,6 +139,8 @@
     "output/Project_Alder_Evidence.json",
     "output/Project_Alder_Evidence.html",
     "output/Project_Alder_Review_Checklist.md",
-    "output/Project_Alder_Run_Record.json"
+    "output/Project_Alder_Review_Checklist.html",
+    "output/Project_Alder_Run_Record.json",
+    "output/Project_Alder_Provenance.html"
   ]
 }
