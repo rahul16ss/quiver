@@ -77,6 +77,12 @@ gitignore and remember.rtf
 .spec-swimlane.md
 docs/ICP.md
 
+# ─── Commercial strategy & sensitive internal docs (not for public repo) ──
+spec-quiver-harness.md
+docs/security/
+docs/qa/
+tests/ACCEPTANCE_CONTRACT.md
+
 # ─── GitHub Actions (requires workflow scope on PAT) ───────────────────
 # Remove this line once your GitHub PAT has the 'workflow' scope added,
 # then: git add .github/ && git commit && git push
