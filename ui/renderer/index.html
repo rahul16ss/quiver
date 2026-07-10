@@ -36,40 +36,71 @@
         <button id="ctxEditBtn" class="link-btn" title="Edit what the AI remembers">Edit</button>
       </div>
 
-      <div class="ctx-section">
-        <div class="ctx-label">Model</div>
-        <div id="ctxModel" class="ctx-value">—</div>
+      <p class="ctx-intro">Everything that will inform Quiver's next answer —
+        visible before it runs, editable where it's yours.</p>
+
+      <!-- §6 layer A: Framing -->
+      <div class="ctx-section" id="ctxFramingSection" hidden>
+        <div class="ctx-label">Instructions</div>
+        <div id="ctxFraming" class="ctx-value muted">—</div>
       </div>
 
+      <!-- §6 layer B: Memory & persona -->
       <div class="ctx-section">
-        <div class="ctx-label">Memory in use <span id="ctxMemCount" class="count"></span></div>
+        <div class="ctx-label">Memory <span id="ctxMemCount" class="count"></span></div>
         <div id="ctxMemList" class="ctx-list"></div>
+        <div class="ctx-sub-row">
+          <span class="ctx-sub">Learned facts to review:</span>
+          <span id="ctxReviewCount" class="ctx-sub">—</span>
+          <button id="openReviewBtn" class="link-btn" hidden>Review</button>
+        </div>
       </div>
 
-      <div class="ctx-section">
+      <!-- §6 layer C: Skills & tools -->
+      <div class="ctx-section" id="ctxSkillsSection" hidden>
         <div class="ctx-label">Skills <span id="ctxSkillCount" class="count"></span></div>
         <div id="ctxSkillsList" class="ctx-list"></div>
       </div>
+      <div class="ctx-section" id="ctxToolsSection" hidden>
+        <div class="ctx-label">Tools</div>
+        <details class="ctx-details">
+          <summary id="ctxToolsSummary" class="ctx-value">—</summary>
+          <div id="ctxToolsList" class="ctx-list ctx-tools-list"></div>
+        </details>
+      </div>
 
-      <div class="ctx-section">
-        <div class="ctx-label">Memory used this session</div>
+      <!-- §6 layer D: Conversation -->
+      <div class="ctx-section" id="ctxTokensSection" hidden>
+        <div class="ctx-label">Conversation</div>
+        <div id="ctxTurns" class="ctx-value muted"></div>
         <div class="ctx-tokens">
           <div class="ctx-bar-wrap">
             <div id="ctxTokenBar" class="ctx-bar"></div>
           </div>
-          <div id="ctxTokenLabel" class="ctx-tokens-label">—</div>
+          <div id="ctxTokenLabel" class="ctx-tokens-label"></div>
         </div>
       </div>
 
+      <!-- §6 layer F: Operational -->
       <div class="ctx-section">
-        <div class="ctx-label">Learned facts to review</div>
-        <div id="ctxReviewCount" class="ctx-value muted">—</div>
-        <button id="openReviewBtn" class="link-btn" hidden>Review queue</button>
+        <div class="ctx-label">Where it runs</div>
+        <div id="ctxModel" class="ctx-value">—</div>
+        <div id="ctxEndpoint" class="ctx-value muted"></div>
+        <div id="ctxTrust" class="ctx-value muted"></div>
+        <div id="ctxWorkspace" class="ctx-value muted" title=""></div>
       </div>
     </aside>
 
     <!-- B. Conversation — what you and Quiver are making -->
     <main id="conversation-plane" aria-label="Conversation">
+      <!-- One-time, non-blocking warning when the configured workspace is the
+           app's own source tree (Epic 2 §2.5). The hard block applies anyway. -->
+      <div id="workspaceWarning" class="workspace-warning" hidden>
+        <span class="ww-text">Your workspace folder is currently Quiver's own app folder.
+          Documents belong in a folder of yours — change it in <strong>Settings → Workspace folder</strong>.
+          (Quiver will refuse to modify its own files either way.)</span>
+        <button id="workspaceWarningDismiss" class="link-btn" title="Dismiss">Dismiss</button>
+      </div>
       <div id="chatArea" class="chat-area">
         <div id="emptyState" class="empty-state">
           <div class="empty-title">What should we work on?</div>
@@ -101,9 +132,11 @@
     <aside id="activity-plane" aria-label="What Quiver is doing">
       <div class="plane-head">
         <h2>What Quiver is doing</h2>
-        <button id="activityClearBtn" class="link-btn" title="Clear the activity stream">Clear</button>
+        <button id="activityClearBtn" class="link-btn" title="Clear the activity stream" hidden>Clear</button>
       </div>
-      <div id="activityStream" class="activity-stream"></div>
+      <div id="activityStream" class="activity-stream">
+        <div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>
+      </div>
     </aside>
   </div>
 
@@ -213,6 +246,7 @@
           <button class="close-btn" data-close="sessionsOverlay">×</button>
         </div>
       </div>
+      <input id="sessionFilter" class="field" type="search" placeholder="Filter sessions…" autocomplete="off" />
       <div id="sessionsList" class="sessions-list"></div>
     </div>
   </div>

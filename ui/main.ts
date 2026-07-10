@@ -1,11 +1,24 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import * as path from "path";
+import * as os from "os";
+import * as fsSync from "fs";
 import { fileURLToPath } from "url";
 import { spawn, ChildProcess } from "child_process";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { config } from "../src/config.ts";
 import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
+import * as crypto from "crypto";
+import {
+  connectOrLaunch,
+  daemonStatus,
+  startAgentViaDaemon,
+  sendLine,
+  stopAgent as stopAgentViaDaemon,
+  subscribe,
+  type DaemonConnection,
+  type AgentEventEntry,
+} from "../src/daemon/client.ts";
 
 // Set application name early so it registers properly with OS Dock and menus
 app.setName("Quiver");
@@ -67,8 +80,56 @@ let agentProcess: ChildProcess | null = null;
 
 const CONFIG_FILE = path.join(app.getPath("userData"), "quiver-config.json");
 
+// ─── Quiver install root (self-modification guard, Epic 2 §2.5) ───────
+// Resolve the directory that contains Quiver's own package.json (the app's
+// installation/source tree). The agent child process receives this as
+// QUIVER_PROTECTED_DIR and the path policy hard-blocks writes into it, so a
+// GUI session can never rewrite Quiver's own source — regardless of what the
+// configured workspace is. CLI/dev runs without the env var are unaffected.
+function getQuiverInstallDir(): string {
+  if (app.isPackaged) return process.resourcesPath;
+  // Dev mode: walk up from ui/ to the directory holding Quiver's package.json.
+  let dir = path.resolve(__dirname, "..");
+  for (let i = 0; i < 5; i++) {
+    try {
+      const pkg = JSON.parse(
+        fsSync.readFileSync(path.join(dir, "package.json"), "utf8"),
+      );
+      if (typeof pkg.name === "string" && pkg.name.includes("quiver")) {
+        return dir;
+      }
+    } catch {
+      // keep walking up
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.resolve(__dirname, "..");
+}
+
+// The default workspace for NEW configs is a documents folder in the user's
+// home — never the app/source directory (Epic 2 §2.5). Created on first
+// agent start by ensureWorkingDir. Existing saved configs are not rewritten.
+const DEFAULT_WORKSPACE = path.join(os.homedir(), "Quiver Workspace");
+
+function isWorkspaceAppSource(workspacePath: string): boolean {
+  if (!workspacePath) return false;
+  try {
+    const installDir = fsSync.realpathSync(getQuiverInstallDir());
+    let ws = path.resolve(workspacePath);
+    try {
+      ws = fsSync.realpathSync(ws);
+    } catch {}
+    const rel = path.relative(installDir, ws);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_CONFIG: QuiverConfig = {
-  workspacePath: process.cwd(),
+  workspacePath: DEFAULT_WORKSPACE,
   provider: {
     baseUrl: config.llmBaseUrl,
     modelName: config.llmModelName,
@@ -97,6 +158,9 @@ async function loadConfig(): Promise<QuiverConfig> {
 
 async function saveConfig(config: QuiverConfig): Promise<void> {
   try {
+    // Strip computed, non-persistent fields (added by the config:load handler)
+    // so they never end up in quiver-config.json.
+    delete (config as any).workspaceIsAppSource;
     const fs = await import("fs/promises");
     await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf8");
   } catch (err) {
@@ -221,6 +285,111 @@ function getAgentCommand(): { cmd: string; args: string[] } {
   };
 }
 
+// ─── Daemon connection (Epic 1 stage 1) ───────────────────────────────
+// The daemon owns the agent child process so the session survives window
+// and app restarts. The GUI connects (or launches the daemon), then either
+// attaches to the running agent (same config) or starts a fresh one.
+let daemonConn: DaemonConnection | null = null;
+let daemonUnsub: (() => void) | null = null;
+let lastEventSeq = 0;
+let agentViaDaemon = false;
+// Ring entries at or below this seq are replay (window was closed when they
+// happened); "user" echoes above it are live and already rendered locally.
+let replayCutoffSeq = 0;
+
+function getDaemonCommand(): { cmd: string; args: string[]; cwd: string } {
+  if (app.isPackaged) {
+    return {
+      cmd: "node",
+      args: ["--import", "tsx", path.join(process.resourcesPath, "src", "daemon", "daemon.ts")],
+      cwd: process.resourcesPath,
+    };
+  }
+  const projectRoot = path.resolve(__dirname, "..");
+  return {
+    cmd: path.join(projectRoot, "node_modules", ".bin", "tsx"),
+    args: [path.join(projectRoot, "src", "daemon", "daemon.ts")],
+    cwd: projectRoot,
+  };
+}
+
+/** Hash of everything that would change the agent's behavior; a running
+ * agent with a different hash is restarted rather than attached to. */
+function configLabel(env: Record<string, string | undefined>, cwd: string, args: string[]): string {
+  const material = JSON.stringify({
+    cwd,
+    args,
+    env: {
+      LLM_API_BASE_URL: env.LLM_API_BASE_URL,
+      LLM_MODEL_NAME: env.LLM_MODEL_NAME,
+      QUIVER_AUTONOMY: env.QUIVER_AUTONOMY,
+      QUIVER_MAX_CONTEXT_TOKENS: env.QUIVER_MAX_CONTEXT_TOKENS,
+      QUIVER_CLOUD_SYNC_PATH: env.QUIVER_CLOUD_SYNC_PATH,
+      QUIVER_PROTECTED_DIR: env.QUIVER_PROTECTED_DIR,
+    },
+  });
+  return crypto.createHash("sha256").update(material).digest("hex").slice(0, 16);
+}
+
+function forwardDaemonEntry(entry: AgentEventEntry): void {
+  lastEventSeq = entry.seq;
+  switch (entry.kind) {
+    case "event": {
+      try {
+        mainWindow?.webContents.send("agent:event", JSON.parse(entry.payload));
+      } catch {
+        mainWindow?.webContents.send("agent:raw", entry.payload);
+      }
+      break;
+    }
+    case "raw":
+      mainWindow?.webContents.send("agent:raw", entry.payload);
+      break;
+    case "stderr":
+      mainWindow?.webContents.send("agent:stderr", entry.payload);
+      break;
+    case "exit": {
+      let code: number | null = null;
+      try {
+        code = JSON.parse(entry.payload)?.code ?? null;
+      } catch {
+        // keep null
+      }
+      mainWindow?.webContents.send("agent:exit", { code });
+      break;
+    }
+    case "error":
+      mainWindow?.webContents.send("agent:error", { message: entry.payload });
+      break;
+    case "user":
+      // Replay the user's side of the conversation after a window restart;
+      // live echoes are skipped (the renderer already painted the bubble).
+      if (entry.seq <= replayCutoffSeq) {
+        mainWindow?.webContents.send("agent:event", {
+          type: "user_replay",
+          content: entry.payload,
+        });
+      }
+      break;
+    case "stopped":
+      break; // expected transitions (restart/stop) — not a crash
+  }
+}
+
+function subscribeToDaemon(fromSeq: number): void {
+  if (!daemonConn) return;
+  daemonUnsub?.();
+  daemonUnsub = subscribe(daemonConn, fromSeq, forwardDaemonEntry, () => {
+    // Daemon went away mid-session: tell the renderer and fall back cleanly.
+    daemonUnsub = null;
+    if (agentViaDaemon) {
+      agentViaDaemon = false;
+      daemonConn = null;
+      mainWindow?.webContents.send("agent:exit", { code: null });
+    }
+  });
+}
+
 async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): Promise<void> {
   if (agentProcess) {
     // Mark the old agent as expected-to-exit so its exit event isn't forwarded
@@ -248,6 +417,9 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     QUIVER_CLOUD_SYNC_PATH: config.cloudSyncPath || "",
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
+    // Self-modification guard (Epic 2 §2.5): the agent's path policy refuses
+    // any write into Quiver's own installation/source tree when this is set.
+    QUIVER_PROTECTED_DIR: getQuiverInstallDir(),
   };
 
   // In packaged mode, set APP_ROOT to resourcesPath
@@ -261,6 +433,39 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
 
   // Write .env to the working directory so the CLI can read it
   await syncToEnv(config);
+
+  // Daemon-first (Epic 1 stage 1): attach to the running agent when its
+  // config matches; otherwise (re)start it through the daemon. The env goes
+  // to the daemon over loopback with bearer-token auth — the same trust
+  // boundary as the 0600 token file. If the daemon can't be reached, fall
+  // back to the legacy directly-owned child process below.
+  const label = configLabel(env, workingDir, finalArgs);
+  try {
+    daemonConn = await connectOrLaunch(getDaemonCommand());
+    const status = await daemonStatus(daemonConn);
+    lastEventSeq = 0;
+    replayCutoffSeq = status.lastSeq;
+    // Subscribe from 0 in both paths: on attach the ring replay rebuilds the
+    // conversation where the user left it; on a fresh start it is empty.
+    subscribeToDaemon(0);
+    if (!(status.running && status.label === label && !resumeLatest)) {
+      await startAgentViaDaemon(daemonConn, {
+        cmd,
+        args: finalArgs,
+        cwd: workingDir,
+        env,
+        label,
+      });
+    }
+    agentViaDaemon = true;
+    return;
+  } catch (err) {
+    console.error("Daemon unavailable, falling back to direct agent spawn:", err);
+    daemonUnsub?.();
+    daemonUnsub = null;
+    daemonConn = null;
+    agentViaDaemon = false;
+  }
 
   const proc = spawn(cmd, finalArgs, {
     cwd: workingDir,
@@ -301,6 +506,14 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
 }
 
 function sendToAgent(text: string): void {
+  if (agentViaDaemon && daemonConn) {
+    void sendLine(daemonConn, text, "user").then((ok) => {
+      if (!ok) {
+        mainWindow?.webContents.send("agent:error", { message: "Agent is not running" });
+      }
+    });
+    return;
+  }
   if (!agentProcess || !agentProcess.stdin) {
     mainWindow?.webContents.send("agent:error", {
       message: "Agent is not running",
@@ -311,11 +524,17 @@ function sendToAgent(text: string): void {
 }
 
 function approveToolCall(approve: boolean, note?: string): void {
-  if (!agentProcess || !agentProcess.stdin) return;
   // "y" approves once; "a" approves all-similar-this-session; "n" denies.
   // An optional revision note is sent as a second line on deny so the agent
   // can feed concrete revision guidance back to the model (US-2.4).
   const choice = approve ? (note === "all" ? "a" : "y") : "n";
+  if (agentViaDaemon && daemonConn) {
+    void sendLine(daemonConn, choice).then(() => {
+      if (!approve && daemonConn) void sendLine(daemonConn, note ? note : "");
+    });
+    return;
+  }
+  if (!agentProcess || !agentProcess.stdin) return;
   agentProcess.stdin.write(choice + "\n");
   if (!approve) {
     agentProcess.stdin.write((note ? note : "") + "\n");
@@ -494,8 +713,29 @@ async function listSessions(): Promise<any[]> {
         const filePath = path.join(sessionsDir, f);
         const content = await fs.readFile(filePath, "utf8");
         const state = JSON.parse(content);
+        // Human title (Epic 2 §2.2): the first user message, truncated.
+        // Falls back to empty — the renderer formats the date instead.
+        let title = "";
+        for (const msg of state.messages || []) {
+          if (msg?.role !== "user") continue;
+          let text = "";
+          if (typeof msg.content === "string") {
+            text = msg.content;
+          } else if (Array.isArray(msg.content)) {
+            text = msg.content
+              .map((p: any) => (p?.type === "text" ? p.text || "" : ""))
+              .join(" ");
+          }
+          // Skip attachment markers so "[Image: /path]" doesn't become a title
+          text = text.replace(/\[Image:[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
+          if (text) {
+            title = text.length > 60 ? text.slice(0, 57).trimEnd() + "…" : text;
+            break;
+          }
+        }
         results.push({
           sessionId: state.sessionId || f.replace(".state.json", ""),
+          title,
           path: filePath,
           savedAt: state.savedAt || new Date().toISOString(),
           messageCount: state.messages?.length || 0,
@@ -642,7 +882,16 @@ async function listSkills(workspacePath: string, skillsDirConfig: string): Promi
 
 function registerIpcHandlers(): void {
   // Config
-  ipcMain.handle("config:load", async () => loadConfig());
+  ipcMain.handle("config:load", async () => {
+    const config = await loadConfig();
+    // Computed flag (never persisted — see saveConfig): lets the renderer
+    // show a one-time warning banner when the configured workspace IS the
+    // app source tree (Epic 2 §2.5). The hard block applies regardless.
+    return {
+      ...config,
+      workspaceIsAppSource: isWorkspaceAppSource(config.workspacePath || ""),
+    };
+  });
   ipcMain.handle("config:save", async (_evt, config: QuiverConfig) => {
     await saveConfig(config);
     await syncToEnv(config);
@@ -666,6 +915,11 @@ function registerIpcHandlers(): void {
     return true;
   });
   ipcMain.handle("agent:stop", async () => {
+    // An explicit user Stop halts the agent everywhere — including in the
+    // daemon. (Closing the window, by contrast, leaves it running.)
+    if (agentViaDaemon && daemonConn) {
+      await stopAgentViaDaemon(daemonConn).catch(() => {});
+    }
     if (agentProcess) {
       agentProcess.kill();
       agentProcess = null;
@@ -687,21 +941,70 @@ function registerIpcHandlers(): void {
     }
   }
 
-  // Sessions
+  // Sessions live under ~/.quiver/projects/<project>/.sessions/ (or a legacy
+  // <workspace>/.sessions/), which is OUTSIDE the workspace-rooted default
+  // policy — the generic ipcPathGuard would reject every legitimate session
+  // path (that bug rendered resumed sessions as a blank conversation). This
+  // guard is instead scoped to exactly the session stores and .state.json
+  // files, which is both correct and tighter than the generic guard.
+  async function sessionPathGuard(filePath: string): Promise<string | null> {
+    try {
+      const resolved = fsSync.realpathSync(path.resolve(filePath));
+      if (!resolved.endsWith(".state.json")) return "Not a session state file";
+      const projectsRoot = fsSync.realpathSync(
+        path.join(app.getPath("home"), ".quiver", "projects"),
+      );
+      const inProjects = resolved.startsWith(projectsRoot + path.sep);
+      let inWorkspace = false;
+      try {
+        const ws = fsSync.realpathSync(getWorkingDir(await loadConfig()));
+        inWorkspace = resolved.startsWith(path.join(ws, ".sessions") + path.sep);
+      } catch {
+        // no workspace configured — projects root check stands alone
+      }
+      if (!inProjects && !inWorkspace) return "Path is outside the session stores";
+      return null;
+    } catch (e: any) {
+      return e?.message || "Invalid session path";
+    }
+  }
+
+  // Second layer under the store-membership guard: the path-policy engine
+  // (symlink realpath, traversal, blocked sensitive globs) runs on the live
+  // path inside every handler body (US-8.1), rooted at the session file's own
+  // directory since store membership is already proven by sessionPathGuard.
+  const sessionPolicyFor = (filePath: string) =>
+    createDefaultPolicy(path.dirname(path.resolve(filePath)));
+
   ipcMain.handle("sessions:list", async () => listSessions());
   ipcMain.handle("sessions:load", async (_evt, filePath: string) => {
-    const guardErr = ipcPathGuard(filePath, "read");
+    const guardErr = await sessionPathGuard(filePath);
     if (guardErr) return { error: guardErr };
+    try {
+      resolveAndAssertPathAllowed(filePath, "read", sessionPolicyFor(filePath));
+    } catch (e: any) {
+      return { error: e?.message || "Path policy rejected the session path" };
+    }
     return loadSessionFile(filePath);
   });
   ipcMain.handle("sessions:delete", async (_evt, filePath: string, permanent: boolean = false) => {
-    const guardErr = ipcPathGuard(filePath, "write");
+    const guardErr = await sessionPathGuard(filePath);
     if (guardErr) return { error: guardErr };
+    try {
+      resolveAndAssertPathAllowed(filePath, "write", sessionPolicyFor(filePath));
+    } catch (e: any) {
+      return { error: e?.message || "Path policy rejected the session path" };
+    }
     return deleteSessionFile(filePath, permanent);
   });
   ipcMain.handle("sessions:touch", async (_evt, filePath: string) => {
-    const guardErr = ipcPathGuard(filePath, "write");
+    const guardErr = await sessionPathGuard(filePath);
     if (guardErr) return { error: guardErr };
+    try {
+      resolveAndAssertPathAllowed(filePath, "write", sessionPolicyFor(filePath));
+    } catch (e: any) {
+      return { error: e?.message || "Path policy rejected the session path" };
+    }
     return touchSessionFile(filePath);
   });
 
@@ -885,6 +1188,49 @@ function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
+  // ── Deliverable actions (Epic 2 §2.4) ──
+  // Open a produced document in its native app / reveal it in Finder.
+  // Validation: the renderer is driven by untrusted model output, so the
+  // path must resolve inside the configured workspace (documents live there)
+  // and must pass the path policy (no .env/keys/VCS internals).
+  async function validateDeliverablePath(filePath: string): Promise<string | null> {
+    try {
+      if (typeof filePath !== "string" || !filePath.trim()) return "No file path given.";
+      const config = await loadConfig();
+      const workspace = path.resolve(config.workspacePath || process.cwd());
+      let real = path.resolve(filePath);
+      try {
+        real = fsSync.realpathSync(real);
+      } catch {
+        return "This file doesn't exist.";
+      }
+      let wsReal = workspace;
+      try {
+        wsReal = fsSync.realpathSync(workspace);
+      } catch {}
+      const rel = path.relative(wsReal, real);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) {
+        return "Only files inside your workspace folder can be opened from here.";
+      }
+      resolveAndAssertPathAllowed(real, "read", createDefaultPolicy(wsReal));
+      return null;
+    } catch (e: any) {
+      return e?.message || "This file can't be opened.";
+    }
+  }
+  ipcMain.handle("file:open", async (_evt, filePath: string) => {
+    const err = await validateDeliverablePath(filePath);
+    if (err) return { error: err };
+    const result = await shell.openPath(path.resolve(filePath));
+    return result ? { error: result } : { ok: true };
+  });
+  ipcMain.handle("file:showInFolder", async (_evt, filePath: string) => {
+    const err = await validateDeliverablePath(filePath);
+    if (err) return { error: err };
+    shell.showItemInFolder(path.resolve(filePath));
+    return { ok: true };
+  });
+
   // Preview — read a file and return its content + type for the preview panel
   ipcMain.handle("preview:file", async (_evt, filePath: string) => {
     try {
@@ -1014,16 +1360,25 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // Epic 1 stage 1: a daemon-owned agent deliberately survives here — the
+  // session is where you left it when the window reopens. Only a legacy
+  // directly-owned child is killed with its window.
   if (agentProcess) {
     agentProcess.kill();
   }
+  daemonUnsub?.();
+  daemonUnsub = null;
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
+  // Same deliberate survival on app quit: the daemon keeps the agent and
+  // the event ring; the next launch attaches and replays.
   if (agentProcess) {
     agentProcess.kill();
   }
+  daemonUnsub?.();
+  daemonUnsub = null;
 });

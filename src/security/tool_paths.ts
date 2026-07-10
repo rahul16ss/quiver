@@ -22,6 +22,7 @@ import { realpathSync } from "fs";
 import {
   resolveAndAssertPathAllowed,
   createDefaultPolicy,
+  assertNotProtectedInstallDir,
   type PathPolicy,
   type ResolvedPath,
 } from "./path_policy.js";
@@ -60,6 +61,10 @@ export function assertToolPathAllowed(
     const absolutePath = path.resolve(filePath);
     let realPath = absolutePath;
     try { realPath = realpathSync(absolutePath); } catch {}
+    // Even with the sandbox off, GUI-spawned sessions may never write into
+    // Quiver's own installation tree (QUIVER_PROTECTED_DIR) — the
+    // self-modification guard is not bypassable from the app (Epic 2 §2.5).
+    assertNotProtectedInstallDir(realPath, operation);
     return { inputPath: filePath, absolutePath, realPath, insideWorkspace: false };
   }
   // Build the path policy. Reads are gated by the active trust tier's

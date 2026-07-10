@@ -59,6 +59,9 @@ const ALLOWED_CHANNELS = new Set<string>([
   "nav:loadOnboarding",
   // Preview
   "preview:file",
+  // Deliverables (document card)
+  "file:open",
+  "file:showInFolder",
   // Agent events (main → renderer only)
   "agent:event",
   "agent:raw",
@@ -150,6 +153,10 @@ const exposedApi = {
 
   // Preview
   previewFile: (filePath: string) => safeInvoke("preview:file", filePath),
+
+  // Deliverables (document card: open in native app / reveal in folder)
+  openFile: (filePath: string) => safeInvoke("file:open", filePath),
+  showInFolder: (filePath: string) => safeInvoke("file:showInFolder", filePath),
 
   // Navigation
   loadMain: () => safeInvoke("nav:loadMain"),

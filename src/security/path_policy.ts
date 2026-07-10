@@ -155,6 +155,55 @@ function isInsideWorkspace(resolvedPath: string, workspaceRoot: string): boolean
 }
 
 /**
+ * Self-modification guard (Epic 2 §2.5) — Quiver's own installation/source
+ * tree, when known, is write-protected regardless of the configured workspace.
+ *
+ * When the GUI spawns the agent it resolves its own install root (the
+ * directory containing Quiver's package.json) and passes it as the
+ * QUIVER_PROTECTED_DIR environment variable. With that variable set, any
+ * write/delete that resolves inside the protected tree is refused — even if
+ * the user's configured workspace IS the install directory. This is what
+ * stops a GUI session from rewriting src/tools/office_doc.ts or the harness
+ * itself. CLI/dev usage without the env var is unaffected: developers
+ * legitimately edit the repo.
+ */
+export function getProtectedInstallDir(): string | null {
+  const dir = process.env.QUIVER_PROTECTED_DIR;
+  if (!dir || !dir.trim()) return null;
+  let resolved = path.resolve(dir.trim());
+  try {
+    resolved = realpathSync(resolved);
+  } catch {
+    // keep the resolved absolute path
+  }
+  return resolved;
+}
+
+/**
+ * Throws if `realPath` is a write/delete target inside the protected
+ * install dir (see getProtectedInstallDir). No-op for reads or when the
+ * QUIVER_PROTECTED_DIR env var is unset.
+ */
+export function assertNotProtectedInstallDir(
+  realPath: string,
+  operation: "read" | "write" | "delete",
+): void {
+  if (operation === "read") return;
+  const protectedDir = getProtectedInstallDir();
+  if (!protectedDir) return;
+  const rel = path.relative(protectedDir, realPath);
+  const inside = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  if (inside) {
+    throw new Error(
+      `Path '${realPath}' is inside Quiver's own installation directory ` +
+        `('${protectedDir}'), which is write-protected in app sessions. ` +
+        `Quiver will not modify its own source or installation. ` +
+        `Choose a different workspace folder (Settings → Workspace folder).`,
+    );
+  }
+}
+
+/**
  * Check if a path is inside the user's home directory blocked paths.
  */
 function isBlockedHomePath(resolvedPath: string): boolean {
@@ -212,6 +261,10 @@ export function resolveAndAssertPathAllowed(
       `This protects sensitive files like .env, credentials, and VCS internals.`,
     );
   }
+
+  // Self-modification guard: GUI-spawned sessions must never write into
+  // Quiver's own installation/source tree (QUIVER_PROTECTED_DIR).
+  assertNotProtectedInstallDir(realPath, operation);
 
   // Check home-directory blocked paths
   if (isBlockedHomePath(realPath)) {

@@ -55,6 +55,9 @@ const ALLOWED_CHANNELS = new Set([
   "nav:loadOnboarding",
   // Preview
   "preview:file",
+  // Deliverables (document card)
+  "file:open",
+  "file:showInFolder",
   // Agent events (main → renderer only, no invoke)
   "agent:event",
   "agent:raw",
@@ -155,6 +158,10 @@ contextBridge.exposeInMainWorld("quiver", {
 
   // Preview
   previewFile: (filePath) => safeInvoke("preview:file", filePath),
+
+  // Deliverables (document card: open in native app / reveal in folder)
+  openFile: (filePath) => safeInvoke("file:open", filePath),
+  showInFolder: (filePath) => safeInvoke("file:showInFolder", filePath),
 
   // Navigation
   loadMain: () => safeInvoke("nav:loadMain"),

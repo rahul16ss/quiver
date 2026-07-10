@@ -166,7 +166,11 @@ export interface AgentEvent {
     model?: string;
     memory?: string;
     skills?: string;
+    /** Structured loaded-skill list for the GUI context rail (id + version). */
+    skillsDetail?: { id: string; version: string }[];
     tools?: string;
+    /** Tool catalog names for the GUI context rail (spec §6 layer C). */
+    toolNames?: string[];
     tokens?: string;
     tokenStats?: {
       inputTokens: number;
@@ -1598,8 +1602,18 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           memory: memories.map((m: any) => m.filename).join(", ") || "—",
           skills:
             skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
+          // Structured skill list so the GUI can render real names + versions
+          // in the context rail (Epic 2 §2.6 — honest surfaces).
+          skillsDetail: skills.map((s: any) => ({
+            id: s.id,
+            version: s.version,
+          })),
           tools: String(this.registry.getAllTools().length),
-          tokens: `${estTokens.toLocaleString()} / ${config.maxContextTokens.toLocaleString()}`,
+          // Tool names let the GUI show the actual tool catalog (spec §6
+          // layer C) instead of a bare count.
+          toolNames: this.registry.getAllTools().map((t) => t.name),
+          // en-US grouping regardless of system locale (Epic 2 §2.6).
+          tokens: `${estTokens.toLocaleString("en-US")} / ${config.maxContextTokens.toLocaleString("en-US")}`,
         },
       });
     }
@@ -2189,6 +2203,22 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           } catch {
             approvalKey.dir = String(args.filePath);
           }
+        } else if (toolName === "office_doc" && typeof args.file === "string") {
+          // Scope office_doc approvals to the exact document file. One user
+          // consent covers the whole build of THAT document (officecli emits
+          // many small ops — create, add paragraph, set style… — for a single
+          // "make me a docx" intent), so we don't spam N popups per document.
+          // Security reasoning: the grant is bounded to a single file path the
+          // user already saw and approved, inside the workspace (path policy
+          // still applies to every op). It does not loosen approvals for other
+          // files, file edits outside the workspace, commands, or web tools.
+          try {
+            approvalKey.dir =
+              path.relative(process.cwd(), path.resolve(args.file)) ||
+              String(args.file);
+          } catch {
+            approvalKey.dir = String(args.file);
+          }
         }
         if (config.dryRun) {
           isApproved = true;
@@ -2224,6 +2254,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           this.pendingRevisionNote = decision.revisionNote;
           // Record a session-scoped approval so similar actions skip the gate.
           if (isApproved && decision.scope === "session") {
+            this.approvalCache.record(approvalKey, "session");
+          } else if (isApproved && toolName === "office_doc") {
+            // A single "Allow" on an office_doc op auto-approves subsequent
+            // office_doc ops on the SAME file (file-scoped key above): the
+            // user consented to building that document, and each officecli op
+            // is a sub-step of the same consented deliverable. Ops on any
+            // other file — or any other tool — still prompt normally.
             this.approvalCache.record(approvalKey, "session");
           }
         }
@@ -2449,6 +2486,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             type: "tool_result",
             data: {
               toolName,
+              toolArgs: args,
               toolResult: resultStr,
             },
           });

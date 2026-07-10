@@ -246,6 +246,22 @@ export const IPC_CHANNELS: IpcChannelDef[] = [
     payloadSchema: { filePath: "string" },
     description: "Open a file in the preview panel",
   },
+
+  // ── Deliverables (Epic 2 §2.4 — the document card) ──
+  {
+    channel: "file:open",
+    direction: "renderer-to-main",
+    payloadSchema: { filePath: "string" },
+    description:
+      "Open a produced document in its native app (validated: workspace-only)",
+  },
+  {
+    channel: "file:showInFolder",
+    direction: "renderer-to-main",
+    payloadSchema: { filePath: "string" },
+    description:
+      "Reveal a produced document in the OS file manager (validated: workspace-only)",
+  },
 ];
 
 // ─── Main → Renderer (events) ─────────────────────────────────────────

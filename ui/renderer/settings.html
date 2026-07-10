@@ -32,7 +32,10 @@
           <button id="browseWorkspaceBtn" class="ghost-btn">Choose…</button>
         </span>
       </label>
-      <label>Memory budget <input id="maxContextTokens" class="field" type="number" /></label>
+      <label>Working memory (tokens)
+        <input id="maxContextTokens" class="field" type="number" />
+        <span class="field-hint">How much conversation and source material Quiver keeps in mind at once. The default suits most work.</span>
+      </label>
     </section>
 
     <!-- API Credentials -->
@@ -41,7 +44,10 @@
       <p class="settings-help">Your keys are stored securely and never shared.</p>
       <label>API key <input id="apiKey" class="field" type="password" placeholder="Your Quiver API key" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
-      <label>GitHub token (optional) <input id="githubToken" class="field" type="password" placeholder="Only if you use GitHub" /></label>
+      <details class="settings-advanced">
+        <summary>Advanced</summary>
+        <label>GitHub token (optional) <input id="githubToken" class="field" type="password" placeholder="Only if you use GitHub" /></label>
+      </details>
     </section>
 
     <!-- Vision Model -->
@@ -59,10 +65,10 @@
       <label>Approval level
         <select id="autonomyMode" class="field">
           <option value="">Ask before acting (recommended)</option>
-          <option value="tier:propose">Propose — write files, keep notes</option>
-          <option value="tier:build">Build — also run commands and web research</option>
-          <option value="tier:operate">Operate — also handle destructive actions</option>
-          <option value="yolo">Full auto — never ask (use with care)</option>
+          <option value="tier:propose">Draft only — write drafts and notes, ask for everything else</option>
+          <option value="tier:build">Draft and research — also run web research and safe commands</option>
+          <option value="tier:operate">Assisted — handle most actions, approval at key boundaries</option>
+          <option value="yolo" hidden>Full access — developer mode</option>
         </select>
       </label>
       <div class="toggle-row">
@@ -73,7 +79,7 @@
     <!-- Cloud Sync -->
     <section class="settings-section">
       <h2>Cloud Sync</h2>
-      <p class="settings-help">Optional. Sync your memory across your computers. Nothing leaves your machine until you turn this on.</p>
+      <p class="settings-help">Optional and off by default. Copies Quiver's memory to a folder you choose (e.g. Dropbox or iCloud). Check your firm's data policy before enabling.</p>
       <div class="toggle-row">
         <button id="syncEnabled" class="toggle">Turn on cloud sync</button>
       </div>
@@ -92,8 +98,9 @@
       <div class="toggle-row">
         <button id="sessionLogEnabled" class="toggle">Keep a session log</button>
       </div>
-      <label>Log detail <input id="sessionLogMaxChars" class="field" type="number" /></label>
+      <label>Log detail (characters per message) <input id="sessionLogMaxChars" class="field" type="number" /></label>
       <div class="memory-stats" id="memoryStats">
+        <span class="memory-stats-label">Learned facts:</span>
         <span id="memPending">Pending: —</span>
         <span id="memReviewed">Reviewed: —</span>
         <span id="memTotal">Total: —</span>

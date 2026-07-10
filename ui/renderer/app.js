@@ -23,7 +23,6 @@ let assistantBubble = null;       // current streaming assistant message element
 let pendingApproval = null;       // the approval event awaiting a decision
 let pendingApprovalAll = false;
 let attachments = [];   // "allow all similar" requested
-let activeDraftCard = null; // reference to the active document draft card
 
 // ─── element cache ────────────────────────────────────────────────────
 const chatArea = $("chatArea");
@@ -49,10 +48,39 @@ async function init() {
     return;
   }
   const config = await api.loadConfig();
-  await api.startAgent(config, false);
-  agentRunning = true;
-  setWorking(true);
+  // Launch state is idle (Epic 2 §2.2): spawning the agent process is NOT
+  // "working". Send stays visible/enabled; the dot goes amber only when a
+  // prompt is dispatched or the agent reports activity.
+  setWorking(false);
+  try {
+    await api.startAgent(config, false);
+    agentRunning = true;
+  } catch (e) {
+    agentRunning = false;
+    addActivity("Could not start the agent: " + (e?.message || e), "err");
+  }
+  // A failed/errored startup must never leave the working state stuck.
+  setWorking(false);
+  maybeShowWorkspaceWarning(config);
   loadContextSurfaces(config);
+}
+
+// One-time, non-blocking banner when the configured workspace is Quiver's own
+// app/source folder (Epic 2 §2.5). The path-policy hard block applies anyway;
+// this just nudges the user toward a real documents folder.
+function maybeShowWorkspaceWarning(config) {
+  if (!config?.workspaceIsAppSource) return;
+  const DISMISS_KEY = "quiver.workspaceWarningDismissed";
+  try {
+    if (localStorage.getItem(DISMISS_KEY) === "1") return;
+  } catch {}
+  const banner = $("workspaceWarning");
+  if (!banner) return;
+  banner.hidden = false;
+  $("workspaceWarningDismiss")?.addEventListener("click", () => {
+    banner.hidden = true;
+    try { localStorage.setItem(DISMISS_KEY, "1"); } catch {}
+  });
 }
 
 // ─── context plane: what Quiver sees ───────────────────────────────────
@@ -63,18 +91,42 @@ async function loadContextSurfaces(config) {
   const grants = config?.autonomyGrants || "";
   let label = "Ask before acting";
   if (grants.includes("yolo")) {
-    label = "Full auto (YOLO)";
+    label = "Full access (developer)";
   } else if (grants.includes("tier:operate")) {
-    label = "High Autonomy";
+    label = "Assisted";
   } else if (grants.includes("tier:build")) {
-    label = "Semi-Autonomous";
+    label = "Draft and research";
   } else if (grants.includes("tier:propose")) {
-    label = "Propose changes";
+    label = "Draft only";
   } else if (grants.includes("tier:observe")) {
     label = "Read-only";
   }
   const badge = $("trustBadge");
   if (badge) badge.textContent = label;
+
+  // §6 layer F: operational metadata — where the work actually runs.
+  const trustEl = $("ctxTrust");
+  if (trustEl) trustEl.textContent = `Approvals: ${label}`;
+  const endpointEl = $("ctxEndpoint");
+  if (endpointEl) {
+    const baseUrl = config?.provider?.baseUrl || "";
+    let where = "Endpoint not configured";
+    try {
+      const host = new URL(baseUrl).hostname;
+      where =
+        host === "localhost" || host === "127.0.0.1"
+          ? "Local endpoint — prompts stay on this machine"
+          : `Cloud endpoint — prompts go to ${host}`;
+    } catch {}
+    endpointEl.textContent = where;
+    endpointEl.title = baseUrl;
+  }
+  const wsEl = $("ctxWorkspace");
+  if (wsEl) {
+    const ws = config?.workspacePath || "";
+    wsEl.textContent = ws ? `Workspace: ${ws.replace(/^\/Users\/[^/]+/, "~")}` : "";
+    wsEl.title = ws;
+  }
 
   loadCoreMemory();
   loadMemoryList();
@@ -193,27 +245,122 @@ async function loadMemoryList() {
   }
 }
 
-async function loadSkillList() {
+// The internal system-prompt skill is plumbing, not a business capability —
+// it is hidden from the rail (Epic 2 §2.6: the rail must read honestly).
+function isInternalSkill(id) {
+  return /system-prompt/i.test(String(id || ""));
+}
+
+// If there are zero user-facing skills, hide the whole row rather than
+// saying "No skills" (P1-7 / Epic 2 §2.6).
+function renderSkillRow(skills) {
+  const section = $("ctxSkillsSection");
   const list = $("ctxSkillsList");
   const count = $("ctxSkillCount");
+  if (!skills.length) {
+    if (section) section.hidden = true;
+    return;
+  }
+  if (section) section.hidden = false;
+  count.textContent = `· ${skills.length}`;
+  list.innerHTML = "";
+  for (const s of skills) {
+    const item = document.createElement("div");
+    item.className = "ctx-item";
+    item.textContent = s.version ? `${s.id} ` : s.id;
+    if (s.version) {
+      const ver = document.createElement("span");
+      ver.className = "ctx-sub";
+      ver.textContent = `· v${s.version}`;
+      item.appendChild(ver);
+    }
+    item.title = s.version ? `${s.id} v${s.version}` : s.id;
+    item.addEventListener("click", () => openSkillViewer(s.id));
+    list.appendChild(item);
+  }
+}
+
+// Initial fill from the skills folder (before the agent reports anything).
+async function loadSkillList() {
   try {
     const allSkills = await api.listSkills();
-    const skills = (allSkills || []).filter(s => s !== "system-prompt");
-    count.textContent = skills.length ? `· ${skills.length}` : "";
-    list.innerHTML = "";
-    if (!skills.length) {
-      list.innerHTML = '<div class="ctx-value muted">No skills</div>';
-      return;
-    }
-    for (const s of skills) {
-      const item = document.createElement("div");
-      item.className = "ctx-item";
-      item.textContent = s;
-      item.addEventListener("click", () => openSkillViewer(s));
-      list.appendChild(item);
-    }
+    const skills = (allSkills || [])
+      .filter((s) => !isInternalSkill(s))
+      .map((s) => ({ id: s, version: "" }));
+    renderSkillRow(skills);
   } catch {
-    list.innerHTML = '<div class="ctx-value muted">Unable to load</div>';
+    const section = $("ctxSkillsSection");
+    if (section) section.hidden = true;
+  }
+}
+
+// Authoritative fill from the agent's context manifest: the ACTUAL loaded
+// skills with versions — the rail must never contradict the activity feed.
+function renderLoadedSkills(data) {
+  let skills = [];
+  let framing = null;
+  if (Array.isArray(data?.skillsDetail)) {
+    for (const s of data.skillsDetail) {
+      if (!s || !s.id) continue;
+      // The system prompt is §6 layer A (Framing) — shown separately, not
+      // buried in the business skill list.
+      if (isInternalSkill(s.id)) {
+        framing = s;
+        continue;
+      }
+      skills.push({ id: s.id, version: s.version || "" });
+    }
+  } else if (typeof data?.skills === "string" && data.skills !== "—") {
+    skills = data.skills
+      .split(",")
+      .map((part) => {
+        const m = /^\s*(.+?)\s+v([\w.\-]+)\s*$/.exec(part) || [null, part.trim(), ""];
+        return { id: (m[1] || "").trim(), version: m[2] || "" };
+      })
+      .filter((s) => s.id && !isInternalSkill(s.id));
+  }
+  renderSkillRow(skills);
+
+  const framingEl = $("ctxFraming");
+  if (framingEl && framing) {
+    framingEl.textContent = `System prompt v${framing.version || "1"} — editable in ~/.quiver/skills`;
+    framingEl.classList.remove("muted");
+    const section = $("ctxFramingSection");
+    if (section) section.hidden = false;
+  }
+
+  renderToolCatalog(data);
+  updateTurnCount();
+}
+
+// §6 layer C: the actual tool catalog, expandable, not just a count.
+function renderToolCatalog(data) {
+  const summary = $("ctxToolsSummary");
+  const list = $("ctxToolsList");
+  if (!summary || !list) return;
+  const names = Array.isArray(data?.toolNames) ? data.toolNames : [];
+  const count = names.length || Number(data?.tools || 0);
+  const section = $("ctxToolsSection");
+  if (section) section.hidden = count === 0;
+  summary.textContent = count ? `${count} tools available` : "—";
+  list.innerHTML = "";
+  for (const n of names) {
+    const chip = document.createElement("span");
+    chip.className = "ctx-tool-chip";
+    chip.textContent = n;
+    list.appendChild(chip);
+  }
+}
+
+// §6 layer D: how much of the conversation the model carries.
+function updateTurnCount() {
+  const el = $("ctxTurns");
+  if (!el) return;
+  const n = chatTurnCount();
+  el.textContent = n ? `${n} ${n === 1 ? "turn" : "turns"} in this session` : "New session";
+  if (n) {
+    const section = $("ctxTokensSection");
+    if (section) section.hidden = false;
   }
 }
 
@@ -236,6 +383,7 @@ function addUserMessage(text) {
   msg.textContent = text;
   chatArea.appendChild(msg);
   scrollChat();
+  updateTurnCount();
 }
 
 function startAssistantBubble() {
@@ -263,30 +411,107 @@ function appendAssistantToken(token) {
 function hideEmpty() {
   if (emptyState) emptyState.hidden = true;
 }
+function showEmpty() {
+  if (emptyState) emptyState.hidden = false;
+}
+// Clear the conversation without destroying the empty-state node, which
+// lives inside #chatArea (a bare innerHTML="" would delete it for good).
+function clearChat() {
+  for (const child of [...chatArea.children]) {
+    if (child !== emptyState) child.remove();
+  }
+}
+function chatTurnCount() {
+  return [...chatArea.children].filter((c) => c !== emptyState).length;
+}
 function scrollChat() {
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-function addDraftCard(label, sub, filePath) {
+// ─── deliverable cards (Epic 2 §2.4 — "here is your document") ─────────
+// One card per document file; repeated office_doc ops update the same card.
+const documentCards = new Map(); // filePath → card element
+
+const DOC_KINDS = {
+  docx: { icon: "📄", label: "Word document" },
+  xlsx: { icon: "📊", label: "Excel spreadsheet" },
+  pptx: { icon: "📽️", label: "PowerPoint presentation" },
+};
+function docKindFor(filePath) {
+  const ext = String(filePath).split(".").pop().toLowerCase();
+  return DOC_KINDS[ext] || { icon: "📄", label: "Document" };
+}
+const OFFICE_MUTATING_ACTIONS = new Set([
+  "create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import",
+]);
+
+function ensureDocumentCard(filePath) {
+  if (documentCards.has(filePath)) return documentCards.get(filePath);
   hideEmpty();
+  const kind = docKindFor(filePath);
+  const name = String(filePath).split("/").pop();
   const card = document.createElement("div");
   card.className = "draft-card";
   card.innerHTML =
-    '<div class="draft-icon">📄</div>' +
-    '<div class="draft-meta"><div class="draft-title">' +
-    escapeHtml(label) +
-    '</div><div class="draft-sub">' +
-    escapeHtml(sub) +
+    '<div class="draft-icon">' + kind.icon + "</div>" +
+    '<div class="draft-meta">' +
+    '<div class="draft-title">Creating ' + escapeHtml(name) + "…</div>" +
+    '<div class="draft-sub">' + escapeHtml(kind.label) + " · " + escapeHtml(filePath) + "</div>" +
+    '<div class="draft-actions" hidden>' +
+    '<button type="button" class="ghost-btn doc-open">Open</button>' +
+    '<button type="button" class="ghost-btn doc-reveal">Show in Folder</button>' +
+    '<button type="button" class="ghost-btn doc-preview">Preview</button>' +
     "</div></div>";
-  card.addEventListener("click", () => openPreview(filePath, label));
+  card.querySelector(".doc-open").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const res = await api.openFile(filePath);
+    if (res?.error) addActivity("Couldn't open " + name + ": " + res.error, "err");
+  });
+  card.querySelector(".doc-reveal").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const res = await api.showInFolder(filePath);
+    if (res?.error) addActivity("Couldn't reveal " + name + ": " + res.error, "err");
+  });
+  card.querySelector(".doc-preview").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openPreview(filePath, name);
+  });
+  card.addEventListener("click", () => openPreview(filePath, name));
   chatArea.appendChild(card);
   scrollChat();
-  activeDraftCard = card;
+  documentCards.set(filePath, card);
   return card;
 }
 
+function handleOfficeDocResult(args, ok) {
+  const filePath = typeof args?.file === "string" ? args.file : "";
+  if (!filePath || !OFFICE_MUTATING_ACTIONS.has(String(args?.action))) return;
+  const card = ensureDocumentCard(filePath);
+  const name = String(filePath).split("/").pop();
+  const kind = docKindFor(filePath);
+  const titleEl = card.querySelector(".draft-title");
+  const actionsEl = card.querySelector(".draft-actions");
+  if (ok) {
+    if (titleEl) titleEl.textContent = name;
+    card.querySelector(".draft-sub").textContent = kind.label + " · ready";
+    card.querySelector(".draft-sub").title = filePath;
+    if (actionsEl) actionsEl.hidden = false;
+    card.classList.remove("canceled");
+    card.classList.add("ready");
+  } else if (!card.classList.contains("ready")) {
+    if (titleEl) titleEl.textContent = "Creation canceled — " + name;
+    card.classList.add("canceled");
+  }
+  scrollChat();
+}
+
 // ─── activity plane: what Quiver is doing ──────────────────────────────
+let lastContextEntryText = null; // dedupe "Context loaded: …" spam (P1-10)
 function addActivity(text, kind = "") {
+  const placeholder = $("activityEmpty");
+  if (placeholder) placeholder.remove();
+  const clearBtn = $("activityClearBtn");
+  if (clearBtn) clearBtn.hidden = false;
   const line = document.createElement("div");
   line.className = "act " + kind;
   const mark = kind === "ok" ? "✓" : kind === "warn" ? "…" : kind === "err" ? "⚠" : kind === "verify" ? "✓" : "·";
@@ -326,13 +551,22 @@ function wireAgentEvents() {
 function handleAgentEvent(ev) {
   if (!ev || !ev.type) return;
   switch (ev.type) {
+    case "user_replay": {
+      // Daemon ring replay after a window restart: repaint the user's side
+      // of the conversation (live sends are painted locally, not via this).
+      if (ev.content) addUserMessage(ev.content);
+      break;
+    }
     case "context_manifest": {
       if (ev.data?.model) setModel(ev.data.model);
       if (ev.data?.tokens) updateTokenBar(ev.data.tokens);
-      addActivity(
-        `Context loaded: ${ev.data?.memory || "—"} memory · ${ev.data?.skills || "—"} skills · ${ev.data?.tools || "—"} tools`,
-        "tool",
-      );
+      renderLoadedSkills(ev.data);
+      // Don't re-announce an identical context on consecutive turns (P1-10).
+      const entry = `Context loaded: ${ev.data?.memory || "—"} memory · ${ev.data?.skills || "—"} skills · ${ev.data?.tools || "—"} tools`;
+      if (entry !== lastContextEntryText) {
+        addActivity(entry, "tool");
+        lastContextEntryText = entry;
+      }
       break;
     }
     case "token": {
@@ -344,25 +578,18 @@ function handleAgentEvent(ev) {
       const name = ev.data?.toolName || "tool";
       const hint = summarizeArgs(ev.data?.toolArgs);
       addActivity(`Quiver wants to: ${plainToolName(name)}${hint ? " — " + hint : ""}`, "tool");
+      setWorking(true);
       maybeDraftCard(name, ev.data?.toolArgs);
       break;
     }
     case "tool_result": {
       const name = ev.data?.toolName || "tool";
+      const args = ev.data?.toolArgs || {};
       const ok = !/^error/i.test(String(ev.data?.toolResult || ""));
-      addActivity(`${plainToolName(name)} ${ok ? "done" : "failed"}`, ok ? "ok" : "err");
-      if (name === "office_doc" && activeDraftCard) {
-        const typeLabel = activeDraftCard.dataset.typeLabel || "Document";
-        const titleEl = activeDraftCard.querySelector(".draft-title");
-        if (ok) {
-          if (titleEl) titleEl.textContent = `${typeLabel} ready`;
-        } else {
-          if (titleEl) {
-            titleEl.textContent = "Creation canceled";
-            activeDraftCard.classList.add("canceled");
-          }
-        }
-        activeDraftCard = null;
+      const hint = summarizeArgs(args);
+      addActivity(`${plainToolName(name)}${hint ? " — " + hint : ""} ${ok ? "done" : "failed"}`, ok ? "ok" : "err");
+      if (name === "office_doc") {
+        handleOfficeDocResult(args, ok);
       }
       break;
     }
@@ -379,6 +606,7 @@ function handleAgentEvent(ev) {
       statusDot.className = "status-dot ok";
       addActivity("Done", "ok");
       refreshReviewCount();
+      updateTurnCount();
       assistantBubble = null;
       break;
     }
@@ -410,7 +638,8 @@ function renderDiff(before, after) {
     }
   }
   if (!before && !after) {
-    diffLine(view, " ", "(nothing to preview)", "ctx");
+    // Never show a blind approval: fall back to the pretty-printed arguments.
+    renderApprovalPreview(pendingApproval?.toolName || "", pendingApproval?.toolArgs || {});
   }
 }
 function diffLine(view, sign, text, cls) {
@@ -424,7 +653,8 @@ function diffLine(view, sign, text, cls) {
 
 function summarizeArgs(args) {
   if (!args || typeof args !== "object") return "";
-  for (const k of ["filePath", "url", "command", "query", "directoryPath", "filename"]) {
+  // "file" covers office_doc (document ops name their target this way).
+  for (const k of ["filePath", "file", "url", "command", "query", "directoryPath", "filename"]) {
     if (args[k]) return String(args[k]);
   }
   return "";
@@ -457,47 +687,144 @@ function plainToolName(name) {
   })[name] || name;
 }
 function maybeDraftCard(toolName, args) {
-  if (toolName === "office_doc" && args?.filePath) {
-    const fp = String(args.filePath);
-    const ext = fp.split(".").pop().toLowerCase();
-    const typeLabel =
-      ext === "xlsx" ? "Spreadsheet" :
-      ext === "pptx" ? "Presentation" :
-      "Document";
-    addDraftCard(`Creating ${typeLabel.toLowerCase()}...`, fp, fp);
-    if (activeDraftCard) {
-      activeDraftCard.dataset.typeLabel = typeLabel;
-    }
+  if (
+    toolName === "office_doc" &&
+    typeof args?.file === "string" &&
+    OFFICE_MUTATING_ACTIONS.has(String(args?.action))
+  ) {
+    ensureDocumentCard(String(args.file));
   }
 }
 
 // ─── approval gate ─────────────────────────────────────────────────────
+// Every overlay must state: the tool, the target (file/command/URL), and a
+// content preview (Epic 2 §2.3). "(nothing to preview)" is unreachable — the
+// generic fallback pretty-prints the full arguments.
 function showApproval(data) {
   pendingApproval = data;
   pendingApprovalAll = false;
   const name = data?.toolName || "act";
-  $("approvalTitle").textContent = "Quiver wants to " + verbForApproval(name);
-  $("approvalSummary").textContent = summarizeArgs(data?.toolArgs) || "";
-  $("approvalSummary").title = JSON.stringify(data?.toolArgs || {});
-
-  // Compute the proposed content for a real diff.
   const args = data?.toolArgs || {};
-  let before = data?.currentContent ?? "";
-  let after = data?.proposedContent ?? "";
-  if (!after && name === "write_file") after = args.content ?? "";
-  if (!after && name === "replace_content") {
-    after = String(before).split(args.targetContent ?? "").join(args.replacementContent ?? "");
-  }
+  $("approvalTitle").textContent = "Quiver wants to " + verbForApproval(name);
+  $("approvalSummary").textContent = summarizeArgs(args) || plainToolName(name);
+  $("approvalSummary").title = JSON.stringify(args);
+
+  const isFileMutation =
+    name === "write_file" || name === "replace_content" || name === "apply_patch";
   if (name === "apply_patch") {
-    after = args.patch ? "(unified patch — see below)" : "";
     renderPatchPreview(args.patch);
-  } else {
+  } else if (isFileMutation) {
+    // Real before/after diff — already built.
+    let before = data?.currentContent ?? "";
+    let after = data?.proposedContent ?? "";
+    if (!after && name === "write_file") after = args.content ?? "";
+    if (!after && name === "replace_content") {
+      after = String(before).split(args.targetContent ?? "").join(args.replacementContent ?? "");
+    }
     renderDiff(before, after);
+  } else {
+    renderApprovalPreview(name, args);
   }
   $("revisionBox").hidden = true;
   $("revisionNote").value = "";
   showOverlay("approvalOverlay");
   setWorking(false);
+}
+
+// Structured, human-readable previews for non-diff tools.
+function renderApprovalPreview(name, args) {
+  const view = $("approvalDiff");
+  view.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "approval-preview";
+
+  const row = (label, value) => {
+    if (!value) return;
+    const r = document.createElement("div");
+    r.className = "ap-row";
+    r.innerHTML =
+      '<span class="ap-label">' + escapeHtml(label) + "</span>" +
+      '<span class="ap-value">' + escapeHtml(String(value)) + "</span>";
+    box.appendChild(r);
+  };
+  const contentBlock = (label, text) => {
+    if (!text) return;
+    const str = String(text);
+    if (str.length > 600 || str.split("\n").length > 12) {
+      const det = document.createElement("details");
+      det.className = "ap-details";
+      det.innerHTML =
+        "<summary>" + escapeHtml(label) + " (" + str.split("\n").length + " lines — click to expand)</summary>" +
+        '<pre class="ap-pre">' + escapeHtml(str) + "</pre>";
+      box.appendChild(det);
+    } else {
+      const wrap = document.createElement("div");
+      wrap.className = "ap-block";
+      wrap.innerHTML =
+        '<div class="ap-label">' + escapeHtml(label) + "</div>" +
+        '<pre class="ap-pre">' + escapeHtml(str) + "</pre>";
+      box.appendChild(wrap);
+    }
+  };
+
+  if (name === "office_doc") {
+    const kind = docKindFor(args.file || "");
+    row("File", args.file);
+    row("Operation", [args.action, args.type].filter(Boolean).join(" — "));
+    if (args.parent) row("Where", args.parent);
+    if (args.path) row("Element", args.path);
+    if (args.props && typeof args.props === "object") {
+      if (args.props.text) contentBlock("Text being written", args.props.text);
+      const rest = Object.entries(args.props).filter(([k]) => k !== "text");
+      if (rest.length) {
+        contentBlock(
+          "Formatting",
+          rest.map(([k, v]) => `${k}: ${v}`).join("\n"),
+        );
+      }
+    }
+    if (Array.isArray(args.commands)) {
+      contentBlock(
+        `Operations (${args.commands.length})`,
+        args.commands
+          .map((c, i) => `${i + 1}. ${JSON.stringify(c)}`)
+          .join("\n"),
+      );
+    }
+    if (args.template) row("Template", args.template);
+    if (args.source) row("Data source", args.source);
+    row("Kind", kind.label);
+  } else if (name === "run_command") {
+    contentBlock("Command", args.command || "");
+    if (args.cwd) row("Folder", args.cwd);
+  } else if (name === "web_search" || name === "deep_research" || name === "entity_search" || name === "find_all") {
+    row("Query", args.query || args.topic || args.question);
+  } else if (name === "scrape_url" || name === "browser_control") {
+    row("URL", args.url);
+    if (args.action) row("Action", args.action);
+    if (args.query) row("Query", args.query);
+  } else if (name === "github") {
+    row("Action", args.action);
+    row("Repository", args.repo || args.repository);
+  }
+
+  // Generic fallback + full detail: pretty-printed arguments. Guarantees a
+  // non-empty preview for every tool.
+  const argKeys = Object.keys(args || {});
+  if (!box.childNodes.length || argKeys.length) {
+    const pretty = JSON.stringify(args || {}, null, 2);
+    if (!box.childNodes.length) {
+      contentBlock("Details", pretty);
+    } else {
+      const det = document.createElement("details");
+      det.className = "ap-details";
+      det.innerHTML =
+        "<summary>Full details</summary>" +
+        '<pre class="ap-pre">' + escapeHtml(pretty) + "</pre>";
+      box.appendChild(det);
+    }
+  }
+  view.appendChild(box);
 }
 function verbForApproval(name) {
   return ({
@@ -549,17 +876,30 @@ function requestRevision() {
 }
 
 // ─── token bar ─────────────────────────────────────────────────────────
+// Compact "24k / 120k" display (en-US, locale-independent) with the exact
+// figures kept in the tooltip (Epic 2 §2.6). The row stays hidden until the
+// first real reading arrives — no dangling "—" in the idle state (P1-9).
+function compactNumber(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return Math.round(n / 1_000) + "k";
+  return String(n);
+}
 function updateTokenBar(tokenStr) {
   // tokenStr like "12,345 / 120,000"
   const m = /([\d.,]+)\s*\/\s*([\d.,]+)/.exec(tokenStr || "");
   if (!m) return;
   const used = parseFloat(m[1].replace(/[.,]/g, ""));
   const total = parseFloat(m[2].replace(/[.,]/g, ""));
+  if (!isFinite(used) || !isFinite(total)) return;
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const section = $("ctxTokensSection");
+  if (section) section.hidden = false;
   const bar = $("ctxTokenBar");
   bar.style.width = pct + "%";
   bar.style.background = pct > 85 ? "var(--bad)" : pct > 60 ? "var(--warn)" : "var(--accent)";
-  $("ctxTokenLabel").textContent = tokenStr + ` (${Math.round(pct)}%)`;
+  const label = $("ctxTokenLabel");
+  label.textContent = `${compactNumber(used)} / ${compactNumber(total)} (${Math.round(pct)}%)`;
+  label.title = `${used.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} tokens used`;
 }
 
 // ─── input + send ──────────────────────────────────────────────────────
@@ -783,10 +1123,18 @@ function getMessageTextContent(content) {
 
 async function loadSessionStateIntoUi(sessionPath) {
   const session = await api.loadSession(sessionPath);
-  if (!session) return;
-  
-  // Clear chat UI
-  chatArea.innerHTML = "";
+  if (!session || session.error) {
+    // Never leave a silent blank conversation: say what happened and keep
+    // the empty state visible.
+    addActivity(
+      "Couldn't load the session transcript" + (session?.error ? `: ${session.error}` : ""),
+      "err",
+    );
+    return;
+  }
+
+  // Clear chat UI (keep the empty-state node alive)
+  clearChat();
   hideEmpty();
   
   // Track tool calls to check their success and show draft cards
@@ -822,11 +1170,97 @@ async function loadSessionStateIntoUi(sessionPath) {
       const tc = toolCalls[msg.tool_call_id];
       if (tc) {
         const ok = !/^error/i.test(String(msg.content || ""));
-        if (ok) {
-          maybeDraftCard(tc.name, tc.args);
+        if (ok && tc.name === "office_doc") {
+          // Replay renders the finished deliverable card, not "Creating…".
+          handleOfficeDocResult(tc.args, true);
         }
       }
     }
+  }
+
+  if (!chatTurnCount()) {
+    // Session had no renderable turns — show the empty state, not a void.
+    showEmpty();
+    addActivity("This session has no visible messages.", "warn");
+  }
+  updateTurnCount();
+}
+
+// Human dates for the sessions list (Epic 2 §2.2): "Today 1:10 PM",
+// "Yesterday 9:04 AM", else "Jun 5, 1:10 PM" — always en-US.
+function formatSessionDate(iso) {
+  const d = new Date(iso || "");
+  if (isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, today)) return `Today ${time}`;
+  if (sameDay(d, yesterday)) return `Yesterday ${time}`;
+  const opts = { month: "short", day: "numeric" };
+  if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+  return `${d.toLocaleDateString("en-US", opts)}, ${time}`;
+}
+
+function sessionTitleFor(s) {
+  if (s.title) return s.title;
+  const when = formatSessionDate(s.savedAt);
+  return when ? `Session — ${when}` : (s.sessionId || "Session").slice(0, 24);
+}
+
+function renderSessionsList(sessions, filterText) {
+  const list = $("sessionsList");
+  list.innerHTML = "";
+  const q = (filterText || "").trim().toLowerCase();
+  const visible = q
+    ? sessions.filter((s) =>
+        (sessionTitleFor(s) + " " + (s.sessionId || "")).toLowerCase().includes(q))
+    : sessions;
+  if (!visible.length) {
+    list.innerHTML = `<div class="ctx-value muted">${q ? "No sessions match." : "No past sessions."}</div>`;
+    return;
+  }
+  for (const s of visible) {
+    const item = document.createElement("div");
+    item.className = "session-item";
+    const n = s.messageCount || 0;
+    const meta = `${n} ${n === 1 ? "message" : "messages"} · ${formatSessionDate(s.savedAt)}`;
+    item.innerHTML =
+      '<div class="si-main">' +
+      `<div class="si-title">${escapeHtml(sessionTitleFor(s))}</div>` +
+      `<div class="si-meta">${escapeHtml(meta)}</div>` +
+      "</div>" +
+      '<button type="button" class="danger-btn si-delete" title="Delete this session">Delete</button>';
+    item.querySelector(".si-main").addEventListener("click", async () => {
+      await api.touchSession(s.path);
+      closeOverlay("sessionsOverlay");
+      addActivity("Resuming session…", "tool");
+      try {
+        await loadSessionStateIntoUi(s.path);
+      } catch (err) {
+        console.error("Failed to load session history into UI:", err);
+      }
+      // Restart the agent with the resumed session. Resuming is not
+      // "working" — the app stays idle until a prompt is sent (P0-1).
+      const config = await api.loadConfig();
+      await api.startAgent(config, true);
+      agentRunning = true;
+      setWorking(false);
+    });
+    item.querySelector(".si-delete").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const sure = window.confirm(`Delete "${sessionTitleFor(s)}"? It moves to the sessions archive.`);
+      if (!sure) return;
+      const res = await api.deleteSession(s.path);
+      if (res?.error) {
+        addActivity("Couldn't delete session: " + res.error, "err");
+        return;
+      }
+      openSessions();
+    });
+    list.appendChild(item);
   }
 }
 
@@ -835,35 +1269,12 @@ async function openSessions() {
   list.innerHTML = '<div class="ctx-value muted">Loading…</div>';
   showOverlay("sessionsOverlay");
   const sessions = await api.listSessions();
-  list.innerHTML = "";
-  if (!sessions.length) {
-    list.innerHTML = '<div class="ctx-value muted">No past sessions.</div>';
-    return;
+  const filter = $("sessionFilter");
+  if (filter) {
+    filter.value = "";
+    filter.oninput = () => renderSessionsList(sessions, filter.value);
   }
-  for (const s of sessions) {
-    const item = document.createElement("div");
-    item.className = "session-item";
-    item.innerHTML =
-      `<div class="si-title">${escapeHtml((s.sessionId || "").slice(0, 24))}</div>` +
-      `<div class="si-meta">${s.messageCount || 0} messages · ${(s.savedAt || "").slice(0, 19)}</div>`;
-    item.addEventListener("click", async () => {
-      await api.touchSession(s.path);
-      closeOverlay("sessionsOverlay");
-      addActivity("Resuming session…", "tool");
-      
-      try {
-        await loadSessionStateIntoUi(s.path);
-      } catch (err) {
-        console.error("Failed to load session history into UI:", err);
-      }
-      
-      // Restart the agent with the resumed session.
-      const config = await api.loadConfig();
-      await api.startAgent(config, true);
-      setWorking(true);
-    });
-    list.appendChild(item);
-  }
+  renderSessionsList(sessions, "");
 }
 
 // ─── preview panel ─────────────────────────────────────────────────────
@@ -919,7 +1330,12 @@ function wireButtons() {
   });
   $("settingsBtn").addEventListener("click", () => api.loadSettings());
   $("ctxEditBtn").addEventListener("click", () => showOverlay("coreOverlay"));
-  $("activityClearBtn").addEventListener("click", () => (activityStream.innerHTML = ""));
+  $("activityClearBtn").addEventListener("click", () => {
+    activityStream.innerHTML =
+      '<div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>';
+    $("activityClearBtn").hidden = true;
+    lastContextEntryText = null;
+  });
   $("attachments").addEventListener("click", (e) => {
     const x = e.target.closest(".attach-x");
     if (!x) return;
@@ -941,9 +1357,9 @@ function wireButtons() {
 
   // suggestion chips
   const chips = [
+    "Draft an investment memo from example files",
     "Research a company and write a 2-page brief",
     "Build a competitive matrix from public sources",
-    "Draft a due-diligence checklist",
   ];
   const wrap = $("suggestionChips");
   for (const c of chips) {
