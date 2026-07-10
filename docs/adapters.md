@@ -34,7 +34,7 @@ export interface HarnessAdapter {
 - **ID:** `glm`
 - **Compatibility:** GLM-5.2 and GLM-family models
 - **Context Window:** 128K tokens
-- **Max Output:** 8192 tokens
+- **Max Output:** 16384 tokens
 - **Citation Style:** XML
 
 ### ClaudeAdapter

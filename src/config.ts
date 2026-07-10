@@ -423,16 +423,11 @@ export function isFirstRun(): boolean {
  * are source-controlled defaults, so onboarding never asks for a model name.
  */
 export async function runOnboardingHandshake(): Promise<void> {
-  const readline = await import("readline");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  const ask = (q: string) =>
-    new Promise<string>((resolve) => rl.question(q, (a) => resolve(a.trim())));
+  const { askQuestion } = await import("./utils/prompt.js");
+  const ask = (q: string) => askQuestion(q);
 
   console.log(
-    picocolors.cyan("\n  ⚡ Welcome to Quiver! Let's get you set up.\n"),
+    picocolors.cyan("\n  Welcome to Quiver! Let's get you set up.\n"),
   );
   console.log(
     picocolors.gray(
@@ -458,7 +453,7 @@ export async function runOnboardingHandshake(): Promise<void> {
         config.llmApiKey = key;
         console.log(
           picocolors.green(
-            "\n  ✅ Saved to OS keychain. You're ready to go!\n",
+            "\n  Saved to OS keychain. You're ready to go!\n",
           ),
         );
       } else {
@@ -470,14 +465,14 @@ export async function runOnboardingHandshake(): Promise<void> {
         config.llmApiKey = key;
         console.log(
           picocolors.yellow(
-            "\n  ⚠️  Saved to .env (plaintext fallback, 0600). Consider using the OS keychain for better security.\n",
+            "\n    Saved to .env (plaintext fallback, 0600). Consider using the OS keychain for better security.\n",
           ),
         );
       }
     } catch {
       console.log(
         picocolors.yellow(
-          "\n  ⚠️  Could not save API key — add OLLAMA_API_KEY manually later.\n",
+          "\n    Could not save API key — add OLLAMA_API_KEY manually later.\n",
         ),
       );
     }
@@ -488,7 +483,7 @@ export async function runOnboardingHandshake(): Promise<void> {
       ),
     );
   }
-  rl.close();
+  // No rl.close() — askQuestion handles cleanup internally.
 }
 
 export function printFirstRunWizard(): void {

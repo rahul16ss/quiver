@@ -21,7 +21,7 @@ export async function runSignin(): Promise<void> {
   if (id.hasSignedIn) {
     console.log(
       picocolors.green(
-        `\n  ✅ Already signed in via Ollama${id.publicKeyFingerprint ? ` (key: …${id.publicKeyFingerprint})` : ""}`,
+        `\n  Already signed in via Ollama${id.publicKeyFingerprint ? ` (key: …${id.publicKeyFingerprint})` : ""}`,
       ),
     );
     console.log(
@@ -32,7 +32,7 @@ export async function runSignin(): Promise<void> {
 
     if (!id.hasApiKey) {
       console.log(
-        picocolors.yellow(`  ⚠️  OLLAMA_API_KEY is not set in .env.`),
+        picocolors.yellow(`    OLLAMA_API_KEY is not set in .env.`),
       );
       console.log(
         picocolors.gray(
@@ -45,7 +45,7 @@ export async function runSignin(): Promise<void> {
 
   if (!id.hasBinary) {
     console.log(
-      picocolors.yellow(`\n  ⚠️  Ollama binary not found on this machine.`),
+      picocolors.yellow(`\n    Ollama binary not found on this machine.`),
     );
     console.log(
       picocolors.gray(
@@ -73,7 +73,7 @@ export async function runSignin(): Promise<void> {
     if (newId.hasSignedIn) {
       console.log(
         picocolors.green(
-          `\n  ✅ Sign-in successful! Key: …${newId.publicKeyFingerprint}`,
+          `\n  Sign-in successful! Key: …${newId.publicKeyFingerprint}`,
         ),
       );
       console.log(
@@ -84,12 +84,12 @@ export async function runSignin(): Promise<void> {
     } else {
       console.log(
         picocolors.green(
-          `\n  ✅ Sign-in flow completed. Run 'quiver signin' again to verify.\n`,
+          `\n  Sign-in flow completed. Run 'quiver signin' again to verify.\n`,
         ),
       );
     }
   } else {
-    console.log(picocolors.red(`\n  ❌ Sign-in failed or was cancelled.\n`));
+    console.log(picocolors.red(`\n  Sign-in failed or was cancelled.\n`));
   }
 }
 

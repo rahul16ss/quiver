@@ -266,7 +266,7 @@ export const tool: Tool = {
       );
     }
 
-    console.log(picocolors.gray(`   ⚡ Parsing session log: ${path.basename(targetFile)}...`));
+    console.log(picocolors.gray(`   Parsing session log: ${path.basename(targetFile)}...`));
 
     // Read and parse the session log
     let events: SessionEvent[];

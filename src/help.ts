@@ -5,7 +5,7 @@ import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
 
 const TOOL_CATEGORIES: Record<string, string[]> = {
-  "📁 Files": [
+  "Files": [
     "view_file",
     "write_file",
     "replace_content",
@@ -15,8 +15,8 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "format_code",
     "grep_search",
   ],
-  "⚙️ System": ["run_command", "run_tests", "create_tool", "log_tokens"],
-  "🌐 Web": [
+  "System": ["run_command", "run_tests", "create_tool", "log_tokens"],
+  "Web": [
     "web_search",
     "scrape_url",
     "browser_control",
@@ -24,12 +24,12 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "find_all",
     "entity_search",
   ],
-  "🧠 Memory": ["memory_append", "memory_replace", "continual_learning"],
-  "🐙 GitHub": ["github"],
-  "📋 Planning": ["todo_write", "ask_question"],
-  "🔄 Self-Improvement": ["prompt_update"],
-  "🔁 Iteration": ["ralph_loop"],
-  "🤖 Agents": ["subagent"],
+  "Memory": ["memory_append", "memory_replace", "continual_learning"],
+  "GitHub": ["github"],
+  "Planning": ["todo_write", "ask_question"],
+  "Self-Improvement": ["prompt_update"],
+  "Iteration": ["ralph_loop"],
+  "Agents": ["subagent"],
 };
 
 type ToolDisplay = { name: string; displayName: string; description: string };
@@ -50,7 +50,7 @@ function categorizeTools(
 
   const uncategorized = tools.filter((t) => !assigned.has(t.name));
   if (uncategorized.length > 0) {
-    categorized.push({ category: "🔧 Other", tools: uncategorized });
+    categorized.push({ category: "Other", tools: uncategorized });
   }
 
   return categorized;
@@ -61,8 +61,8 @@ export function printHelp(): void {
   console.log(
     t.cyan(
       t.bold(`
-          ⚡ Quiver — Your AI analyst, researcher, and writer
-          `),
+  Quiver — Your AI analyst, researcher, and writer
+  `),
     ),
   );
   console.log(`  ${t.bold("USAGE")}`);
@@ -115,12 +115,7 @@ export function printHelp(): void {
   console.log("");
   console.log(
     t.gray(
-      "  Status lines use [OK], [WARN], [ERROR], [INFO] tags for accessibility.",
-    ),
-  );
-  console.log(
-    t.gray(
-      "  End a line with \\ then Enter for multiline input. Plain Enter submits.",
+      "  Enter to send  ·  \\+Enter or Option+Enter for a new line  ·  type / for commands",
     ),
   );
   console.log("");
@@ -148,7 +143,7 @@ export function printInSessionHelp(): void {
       ],
     },
     {
-      title: "Permissions (trust ladder)",
+      title: "Permissions",
       cmds: [
         { name: "/autonomy", desc: "Trust tiers & grants (observe→propose→build→operate→yolo)", aliases: ["/a", "/tier"] },
         { name: "/yolo", desc: "Top trust tier — bypass ALL gates + path sandbox off", aliases: [] },
@@ -156,13 +151,13 @@ export function printInSessionHelp(): void {
       ],
     },
     {
-      title: "Maker-checker",
+      title: "Verification",
       cmds: [
-        { name: "/override", desc: "Override the last maker-checker verdict", aliases: ["/ov"] },
+        { name: "/override", desc: "Override a blocked action (advanced)", aliases: ["/ov"] },
       ],
     },
     {
-      title: "Infra & inspection",
+      title: "Settings & info",
       cmds: [
         { name: "/tools", desc: "List available tools (+ /tools <search> to filter)", aliases: ["/t"] },
         { name: "/config", desc: "Show current configuration", aliases: ["/c"] },
@@ -179,7 +174,7 @@ export function printInSessionHelp(): void {
     },
   ];
 
-  console.log(picocolors.cyan(`\n  ⚡ Quiver Commands\n`));
+  console.log(picocolors.cyan(`\n  Quiver Commands\n`));
   for (const g of groups) {
     console.log(picocolors.bold(`  ${g.title}`));
     for (const cmd of g.cmds) {
@@ -208,7 +203,7 @@ export function printInSessionHelp(): void {
 
   console.log(
     picocolors.gray(
-      `  ${picocolors.cyan("Ambient")} — finished tasks are verified by the maker-checker and auto-healed.`,
+      `  Finished tasks are auto-verified and healed if needed.`,
     ),
   );
   console.log(
@@ -223,7 +218,7 @@ export function printInSessionHelp(): void {
   );
   console.log(
     picocolors.gray(
-      `  Type any other text to chat. End a line with \\ then Enter for multiline.\n`,
+      `  Type any other text to chat. Enter to send  ·  \\+Enter or Option+Enter for a new line.\n`,
     ),
   );
 }

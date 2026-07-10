@@ -149,6 +149,10 @@ contextBridge.exposeInMainWorld("quiver", {
   runTests: () => safeInvoke("workspace:runTests"),
   selectWorkspaceDir: () => safeInvoke("workspace:selectDir"),
 
+  // Credentials (OS keychain — used by onboarding to store the API key securely)
+  settingsSetCredential: (key, value) =>
+    safeInvoke("settings:set-credential", { key, value }),
+
   // Preview
   previewFile: (filePath) => safeInvoke("preview:file", filePath),
 

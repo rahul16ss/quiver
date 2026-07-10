@@ -135,9 +135,9 @@ export function theme(
     danger: pc.red,
     info: pc.blue,
     dry: pc.cyan,
-    promptUser: () => pc.bold(pc.green("Q> ")),
+    promptUser: () => pc.bold(pc.cyan("❯ ")),
     promptAgent: () =>
-      pc.bold(pc.cyan("\u25c6 ")) +
+      pc.bold(pc.cyan("❯ ")) +
       pc.gray(`[${config.llmModelName}] `),
     brandBorder: pc.gray,
     brandBar: pc.cyan,

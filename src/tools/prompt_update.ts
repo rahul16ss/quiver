@@ -155,9 +155,7 @@ export const tool: Tool = {
         );
       }
 
-      // Interactive mode: prompt the user
-      const readline = await import("readline");
-
+      // Interactive mode: prompt the user via @clack/prompts
       console.log("\n  ┌── System Prompt Update Proposed ──────────────");
       console.log(`  │  Reason: ${reason}`);
       console.log("  │");
@@ -192,10 +190,10 @@ export const tool: Tool = {
       console.log("  │  [3] Reject — discard the proposal");
       console.log("  └──────────────────────────────────────────────────");
 
-      const { Agent } = await import("../agent.js");
-      const activeRl = Agent.activeSessionReadline;
-
-      const handleChoice = async (choice: string, resolve: (val: any) => void) => {
+      const handleChoice = async (
+        choice: string,
+        resolve: (val: any) => void,
+      ) => {
         if (choice === "1") {
           // Accept
           try {
@@ -214,49 +212,27 @@ export const tool: Tool = {
           try {
             execSync(`${editor} "${pendingPath}"`, { stdio: "inherit" });
             // After editing, ask if they want to apply
-            const askApply = async (rlToUse: any, shouldClose: boolean) => {
-              return new Promise<void>((resApply) => {
-                rlToUse.question(
-                  "\n  Apply the edited version? (y/N): ",
-                  async (applyAnswer: string) => {
-                    if (shouldClose) {
-                      rlToUse.removeAllListeners();
-                      process.stdin.resume();
-                    }
-                    if (
-                      applyAnswer.trim().toLowerCase() === "y" ||
-                      applyAnswer.trim().toLowerCase() === "yes"
-                    ) {
-                      try {
-                        const edited = await fs.readFile(pendingPath, "utf8");
-                        await fs.writeFile(promptPath, edited, "utf8");
-                        await fs.unlink(pendingPath).catch(() => {});
-                        resolve(
-                          "System prompt updated with your edited version. The new prompt will be active on the next prompt() call.",
-                        );
-                      } catch (err: any) {
-                        resolve(`Error applying edited update: ${err.message}`);
-                      }
-                    } else {
-                      await fs.unlink(pendingPath).catch(() => {});
-                      resolve(
-                        "Update rejected. The proposal has been discarded.",
-                      );
-                    }
-                    resApply();
-                  },
+            const { askQuestionRaw } = await import("../utils/prompt.js");
+            const applyAnswer = await askQuestionRaw(
+              "\n  Apply the edited version? (y/N): ",
+            );
+            if (
+              applyAnswer.trim().toLowerCase() === "y" ||
+              applyAnswer.trim().toLowerCase() === "yes"
+            ) {
+              try {
+                const edited = await fs.readFile(pendingPath, "utf8");
+                await fs.writeFile(promptPath, edited, "utf8");
+                await fs.unlink(pendingPath).catch(() => {});
+                resolve(
+                  "System prompt updated with your edited version. The new prompt will be active on the next prompt() call.",
                 );
-              });
-            };
-
-            if (activeRl) {
-              await askApply(activeRl, false);
+              } catch (err: any) {
+                resolve(`Error applying edited update: ${err.message}`);
+              }
             } else {
-              const rl2 = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-              });
-              await askApply(rl2, true);
+              await fs.unlink(pendingPath).catch(() => {});
+              resolve("Update rejected. The proposal has been discarded.");
             }
           } catch (err: any) {
             resolve(
@@ -270,27 +246,11 @@ export const tool: Tool = {
         }
       };
 
-      if (activeRl) {
-        return new Promise((resolve) => {
-          activeRl.question("  > ", async (answer) => {
-            const choice = answer.trim();
-            await handleChoice(choice, resolve);
-          });
-        });
-      }
-
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-
-      return new Promise((resolve) => {
-        rl.question("  > ", async (answer) => {
-          rl.removeAllListeners();
-          process.stdin.resume();
-          const choice = answer.trim();
-          await handleChoice(choice, resolve);
-        });
+      // Use the shared prompt utility for consistent input experience.
+      const { askQuestionRaw } = await import("../utils/prompt.js");
+      const answer = await askQuestionRaw("  > ");
+      return new Promise<string>((resolve) => {
+        handleChoice(answer.trim(), resolve);
       });
     } catch (error: any) {
       return `Error proposing system prompt update: ${error.message}`;

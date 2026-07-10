@@ -43,7 +43,7 @@ export const tool: Tool = {
       classification.risk === "safe"
         ? ""
         : picocolors.gray(` [risk: ${classification.risk}]`);
-    console.log(picocolors.gray(`   ⚡ Running command: ${command}`) + riskTag);
+    console.log(picocolors.gray(`   Running command: ${command}`) + riskTag);
 
     return new Promise((resolve) => {
       exec(

@@ -149,7 +149,7 @@ export function formatDecayForCLI(results: DecayResult[]): string {
   lines.push("");
 
   for (const result of results) {
-    const status = result.shouldArchive ? "⚠ ARCHIVE" : "✓ active";
+    const status = result.shouldArchive ? "ARCHIVE" : "✓ active";
     const daysStr = result.daysSinceUse === -1 ? "never used" : `${result.daysSinceUse}d ago`;
     lines.push(
       `  ${status} ${result.file.padEnd(30)} hits: ${result.hitCount} | ${daysStr} | score: ${result.decayScore.toFixed(2)}`,

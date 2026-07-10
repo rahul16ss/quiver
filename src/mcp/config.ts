@@ -57,9 +57,9 @@ export function loadMcpConfig(): McpConfig | null {
         if (parsed.mcpServers && typeof parsed.mcpServers === "object") {
           return parsed as McpConfig;
         }
-        console.warn(`⚠️  MCP config at ${p} is missing "mcpServers" key.`);
+        console.warn(`  MCP config at ${p} is missing "mcpServers" key.`);
       } catch (err: any) {
-        console.warn(`⚠️  Failed to parse MCP config at ${p}: ${err.message}`);
+        console.warn(`  Failed to parse MCP config at ${p}: ${err.message}`);
       }
     }
   }

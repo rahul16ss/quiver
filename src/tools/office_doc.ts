@@ -198,10 +198,17 @@ export const tool: Tool = {
   }),
 
   execute: async (args: any) => {
-    // Path-policy guard (US-9.2): reject sensitive paths
+    // Path-policy guard (US-9.2): reject sensitive paths.
+    // Use "write" for mutating actions, "read" for read-only actions.
+    const _writeActions = new Set(["create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import", "close", "validate"]);
+    const _operation = _writeActions.has(args.action) ? "write" : "read";
     try {
-      const _checkPath = args.filePath || args.directory || args.path || args.file || "";
-      if (_checkPath) assertToolPathAllowed(_checkPath, "read");
+      const _checkPath = args.file || args.filePath || args.directory || args.path || "";
+      if (_checkPath) assertToolPathAllowed(_checkPath, _operation as "read" | "write");
+      // Validate additional file paths (template, source) through the policy
+      if (args.template) assertToolPathAllowed(args.template, "read");
+      if (args.source) assertToolPathAllowed(args.source, "read");
+      if (args.data) assertToolPathAllowed(args.data, "read");
     } catch (e: any) {
       return `Error: ${e.message}`;
     }
@@ -335,12 +342,9 @@ export const tool: Tool = {
         if (!template) return "Error: 'template' is required for merge action.";
         if (!data)
           return "Error: 'data' (JSON data file path) is required for merge action.";
-        cliArgs.push("merge", template, file);
-        // data is the output, template is input — wait, merge syntax is: merge <template> <output>
-        // Actually: officecli merge <template> <output> — but we need data too
-        // Let me re-check: merge takes template + output, data is passed via --data
-        // Actually the SKILL.md says: merge <template> <output> — replaces {{key}} placeholders
-        // The data must be in a JSON file. Let me check the actual CLI
+        // officecli merge <template> <output> --data <data.json>
+        // Replaces {{key}} placeholders in the template with values from the JSON data file.
+        cliArgs.push("merge", template, file, "--data", data);
         break;
 
       case "import":

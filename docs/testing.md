@@ -67,7 +67,7 @@ tests/
 npm test   # = npx tsx tests/run_tests.ts — the single acceptance gate
 ```
 
-It covers, among its 122 checks:
+It covers:
 
 - **Agent-loop wiring** (`WIRE-*`, structural) — `agent.ts` imports and fires
   lifecycle (`wrapModelCall`/`wrapToolCall`), sources model transport via
@@ -87,9 +87,7 @@ It covers, among its 122 checks:
   landing page, moderate command band, blocked globs, CoW scratchpad, behavioral
   untrusted wrap).
 
-> **Status (re-audit 2026-06-28): 122/122 met, 0 failing — gate is GREEN.**
-> The 11 dead-code wiring gaps + 2 maker-checker checks (`MAKER-CHECKER-SEPARATION`/
-> `MAKER-CHECKER-SCRATCHPAD`) are closed at the acceptance bar. This contract is
-> checker-owned and read-only to the vendor; `npm test` is the only live verdict.
-> Defense-in-depth: checker `noNetwork`/`readOnly` are env signals + scratchpad cwd,
-> not OS-level socket blocking — see `tests/ACCEPTANCE_CONTRACT.md`.
+> This contract is checker-owned and read-only to the vendor; `npm test` is the
+> only live verdict — re-run it for the current status. Defense-in-depth: the
+> checker's `noNetwork`/`readOnly` are env signals + scratchpad cwd, not OS-level
+> socket blocking — see `tests/ACCEPTANCE_CONTRACT.md`.

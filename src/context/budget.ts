@@ -104,7 +104,7 @@ export function formatBudgetForHUD(budget: TokenBudget): string {
   ];
 
   if (budget.needsCompaction) {
-    lines.push(`  ⚠ Compaction threshold reached (${Math.round(COMPACTION_FRACTION * 100)}%)`);
+    lines.push(`  Compaction threshold reached (${Math.round(COMPACTION_FRACTION * 100)}%)`);
   }
   if (budget.exceedsLimit) {
     lines.push(`  ✗ Context limit exceeded — submission blocked`);

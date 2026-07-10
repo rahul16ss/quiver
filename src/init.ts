@@ -1,22 +1,13 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 import * as path from "path";
-import readline from "readline";
 import { theme, statusLine, EXIT } from "./cli_ui.js";
 
 const ENV_EXAMPLE = path.resolve(".env.example");
 const ENV_FILE = path.resolve(".env");
 
-function promptLine(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+async function promptLine(question: string): Promise<string> {
+  const { askQuestion } = await import("./utils/prompt.js");
+  return askQuestion(question);
 }
 
 /**

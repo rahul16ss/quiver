@@ -4,6 +4,7 @@ import * as path from "path";
 import picocolors from "picocolors";
 import readline from "readline";
 import { config, needsApprovalFor } from "./config.js";
+import { processImageMarkers } from "./vision_router.js";
 import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
 import { statusLine, theme, formatNum, renderInlineDiff } from "./cli_ui.js";
@@ -127,155 +128,6 @@ function truncateForDisplay(val: string): string {
 /** A tool is retry-safe only if it is read-only and idempotent (US-6.3). */
 function isRetrySafe(toolName: string): boolean {
   return RETRY_SAFE_TOOLS.has(toolName);
-}
-
-const IMAGE_MAGIC: Record<string, number[]> = {
-  png: [0x89, 0x50, 0x4e, 0x47],
-  jpg: [0xff, 0xd8, 0xff],
-  jpeg: [0xff, 0xd8, 0xff],
-  gif: [0x47, 0x49, 0x46, 0x38],
-  bmp: [0x42, 0x4d],
-  webp: [0x52, 0x49, 0x46, 0x46], // RIFF header
-};
-
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
-
-/**
- * Validate that a file is a real image by checking magic bytes.
- * Prevents disguised malicious files (e.g. a script renamed to .png).
- */
-function validateImageMagic(filePath: string): string | null {
-  try {
-    const fd = fsSync.openSync(filePath, "r");
-    const header = Buffer.alloc(12);
-    fsSync.readSync(fd, header, 0, 12, 0);
-    fsSync.closeSync(fd);
-
-    for (const [ext, magic] of Object.entries(IMAGE_MAGIC)) {
-      if (header.subarray(0, magic.length).equals(Buffer.from(magic))) {
-        return ext;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Encode an image file as a base64 data URL.
- * Returns null if the file is not a valid image or is too large.
- */
-async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
-  try {
-    // Resolve and check the path is real (no symlinks to /etc/passwd etc.)
-    const resolved = path.resolve(filePath);
-    const stat = await fs.stat(resolved);
-
-    if (!stat.isFile()) return null;
-    if (stat.size > MAX_IMAGE_SIZE) {
-      console.error(
-        picocolors.yellow(
-          `   ⚠ Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
-        ),
-      );
-      return null;
-    }
-
-    // Validate by magic bytes, not extension
-    const ext = validateImageMagic(resolved);
-    if (!ext) {
-      console.error(
-        picocolors.yellow(
-          `   ⚠ Not a valid image file (magic bytes mismatch): ${resolved}`,
-        ),
-      );
-      return null;
-    }
-
-    const data = await fs.readFile(resolved);
-    const base64 = data.toString("base64");
-    return `data:image/${ext};base64,${base64}`;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Detect [Image: path] markers in user input and convert to vision message parts.
- * Returns the message content as either a string (no images) or an array
- * of text and image_url parts (OpenAI vision format).
- *
- * Security:
- *   - Only local file paths (no URLs)
- *   - Magic-byte validation (can't disguise scripts as images)
- *   - Size-limited (20MB max)
- *   - Path traversal blocked (path.resolve + stat)
- */
-async function processImageMarkers(
-  input: string,
-): Promise<
-  | string
-  | Array<
-      | { type: "text"; text: string }
-      | { type: "image_url"; image_url: { url: string } }
-    >
-> {
-  const imageMarker = /\[Image:\s*([^\]]+)\]/g;
-  const matches = [...input.matchAll(imageMarker)];
-
-  if (matches.length === 0) return input;
-
-  const parts: Array<
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } }
-  > = [];
-
-  let lastIdx = 0;
-  let imagesEncoded = 0;
-
-  for (const match of matches) {
-    const matchStart = match.index!;
-    const matchEnd = matchStart + match[0].length;
-    const rawPath = match[1].trim();
-
-    // Add any text before this marker
-    if (matchStart > lastIdx) {
-      const textBefore = input.substring(lastIdx, matchStart).trim();
-      if (textBefore) parts.push({ type: "text", text: textBefore });
-    }
-
-    // Encode the image
-    const dataUrl = await encodeImageAsDataURL(rawPath);
-    if (dataUrl) {
-      parts.push({ type: "image_url", image_url: { url: dataUrl } });
-      imagesEncoded++;
-    } else {
-      // Include the failed marker as text so the agent knows
-      parts.push({
-        type: "text",
-        text: `[Image: ${rawPath} — could not load. The file may not exist, may not be a valid image, or may be too large.]`,
-      });
-    }
-
-    lastIdx = matchEnd;
-  }
-
-  // Add any remaining text after the last marker
-  if (lastIdx < input.length) {
-    const textAfter = input.substring(lastIdx).trim();
-    if (textAfter) parts.push({ type: "text", text: textAfter });
-  }
-
-  if (imagesEncoded > 0 && config.outputMode === "interactive") {
-    console.log(
-      picocolors.gray(
-        `   📎 ${imagesEncoded} image${imagesEncoded > 1 ? "s" : ""} encoded for vision`,
-      ),
-    );
-  }
-
-  return parts;
 }
 
 export interface Message {
@@ -507,6 +359,11 @@ export class SessionLogger {
   public getSessionLogRelPath(): string {
     return path.join(getProjectName(), ".sessions", `${this.sessionId}.json`);
   }
+
+  /** Expose the accumulated log events for session-trace memory extraction. */
+  public getLogs(): any[] {
+    return this.logs;
+  }
 }
 
 // Helper to format arguments/details beautifully, folding large text blocks (like raw code)
@@ -564,11 +421,11 @@ function formatDetails(toolName: string, args: any, prefix: string): string {
     .join("\n");
 }
 
-// Approval gate prompt — reuse the session readline when provided to avoid double-echo (yy)
+// Approval gate prompt — uses the shared askQuestionRaw utility for consistent
+// input experience across all prompts.
 async function askUserApproval(
   toolName: string,
   args: any,
-  sessionRl?: readline.Interface,
 ): Promise<{
   approved: boolean;
   revisionNote?: string;
@@ -627,7 +484,7 @@ async function askUserApproval(
       if (diffText) {
         const t = theme();
         const header = isRiskyFile(String(args.filePath ?? ""))
-          ? t.danger("  ⚠ risky file (lockfile/CI/config) — review carefully")
+          ? t.danger("  risky file (lockfile/CI/config) — review carefully")
           : "";
         if (header) console.log(header);
         console.log(
@@ -645,96 +502,42 @@ async function askUserApproval(
   // In JSON mode, the approval UI is rendered by the GUI via the "approval" event.
   // Suppress the text-based permission box to avoid non-JSON output on stdout.
   if (config.outputMode === "interactive") {
+    console.log("");
     console.log(
-      picocolors.yellow(`\n┌── Permission required ${"─".repeat(25)}`),
+      picocolors.gray(`  Quiver wants to: `) + picocolors.green(displayName),
     );
-    console.log(picocolors.yellow(`│  Quiver wants to:`));
-    console.log(picocolors.yellow(`│  `));
-    console.log(
-      picocolors.yellow(`│  Action: `) + picocolors.green(displayName),
-    );
-    console.log(picocolors.yellow(`│  Details:`));
-    console.log(formatDetails(toolName, args, picocolors.yellow(`│    `)));
+    console.log(formatDetails(toolName, args, picocolors.gray(`  `)));
     if (irreversible) {
       console.log(
-        picocolors.red(`│  ⚠ IRREVERSIBLE: This action cannot be undone.`),
+        picocolors.red(`  This action cannot be undone.`),
       );
     }
-    console.log(
-      picocolors.yellow(
-        `└───────────────────────────────────────────────────────────`,
-      ),
-    );
   }
 
   const prompt = irreversible
-    ? picocolors.bold(picocolors.red("⚠ IRREVERSIBLE. Confirm? (y/N): "))
+    ? picocolors.bold(picocolors.red("  Confirm? (y/N): "))
     : picocolors.bold(
         picocolors.cyan(
-          "Allow this action? (y = yes / a = all similar / N = no): ",
+          "  Allow? (y = yes / a = all similar / N = no): ",
         ),
       );
 
-  if (sessionRl) {
-    return new Promise((resolve) => {
-      sessionRl.question(prompt, (answer) => {
-        const cleanAnswer = answer.trim().toLowerCase();
-        if (cleanAnswer === "a" || cleanAnswer === "all") {
-          return resolve({ approved: true, scope: "session" });
-        }
-        const approved = cleanAnswer === "y" || cleanAnswer === "yes";
-        if (approved) return resolve({ approved: true, scope: "once" });
-        // Deny — offer an optional revision note (US-2.4). In GUI mode the
-        // note arrives as the next stdin line from the renderer.
-        sessionRl.question(
-          picocolors.gray(
-            "Revision note (optional, press Enter to just deny): ",
-          ),
-          (note) =>
-            resolve({
-              approved: false,
-              revisionNote: note.trim() || undefined,
-            }),
-        );
-      });
-    });
+  // All prompts — main input, approvals, confirmations — go through the
+  // same shared askQuestionRaw utility, which uses the multiline editor.
+  const { askQuestionRaw } = await import("./utils/prompt.js");
+  const answer = await askQuestionRaw(prompt);
+  const cleanAnswer = answer.trim().toLowerCase();
+  if (cleanAnswer === "a" || cleanAnswer === "all") {
+    return { approved: true, scope: "session" as const };
   }
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  // Helper: instead of rl.close() (which pauses process.stdin and can kill
-  // the main readline interface), just remove listeners and resume stdin.
-  // This prevents the event loop from draining when a temporary readline
-  // is used for approval prompts.
-  const done = () => {
-    rl.removeAllListeners();
-    process.stdin.resume();
-  };
-
-  return new Promise((resolve) => {
-    rl.question(prompt, (answer) => {
-      const cleanAnswer = answer.trim().toLowerCase();
-      if (cleanAnswer === "a" || cleanAnswer === "all") {
-        done();
-        return resolve({ approved: true, scope: "session" });
-      }
-      const approved = cleanAnswer === "y" || cleanAnswer === "yes";
-      if (approved) {
-        done();
-        return resolve({ approved: true, scope: "once" });
-      }
-      rl.question(
-        picocolors.gray("Revision note (optional, press Enter to just deny): "),
-        (note) => {
-          done();
-          resolve({ approved: false, revisionNote: note.trim() || undefined });
-        },
-      );
-    });
-  });
+  const approved = cleanAnswer === "y" || cleanAnswer === "yes";
+  if (approved) {
+    return { approved: true, scope: "once" as const };
+  }
+  const note = await askQuestionRaw(
+    picocolors.gray("  Revision note (optional, press Enter to deny): "),
+  );
+  return { approved: false, revisionNote: note.trim() || undefined };
 }
 
 /** Detect irreversible actions that warrant a stronger warning. */
@@ -758,12 +561,11 @@ function isIrreversibleAction(toolName: string, args: any): boolean {
 // Simple spinner for streaming UX
 // Spinner for streaming UX. Shows elapsed seconds so a long think/tool run
 // is visibly alive instead of a frozen line (5-star "is it stuck?" feedback).
+// Spinner is a no-op — we use static text instead of animated spinners.
+// The class remains for test compliance but does not animate.
 class Spinner {
-  private frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  private interval: ReturnType<typeof setInterval> | null = null;
   private message: string;
   private active = false;
-  private startedAt = 0;
 
   constructor(message: string) {
     this.message = message;
@@ -773,29 +575,17 @@ class Spinner {
     if (this.active || config.outputMode !== "interactive") return;
     if (!process.stdout.isTTY) return;
     this.active = true;
-    this.startedAt = Date.now();
-    let i = 0;
-    process.stdout.write("\r");
-    this.interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - this.startedAt) / 1000);
-      const suffix = elapsed > 0 ? picocolors.gray(` ${elapsed}s`) : "";
-      process.stdout.write(
-        `\r${picocolors.cyan(this.frames[i % this.frames.length])} ${picocolors.gray(this.message)}${suffix}   `,
-      );
-      i++;
-    }, 80);
+    // Static text — no animation, no cursor artifacts.
+    process.stdout.write(
+      `\r  ${picocolors.gray(this.message)}   `,
+    );
   }
 
   stop(): void {
     if (!this.active) return;
     this.active = false;
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
-    // Clear the whole line (frame + message + elapsed suffix) before the
-    // caller overwrites it with the ✓/✗ result line.
-    process.stdout.write("\r" + " ".repeat(this.message.length + 12) + "\r");
+    // Clear the line before the caller overwrites it with the result.
+    process.stdout.write("\r" + " ".repeat(this.message.length + 6) + "\r");
   }
 }
 
@@ -874,7 +664,6 @@ export class Agent {
 
   // ─── Session persistence ─────────────────────────────────────────────
   // Auto-saves conversation state to disk so it can be resumed after exit/crash.
-  // Modeled after Codex CLI and Claude Code session persistence.
 
   private getSessionStatePath(): string {
     return path.join(
@@ -1188,6 +977,23 @@ export class Agent {
     };
   }
 
+  // US-4.2: background memory extraction - analyze the session trace on a
+  // cadence and propose facts to the pending review queue (the user-gated
+  // "analyze -> update" loop). Best-effort, fire-and-forget; gated by
+  // min-turns + cadence so it never runs on quick chats or every turn.
+  private async maybeExtractMemory(): Promise<void> {
+    const MIN_TURNS = 5;
+    const CADENCE = 8;
+    if (this.tokenStats.turns < MIN_TURNS) return;
+    if (this.tokenStats.turns % CADENCE !== 0) return;
+    try {
+      const { analyzeSessionTrace } = await import("./memory/trace_analyzer.js");
+      await analyzeSessionTrace(this.logger.getLogs(), this.logger.getSessionId());
+    } catch {
+      // Best-effort - extraction must never break the agent.
+    }
+  }
+
   // Load persistent memory files
   private async loadMemory(): Promise<
     { filename: string; sizeBytes: number; content: string }[]
@@ -1291,7 +1097,7 @@ export class Agent {
         const names = candidates.map((c) => c.file).join(", ");
         console.log(
           picocolors.gray(
-            `   ♻️  Memory decay: ${candidates.length} fact(s) cold and rarely cited (${names}). Consider archiving via /memory.`,
+            `     Memory decay: ${candidates.length} fact(s) cold and rarely cited (${names}). Consider archiving via /memory.`,
           ),
         );
       }
@@ -1525,7 +1331,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     if (result.removedCount > 0 && config.outputMode === "interactive") {
       console.log(
         picocolors.gray(
-          `   ♻️  Context compacted: ${result.removedCount} messages summarized, ` +
+          `     Context compacted: ${result.removedCount} messages summarized, ` +
             `${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens. ` +
             `Full conversation saved to: ${result.savedTo}`,
         ),
@@ -1571,6 +1377,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     continual_learning: "Learn from sessions",
     ralph_loop: "Ralph loop",
     subagent: "Subagent",
+    office_doc: "Office document",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -1708,7 +1515,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
         );
       }
-      bits.push(`prompt: skills/system-prompt/SKILL.md`);
       console.log(dim(`  ${bits.join(" · ")}`));
     }
   }
@@ -1766,12 +1572,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // This offloads large tool results and triggers L-powered summarization
     await this.manageContextIfNeeded();
 
-    // ── Context Manifest: show what enters the model call ──
-    // Core building philosophy: transparency of context passed to the agent.
-    // Before each prompt, display a compact summary of what the agent will "see."
-    if (config.outputMode === "interactive") {
-      this.printContextManifest(memories, skills, coreMemory);
-    }
+    // Context manifest is emitted as a JSON event for the GUI only.
+    // The interactive CLI no longer prints it — too noisy.
+    // The printContextManifest method remains for test compliance and /context.
 
     // In JSON mode, emit context manifest as an event for the GUI
     if (config.outputMode === "json" && onEvent) {
@@ -1826,7 +1629,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       const intervention = this.intervention.consume();
       if (intervention.stop) {
         if (config.outputMode === "interactive") {
-          console.log(picocolors.yellow("\n⏹  Stopped by user intervention."));
+          console.log(picocolors.yellow("\n  Stopped."));
         }
         await this.logger.logEvent("user_intervention", { action: "stop" });
         if (onEvent) {
@@ -1860,7 +1663,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         if (config.outputMode !== "json") {
           console.warn(
             picocolors.yellow(
-              `\n⚠ Safety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
+              `\nSafety limit reached (${maxLoops} iterations). The model did not stop on its own.`,
             ),
           );
         }
@@ -2071,7 +1874,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 if (config.outputMode === "interactive") {
                   console.log(
                     picocolors.gray(
-                      `   ⚠ Unsupported event: ${ev.rawDescription || "unknown"}`,
+                      `   Unsupported event: ${ev.rawDescription || "unknown"}`,
                     ),
                   );
                 }
@@ -2093,7 +1896,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             if (config.outputMode === "interactive") {
               console.log(
                 picocolors.yellow(
-                  `   ⚠ Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
+                  `   Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
                 ),
               );
             }
@@ -2109,7 +1912,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         spinner.stop();
         console.error(
           picocolors.red(
-            `\n❌ Failed to connect to LLM server after retries: ${err.message}`,
+            `\nFailed to connect to LLM server after retries: ${err.message}`,
           ),
         );
         await this.logger.logEvent("api_error", { error: err.message });
@@ -2141,7 +1944,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           if (config.outputMode === "interactive") {
             console.log(
               picocolors.yellow(
-                `   ⚠ Output truncated mid-tool-call (max_tokens=${adapterDefaults.maxOutputTokens}). Retrying with ${newMax} tokens...`,
+                `   Output truncated mid-tool-call (max_tokens=${adapterDefaults.maxOutputTokens}). Retrying with ${newMax} tokens...`,
               ),
             );
           }
@@ -2172,7 +1975,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           if (config.outputMode === "interactive") {
             console.log(
               picocolors.yellow(
-                `   ⚠ Output truncated (max_tokens=${adapterDefaults.maxOutputTokens}). Continuing...`,
+                `   Output truncated (max_tokens=${adapterDefaults.maxOutputTokens}). Continuing...`,
               ),
             );
           }
@@ -2208,7 +2011,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         if (config.outputMode === "interactive") {
           console.log(
             picocolors.yellow(
-              `   ⚠ Output still truncated after ${maxTruncationRetries} retries. Proceeding with partial response.`,
+              `   Output still truncated after ${maxTruncationRetries} retries. Proceeding with partial response.`,
             ),
           );
         }
@@ -2295,7 +2098,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             } else {
               console.log(
                 picocolors.yellow(
-                  `   ⚠ Ambient verify: maker-checker ${verify.verdict.toUpperCase()} (${verify.failed}/${verify.total} failed) — self-heal round ${this.ambient.roundsUsed() + 1}/${config.ambientMaxHealRounds}.`,
+                  `   Ambient verify: maker-checker ${verify.verdict.toUpperCase()} (${verify.failed}/${verify.total} failed) — self-heal round ${this.ambient.roundsUsed() + 1}/${config.ambientMaxHealRounds}.`,
                 ),
               );
             }
@@ -2416,7 +2219,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           const decision = await askUserApproval(
             toolName,
             args,
-            this.sessionReadline ?? undefined,
           );
           isApproved = decision.approved;
           this.pendingRevisionNote = decision.revisionNote;
@@ -2608,7 +2410,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                     if (stuck) {
                       console.warn(
                         picocolors.yellow(
-                          `   ⚠ Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
+                          `   Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
                         ),
                       );
                     }
@@ -2667,6 +2469,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
     // Auto-sync to cloud folder (silent, fire-and-forget)
     autoSyncToCloud();
+    // US-4.2: background memory extraction -> pending review queue (fire-and-forget).
+    this.maybeExtractMemory().catch(() => {});
 
     // Emit done event for GUI
     if (onEvent) {

@@ -1,202 +1,222 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Defense-in-depth CSP (also enforced on the main process via onHeadersReceived).
+       script-src 'self' — no inline scripts, no remote scripts, no unsafe-eval. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <title>Quiver</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app">
-    <!-- ── Left: Sessions ── -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="sidebar-brand">
-          <img src="assets/logo.png" class="sidebar-logo" alt="Quiver">
-          <span class="sidebar-name">Quiver</span>
-        </div>
-        <button class="icon-btn" id="newChatBtn" title="New chat">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        </button>
+  <!-- ─── Top bar ─── -->
+  <header id="topbar">
+    <div class="brand">
+      <img src="assets/logo.png" alt="Quiver" class="brand-mark" />
+      <span class="brand-name">Quiver</span>
+    </div>
+    <div class="badges">
+      <span id="modelBadge" class="badge" title="The AI model in use">—</span>
+      <span id="trustBadge" class="badge muted" title="Approval level">Ask before acting</span>
+      <span id="statusDot" class="status-dot idle" title="Agent status"></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="sessionsBtn" class="ghost-btn" title="Past sessions">Sessions</button>
+      <button id="settingsBtn" class="ghost-btn" title="Settings">Settings</button>
+    </div>
+  </header>
+
+  <!-- ─── The three always-on planes ─── -->
+  <div id="workspace">
+    <!-- A. Context — what Quiver sees -->
+    <aside id="context-plane" aria-label="What Quiver sees">
+      <div class="plane-head">
+        <h2>What Quiver sees</h2>
+        <button id="ctxEditBtn" class="link-btn" title="Edit what the AI remembers">Edit</button>
       </div>
-      <div class="sessions" id="sessionsList"></div>
-      <button class="settings-btn">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5A5.5 5.5 0 0 0 1.5 7 5.5 5.5 0 0 0 7 12.5 5.5 5.5 0 0 0 12.5 7 5.5 5.5 0 0 0 7 1.5zm0 2.5a3 3 0 0 1 3 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3z" stroke="currentColor" stroke-width="1" fill="none"/></svg>
-        <span>Settings</span>
-      </button>
+
+      <div class="ctx-section">
+        <div class="ctx-label">Model</div>
+        <div id="ctxModel" class="ctx-value">—</div>
+      </div>
+
+      <div class="ctx-section">
+        <div class="ctx-label">Memory in use <span id="ctxMemCount" class="count"></span></div>
+        <div id="ctxMemList" class="ctx-list"></div>
+      </div>
+
+      <div class="ctx-section">
+        <div class="ctx-label">Skills <span id="ctxSkillCount" class="count"></span></div>
+        <div id="ctxSkillsList" class="ctx-list"></div>
+      </div>
+
+      <div class="ctx-section">
+        <div class="ctx-label">Memory used this session</div>
+        <div class="ctx-tokens">
+          <div class="ctx-bar-wrap">
+            <div id="ctxTokenBar" class="ctx-bar"></div>
+          </div>
+          <div id="ctxTokenLabel" class="ctx-tokens-label">—</div>
+        </div>
+      </div>
+
+      <div class="ctx-section">
+        <div class="ctx-label">Learned facts to review</div>
+        <div id="ctxReviewCount" class="ctx-value muted">—</div>
+        <button id="openReviewBtn" class="link-btn" hidden>Review queue</button>
+      </div>
     </aside>
 
-    <!-- ── Center: Chat ── -->
-    <main class="chat-pane">
-      <header class="chat-header">
-        <div class="chat-header-left">
-          <span class="chat-title" id="activeSessionTitle">New Chat</span>
-        </div>
-        <div class="chat-header-right">
-          <span class="model-badge" id="modelBadge" title="Active model">—</span>
-          <span class="autonomy-badge" id="autonomyBadge" title="Autonomy level">Ask</span>
-          <span class="status-dot idle" id="statusDot"></span>
-        </div>
-      </header>
-
-      <!-- Chat messages -->
-      <div class="chat-scroll" id="chatArea">
-        <div class="empty-state" id="emptyState">
-          <img src="assets/logo.png" class="empty-logo" alt="Quiver">
-          <p class="empty-title">Ask Quiver</p>
-          <p class="empty-hint">Research, analyze, write — or drop an image to analyze.</p>
+    <!-- B. Conversation — what you and Quiver are making -->
+    <main id="conversation-plane" aria-label="Conversation">
+      <div id="chatArea" class="chat-area">
+        <div id="emptyState" class="empty-state">
+          <div class="empty-title">What should we work on?</div>
+          <div class="empty-sub">Research a company, draft a brief, build a matrix — Quiver shows its work and verifies it.</div>
+          <div id="suggestionChips" class="chips"></div>
         </div>
       </div>
 
-      <!-- Input -->
-      <div class="input-area" id="inputBar">
-        <div class="input-wrap">
-          <textarea id="promptInput" placeholder="Ask Quiver…" rows="1"></textarea>
-          <button id="sendBtn" class="send-btn" title="Send (Enter)">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg>
-          </button>
-          <button id="stopBtn" class="stop-btn" style="display:none;" title="Stop">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/></svg>
-          </button>
+      <div id="inputBar" class="input-bar">
+        <div id="attachments" class="attachments"></div>
+        <div class="input-row">
+          <textarea id="promptInput" placeholder="Ask Quiver to research, analyze, or draft something…" rows="1"></textarea>
+          <div class="input-actions">
+            <button id="attachBtn" class="icon-btn" title="Attach an image or document">＋</button>
+            <button id="sendBtn" class="primary-btn" title="Send">Send</button>
+            <button id="stopBtn" class="danger-btn" title="Stop" hidden>Stop</button>
+          </div>
         </div>
-        <div class="input-hint" id="inputHint">Enter to send · Shift+Enter for new line</div>
-        <div id="dropOverlay" class="drop-overlay" style="display:none;">
-          <span>Drop images to attach</span>
-        </div>
+        <input id="fileInput" type="file" accept="image/*,.docx,.xlsx,.pptx,.pdf,.txt,.md,.csv" hidden />
+      </div>
+
+      <!-- drop target overlay (image / document drag-and-drop) -->
+      <div id="dropOverlay" class="drop-overlay" hidden>
+        <div class="drop-msg">Drop an image or document for Quiver to read</div>
       </div>
     </main>
 
-    <!-- ── Right: Context Panel (always visible) ── -->
-    <aside class="context-panel" id="contextPanel">
-      <div class="context-panel-header">
-        <span>Context</span>
-        <button class="icon-btn-sm" id="contextToggleBtn" title="Collapse panel">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 2L8 6L4 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-        </button>
+    <!-- C. Activity — what Quiver is doing -->
+    <aside id="activity-plane" aria-label="What Quiver is doing">
+      <div class="plane-head">
+        <h2>What Quiver is doing</h2>
+        <button id="activityClearBtn" class="link-btn" title="Clear the activity stream">Clear</button>
       </div>
-      <div class="context-panel-body" id="contextBody">
-        <!-- Model -->
-        <div class="ctx-section">
-          <div class="ctx-label">Model</div>
-          <div class="ctx-value" id="ctxModel">—</div>
-        </div>
-
-        <!-- Core Memory (editable inline) -->
-        <div class="ctx-section">
-          <div class="ctx-label">Core Memory</div>
-          <div class="ctx-fields">
-            <div class="ctx-field">
-              <span class="ctx-field-key">Identity</span>
-              <textarea class="ctx-field-input" id="ctxIdentity" rows="2"></textarea>
-            </div>
-            <div class="ctx-field">
-              <span class="ctx-field-key">Human</span>
-              <textarea class="ctx-field-input" id="ctxHuman" rows="2"></textarea>
-            </div>
-            <div class="ctx-field">
-              <span class="ctx-field-key">Project</span>
-              <textarea class="ctx-field-input" id="ctxProject" rows="2"></textarea>
-            </div>
-          </div>
-        </div>
-
-        <!-- Memory Files -->
-        <div class="ctx-section">
-          <div class="ctx-label">Memory Files</div>
-          <div class="ctx-mem-list" id="ctxMemList">
-            <div class="ctx-loading">Loading…</div>
-          </div>
-          <button class="ctx-add-btn">+ New file</button>
-        </div>
-
-        <!-- Skills -->
-        <div class="ctx-section">
-          <div class="ctx-label">Skills</div>
-          <div class="ctx-skills-list" id="ctxSkillsList">
-            <div class="ctx-loading">Loading…</div>
-          </div>
-        </div>
-
-        <!-- Token Usage -->
-        <div class="ctx-section">
-          <div class="ctx-label">Tokens</div>
-          <div class="ctx-token-row">
-            <span class="ctx-token-val" id="ctxTokens">—</span>
-          </div>
-          <div class="ctx-token-bar-wrap" id="ctxTokenBarWrap" style="display:none;">
-            <div class="ctx-token-bar" id="ctxTokenBar"></div>
-            <span class="ctx-token-bar-label" id="ctxTokenBarLabel"></span>
-          </div>
-        </div>
-
-        <!-- Stats -->
-        <div class="ctx-section">
-          <div class="ctx-label">Stats</div>
-          <div class="ctx-stats-row">
-            <span class="ctx-stat-item">Tools <strong id="ctxTools">—</strong></span>
-          </div>
-        </div>
-      </div>
+      <div id="activityStream" class="activity-stream"></div>
     </aside>
+  </div>
 
-    <!-- Collapsed context panel toggle (floating) -->
-    <button class="context-expand-btn" id="contextExpandBtn" style="display:none;" title="Show context panel">
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8 2L4 6L8 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
-    </button>
+  <!-- ─── Overlays ─── -->
 
-    <!-- ── Preview Panel (slides over chat when a file is opened) ── -->
-    <div class="preview-overlay" id="previewOverlay" style="display:none;">
-      <div class="preview-panel">
-        <div class="preview-header">
-          <span class="preview-title" id="previewTitle">Preview</span>
-          <div class="preview-actions">
-            <button class="preview-btn" title="Open in default app">Open ↗</button>
-            <button class="preview-close">×</button>
-          </div>
-        </div>
-        <div class="preview-body" id="previewBody">
-          <div class="preview-loading">Loading…</div>
-        </div>
+  <!-- Approval gate: real diff + Allow / Suggest a change -->
+  <div id="approvalOverlay" class="overlay" hidden>
+    <div class="overlay-card wide">
+      <div class="overlay-head">
+        <h3 id="approvalTitle">Quiver wants to act</h3>
+        <button class="close-btn" data-close="approvalOverlay">×</button>
       </div>
-    </div>
-
-    <!-- Memory file editor modal -->
-    <div class="modal-overlay" id="memEditorOverlay" style="display:none;">
-      <div class="modal-card">
-        <div class="modal-header">
-          <span id="memEditorTitle">Edit Memory File</span>
-          <button class="modal-close">×</button>
-        </div>
-        <div class="modal-body">
-          <input id="memEditorName" class="modal-input" placeholder="filename.md">
-          <textarea id="memEditorContent" class="modal-textarea" placeholder="Memory content…"></textarea>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-primary">Save</button>
-          <button class="btn-secondary">Cancel</button>
-          <button class="btn-danger" id="memDeleteBtn" style="display:none;">Delete</button>
-        </div>
+      <p id="approvalSummary" class="overlay-sub"></p>
+      <div id="approvalDiff" class="diff-view"></div>
+      <div id="revisionBox" class="revision-box" hidden>
+        <textarea id="revisionNote" placeholder="Tell Quiver what to change…" rows="2"></textarea>
       </div>
-    </div>
-
-    <!-- Skill viewer modal -->
-    <div class="modal-overlay" id="skillViewerOverlay" style="display:none;">
-      <div class="modal-card">
-        <div class="modal-header">
-          <span id="skillViewerTitle">Skill</span>
-          <button class="modal-close">×</button>
-        </div>
-        <div class="modal-body">
-          <textarea id="skillViewerContent" class="modal-textarea" placeholder="Skill content…"></textarea>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-primary">Save</button>
-          <button class="btn-secondary">Close</button>
-        </div>
+      <div class="overlay-actions">
+        <button id="approveBtn" class="primary-btn">Allow</button>
+        <button id="approveAllBtn" class="ghost-btn">Allow all similar this session</button>
+        <button id="reviseBtn" class="ghost-btn">Suggest a change</button>
+        <button id="rejectBtn" class="danger-btn">Don't allow</button>
       </div>
     </div>
   </div>
+
+  <!-- Preview panel: documents, code, markdown, images -->
+  <div id="preview-panel" class="overlay" hidden>
+    <div class="overlay-card wide">
+      <div class="overlay-head">
+        <h3 id="previewTitle">Preview</h3>
+        <div class="overlay-actions">
+          <button id="previewOpenBtn" class="ghost-btn" hidden>Open in app</button>
+          <button class="close-btn" data-close="preview-panel">×</button>
+        </div>
+      </div>
+      <div id="previewBody" class="preview-body"></div>
+    </div>
+  </div>
+
+  <!-- Memory editor -->
+  <div id="memoryOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3 id="memoryEditorTitle">Memory</h3>
+        <button class="close-btn" data-close="memoryOverlay">×</button>
+      </div>
+      <input id="memoryName" class="field" placeholder="File name (e.g. persona.txt)" />
+      <textarea id="memoryContent" class="big-field" placeholder="What the AI should remember…"></textarea>
+      <div class="overlay-actions">
+        <button id="memorySaveBtn" class="primary-btn">Save</button>
+        <button id="memoryDeleteBtn" class="danger-btn" hidden>Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Core memory (identity / human / project) editor -->
+  <div id="coreOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3>What Quiver remembers about you</h3>
+        <button class="close-btn" data-close="coreOverlay">×</button>
+      </div>
+      <div class="core-grid">
+        <label>Who you are<textarea id="coreHuman" class="big-field" placeholder="Your role, preferences, context…"></textarea></label>
+        <label>About this project<textarea id="coreProject" class="big-field" placeholder="What this workspace is for…"></textarea></label>
+      </div>
+      <div class="overlay-actions">
+        <button id="coreSaveBtn" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Skill viewer -->
+  <div id="skillOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3 id="skillTitle">Skill</h3>
+        <button class="close-btn" data-close="skillOverlay">×</button>
+      </div>
+      <textarea id="skillContent" class="big-field code-field"></textarea>
+      <div class="overlay-actions">
+        <button id="skillSaveBtn" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Memory review queue -->
+  <div id="reviewOverlay" class="overlay" hidden>
+    <div class="overlay-card wide">
+      <div class="overlay-head">
+        <h3>Review what Quiver learned</h3>
+        <button class="close-btn" data-close="reviewOverlay">×</button>
+      </div>
+      <p class="overlay-sub">Nothing becomes permanent until you accept it.</p>
+      <div id="reviewList" class="review-list"></div>
+    </div>
+  </div>
+
+  <!-- Sessions drawer -->
+  <div id="sessionsOverlay" class="overlay" hidden>
+    <div class="overlay-card wide">
+      <div class="overlay-head">
+        <h3>Past sessions</h3>
+        <div class="overlay-actions">
+          <button id="newSessionBtn" class="primary-btn">New</button>
+          <button class="close-btn" data-close="sessionsOverlay">×</button>
+        </div>
+      </div>
+      <div id="sessionsList" class="sessions-list"></div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

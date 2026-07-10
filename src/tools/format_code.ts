@@ -170,7 +170,7 @@ export const tool: Tool = {
   execute: async ({ filePath }) => {
     // Path-policy guard (US-9.2): reject sensitive paths
     try {
-      assertToolPathAllowed(filePath, "read");
+      assertToolPathAllowed(filePath, "write");
     } catch (e: any) {
       return `Error: ${e.message}`;
     }
@@ -192,7 +192,7 @@ export const tool: Tool = {
     let method: string;
 
     if (prettierAvailable) {
-      console.log(picocolors.gray(`   ⚡ Formatting with prettier...`));
+      console.log(picocolors.gray(`   Formatting with prettier...`));
       const result = await runPrettier(resolvedPath);
       if (result.code === 0) {
         formatted = await fs.readFile(resolvedPath, "utf8");
@@ -200,7 +200,7 @@ export const tool: Tool = {
       } else {
         console.log(
           picocolors.yellow(
-            `   ⚠️  Prettier failed, falling back to built-in formatter.`,
+            `     Prettier failed, falling back to built-in formatter.`,
           ),
         );
         formatted = customFormat(original);
@@ -208,7 +208,7 @@ export const tool: Tool = {
       }
     } else {
       console.log(
-        picocolors.gray(`   ⚡ Formatting with built-in formatter...`),
+        picocolors.gray(`   Formatting with built-in formatter...`),
       );
       formatted = customFormat(original);
       method = "built-in";
@@ -220,7 +220,7 @@ export const tool: Tool = {
       const linesChanged = formatted.split("\n").length;
       console.log(
         picocolors.green(
-          `   ✅ Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`,
+          `   Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`,
         ),
       );
       return JSON.stringify(
@@ -236,7 +236,7 @@ export const tool: Tool = {
       );
     } else {
       console.log(
-        picocolors.green(`   ✅ File already well-formatted (${method}).`),
+        picocolors.green(`   File already well-formatted (${method}).`),
       );
       return JSON.stringify(
         {

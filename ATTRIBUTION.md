@@ -17,19 +17,13 @@ following projects.
 - **Project:** [AionUi](https://github.com/iofficeai/aionui)
 - **Authors:** iOfficeAI, 90+ contributors
 - **License:** Apache 2.0
-- **Usage:** The Quiver desktop GUI is derived from the AionUi Electron
-  architecture. We forked the renderer, preload, and main process patterns,
-  then customized them for tight coupling with the Quiver CLI. AionUi's
-  chat interface, workspace file panel, preview system, and settings
-  architecture provided the foundation for Quiver's desktop experience.
-- **What we kept:** Electron + React renderer architecture, IPC bridge
-  pattern, conversation/workspace layout, preview panel concept, settings
-  modal structure.
-- **What we customized:** Removed multi-agent/multi-CLI support (Quiver is
-  tightly coupled to its own CLI only), replaced AionUi's agent detection
-  with direct Quiver CLI spawning, added Quiver's unique context transparency
-  panel, AI explainability features (maker-checker verdicts, audit chain
-  timeline, reasoning visibility), and plain-text memory editing.
+- **Usage:** An early influence for Quiver's Electron host structure (main
+  process, preload IPC bridge, sandbox/CSP hardening patterns). The current
+  Quiver desktop renderer is original, from-scratch work: a transparency-first
+  three-plane surface (Context | Conversation | Activity) written in vanilla
+  JavaScript with no UI framework, rebuilt against `docs/desktop-design.md`.
+  It is not derived from AionUi's renderer, does not use React, and shares no
+  AionUi renderer code.
 
 ### OfficeCLI
 
@@ -57,7 +51,6 @@ following projects.
 ### Other Direct Dependencies
 
 - **Electron** — MIT License — Desktop application framework
-- **React** — MIT License — UI rendering (via AionUi architecture)
 - **TypeScript** — Apache 2.0 — Language
 - **tsx** — MIT License — TypeScript execution
 - **Zod** — MIT License — Schema validation

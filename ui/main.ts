@@ -7,6 +7,9 @@ import { promisify } from "util";
 import { config } from "../src/config.ts";
 import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
 
+// Set application name early so it registers properly with OS Dock and menus
+app.setName("Quiver");
+
 const execAsync = promisify(exec);
 
 // ESM doesn't have __dirname — create it from import.meta.url
@@ -220,6 +223,10 @@ function getAgentCommand(): { cmd: string; args: string[] } {
 
 async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): Promise<void> {
   if (agentProcess) {
+    // Mark the old agent as expected-to-exit so its exit event isn't forwarded
+    // to the renderer as a crash (which would mark the freshly-spawned agent
+    // "stopped" and null out the global reference from under it).
+    (agentProcess as any)._expectedExit = true;
     agentProcess.kill();
     agentProcess = null;
   }
@@ -255,33 +262,42 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
   // Write .env to the working directory so the CLI can read it
   await syncToEnv(config);
 
-  agentProcess = spawn(cmd, finalArgs, {
+  const proc = spawn(cmd, finalArgs, {
     cwd: workingDir,
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-  agentProcess.stdout?.on("data", (data: Buffer) => {
+  proc.stdout?.on("data", (data: Buffer) => {
     const lines = data.toString().split("\n").filter(Boolean);
     for (const line of lines) {
       try {
         const msg = JSON.parse(line);
         mainWindow?.webContents.send("agent:event", msg);
       } catch {
-        // Non-JSON output — forward as raw
+        // Non-JSON output - forwarded as raw
         mainWindow?.webContents.send("agent:raw", line);
       }
     }
   });
 
-  agentProcess.stderr?.on("data", (data: Buffer) => {
+  proc.stderr?.on("data", (data: Buffer) => {
     mainWindow?.webContents.send("agent:stderr", data.toString());
   });
 
-  agentProcess.on("exit", (code) => {
+  proc.on("exit", (code) => {
+    // A deliberately-killed agent (restart) is expected: don't tell the
+    // renderer it "stopped", and only clear the global if it still refers to
+    // this process (a newer spawn may already have replaced it).
+    if ((proc as any)._expectedExit) {
+      if (agentProcess === proc) agentProcess = null;
+      return;
+    }
     mainWindow?.webContents.send("agent:exit", { code });
-    agentProcess = null;
+    if (agentProcess === proc) agentProcess = null;
   });
+
+  agentProcess = proc;
 }
 
 function sendToAgent(text: string): void {
@@ -296,10 +312,11 @@ function sendToAgent(text: string): void {
 
 function approveToolCall(approve: boolean, note?: string): void {
   if (!agentProcess || !agentProcess.stdin) return;
-  // "y" approves. "n" denies; an optional revision note is sent as a second
-  // line so the agent can feed concrete revision guidance back to the model
-  // (US-2.4 Request-revision flow).
-  agentProcess.stdin.write((approve ? "y" : "n") + "\n");
+  // "y" approves once; "a" approves all-similar-this-session; "n" denies.
+  // An optional revision note is sent as a second line on deny so the agent
+  // can feed concrete revision guidance back to the model (US-2.4).
+  const choice = approve ? (note === "all" ? "a" : "y") : "n";
+  agentProcess.stdin.write(choice + "\n");
   if (!approve) {
     agentProcess.stdin.write((note ? note : "") + "\n");
   }
@@ -330,6 +347,7 @@ async function listMemoryFiles(): Promise<
     const results: { name: string; content: string; size: number }[] = [];
     for (const file of files) {
       if (file.startsWith(".")) continue;
+      if (file === "facts.jsonl" || file === "project.json") continue;
       const filePath = path.join(memDir, file);
       const stat = await fs.stat(filePath);
       if (stat.isFile()) {
@@ -704,9 +722,9 @@ function registerIpcHandlers(): void {
       return JSON.parse(content);
     } catch {
       return {
-        identity: "You are Quiver, a self-evolving coding and research assistant running in the terminal.",
+        identity: "You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.",
         human_context: "",
-        project_context: "This workspace is an agent harness containing TS tools, test runners, and configuration."
+        project_context: ""
       };
     }
   });
@@ -896,7 +914,7 @@ function registerIpcHandlers(): void {
         } catch {
           // OfficeCLI not available — fall through
         }
-        return { error: "Cannot preview Office document (OfficeCLI not found)", type: ext };
+        return { error: "Office documents can't be previewed yet. The Office engine isn't installed; it installs automatically the first time Quiver creates a document.", type: ext };
       }
 
       // For text-based files, read as UTF-8
@@ -922,7 +940,8 @@ function registerIpcHandlers(): void {
 
       return { error: `Cannot preview ${ext} files`, type: ext };
     } catch (err: any) {
-      return { error: err.message || "Failed to read file", type: path.extname(filePath) };
+      if (err?.code === "ENOENT") return { error: "This file hasn't been created yet." };
+      return { error: err.message || "Couldn't preview this file." };
     }
   });
 
@@ -943,6 +962,15 @@ function registerIpcHandlers(): void {
 app.whenReady().then(async () => {
   // Set app identity for macOS (dock name, menu bar name)
   app.setName("Quiver");
+
+  // Dynamically set macOS dock icon if available
+  if (process.platform === "darwin" && app.dock) {
+    try {
+      app.dock.setIcon(path.join(__dirname, "renderer", "icon.png"));
+    } catch (e) {
+      console.error("Failed to set dock icon:", e);
+    }
+  }
 
   // Replace default Electron menu with Quiver menu
   const { Menu } = await import("electron");

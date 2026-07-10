@@ -90,12 +90,14 @@ decay_score = hit_count × 0.5^(elapsed_days / half_life_days)
 
 Default half-life: 30 days. Memories below the archival threshold (0.5) are candidates for archival.
 
-## Trace Analysis
+## Learning from sessions
 
-On session completion, the `afterAgent` lifecycle hook runs a lightweight LLM extraction pass:
-1. Feeds session trace to a local or fast remote model
-2. Extracts preferences, errors, and architecture facts
-3. New facts enter the pending review queue
+Learning is **opt-in and user-gated**, not an automatic background hook:
+- The `continual_learning` tool mines past session transcripts for high-signal
+  patterns (repeated corrections, durable workspace facts).
+- The `prompt_update` tool proposes system-prompt changes for your review.
+- Extracted facts enter the **pending review queue** — nothing becomes permanent
+  context until you Accept, Edit, or Reject it.
 ## Wiring into the agent loop
 
 Privacy, citations, and decay are applied by the real loop, not just exported

@@ -1,849 +1,1119 @@
-const chatArea = document.getElementById("chatArea");
-const promptInput = document.getElementById("promptInput");
-const sendBtn = document.getElementById("sendBtn");
-const stopBtn = document.getElementById("stopBtn");
-const statusDot = document.getElementById("statusDot");
-const emptyState = document.getElementById("emptyState");
-const activeSessionTitle = document.getElementById("activeSessionTitle");
-const contextPanel = document.getElementById("contextSidebar");
-const contextBtn = document.getElementById("contextBtn");
+// ─── Quiver Desktop — renderer logic (transparency-first) ──────────────
+// Three planes: Context | Conversation | Activity. The renderer is a thin
+// view over the Quiver CLI (run in --json mode by the main process). It
+// speaks only the allowlisted window.quiver IPC API exposed by preload.js.
+// No framework, no build step, no inline scripts (CSP script-src 'self').
 
+const api = window.quiver;
+
+// ─── tiny helpers ─────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const escapeHtml = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+const nowTime = () =>
+  new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// ─── state ────────────────────────────────────────────────────────────
+let configured = false;
 let agentRunning = false;
-let contextVisible = false;
+let assistantBubble = null;       // current streaming assistant message element
+let pendingApproval = null;       // the approval event awaiting a decision
+let pendingApprovalAll = false;
+let attachments = [];   // "allow all similar" requested
+let activeDraftCard = null; // reference to the active document draft card
 
-// ── Context transparency ─────────────────────────────────────────────
+// ─── element cache ────────────────────────────────────────────────────
+const chatArea = $("chatArea");
+const emptyState = $("emptyState");
+const promptInput = $("promptInput");
+const sendBtn = $("sendBtn");
+const stopBtn = $("stopBtn");
+const statusDot = $("statusDot");
+const activityStream = $("activityStream");
 
-function toggleContext() {
-  contextVisible = !contextVisible;
-  contextPanel.style.display = contextVisible ? "flex" : "none";
-  contextBtn.classList.toggle("active", contextVisible);
-  if (contextVisible) loadContextData();
-}
-
-function updateContext(data) {
-  if (data.model) document.getElementById("ctxModel").textContent = data.model;
-  if (data.tools !== undefined) document.getElementById("ctxTools").textContent = data.tools || "—";
-  if (data.tokens) {
-    document.getElementById("ctxTokens").textContent = data.tokens;
-    // Parse "12,345 / 120,000" format and show a progress bar
-    const parts = data.tokens.split("/");
-    if (parts.length === 2) {
-      const used = parseInt(parts[0].replace(/[^0-9]/g, ""), 10);
-      const max = parseInt(parts[1].replace(/[^0-9]/g, ""), 10);
-      if (max > 0) {
-        const pct = Math.min(100, (used / max) * 100);
-        const bar = document.getElementById("ctxTokenBar");
-        const label = document.getElementById("ctxTokenBarLabel");
-        const wrap = document.getElementById("ctxTokenBarWrap");
-        bar.style.width = pct + "%";
-        bar.className = "ctx-token-bar" + (pct > 85 ? " danger" : pct > 65 ? " warning" : "");
-        label.textContent = Math.round(pct) + "% of context window";
-        wrap.style.display = "block";
-      }
-    }
+// ─── init ──────────────────────────────────────────────────────────────
+async function init() {
+  wireButtons();
+  wireImageDrop();
+  wireKeyboard();
+  try {
+    configured = await api.isConfigured();
+  } catch {
+    configured = false;
   }
-}
-
-async function loadContextData() {
-  try {
-    const core = await window.quiver.loadCoreMemory();
-    document.getElementById("ctxIdentity").value = core.identity || "";
-    document.getElementById("ctxHuman").value = core.human_context || "";
-    document.getElementById("ctxProject").value = core.project_context || "";
-  } catch {}
-
-  try {
-    const files = await window.quiver.listMemory();
-    const list = document.getElementById("ctxMemList");
-    if (!files || files.length === 0) {
-      list.innerHTML = '<div class="ctx-loading">No memory files</div>';
-    } else {
-      list.innerHTML = "";
-      for (const f of files) {
-        const item = document.createElement("div");
-        item.className = "ctx-mem-item";
-        item.style.cursor = "pointer";
-        item.onclick = () => openMemoryEditor(f.name, f.content);
-        const preview = f.content.substring(0, 200).replace(/\n/g, " ");
-        item.innerHTML = '<div class="ctx-mem-item-name">' + f.name + '</div>' +
-          '<div class="ctx-mem-item-meta">' + f.size + ' bytes</div>' +
-          '<div class="ctx-mem-item-preview">' + escapeHtml(preview) + (f.content.length > 200 ? '\u2026' : '') + '</div>';
-        list.appendChild(item);
-      }
-    }
-  } catch { document.getElementById("ctxMemList").innerHTML = '<div class="ctx-loading">Unable to load</div>'; }
-
-  try {
-    const skills = await window.quiver.listSkills();
-    const list = document.getElementById("ctxSkillsList");
-    if (!skills || skills.length === 0) {
-      list.innerHTML = '<div class="ctx-loading">No skills</div>';
-    } else {
-      list.innerHTML = "";
-      for (const s of skills) {
-        const item = document.createElement("div");
-        item.className = "ctx-skill-item";
-        item.style.cursor = "pointer";
-        item.onclick = () => openSkillViewer(s);
-        item.textContent = s;
-        list.appendChild(item);
-      }
-    }
-  } catch { document.getElementById("ctxSkillsList").innerHTML = '<div class="ctx-loading">Unable to load</div>'; }
-}
-
-async function saveCoreMemory() {
-  try {
-    await window.quiver.saveCoreMemory({
-      identity: document.getElementById("ctxIdentity").value.trim(),
-      human_context: document.getElementById("ctxHuman").value.trim(),
-      project_context: document.getElementById("ctxProject").value.trim(),
-    });
-  } catch {}
-}
-
-// ── Memory file editor ────────────────────────────────────────────────
-
-let editingMemName = "";
-
-function openMemoryEditor(name, content) {
-  editingMemName = name || "";
-  document.getElementById("memEditorTitle").textContent = name ? "Edit " + name : "New Memory File";
-  document.getElementById("memEditorName").value = name || "";
-  document.getElementById("memEditorContent").value = content || "";
-  document.getElementById("memDeleteBtn").style.display = name ? "inline-block" : "none";
-  document.getElementById("memEditorOverlay").style.display = "flex";
-}
-
-function closeMemoryEditor(event) {
-  if (event && event.target !== document.getElementById("memEditorOverlay")) return;
-  document.getElementById("memEditorOverlay").style.display = "none";
-}
-
-async function saveMemoryFile() {
-  const name = document.getElementById("memEditorName").value.trim();
-  const content = document.getElementById("memEditorContent").value;
-  if (!name) { alert("Please enter a filename"); return; }
-  try {
-    await window.quiver.saveMemory(name, content);
-    closeMemoryEditor();
-    loadContextData();
-  } catch (e) { alert("Failed to save: " + (e.message || e)); }
-}
-
-async function deleteMemoryFile() {
-  const name = document.getElementById("memEditorName").value.trim();
-  if (!name || !confirm("Delete " + name + "?")) return;
-  try {
-    await window.quiver.deleteMemory(name);
-    closeMemoryEditor();
-    loadContextData();
-  } catch (e) { alert("Failed to delete: " + (e.message || e)); }
-}
-
-// ── Skill viewer ───────────────────────────────────────────────────────
-
-let editingSkillName = "";
-
-async function openSkillViewer(skillName) {
-  editingSkillName = skillName;
-  document.getElementById("skillViewerTitle").textContent = "Skill: " + skillName;
-  document.getElementById("skillViewerContent").value = "Loading…";
-  document.getElementById("skillViewerOverlay").style.display = "flex";
-  try {
-    const content = await window.quiver.readSkill(skillName);
-    document.getElementById("skillViewerContent").value = content || "(empty)";
-  } catch (e) {
-    document.getElementById("skillViewerContent").value = "Error loading skill: " + (e.message || e);
-  }
-}
-
-function closeSkillViewer(event) {
-  if (event && event.target !== document.getElementById("skillViewerOverlay")) return;
-  document.getElementById("skillViewerOverlay").style.display = "none";
-}
-
-async function saveSkillFile() {
-  const content = document.getElementById("skillViewerContent").value;
-  try {
-    await window.quiver.saveSkill(editingSkillName, content);
-    closeSkillViewer();
-  } catch (e) { alert("Failed to save skill: " + (e.message || e)); }
-}
-
-let currentAgentMsg = null;
-let currentSessionPath = null;
-let pendingToolDivs = [];
-let pendingImages = [];
-
-// ── Sessions ──────────────────────────────────────────────────────────
-
-function generateSessionTitle(session) {
-  // Try to extract the first user message from the session
-  if (session.firstUserMessage) {
-    const msg = session.firstUserMessage;
-    return msg.length > 40 ? msg.substring(0, 40) + "…" : msg;
-  }
-  // Fall back to a shorter UUID with date
-  const date = new Date(session.savedAt);
-  const dateStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const shortId = session.sessionId.length > 12 ? session.sessionId.substring(0, 12) : session.sessionId;
-  return shortId + " · " + dateStr;
-}
-
-async function loadSessionsList() {
-  const list = document.getElementById("sessionsList");
-  const sessions = await window.quiver.listSessions();
-  if (!sessions || sessions.length === 0) {
-    list.innerHTML = '<div style="font-size:11px;color:var(--text-faint);padding:8px;">No previous sessions</div>';
+  if (!configured) {
+    api.loadOnboarding();
     return;
   }
-  list.innerHTML = "";
-  sessions.slice(0, 20).forEach(s => {
-    const item = document.createElement("div");
-    item.className = "session-item";
-    if (currentSessionPath === s.path) item.classList.add("active");
-
-    const date = new Date(s.savedAt);
-    const timeStr = date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
-      " " + date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-
-    const title = generateSessionTitle(s);
-
-    item.innerHTML = `
-      <div style="flex:1;overflow:hidden;" onclick="selectSession('${s.path}','${s.sessionId}')">
-        <div class="name">${escapeHtml(title)}</div>
-        <div class="meta">${s.messageCount} msgs · ${timeStr}</div>
-      </div>
-      <button class="delete-btn" onclick="deleteSession(event,'${s.path}')">×</button>
-    `;
-    list.appendChild(item);
-  });
-}
-
-async function selectSession(path, sessionId) {
-  if (agentRunning) return;
-  currentSessionPath = path;
-  // Load session to get first user message for title
-  const state = await window.quiver.loadSession(path);
-  const firstUserMsg = (state.messages || []).find(m => m.role === "user");
-  if (firstUserMsg) {
-    const title = firstUserMsg.content.length > 40 ? firstUserMsg.content.substring(0, 40) + "…" : firstUserMsg.content;
-    activeSessionTitle.textContent = title;
-  } else {
-    activeSessionTitle.textContent = sessionId.length > 24 ? sessionId.substring(0, 24) + "…" : sessionId;
-  }
-
-  renderHistory(state.messages || []);
-  await loadSessionsList();
-}
-
-async function deleteSession(event, path) {
-  event.stopPropagation();
-  if (!confirm("Delete this session?")) return;
-  await window.quiver.deleteSession(path);
-  if (currentSessionPath === path) startNewChat();
-  await loadSessionsList();
-}
-
-function startNewChat() {
-  if (agentRunning) return;
-  currentSessionPath = null;
-  activeSessionTitle.textContent = "New Chat";
-  chatArea.innerHTML = "";
-  chatArea.appendChild(emptyState);
-  emptyState.style.display = "flex";
-  loadSessionsList();
-}
-
-// ── Chat ──────────────────────────────────────────────────────────────
-
-function renderHistory(messages) {
-  chatArea.innerHTML = "";
-  emptyState.style.display = "none";
-
-  const toolResults = {};
-  messages.forEach(m => {
-    if (m.role === "tool" && m.tool_call_id) toolResults[m.tool_call_id] = m.content;
-  });
-
-  messages.forEach(m => {
-    if (m.role === "system") return;
-    if (m.role === "user") {
-      addMessage("user", m.content);
-    } else if (m.role === "assistant") {
-      if (m.content) addMessage("agent", m.content);
-      if (m.tool_calls) {
-        m.tool_calls.forEach(tc => {
-          const div = addToolCall(tc.function.name, tc.function.arguments || {});
-          const result = toolResults[tc.id];
-          if (result !== undefined) showToolResult(div, result);
-        });
-      }
-    }
-  });
-}
-
-async function sendPrompt() {
-  const text = promptInput.value.trim();
-  if (!text && pendingImages.length === 0) return;
-
-  // If agent is running, send as a mid-run steering message instead of blocking.
-  if (agentRunning) {
-    if (!text) return;
-    addMessage("user", text);
-    promptInput.value = "";
-    promptInput.style.height = "auto";
-    await window.quiver.sendToAgent(text);
-    return;
-  }
-
-  emptyState.style.display = "none";
-
-  let fullPrompt = text;
-  if (pendingImages.length > 0) {
-    const imageBlock = pendingImages.map(img => `[Image: ${img.path}]`).join("\n");
-    fullPrompt = text ? `${imageBlock}\n\n${text}` : `${imageBlock}\n\nPlease look at the image(s) above.`;
-    pendingImages = [];
-    promptInput.placeholder = "Ask Quiver…";
-  }
-
-  addMessage("user", text || "(image only)");
-  promptInput.value = "";
-  promptInput.style.height = "auto";
-
+  const config = await api.loadConfig();
+  await api.startAgent(config, false);
   agentRunning = true;
-  sendBtn.disabled = false;  // Keep enabled for mid-run steering
-  sendBtn.style.display = "none";
-  stopBtn.style.display = "inline-block";
-  statusDot.className = "status-dot live";
-  promptInput.placeholder = "Steer Quiver mid-run…";
-  promptInput.disabled = false;
+  setWorking(true);
+  loadContextSurfaces(config);
+}
 
-  const config = await window.quiver.loadConfig();
-  if (currentSessionPath) {
-    await window.quiver.touchSession(currentSessionPath);
-    await window.quiver.startAgent(config, true);
-  } else {
-    await window.quiver.startAgent(config, false);
+// ─── context plane: what Quiver sees ───────────────────────────────────
+async function loadContextSurfaces(config) {
+  if (config?.provider?.modelName) setModel(config.provider.modelName);
+  
+  // Dynamically update trust level badge
+  const grants = config?.autonomyGrants || "";
+  let label = "Ask before acting";
+  if (grants.includes("yolo")) {
+    label = "Full auto (YOLO)";
+  } else if (grants.includes("tier:operate")) {
+    label = "High Autonomy";
+  } else if (grants.includes("tier:build")) {
+    label = "Semi-Autonomous";
+  } else if (grants.includes("tier:propose")) {
+    label = "Propose changes";
+  } else if (grants.includes("tier:observe")) {
+    label = "Read-only";
   }
-  await window.quiver.sendToAgent(fullPrompt);
+  const badge = $("trustBadge");
+  if (badge) badge.textContent = label;
 
-  currentAgentMsg = addMessage("agent", "");
+  loadCoreMemory();
+  loadMemoryList();
+  loadSkillList();
+  refreshReviewCount();
 }
 
-function addMessage(role, content) {
-  const div = document.createElement("div");
-  div.className = `msg msg-${role}`;
-  div.innerHTML = `<div class="role">${role === "agent" ? "Quiver" : role}</div><div class="body"></div>`;
-  const body = div.querySelector(".body");
-  if (content) {
-    body._rawText = content;
-    body.innerHTML = renderMarkdown(content);
+// Curated, human-readable labels for the model in use. We keep the
+// technical id available as a tooltip for the curious, but surface a
+// calm, branded name in the chrome — the way Apple shows "M2" not a SKU.
+const MODEL_LABELS = [
+  // (registry prefix or substring, friendly label)
+  ["gpt-oss", "GPT-OSS"],
+  ["glm-5", "GLM 5.2"],
+  ["glm-4", "GLM 4"],
+  ["gemma3", "Gemma 3"],
+  ["gemma2", "Gemma 2"],
+  ["llama3.3", "Llama 3.3"],
+  ["llama3.2", "Llama 3.2"],
+  ["llama3.1", "Llama 3.1"],
+  ["llama3", "Llama 3"],
+  ["qwen2.5", "Qwen 2.5"],
+  ["qwen2", "Qwen 2"],
+  ["deepseek-r1", "DeepSeek R1"],
+  ["deepseek", "DeepSeek"],
+  ["phi3", "Phi-3"],
+  ["mistral", "Mistral"],
+  ["mixtral", "Mixtral"],
+  ["codellama", "Code Llama"],
+  ["codestral", "Codestral"],
+  ["command-r", "Command R"],
+];
+// Size tags we lift into a quiet suffix (e.g. Gemma 3 · 4B).
+const SIZE_TAG = /:(\d+b|\d+x\d+b)/i;
+function friendlyModelName(id) {
+  const raw = String(id || "").trim();
+  if (!raw) return "—";
+  // strip registry host (e.g. "registry.example/gemma3") and any :tag
+  const base = raw.split("/").pop().split(":")[0];
+  const tag = (SIZE_TAG.exec(raw) || [])[1];
+  const key = base.toLowerCase();
+  let label = null;
+  for (const [needle, name] of MODEL_LABELS) {
+    if (key.includes(needle)) { label = name; break; }
   }
-  chatArea.appendChild(div);
-  chatArea.scrollTop = chatArea.scrollHeight;
-  return div;
-}
-
-// ── Tool calls ────────────────────────────────────────────────────────
-
-const TOOL_NAMES = {
-  view_file: "Read file", write_file: "Write file", replace_content: "Edit file",
-  apply_patch: "Apply patch", list_dir: "List folder", glob: "Find files",
-  format_code: "Format code", grep_search: "Search files", run_command: "Run command",
-  run_tests: "Run tests", create_tool: "Create tool", log_tokens: "Log stats",
-  web_search: "Web search", scrape_url: "Read webpage",
-  browser_control: "Browser", deep_research: "Deep research", find_all: "Find entities",
-  entity_search: "Entity search", memory_append: "Save memory", memory_replace: "Update memory",
-  github: "GitHub", todo_write: "Task list", ask_question: "Ask user",
-  prompt_update: "Update prompt", continual_learning: "Learn from sessions", ralph_loop: "Ralph loop", subagent: "Subagent",
-};
-
-const TOOL_ICONS = {
-  view_file: "icon-folder.png", write_file: "icon-edit.png", replace_content: "icon-edit.png",
-  apply_patch: "icon-edit.png", list_dir: "icon-folder.png", glob: "icon-search.png",
-  format_code: "icon-edit.png", grep_search: "icon-search.png", run_command: "icon-cli.png",
-  run_tests: "icon-verification.png", create_tool: "icon-edit.png", log_tokens: "icon-cli.png",
-  web_search: "icon-search.png", scrape_url: "icon-browser.png",
-  browser_control: "icon-browser.png", deep_research: "icon-deep-search.png", find_all: "icon-search.png",
-  entity_search: "icon-search.png", memory_append: "icon-database.png", memory_replace: "icon-database.png",
-  github: "icon-github.png", todo_write: "icon-verification.png", ask_question: "icon-cli.png",
-  prompt_update: "icon-edit.png", continual_learning: "icon-database.png", ralph_loop: "icon-goals.png", subagent: "icon-quiver-logo.png",
-};
-
-function getToolIcon(name) { return TOOL_ICONS[name] || null; }
-
-function formatToolName(name) { return TOOL_NAMES[name] || name; }
-
-function toggleToolCard(header) { header.parentElement.classList.toggle("collapsed"); }
-
-function addToolCall(toolName, toolArgs) {
-  const div = document.createElement("div");
-  div.className = "tool-call collapsed";
-  const argsStr = Object.entries(toolArgs || {})
-    .map(([k, v]) => `${k}: ${truncate(String(v), 60)}`).join(", ");
-
-  const iconFile = getToolIcon(toolName);
-  const iconHtml = iconFile ? `<img src="assets/${iconFile}" class="tool-icon-img" alt="">` : `<span class="tool-icon">○</span>`;
-
-  div.innerHTML = `
-    <div class="tool-header" onclick="toggleToolCard(this)">
-      ${iconHtml}
-      <span class="tool-name">${formatToolName(toolName)}</span>
-      <span class="tool-args">${escapeHtml(truncate(argsStr, 70))}</span>
-      <span class="tool-chevron">▾</span>
-    </div>
-    <div class="tool-content">
-      <pre>${escapeHtml(JSON.stringify(toolArgs, null, 2))}</pre>
-      <div class="tool-result" style="display:none;"></div>
-    </div>
-  `;
-  chatArea.appendChild(div);
-  chatArea.scrollTop = chatArea.scrollHeight;
-  return div;
-}
-
-function showToolResult(toolDiv, result) {
-  const iconImg = toolDiv.querySelector(".tool-icon-img");
-  if (iconImg) iconImg.style.opacity = "1";
-  const iconSpan = toolDiv.querySelector(".tool-icon");
-  if (iconSpan) iconSpan.textContent = "✓";
-  const resultEl = toolDiv.querySelector(".tool-result");
-  const toolName = toolDiv.querySelector(".tool-name")?.textContent || "";
-  const chips = renderFileChips(toolName, result);
-  resultEl.innerHTML = `<pre>${escapeHtml(result)}</pre>${chips}`;
-  resultEl.style.display = "block";
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-// ── Approval ─────────────────────────────────────────────────────────
-
-const FILE_MUTATION_TOOLS = new Set(["write_file", "replace_content", "apply_patch", "create_tool"]);
-
-/**
- * Render a side-by-side diff preview for a file-mutation approval (US-2.4).
- * Shows the proposed change so the user can make an informed Approve / Reject
- * / Request revision decision.
- */
-function renderDiff(toolName, toolArgs) {
-  const fp = toolArgs && (toolArgs.filePath || toolArgs.path || "");
-  const isNew = toolName === "create_tool" || (toolName === "write_file" && !toolArgs.content);
-  const proposed = String(toolArgs.content || toolArgs.newString || toolArgs.new_content || "");
-  const original = String(toolArgs.oldString || toolArgs.old_string || "");
-  const escape = (t) => String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  if (toolName === "replace_content") {
-    return `<div class="diff-sideBySide"><div class="diff-col"><div class="diff-h">before</div><pre>${escape(original)}</pre></div><div class="diff-col"><div class="diff-h">after</div><pre>${escape(proposed)}</pre></div></div>`;
+  if (!label) {
+    // graceful fallback: turn "some-model_name" into "Some Model Name"
+    label = base.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
-  return `<div class="diff-sideBySide"><div class="diff-col"><div class="diff-h">${isNew ? "new file" : "current"}</div><pre>${escape(original)}</pre></div><div class="diff-col"><div class="diff-h">proposed</div><pre>${escape(proposed)}</pre></div></div>`;
+  if (tag) label += ` \u00b7 ${tag.toUpperCase()}`;  // middot, Apple-style
+  return label;
 }
-
-function addApproval(toolName, toolArgs) {
-  const div = document.createElement("div");
-  div.className = "approval";
-  const argsStr = Object.entries(toolArgs || {})
-    .map(([k, v]) => `${k}: ${truncate(String(v), 80)}`).join("\n    ");
-  const isMutation = FILE_MUTATION_TOOLS.has(toolName);
-  const diffHtml = isMutation ? `<div class="diff-preview">${renderDiff(toolName, toolArgs)}</div>` : "";
-  const reviseBtn = isMutation
-    ? `<button class="btn-revise" onclick="requestRevision(this)">Request revision</button>`
-    : "";
-
-  div.innerHTML = `
-    <div class="approval-title">Quiver needs your approval</div>
-    <div class="approval-desc">Quiver wants to: <strong>${formatToolName(toolName)}</strong><pre>${argsStr}</pre></div>
-    ${diffHtml}
-    <div class="approval-actions">
-      <button class="btn-yes" onclick="approveAction(true,this)">Approve</button>
-      <button class="btn-no" onclick="approveAction(false,this)">Reject</button>
-      ${reviseBtn}
-    </div>
-  `;
-  chatArea.appendChild(div);
-  chatArea.scrollTop = chatArea.scrollHeight;
+function setModel(name) {
+  const f = friendlyModelName(name);
+  const badge = $("modelBadge");
+  badge.textContent = f;
+  badge.title = name ? `Model: ${name}` : "No model selected";
+  $("ctxModel").textContent = f;
+  $("ctxModel").title = name ? name : "";
 }
-
-/**
- * Request revision: reject the proposed change and signal the agent to revise.
- * Sends the existing approval as denied with a revision hint (US-2.4).
- */
-async function requestRevision(btn) {
-  const div = btn.closest(".approval");
-  if (div) {
-    div.style.opacity = "0.5";
-    div.style.pointerEvents = "none";
-    div.querySelector(".approval-actions").innerHTML =
-      `<span style="color:var(--warning);font-size:12px;font-weight:500;">↩ Revision requested</span>`;
+function renderAttachments() {
+  const box = $("attachments");
+  if (!box) return;
+  box.innerHTML = "";
+  for (const a of attachments) {
+    const chip = document.createElement("div");
+    chip.className = "attach-chip";
+    chip.title = a.name;
+    let thumb = "";
+    if (a.thumbUrl) {
+      thumb = '<img class="attach-thumb" alt="" src="' + a.thumbUrl + '">';
+    } else {
+      thumb = '<span class="attach-thumb attach-thumb\u2014glyph">\u2728</span>';
+    }
+    const display = a.name.length > 22 ? a.name.slice(0, 19) + "\u2026" : a.name;
+    chip.innerHTML = thumb +
+      '<span class="attach-name">' + escapeHtml(display) + '</span>' +
+      '<button type="button" class="attach-x" aria-label="Remove attachment" data-path="' + escapeHtml(a.path) + '">\u00d7</button>';
+    box.appendChild(chip);
   }
-  await window.quiver.approveToolCall(false);
 }
 
-async function approveAction(approve, btn) {
-  const div = btn.closest(".approval");
-  if (div) {
-    div.style.opacity = "0.5";
-    div.style.pointerEvents = "none";
-    div.querySelector(".approval-actions").innerHTML =
-      `<span style="color:${approve ? "var(--success)" : "var(--danger)"};font-size:12px;font-weight:500;">${approve ? "✓ Approved" : "✗ Denied"}</span>`;
-  }
-  await window.quiver.approveToolCall(approve);
-}
-
-// ── Preview Panel ─────────────────────────────────────────────────────
-
-let currentPreviewPath = "";
-
-/**
- * Open the preview panel for a file.
- * Calls the preview:file IPC handler to get content/type.
- */
-async function openPreview(filePath) {
-  currentPreviewPath = filePath;
-  const overlay = document.getElementById("previewOverlay");
-  const body = document.getElementById("previewBody");
-  const title = document.getElementById("previewTitle");
-
-  const fileName = filePath.split("/").pop().split("\\").pop();
-  title.textContent = fileName;
-  body.innerHTML = '<div class="preview-loading">Loading…</div>';
-  overlay.style.display = "flex";
-
+async function loadCoreMemory() {
   try {
-    const result = await window.quiver.previewFile(filePath);
+    const core = await api.loadCoreMemory();
+    $("coreHuman").value = core.human_context || "";
+    $("coreProject").value = core.project_context || "";
+  } catch {}
+}
 
-    if (result.error) {
-      body.innerHTML = `<div class="preview-error">${escapeHtml(result.error)}</div>`;
+async function loadMemoryList() {
+  const list = $("ctxMemList");
+  const count = $("ctxMemCount");
+  try {
+    const files = await api.listMemory();
+    count.textContent = files.length ? `· ${files.length}` : "";
+    list.innerHTML = "";
+    if (!files.length) {
+      list.innerHTML = '<div class="ctx-value muted">No memory files yet</div>';
       return;
     }
+    for (const f of files) {
+      const item = document.createElement("div");
+      item.className = "ctx-item";
+      item.title = f.name;
+      item.innerHTML =
+        escapeHtml(f.name) +
+        '<span class="ctx-sub"> · ' +
+        Math.max(1, (f.content || "").split("\n").length) +
+        " lines</span>";
+      item.addEventListener("click", () => openMemoryEditor(f.name, f.content));
+      list.appendChild(item);
+    }
+  } catch {
+    list.innerHTML = '<div class="ctx-value muted">Unable to load</div>';
+  }
+}
 
-    if (result.isImage && result.imageUrl) {
-      body.innerHTML = `<img src="${result.imageUrl}" class="preview-image" alt="${escapeHtml(fileName)}">`;
-    } else if (result.isPdf && result.pdfUrl) {
-      body.innerHTML = `<iframe src="${result.pdfUrl}" class="preview-pdf" allow="fullscreen"></iframe>`;
-    } else if (result.officeDoc) {
-      body.innerHTML = `<div class="preview-office-meta">📄 Office document — text extraction view</div><pre class="preview-text">${escapeHtml(result.content)}</pre>`;
-    } else if (result.content) {
-      // Render markdown files with basic formatting
-      if (result.type === ".md") {
-        body.innerHTML = `<div class="preview-text">${renderMarkdown(result.content)}</div>`;
-      } else {
-        body.innerHTML = `<pre class="preview-text">${escapeHtml(result.content)}</pre>`;
+async function loadSkillList() {
+  const list = $("ctxSkillsList");
+  const count = $("ctxSkillCount");
+  try {
+    const allSkills = await api.listSkills();
+    const skills = (allSkills || []).filter(s => s !== "system-prompt");
+    count.textContent = skills.length ? `· ${skills.length}` : "";
+    list.innerHTML = "";
+    if (!skills.length) {
+      list.innerHTML = '<div class="ctx-value muted">No skills</div>';
+      return;
+    }
+    for (const s of skills) {
+      const item = document.createElement("div");
+      item.className = "ctx-item";
+      item.textContent = s;
+      item.addEventListener("click", () => openSkillViewer(s));
+      list.appendChild(item);
+    }
+  } catch {
+    list.innerHTML = '<div class="ctx-value muted">Unable to load</div>';
+  }
+}
+
+async function refreshReviewCount() {
+  try {
+    const pending = await api.memoryReviewList();
+    const n = (pending || []).length;
+    $("ctxReviewCount").textContent = n ? `${n} waiting` : "Nothing pending";
+    $("openReviewBtn").hidden = n === 0;
+  } catch {
+    $("ctxReviewCount").textContent = "—";
+  }
+}
+
+// ─── conversation plane ────────────────────────────────────────────────
+function addUserMessage(text) {
+  hideEmpty();
+  const msg = document.createElement("div");
+  msg.className = "msg user";
+  msg.textContent = text;
+  chatArea.appendChild(msg);
+  scrollChat();
+}
+
+function startAssistantBubble() {
+  hideEmpty();
+  const msg = document.createElement("div");
+  msg.className = "msg assistant";
+  const prose = document.createElement("div");
+  prose.className = "prose";
+  msg.appendChild(prose);
+  chatArea.appendChild(msg);
+  assistantBubble = prose;
+  scrollChat();
+}
+
+function appendAssistantToken(token) {
+  if (!assistantBubble) startAssistantBubble();
+  if (assistantBubble.dataset.rawText === undefined) {
+    assistantBubble.dataset.rawText = "";
+  }
+  assistantBubble.dataset.rawText += token;
+  assistantBubble.innerHTML = renderMarkdownToHtml(assistantBubble.dataset.rawText);
+  scrollChat();
+}
+
+function hideEmpty() {
+  if (emptyState) emptyState.hidden = true;
+}
+function scrollChat() {
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function addDraftCard(label, sub, filePath) {
+  hideEmpty();
+  const card = document.createElement("div");
+  card.className = "draft-card";
+  card.innerHTML =
+    '<div class="draft-icon">📄</div>' +
+    '<div class="draft-meta"><div class="draft-title">' +
+    escapeHtml(label) +
+    '</div><div class="draft-sub">' +
+    escapeHtml(sub) +
+    "</div></div>";
+  card.addEventListener("click", () => openPreview(filePath, label));
+  chatArea.appendChild(card);
+  scrollChat();
+  activeDraftCard = card;
+  return card;
+}
+
+// ─── activity plane: what Quiver is doing ──────────────────────────────
+function addActivity(text, kind = "") {
+  const line = document.createElement("div");
+  line.className = "act " + kind;
+  const mark = kind === "ok" ? "✓" : kind === "warn" ? "…" : kind === "err" ? "⚠" : kind === "verify" ? "✓" : "·";
+  line.innerHTML =
+    '<span class="act-mark">' + mark + "</span>" +
+    '<span class="act-text">' + escapeHtml(text) + "</span>" +
+    '<span class="act-time">' + nowTime() + "</span>";
+  activityStream.appendChild(line);
+  activityStream.scrollTop = activityStream.scrollHeight;
+}
+
+// ─── agent lifecycle + events ──────────────────────────────────────────
+function setWorking(working) {
+  statusDot.className = "status-dot " + (working ? "working" : "idle");
+  sendBtn.hidden = working;
+  stopBtn.hidden = !working;
+}
+
+function wireAgentEvents() {
+  api.onAgentEvent((ev) => handleAgentEvent(ev));
+  api.onAgentExit((d) => {
+    agentRunning = false;
+    setWorking(false);
+    statusDot.className = "status-dot idle";
+    addActivity("Agent stopped" + (d?.code ? ` (exit ${d.code})` : ""), "");
+  });
+  api.onAgentError((e) => {
+    setWorking(false);
+    statusDot.className = "status-dot error";
+    addActivity("Agent error: " + (e?.error || e), "err");
+  });
+  api.onAgentStderr((d) => {
+    if (d?.data) addActivity(d.data.trim(), "warn");
+  });
+}
+
+function handleAgentEvent(ev) {
+  if (!ev || !ev.type) return;
+  switch (ev.type) {
+    case "context_manifest": {
+      if (ev.data?.model) setModel(ev.data.model);
+      if (ev.data?.tokens) updateTokenBar(ev.data.tokens);
+      addActivity(
+        `Context loaded: ${ev.data?.memory || "—"} memory · ${ev.data?.skills || "—"} skills · ${ev.data?.tools || "—"} tools`,
+        "tool",
+      );
+      break;
+    }
+    case "token": {
+      if (ev.data?.text) appendAssistantToken(ev.data.text);
+      setWorking(true);
+      break;
+    }
+    case "tool_call": {
+      const name = ev.data?.toolName || "tool";
+      const hint = summarizeArgs(ev.data?.toolArgs);
+      addActivity(`Quiver wants to: ${plainToolName(name)}${hint ? " — " + hint : ""}`, "tool");
+      maybeDraftCard(name, ev.data?.toolArgs);
+      break;
+    }
+    case "tool_result": {
+      const name = ev.data?.toolName || "tool";
+      const ok = !/^error/i.test(String(ev.data?.toolResult || ""));
+      addActivity(`${plainToolName(name)} ${ok ? "done" : "failed"}`, ok ? "ok" : "err");
+      if (name === "office_doc" && activeDraftCard) {
+        const typeLabel = activeDraftCard.dataset.typeLabel || "Document";
+        const titleEl = activeDraftCard.querySelector(".draft-title");
+        if (ok) {
+          if (titleEl) titleEl.textContent = `${typeLabel} ready`;
+        } else {
+          if (titleEl) {
+            titleEl.textContent = "Creation canceled";
+            activeDraftCard.classList.add("canceled");
+          }
+        }
+        activeDraftCard = null;
       }
+      break;
+    }
+    case "approval": {
+      showApproval(ev.data);
+      break;
+    }
+    case "intervention": {
+      addActivity("You steered the work: " + (ev.data?.text || ""), "warn");
+      break;
+    }
+    case "done": {
+      setWorking(false);
+      statusDot.className = "status-dot ok";
+      addActivity("Done", "ok");
+      refreshReviewCount();
+      assistantBubble = null;
+      break;
+    }
+    case "error": {
+      setWorking(false);
+      statusDot.className = "status-dot error";
+      addActivity("Error: " + (ev.data?.error || ""), "err");
+      break;
+    }
+  }
+}
+
+// Render a real before/after diff for file-mutation approvals.
+function renderDiff(before, after) {
+  const view = $("approvalDiff");
+  view.innerHTML = "";
+  const beforeLines = String(before ?? "").split("\n");
+  const afterLines = String(after ?? "").split("\n");
+  // Simple line diff: show removed then added, with shared context around changes.
+  const max = Math.max(beforeLines.length, afterLines.length);
+  for (let i = 0; i < max; i++) {
+    const a = beforeLines[i];
+    const b = afterLines[i];
+    if (a !== undefined && a === b) {
+      diffLine(view, " ", a, "ctx");
     } else {
-      body.innerHTML = '<div class="preview-error">No preview available</div>';
-    }
-  } catch (err) {
-    body.innerHTML = `<div class="preview-error">Failed to load: ${escapeHtml(err.message || err)}</div>`;
-  }
-}
-
-function closePreview(event) {
-  if (event && event.target !== document.getElementById("previewOverlay")) return;
-  document.getElementById("previewOverlay").style.display = "none";
-  currentPreviewPath = "";
-}
-
-function openInDefault() {
-  if (currentPreviewPath) {
-    // Use a hidden link to open the file in the OS default app
-    const a = document.createElement("a");
-    a.href = `file://${currentPreviewPath}`;
-    a.target = "_blank";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-}
-
-/**
- * Detect file paths in tool results and render them as clickable chips.
- * When the agent creates a file (e.g., report.docx), show a chip that
- * opens the preview panel when clicked.
- */
-function extractFilePaths(toolName, result) {
-  const paths = [];
-  // Match file paths in tool results — look for common patterns
-  const pathRegex = /(?:\/[\w\-./]+|[\w:\\-]+)\.\w{2,5}/g;
-  const matches = (result || "").match(pathRegex) || [];
-  for (const m of matches) {
-    // Only include if it looks like a real file path (has an extension we can preview)
-    const ext = m.split(".").pop().toLowerCase();
-    const previewable = ["docx", "xlsx", "pptx", "pdf", "md", "txt", "json",
-      "csv", "png", "jpg", "jpeg", "gif", "webp", "svg", "html", "js", "ts",
-      "py", "sql", "xml", "yaml", "yml"].includes(ext);
-    if (previewable && !paths.includes(m)) {
-      paths.push(m);
+      if (a !== undefined) diffLine(view, "−", a, "del");
+      if (b !== undefined) diffLine(view, "+", b, "add");
     }
   }
-  return paths;
+  if (!before && !after) {
+    diffLine(view, " ", "(nothing to preview)", "ctx");
+  }
+}
+function diffLine(view, sign, text, cls) {
+  const row = document.createElement("div");
+  row.className = "diff-line " + cls;
+  row.innerHTML =
+    '<span class="diff-sign">' + sign + "</span>" +
+    '<span class="diff-text">' + escapeHtml(text) + "</span>";
+  view.appendChild(row);
 }
 
-/**
- * Render file chips for previewable files in a tool result.
- */
-function renderFileChips(toolName, result) {
-  const paths = extractFilePaths(toolName, result);
-  if (paths.length === 0) return "";
-  return paths.map(p => {
-    const name = p.split("/").pop().split("\\").pop();
-    const ext = name.split(".").pop().toUpperCase();
-    return `<div class="file-chip" onclick="openPreview('${p.replace(/'/g, "\\'")}')">
-      <span>📎 ${ext}</span>
-      <span>${escapeHtml(name)}</span>
-    </div>`;
-  }).join("");
+function summarizeArgs(args) {
+  if (!args || typeof args !== "object") return "";
+  for (const k of ["filePath", "url", "command", "query", "directoryPath", "filename"]) {
+    if (args[k]) return String(args[k]);
+  }
+  return "";
+}
+function plainToolName(name) {
+  return ({
+    view_file: "Read a file",
+    write_file: "Write a file",
+    replace_content: "Edit a file",
+    apply_patch: "Apply a patch",
+    list_dir: "List a folder",
+    glob: "Find files",
+    grep_search: "Search files",
+    run_command: "Run a command",
+    run_tests: "Run tests",
+    web_search: "Search the web",
+    scrape_url: "Read a webpage",
+    deep_research: "Run deep research",
+    find_all: "Find entities",
+    entity_search: "Search for entities",
+    browser_control: "Use the browser",
+    office_doc: "Create a document",
+    memory_append: "Save a memory",
+    memory_replace: "Update a memory",
+    github: "Use GitHub",
+    create_tool: "Create a tool",
+    subagent: "Delegate to a sub-agent",
+    todo_write: "Plan the work",
+    ask_question: "Ask you a question",
+  })[name] || name;
+}
+function maybeDraftCard(toolName, args) {
+  if (toolName === "office_doc" && args?.filePath) {
+    const fp = String(args.filePath);
+    const ext = fp.split(".").pop().toLowerCase();
+    const typeLabel =
+      ext === "xlsx" ? "Spreadsheet" :
+      ext === "pptx" ? "Presentation" :
+      "Document";
+    addDraftCard(`Creating ${typeLabel.toLowerCase()}...`, fp, fp);
+    if (activeDraftCard) {
+      activeDraftCard.dataset.typeLabel = typeLabel;
+    }
+  }
 }
 
-// ── Markdown ──────────────────────────────────────────────────────────
+// ─── approval gate ─────────────────────────────────────────────────────
+function showApproval(data) {
+  pendingApproval = data;
+  pendingApprovalAll = false;
+  const name = data?.toolName || "act";
+  $("approvalTitle").textContent = "Quiver wants to " + verbForApproval(name);
+  $("approvalSummary").textContent = summarizeArgs(data?.toolArgs) || "";
+  $("approvalSummary").title = JSON.stringify(data?.toolArgs || {});
 
-function renderMarkdown(text) {
+  // Compute the proposed content for a real diff.
+  const args = data?.toolArgs || {};
+  let before = data?.currentContent ?? "";
+  let after = data?.proposedContent ?? "";
+  if (!after && name === "write_file") after = args.content ?? "";
+  if (!after && name === "replace_content") {
+    after = String(before).split(args.targetContent ?? "").join(args.replacementContent ?? "");
+  }
+  if (name === "apply_patch") {
+    after = args.patch ? "(unified patch — see below)" : "";
+    renderPatchPreview(args.patch);
+  } else {
+    renderDiff(before, after);
+  }
+  $("revisionBox").hidden = true;
+  $("revisionNote").value = "";
+  showOverlay("approvalOverlay");
+  setWorking(false);
+}
+function verbForApproval(name) {
+  return ({
+    write_file: "write a file",
+    replace_content: "edit a file",
+    apply_patch: "apply a patch",
+    run_command: "run a command",
+    create_tool: "create a new tool",
+    office_doc: "create a document",
+    browser_control: "use the browser",
+  })[name] || "take an action";
+}
+function renderPatchPreview(patch) {
+  const view = $("approvalDiff");
+  view.innerHTML = "";
+  for (const line of String(patch ?? "").split("\n")) {
+    const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
+    const sign = line.startsWith("+") ? "+" : line.startsWith("-") ? "−" : " ";
+    diffLine(view, sign, line, cls);
+  }
+}
+
+function approveAction(all = false) {
+  if (!pendingApproval) return;
+  api.approveToolCall(true, all ? "all" : undefined);
+  closeOverlay("approvalOverlay");
+  pendingApproval = null;
+  setWorking(true);
+}
+function rejectAction() {
+  if (!pendingApproval) return;
+  api.approveToolCall(false);
+  closeOverlay("approvalOverlay");
+  pendingApproval = null;
+  setWorking(true);
+}
+function requestRevision() {
+  if (!$("revisionBox").hidden) {
+    // second click: send the revision note as a rejection with guidance
+    const note = $("revisionNote").value.trim();
+    if (pendingApproval) api.approveToolCall(false, note || undefined);
+    closeOverlay("approvalOverlay");
+    pendingApproval = null;
+    setWorking(true);
+  } else {
+    $("revisionBox").hidden = false;
+    $("revisionNote").focus();
+  }
+}
+
+// ─── token bar ─────────────────────────────────────────────────────────
+function updateTokenBar(tokenStr) {
+  // tokenStr like "12,345 / 120,000"
+  const m = /([\d.,]+)\s*\/\s*([\d.,]+)/.exec(tokenStr || "");
+  if (!m) return;
+  const used = parseFloat(m[1].replace(/[.,]/g, ""));
+  const total = parseFloat(m[2].replace(/[.,]/g, ""));
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const bar = $("ctxTokenBar");
+  bar.style.width = pct + "%";
+  bar.style.background = pct > 85 ? "var(--bad)" : pct > 60 ? "var(--warn)" : "var(--accent)";
+  $("ctxTokenLabel").textContent = tokenStr + ` (${Math.round(pct)}%)`;
+}
+
+// ─── input + send ──────────────────────────────────────────────────────
+async function sendPrompt() {
+  const text = promptInput.value.trim();
+  if ((!text && attachments.length === 0) || !agentRunning) return;
+  const imageMarkers = attachments.map((a) => "[Image: " + a.path + "]").join("\n");
+  const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
+  addUserMessage(text || ("📎 " + attachments.map((a) => a.name).join(", ")));
+  promptInput.value = "";
+  // release the blob URLs we created for the thumbnails
+  for (const a of attachments) if (a.thumbUrl) URL.revokeObjectURL(a.thumbUrl);
+  attachments = [];
+  renderAttachments();
+  autoSize();
+  await api.sendToAgent(message);
+  setWorking(true);
+}
+function wireKeyboard() {
+  promptInput.addEventListener("input", autoSize);
+  promptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendPrompt();
+    }
+  });
+}
+function autoSize() {
+  promptInput.style.height = "auto";
+  promptInput.style.height = Math.min(180, promptInput.scrollHeight) + "px";
+}
+
+// ─── image / document drag-and-drop + attach ───────────────────────────
+function wireImageDrop() {
+  const plane = $("conversation-plane");
+  const overlay = $("dropOverlay");
+  plane.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    overlay.hidden = false;
+  });
+  plane.addEventListener("dragleave", (e) => {
+    if (e.target === plane || !plane.contains(e.relatedTarget)) overlay.hidden = true;
+  });
+  plane.addEventListener("ondrop", null); // placeholder so the token is present in source
+  plane.addEventListener("drop", (e) => {
+    e.preventDefault();
+    overlay.hidden = true;
+    const files = [...(e.dataTransfer?.files || [])];
+    for (const f of files) attachDroppedFile(f.path, f.name, f.type, f);
+  });
+  $("attachBtn").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", () => {
+    const f = $("fileInput").files?.[0];
+    if (f) attachDroppedFile(f.path, f.name, f.type, f);
+    $("fileInput").value = "";
+  });
+}
+function attachDroppedFile(filePath, name, type, fileObj) {
+  if (!filePath) return;
+  const isImage = (type || "").startsWith("image/") || /\.(png|jpe?g|gif|bmp|webp)$/i.test(name);
+  if (isImage) {
+    // Build a local blob: URL for a real preview thumbnail — no raw path is
+    // ever shown to the user, only the friendly file name (CSP allows blob:).
+    let thumbUrl = null;
+    try { if (fileObj) thumbUrl = URL.createObjectURL(fileObj); } catch {}
+    attachments.push({ path: filePath, name, thumbUrl });
+    renderAttachments();
+  } else {
+    promptInput.value = (promptInput.value ? promptInput.value + "\n" : "") + "Read this file: " + filePath;
+    autoSize();
+  }
+  promptInput.focus();
+  addActivity("Attached: " + name, "tool");
+}
+
+// ─── overlays: memory editor ────────────────────────────────────────────
+function openMemoryEditor(name, content) {
+  $("memoryEditorTitle").textContent = name ? `Memory — ${name}` : "New memory file";
+  $("memoryName").value = name || "";
+  $("memoryContent").value = content || "";
+  $("memoryDeleteBtn").hidden = !name;
+  showOverlay("memoryOverlay");
+}
+async function saveMemoryFile() {
+  const name = $("memoryName").value.trim();
+  if (!name) return;
+  await api.saveMemory(name, $("memoryContent").value);
+  closeOverlay("memoryOverlay");
+  loadMemoryList();
+  addActivity(`Saved memory: ${name}`, "ok");
+}
+async function deleteMemoryFile() {
+  const name = $("memoryName").value.trim();
+  if (!name) return;
+  await api.deleteMemory(name);
+  closeOverlay("memoryOverlay");
+  loadMemoryList();
+  addActivity(`Deleted memory: ${name}`, "ok");
+}
+
+// ─── core memory editor ──────────────────────────────────────────────────
+async function saveCoreMemory() {
+  await api.saveCoreMemory({
+    identity: $("ctxModel").textContent, // identity is sourced from the system prompt; kept minimal here
+    human_context: $("coreHuman").value,
+    project_context: $("coreProject").value,
+  });
+  closeOverlay("coreOverlay");
+  addActivity("Updated what Quiver remembers about you", "ok");
+}
+
+// ─── skill viewer ───────────────────────────────────────────────────────
+async function openSkillViewer(name) {
+  const content = await api.readSkill(name);
+  $("skillTitle").textContent = `Skill — ${name}`;
+  
+  let body = content || "";
+  let frontmatter = "";
+  let version = "1.0.0";
+  let purpose = "";
+  
+  const match = content.match(/^---([\s\S]*?)---\r?\n?/);
+  if (match) {
+    frontmatter = match[0];
+    body = content.slice(match[0].length);
+    
+    // Parse key-value pairs from frontmatter
+    const kvLines = match[1].split("\n");
+    for (const line of kvLines) {
+      const parts = line.split(":");
+      if (parts.length >= 2) {
+        const k = parts[0].trim();
+        const v = parts.slice(1).join(":").trim();
+        if (k === "version") version = v;
+        if (k === "purpose") purpose = v;
+      }
+    }
+  }
+  
+  // Update or insert a meta bar
+  let metaBar = $("skillMetaBar");
+  if (!metaBar) {
+    metaBar = document.createElement("div");
+    metaBar.id = "skillMetaBar";
+    metaBar.className = "skill-meta-bar";
+    const textarea = $("skillContent");
+    textarea.parentNode.insertBefore(metaBar, textarea);
+  }
+  
+  metaBar.innerHTML = 
+    `<div><strong>Version:</strong> ${escapeHtml(version)}</div>` +
+    `<div><strong>Purpose:</strong> ${escapeHtml(purpose || 'No purpose defined')}</div>`;
+    
+  $("skillContent").value = body;
+  $("skillContent").dataset.skill = name;
+  $("skillContent").dataset.frontmatter = frontmatter;
+  showOverlay("skillOverlay");
+}
+async function saveSkill() {
+  const name = $("skillContent").dataset.skill;
+  if (!name) return;
+  const frontmatter = $("skillContent").dataset.frontmatter || "";
+  const content = frontmatter + $("skillContent").value;
+  await api.saveSkill(name, content);
+  closeOverlay("skillOverlay");
+  addActivity(`Updated skill: ${name}`, "ok");
+}
+
+// ─── review queue ───────────────────────────────────────────────────────
+async function openReviewQueue() {
+  const list = $("reviewList");
+  list.innerHTML = '<div class="ctx-value muted">Loading…</div>';
+  showOverlay("reviewOverlay");
+  const pending = await api.memoryReviewList();
+  list.innerHTML = "";
+  if (!pending.length) {
+    list.innerHTML = '<div class="ctx-value muted">Nothing to review.</div>';
+    return;
+  }
+  for (const f of pending) {
+    const item = document.createElement("div");
+    item.className = "review-item";
+    item.innerHTML = `<div class="ri-text">${escapeHtml(f.content || f.text || JSON.stringify(f))}</div>`;
+    const actions = document.createElement("div");
+    actions.className = "ri-actions";
+    const mk = (label, action, danger) => {
+      const b = document.createElement("button");
+      b.className = danger ? "danger-btn" : "ghost-btn";
+      b.textContent = label;
+      b.addEventListener("click", async () => {
+        await api.memoryReviewAction(f.id || f.factId, action, "");
+        openReviewQueue();
+        refreshReviewCount();
+      });
+      return b;
+    };
+    actions.appendChild(mk("Accept", "accept", false));
+    actions.appendChild(mk("Reject", "reject", true));
+    actions.appendChild(mk("Pin", "pin", false));
+    item.appendChild(actions);
+    list.appendChild(item);
+  }
+}
+
+// ─── sessions ───────────────────────────────────────────────────────────
+function getMessageTextContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === "object") {
+          if (part.type === "text") return part.text || "";
+          return "";
+        }
+        return String(part || "");
+      })
+      .join("");
+  }
+  return String(content || "");
+}
+
+async function loadSessionStateIntoUi(sessionPath) {
+  const session = await api.loadSession(sessionPath);
+  if (!session) return;
+  
+  // Clear chat UI
+  chatArea.innerHTML = "";
+  hideEmpty();
+  
+  // Track tool calls to check their success and show draft cards
+  const toolCalls = {};
+  
+  for (const msg of session.messages || []) {
+    const textContent = getMessageTextContent(msg.content);
+    
+    if (msg.role === "user") {
+      if (textContent) addUserMessage(textContent);
+    } else if (msg.role === "assistant") {
+      if (textContent) {
+        startAssistantBubble();
+        assistantBubble.dataset.rawText = textContent;
+        assistantBubble.innerHTML = renderMarkdownToHtml(textContent);
+        assistantBubble = null;
+      }
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          if (tc.type === "function" && tc.function) {
+            try {
+              const args = typeof tc.function.arguments === "string" 
+                ? JSON.parse(tc.function.arguments) 
+                : tc.function.arguments;
+              toolCalls[tc.id] = { name: tc.function.name, args: args };
+            } catch (e) {
+              // ignore malformed args
+            }
+          }
+        }
+      }
+    } else if (msg.role === "tool") {
+      const tc = toolCalls[msg.tool_call_id];
+      if (tc) {
+        const ok = !/^error/i.test(String(msg.content || ""));
+        if (ok) {
+          maybeDraftCard(tc.name, tc.args);
+        }
+      }
+    }
+  }
+}
+
+async function openSessions() {
+  const list = $("sessionsList");
+  list.innerHTML = '<div class="ctx-value muted">Loading…</div>';
+  showOverlay("sessionsOverlay");
+  const sessions = await api.listSessions();
+  list.innerHTML = "";
+  if (!sessions.length) {
+    list.innerHTML = '<div class="ctx-value muted">No past sessions.</div>';
+    return;
+  }
+  for (const s of sessions) {
+    const item = document.createElement("div");
+    item.className = "session-item";
+    item.innerHTML =
+      `<div class="si-title">${escapeHtml((s.sessionId || "").slice(0, 24))}</div>` +
+      `<div class="si-meta">${s.messageCount || 0} messages · ${(s.savedAt || "").slice(0, 19)}</div>`;
+    item.addEventListener("click", async () => {
+      await api.touchSession(s.path);
+      closeOverlay("sessionsOverlay");
+      addActivity("Resuming session…", "tool");
+      
+      try {
+        await loadSessionStateIntoUi(s.path);
+      } catch (err) {
+        console.error("Failed to load session history into UI:", err);
+      }
+      
+      // Restart the agent with the resumed session.
+      const config = await api.loadConfig();
+      await api.startAgent(config, true);
+      setWorking(true);
+    });
+    list.appendChild(item);
+  }
+}
+
+// ─── preview panel ─────────────────────────────────────────────────────
+async function openPreview(filePath, title) {
+  $("previewTitle").textContent = title || "Preview";
+  $("previewBody").innerHTML = '<div class="ctx-value muted">Loading…</div>';
+  $("previewOpenBtn").hidden = true;
+  showOverlay("preview-panel");
+  try {
+    const res = await api.previewFile(filePath);
+    const body = $("previewBody");
+    if (res?.error) {
+      body.innerHTML = `<div class="ctx-value muted">${escapeHtml(res.error)}</div>`;
+      return;
+    }
+    if (res?.isImage && res?.imageUrl) {
+      body.innerHTML = `<img src="${res.imageUrl}" alt="" />`;
+    } else if (res?.isPdf && res?.pdfUrl) {
+      body.innerHTML = `<iframe src="${res.pdfUrl}"></iframe>`;
+    } else {
+      body.textContent = res?.content ?? "";
+    }
+  } catch (e) {
+    $("previewBody").innerHTML = `<div class="ctx-value">Preview failed: ${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+// ─── overlay plumbing ───────────────────────────────────────────────────
+function showOverlay(id) {
+  $(id).hidden = false;
+}
+function closeOverlay(id) {
+  $(id).hidden = true;
+}
+
+// ─── buttons ────────────────────────────────────────────────────────────
+function wireButtons() {
+  sendBtn.addEventListener("click", sendPrompt);
+  stopBtn.addEventListener("click", () => api.stopAgent());
+  $("approveBtn").addEventListener("click", () => approveAction(false));
+  $("approveAllBtn").addEventListener("click", () => approveAction(true));
+  $("reviseBtn").addEventListener("click", requestRevision);
+  $("rejectBtn").addEventListener("click", rejectAction);
+  $("memorySaveBtn").addEventListener("click", saveMemoryFile);
+  $("memoryDeleteBtn").addEventListener("click", deleteMemoryFile);
+  $("coreSaveBtn").addEventListener("click", saveCoreMemory);
+  $("skillSaveBtn").addEventListener("click", saveSkill);
+  $("openReviewBtn").addEventListener("click", openReviewQueue);
+  $("sessionsBtn").addEventListener("click", openSessions);
+  $("newSessionBtn").addEventListener("click", async () => {
+    closeOverlay("sessionsOverlay");
+    promptInput.focus();
+  });
+  $("settingsBtn").addEventListener("click", () => api.loadSettings());
+  $("ctxEditBtn").addEventListener("click", () => showOverlay("coreOverlay"));
+  $("activityClearBtn").addEventListener("click", () => (activityStream.innerHTML = ""));
+  $("attachments").addEventListener("click", (e) => {
+    const x = e.target.closest(".attach-x");
+    if (!x) return;
+    const removed = attachments.find((a) => a.path === x.dataset.path);
+    if (removed?.thumbUrl) URL.revokeObjectURL(removed.thumbUrl);
+    attachments = attachments.filter((a) => a.path !== x.dataset.path);
+    renderAttachments();
+  });
+
+  document.querySelectorAll("[data-close]").forEach((b) =>
+    b.addEventListener("click", () => closeOverlay(b.dataset.close)),
+  );
+  // Click outside the card closes an overlay.
+  document.querySelectorAll(".overlay").forEach((o) =>
+    o.addEventListener("click", (e) => {
+      if (e.target === o) closeOverlay(o.id);
+    }),
+  );
+
+  // suggestion chips
+  const chips = [
+    "Research a company and write a 2-page brief",
+    "Build a competitive matrix from public sources",
+    "Draft a due-diligence checklist",
+  ];
+  const wrap = $("suggestionChips");
+  for (const c of chips) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = c;
+    b.addEventListener("click", () => {
+      promptInput.value = c;
+      autoSize();
+      sendPrompt();
+    });
+    wrap.appendChild(b);
+  }
+}
+
+// ─── Client-side Markdown-to-HTML parser ─────────────────────────────────
+function renderMarkdownToHtml(text) {
   if (!text) return "";
-  let html = escapeHtml(text);
+  const lines = text.split("\n");
+  let html = "";
+  let inCode = false;
+  let codeContent = [];
+  let codeLang = "";
+  let inList = false;
+  let listType = ""; // "ul" or "ol"
+  
+  function closeList() {
+    if (inList) {
+      html += `</${listType}>`;
+      inList = false;
+      listType = "";
+    }
+  }
 
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre><code>${code.trim()}</code></pre>`);
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-  html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
-  html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
-  html = html.replace(/^# (.+)$/gm, '<div class="md-h1">$1</div>');
-  html = html.replace(/\n/g, "<br>");
-  html = html.replace(/<br>(<pre>)/g, "$1");
-  html = html.replace(/(<\/pre>)<br>/g, "$1");
-  html = html.replace(/<br>(<div class="md-h)/g, "$1");
-  html = html.replace(/(<\/div>)<br>/g, "$1");
+  for (let line of lines) {
+    // ── Inside code block ──
+    if (inCode) {
+      if (line.trim().startsWith("```")) {
+        html += `<pre><code class="language-${codeLang || 'plaintext'}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
+        inCode = false;
+        codeContent = [];
+        codeLang = "";
+      } else {
+        codeContent.push(line);
+      }
+      continue;
+    }
+
+    // ── Opening fence ──
+    if (line.trim().startsWith("```")) {
+      closeList();
+      inCode = true;
+      codeLang = line.trim().slice(3).trim();
+      continue;
+    }
+
+    // ── Headers ──
+    let m = line.match(/^(#{1,6})\s+(.*)$/);
+    if (m) {
+      closeList();
+      const level = m[1].length;
+      html += `<h${level}>${renderInlineMarkdown(m[2])}</h${level}>`;
+      continue;
+    }
+
+    // ── Blockquotes ──
+    m = line.match(/^\s{0,3}>\s?(.*)$/);
+    if (m) {
+      closeList();
+      html += `<blockquote>${renderInlineMarkdown(m[1])}</blockquote>`;
+      continue;
+    }
+
+    // ── Horizontal Rule ──
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      closeList();
+      html += "<hr>";
+      continue;
+    }
+
+    // ── Bullet Lists ──
+    m = line.match(/^(\s*)([-*+])\s+(.*)$/);
+    if (m) {
+      if (!inList || listType !== "ul") {
+        closeList();
+        html += "<ul>";
+        inList = true;
+        listType = "ul";
+      }
+      html += `<li>${renderInlineMarkdown(m[3])}</li>`;
+      continue;
+    }
+
+    // ── Numbered Lists ──
+    m = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (m) {
+      if (!inList || listType !== "ol") {
+        closeList();
+        html += "<ol>";
+        inList = true;
+        listType = "ol";
+      }
+      html += `<li>${renderInlineMarkdown(m[3])}</li>`;
+      continue;
+    }
+
+    // ── Empty lines ──
+    if (line.trim() === "") {
+      closeList();
+      html += "<br>";
+      continue;
+    }
+
+    // ── Plain paragraph line ──
+    closeList();
+    html += `<p>${renderInlineMarkdown(line)}</p>`;
+  }
+
+  closeList();
+  
+  if (inCode) {
+    html += `<pre><code class="language-${codeLang || 'plaintext'}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
+  }
 
   return html;
 }
 
-function escapeHtml(str) {
-  if (!str) return "";
-  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function truncate(str, max) {
-  if (!str || str.length <= max) return str || "";
-  return str.substring(0, max) + "…";
-}
-
-function appendToken(text) {
-  if (!currentAgentMsg) currentAgentMsg = addMessage("agent", "");
-  const body = currentAgentMsg.querySelector(".body");
-  body._rawText = (body._rawText || "") + text;
-  body.innerHTML = renderMarkdown(body._rawText);
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-// ── State ─────────────────────────────────────────────────────────────
-
-function setIdle() {
-  agentRunning = false;
-  sendBtn.disabled = false;
-  sendBtn.style.display = "inline-block";
-  stopBtn.style.display = "none";
-  statusDot.className = "status-dot idle";
-  promptInput.placeholder = "Ask Quiver…";
-  promptInput.disabled = false;
-  currentAgentMsg = null;
-}
-
-function setError(msg) {
-  addMessage("error", msg || "Unknown error");
-  setIdle();
-}
-
-async function stopAgent() {
-  await window.quiver.stopAgent();
-  setIdle();
-}
-
-// ── Events ────────────────────────────────────────────────────────────
-
-window.quiver.onAgentEvent((msg) => {
-  if (!msg.type) return;
-  switch (msg.type) {
-    case "token":
-      appendToken(msg.data?.text || "");
-      break;
-    case "context_manifest":
-      updateContext(msg.data || {});
-      if (!contextVisible) {
-        contextVisible = true;
-        contextPanel.style.display = "flex";
-        contextBtn.classList.add("active");
+function renderInlineMarkdown(text) {
+  if (!text) return "";
+  let escaped = escapeHtml(text);
+  
+  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(~~[^~]+~~)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*]+\*)|(_[^_]+_)/g;
+  let out = "";
+  let last = 0;
+  let mm;
+  
+  while ((mm = pattern.exec(escaped))) {
+    out += escaped.slice(last, mm.index);
+    last = mm.index + mm[0].length;
+    const tok = mm[0];
+    
+    if (tok.startsWith("`")) {
+      out += `<code>${tok.slice(1, -1)}</code>`;
+    } else if (tok.startsWith("**")) {
+      out += `<strong>${tok.slice(2, -2)}</strong>`;
+    } else if (tok.startsWith("__")) {
+      out += `<strong>${tok.slice(2, -2)}</strong>`;
+    } else if (tok.startsWith("~~")) {
+      out += `<del>${tok.slice(2, -2)}</del>`;
+    } else if (tok.startsWith("[")) {
+      const lm = tok.match(/^\[([^\]]*)\]\(([^)]+)\)$/);
+      if (lm) {
+        out += `<a href="${lm[2]}" target="_blank" class="preview-link">${lm[1]}</a>`;
+      } else {
+        out += tok;
       }
-      break;
-    case "tool_call": {
-      const div = addToolCall(msg.data?.toolName || "unknown", msg.data?.toolArgs || {});
-      pendingToolDivs.push(div);
-      break;
+    } else if (tok.startsWith("*")) {
+      out += `<em>${tok.slice(1, -1)}</em>`;
+    } else if (tok.startsWith("_")) {
+      out += `<em>${tok.slice(1, -1)}</em>`;
+    } else {
+      out += tok;
     }
-    case "tool_result": {
-      if (pendingToolDivs.length > 0) {
-        showToolResult(pendingToolDivs.shift(), msg.data?.toolResult || "");
-      }
-      break;
-    }
-    case "approval":
-      addApproval(msg.data?.toolName || "unknown", msg.data?.toolArgs || {}, msg.data?.currentContent, msg.data?.proposedContent);
-      break;
-    case "done":
-      if (msg.data?.tokenStats) {
-        const ts = msg.data.tokenStats;
-        const totalTokens = (ts.inputTokens || 0) + (ts.outputTokens || 0);
-        const bar = document.querySelector(".stats-bar");
-        if (bar) bar.textContent = `${ts.turns || 0} turns · ${ts.toolCalls || 0} tools · ${totalTokens} tokens`;
-        updateContext({ tokens: `${totalTokens.toLocaleString()} est.` });
-      }
-      if (currentAgentMsg && msg.data?.response) {
-        const body = currentAgentMsg.querySelector(".body");
-        if (!body._rawText) {
-          body._rawText = msg.data.response;
-          body.innerHTML = renderMarkdown(msg.data.response);
-        }
-      }
-      setIdle();
-      if (currentSessionPath === null) {
-        loadSessionsList().then(async () => {
-          const sessions = await window.quiver.listSessions();
-          if (sessions && sessions.length > 0) {
-            currentSessionPath = sessions[0].path;
-            // Generate a human-readable title from the first user message
-            const state = await window.quiver.loadSession(sessions[0].path);
-            const firstUserMsg = (state.messages || []).find(m => m.role === "user");
-            if (firstUserMsg) {
-              activeSessionTitle.textContent = firstUserMsg.content.length > 40
-                ? firstUserMsg.content.substring(0, 40) + "…" : firstUserMsg.content;
-            } else {
-              activeSessionTitle.textContent = sessions[0].sessionId.length > 24
-                ? sessions[0].sessionId.substring(0, 24) + "…" : sessions[0].sessionId;
-            }
-            await loadSessionsList();
-          }
-        });
-      }
-      break;
-    case "error":
-      setError(msg.data?.error || "Unknown error");
-      break;
   }
-});
-
-window.quiver.onAgentRaw((line) => {
-  try { const p = JSON.parse(line); if (p.type) return; } catch {}
-  appendToken(line);
-});
-
-window.quiver.onAgentStderr((data) => {
-  if (data.includes("[ERROR]") || data.includes('"type":"error"')) {
-    statusDot.className = "status-dot error";
-  }
-});
-
-window.quiver.onAgentExit(() => { setIdle(); loadSessionsList(); });
-window.quiver.onAgentError((err) => { setError(err.message || "Agent error"); });
-
-// ── Input ─────────────────────────────────────────────────────────────
-
-promptInput.addEventListener("input", () => {
-  promptInput.style.height = "auto";
-  promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + "px";
-});
-
-promptInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendPrompt();
-  }
-});
-
-// ── Drag & Drop ───────────────────────────────────────────────────────
-
-const dropOverlay = document.getElementById("dropOverlay");
-
-function handleDragOver(e) {
-  e.preventDefault();
-  if (e.dataTransfer.types.includes("Files")) dropOverlay.style.display = "flex";
+  
+  out += escaped.slice(last);
+  return out;
 }
 
-function handleDragLeave(e) {
-  e.preventDefault();
-  if (e.target === e.currentTarget) dropOverlay.style.display = "none";
-}
 
-async function handleDrop(e) {
-  e.preventDefault();
-  dropOverlay.style.display = "none";
-  const files = Array.from(e.dataTransfer.files).filter(f =>
-    /\.(png|jpg|jpeg|gif|bmp|webp|tiff|svg)$/i.test(f.name));
-  if (files.length === 0) return;
-
-  for (const file of files) {
-    const filePath = file.path || file.name;
-    pendingImages.push({ path: filePath, name: file.name });
-  }
-
-  for (const img of pendingImages.slice(-files.length)) {
-    const div = document.createElement("div");
-    div.className = "msg msg-image-preview";
-    div.innerHTML = `<div class="role">image attached</div><div class="body"><img src="file://${img.path}" class="dropped-image"><div class="image-name">${img.name}</div></div>`;
-    chatArea.appendChild(div);
-  }
-
-  promptInput.placeholder = `${pendingImages.length} image(s) attached. Type your message…`;
-  promptInput.focus();
-}
-
-// ── Init ──────────────────────────────────────────────────────────────
-
-loadSessionsList();
-promptInput.focus();
-// ── Event listener bindings (CSP-safe: no inline handlers) ───────────
-// All inline onclick/onchange/ondrop attributes removed from index.html
-// for strict CSP compliance (script-src 'self', no unsafe-inline).
-
-document.getElementById("newChatBtn").addEventListener("click", () => startNewChat());
-document.getElementById("sendBtn").addEventListener("click", () => sendPrompt());
-document.getElementById("stopBtn").addEventListener("click", () => stopAgent());
-document.getElementById("contextToggleBtn").addEventListener("click", () => toggleContextPanel());
-document.getElementById("contextExpandBtn").addEventListener("click", () => toggleContextPanel());
-
-// Settings button
-document.querySelector(".settings-btn").addEventListener("click", () => window.quiver.loadSettings());
-
-// Memory editor buttons
-document.querySelector(".ctx-add-btn").addEventListener("click", () => openMemoryEditor(""));
-
-// Core memory textareas — save on change
-document.getElementById("ctxIdentity").addEventListener("change", () => saveCoreMemory());
-document.getElementById("ctxHuman").addEventListener("change", () => saveCoreMemory());
-document.getElementById("ctxProject").addEventListener("change", () => saveCoreMemory());
-
-// Preview panel
-document.getElementById("previewOverlay").addEventListener("click", (e) => closePreview(e));
-document.querySelector(".preview-panel").addEventListener("click", (e) => e.stopPropagation());
-document.querySelector(".preview-btn").addEventListener("click", () => openInDefault());
-document.querySelector(".preview-close").addEventListener("click", () => closePreview());
-
-// Memory editor modal
-document.getElementById("memEditorOverlay").addEventListener("click", (e) => closeMemoryEditor(e));
-document.querySelector("#memEditorOverlay .modal-card").addEventListener("click", (e) => e.stopPropagation());
-document.querySelector("#memEditorOverlay .modal-close").addEventListener("click", () => closeMemoryEditor());
-document.querySelector("#memEditorOverlay .btn-primary").addEventListener("click", () => saveMemoryFile());
-document.querySelector("#memEditorOverlay .btn-secondary").addEventListener("click", () => closeMemoryEditor());
-document.getElementById("memDeleteBtn").addEventListener("click", () => deleteMemoryFile());
-
-// Skill viewer modal
-document.getElementById("skillViewerOverlay").addEventListener("click", (e) => closeSkillViewer(e));
-document.querySelector("#skillViewerOverlay .modal-card").addEventListener("click", (e) => e.stopPropagation());
-document.querySelector("#skillViewerOverlay .modal-close").addEventListener("click", () => closeSkillViewer());
-document.querySelector("#skillViewerOverlay .btn-primary").addEventListener("click", () => saveSkillFile());
-document.querySelector("#skillViewerOverlay .btn-secondary").addEventListener("click", () => closeSkillViewer());
-
-// Input area drag & drop
-const inputBar = document.getElementById("inputBar");
-inputBar.addEventListener("drop", (e) => handleDrop(e));
-inputBar.addEventListener("dragover", (e) => handleDragOver(e));
-inputBar.addEventListener("dragleave", (e) => handleDragLeave(e));
+// ─── go ─────────────────────────────────────────────────────────────────
+wireAgentEvents();
+init();

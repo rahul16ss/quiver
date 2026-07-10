@@ -20,13 +20,13 @@ export const tool: Tool = {
   description: "Runs TypeScript compilation check (tsc --noEmit) and the unit tests suite to validate codebase integrity. Returns test outcomes and errors.",
   parameters: z.object({}),
   execute: async () => {
-    console.log(picocolors.gray(`   ⚡ Validating codebase (run_tests)...`));
+    console.log(picocolors.gray(`   Validating codebase (run_tests)...`));
 
     // 1. Run tsc --noEmit
     console.log(picocolors.gray(`   ├─ Running TypeScript compilation check...`));
     const tscRes = await executeCmd("npx tsc --noEmit");
     if (tscRes.code !== 0) {
-      console.log(picocolors.red(`   └─ ❌ Compilation failed.`));
+      console.log(picocolors.red(`   └─ Compilation failed.`));
       return JSON.stringify({
         success: false,
         phase: "compilation",
@@ -40,7 +40,7 @@ export const tool: Tool = {
     console.log(picocolors.gray(`   └─ Running unit tests suite...`));
     const testRes = await executeCmd("npm test");
     if (testRes.code !== 0) {
-      console.log(picocolors.red(`      ❌ Tests failed.`));
+      console.log(picocolors.red(`      Tests failed.`));
       return JSON.stringify({
         success: false,
         phase: "test",
@@ -50,7 +50,7 @@ export const tool: Tool = {
       }, null, 2);
     }
 
-    console.log(picocolors.green(`      ✅ Codebase is clean and all tests passed.`));
+    console.log(picocolors.green(`      Codebase is clean and all tests passed.`));
     return JSON.stringify({
       success: true,
       phase: "all",

@@ -1,82 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiver — Setup</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <title>Welcome to Quiver</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-  <div class="form-page">
-    <div class="form-card">
-      <img src="assets/logo.png" class="form-logo" alt="Quiver">
-      <h1>Quiver</h1>
-      <p class="subtitle">Your AI analyst, researcher, and writer</p>
+<body class="onboarding">
+  <div class="onboarding-card">
+    <img src="assets/logo.png" alt="Quiver" class="onb-logo" />
+    <h1>Welcome to Quiver</h1>
+    <p class="onb-sub">
+      Your AI analyst, researcher, and writer. It works privately on your
+      computer — research a company, draft a brief, or build a matrix, and
+      Quiver shows its work and verifies it before it reaches you.
+    </p>
 
-      <div class="form-group">
-        <label>Project Folder</label>
-        <div class="dir-picker-row">
-          <input id="workspacePath" type="text" placeholder="Choose where to save your work" readonly>
-          <button class="btn-browse" onclick="browseWorkspace()">Browse</button>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>AI Model Key</label>
-        <input id="apiKey" type="password" placeholder="Your API key" autofocus>
-        <div class="hint">Get your key at <a href="https://ollama.com" target="_blank" style="color:var(--accent);text-decoration:none;">ollama.com</a></div>
-      </div>
-
-      <div class="form-group">
-        <label>Web Research Key <span style="font-weight:400;text-transform:none;color:var(--text-faint);">(optional)</span></label>
-        <input id="parallelApiKey" type="password" placeholder="For web search and deep research">
-        <div class="hint">Enables cited web research — <a href="https://platform.parallel.ai" target="_blank" style="color:var(--accent);text-decoration:none;">parallel.ai</a></div>
-      </div>
-
-      <div class="form-actions">
-        <button class="btn-primary" onclick="saveAndStart()">Start</button>
-      </div>
+    <div class="onb-step">
+      <label for="onbKey" class="onb-label">Your API key</label>
+      <input id="onbKey" class="field" type="password" placeholder="Paste the key from your Ollama account" autocomplete="off" />
+      <p class="onb-hint">Stored securely in your computer’s keychain — never written where others can read it.</p>
+      <p class="onb-hint">No key yet? Create a free account at ollama.com, then paste your API key above.</p>
     </div>
+
+    <div class="onb-actions">
+      <button id="onbStartBtn" class="primary-btn">Get started</button>
+    </div>
+    <p class="onb-foot">Prefer to add your key later? Just close this window and set it in Settings.</p>
   </div>
-
-  <script>
-    async function initOnboarding() {
-      const config = await window.quiver.loadConfig();
-      if (config.workspacePath) document.getElementById("workspacePath").value = config.workspacePath;
-    }
-
-    async function browseWorkspace() {
-      const selected = await window.quiver.selectWorkspaceDir();
-      if (selected) document.getElementById("workspacePath").value = selected;
-    }
-
-    async function saveAndStart() {
-      const workspacePath = document.getElementById("workspacePath").value.trim();
-      const apiKey = document.getElementById("apiKey").value.trim();
-      const parallelApiKey = document.getElementById("parallelApiKey").value.trim();
-
-      if (!workspacePath) { alert("Please select your workspace folder."); return; }
-      if (!apiKey) { alert("Please enter your API key."); return; }
-
-      // Source all defaults from the main process (which sources the
-      // source-controlled defaults in src/config.ts) — no hardcoded model
-      // name, base URL, or context size here.
-      const defaults = await window.quiver.loadConfig();
-      await window.quiver.saveConfig({
-        ...defaults,
-        workspacePath,
-        provider: { ...defaults.provider, apiKey },
-        parallelApiKey,
-        ollamaApiKey: apiKey,
-      });
-      await window.quiver.loadMain();
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveAndStart(); }
-    });
-
-    initOnboarding();
-  </script>
+  <script src="onboarding.js"></script>
 </body>
 </html>

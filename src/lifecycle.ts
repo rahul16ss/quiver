@@ -229,7 +229,7 @@ export class LifecycleHookRegistry {
         if (config.outputMode === "interactive") {
           process.stderr.write(
             picocolors.yellow(
-              `  ⚠ Hook '${entry.id}' at ${stage} threw: ${error.message}\n`,
+              `  Hook '${entry.id}' at ${stage} threw: ${error.message}\n`,
             ),
           );
         }

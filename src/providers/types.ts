@@ -381,7 +381,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
             // frames become a visible "unsupported" event instead of
             // vanishing.
             if (
-              !delta?.content &&
+              delta?.content === undefined &&
               !delta?.reasoning &&
               !delta?.reasoning_content &&
               !delta?.tool_calls &&

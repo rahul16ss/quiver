@@ -247,7 +247,7 @@ Quiver can propose updates to its own system prompt using `prompt_update`. The u
 ## Development & Testing
 
 ```bash
-npm test            # THE checker-owned acceptance contract (143 checks) — must stay green.
+npm test            # THE checker-owned acceptance contract — must stay green.
                      # Asserts the SPEC AND that src/agent.ts + the file tools actually wire in
                      # the provider/adapter, assembler, budget, path sandbox, command classifier,
                      # read-before-write, atomic write, checkpoint, diagnostics, memory privacy,
@@ -258,10 +258,9 @@ npx tsc --noEmit    # Definition of Done: clean typecheck
 The acceptance contract (`tests/spec_acceptance_tests.ts`) is **read-only to the
 vendor**. It is the single checker-owned gate: it asserts both the spec behavior and
 (via its `WIRE-*` checks) that the modules are actually wired into `src/agent.ts` and
-the file tools. Status (2026-06-28 re-audit): 143/143 met, 0 failing — the gate is
-GREEN. All maker-checker controls, symlink validation realpath checks, environment sanitizations,
-and automated rollback routines are active. `npm test` is the only live verdict — re-run it before
-trusting any status text. See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.
+the file tools — including maker-checker controls, symlink realpath validation,
+environment sanitizations, and automated rollback. `npm test` is the only live verdict — re-run
+it before trusting any status text. See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.
 
 ## Feature Flags (internal)
 

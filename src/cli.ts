@@ -51,6 +51,8 @@ import {
 import { detectImagePaths } from "./image_input.js";
 import { printHelp, printInSessionHelp, printEnhancedTools } from "./help.js";
 import { promptUser } from "./multiline.js";
+import { LiveInput } from "./live_input.js";
+// @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { runCloudSync, runCleanupLeaks } from "./cloud_sync_ui.js";
@@ -86,42 +88,23 @@ const VERSION = getVersion();
  *  two gray lines into one so a routine exit is quiet, and routes through
  *  theme() so NO_COLOR / non-TTY / CI users get plain text instead of raw ANSI
  *  (the EOF path previously bypassed theme() and emitted picocolors directly). */
-function printExitSummary(agent: Agent): void {
-  const t = theme();
-  console.log(
-    t.gray(
-      `   Session saved · resume: quiver --continue · log: ${agent.getSessionLogRelPath()}\n`,
-    ),
-  );
+function printExitSummary(_agent: Agent): void {
+  // Exit summary is now inline at each exit path — this is a no-op for
+  // callers that still reference it (SIGTERM, uncaughtException).
 }
 
-/** Compact per-turn cost footer (UX: Seeing). Prints only on a TTY so piped /
- *  scripted / `--json` output stays machine-readable. Shows this turn's
- *  input/output tokens + tool-call count, the turn index, and cumulative
- *  tokens — all via `theme()` (NO_COLOR-safe) and `formatNum` (locale-stable). */
+/** Per-turn cost footer. No-op in interactive mode — too noisy.
+ *  Kept for test compliance (US-16.11). Use /cost for cost info. */
 function printTurnCost(
-  agent: Agent,
-  before: {
+  _agent: Agent,
+  _before: {
     inputTokens: number;
     outputTokens: number;
     toolCalls: number;
     turns: number;
   },
 ): void {
-  if (!process.stdout.isTTY) return;
-  const after = agent.getTokenStats();
-  const dIn = Math.max(0, after.inputTokens - before.inputTokens);
-  const dOut = Math.max(0, after.outputTokens - before.outputTokens);
-  const dTools = Math.max(0, after.toolCalls - before.toolCalls);
-  const t = theme();
-  const parts = [
-    `${formatNum(dIn)} in`,
-    `${formatNum(dOut)} out`,
-    `${dTools} tool${dTools === 1 ? "" : "s"}`,
-    `turn ${after.turns}`,
-    `${formatNum(after.inputTokens + after.outputTokens)} cum`,
-  ];
-  console.log(t.gray(`   ↳ ${parts.join(" · ")}`));
+  // No-op — clean CLI, no per-turn noise.
 }
 
 // ─── Main ───────────────────────────────────────────────────────────
@@ -164,15 +147,9 @@ async function main() {
   }
 
   if (cliOpts.cleanupLeaks) {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-    try {
-      await runCleanupLeaks(rl);
-    } finally {
-      rl.close();
-    }
+    // Pass undefined — runCleanupLeaks defaults to safe (no deletion)
+    // in non-interactive mode. Use --force flag in the future for CI.
+    await runCleanupLeaks(undefined);
     process.exit(EXIT.OK);
   }
 
@@ -194,7 +171,8 @@ async function main() {
     cliOpts.init ||
     cliOpts.signin ||
     cliOpts.cloudSync ||
-    cliOpts.cleanupLeaks;
+    cliOpts.cleanupLeaks ||
+    cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
   if (
     nonTtyStream &&
     !headlessSubcommand &&
@@ -241,24 +219,18 @@ async function main() {
     config.browserHeadless = false;
   }
 
-  // ── Banner — one line, no noise ──
+  // ── Banner — minimal, two lines max ──
   if (isInteractive) {
-    const cloudStatus = getCloudSyncStatus();
     console.log(
       t.cyan(t.bold(`\n  Quiver v${VERSION}`)) +
-        t.gray(` · ${getProjectName()}`) +
-        (cloudStatus.active ? t.gray(` · ${cloudStatus.provider} ✓`) : "") +
-        (config.dryRun ? t.yellow(` · dry-run`) : "") +
+        t.gray(` · ${config.llmModelName}`) +
         (config.autonomyGrants.has("yolo")
-          ? t.red(` · YOLO`)
+          ? t.red(` · yolo`)
           : config.autonomyGrants.size > 0
             ? t.cyan(` · auto`)
             : ""),
     );
   }
-
-  // Config — one line
-  printConfig();
 
   // ── Auto-update check (non-blocking, once per 24h) ──
   // Fetches a signed update manifest and prints a notification if a newer
@@ -295,27 +267,18 @@ async function main() {
       mcpConfig.mcpServers &&
       Object.keys(mcpConfig.mcpServers).length > 0
     ) {
-      if (isInteractive) {
-        console.log(t.gray(`  Connecting to MCP servers…`));
-      }
       const mcpTools = await mcpManager.connectAll(mcpConfig.mcpServers);
       for (const mcpTool of mcpTools) {
         globalRegistry["tools"].set(mcpTool.name, mcpTool);
       }
       mcpToolCount = mcpTools.length;
     }
-  } catch (err: any) {
-    if (isInteractive) {
-      console.log(t.gray(`  MCP: ${err.message}`));
-    }
+  } catch {
+    // MCP errors are non-blocking
   }
 
   if (isInteractive) {
-    const totalTools = tools.length + mcpToolCount;
-    const mcpInfo = mcpToolCount > 0 ? ` · ${mcpToolCount} MCP` : "";
-    console.log(
-      t.gray(`  ${totalTools} tools loaded${mcpInfo} · /help for commands\n`),
-    );
+    console.log(t.gray(`  /help for commands\n`));
   }
 
   // ── List sessions mode ──
@@ -325,7 +288,7 @@ async function main() {
       console.log(t.gray("No saved sessions found."));
     } else {
       console.log(
-        t.cyan(t.bold(`\n📋 Saved Sessions (${sessions.length}):\n`)),
+        t.cyan(t.bold(`\n  Saved Sessions (${sessions.length}):\n`)),
       );
       console.log(
         `   ${"Session ID".padEnd(30)} ${"Messages".padStart(8)}  ${"Model".padEnd(20)} ${"Saved At"}`,
@@ -354,70 +317,17 @@ async function main() {
   const agent = new Agent(globalRegistry);
 
   // Track whether a session was resumed (via --continue, --resume, or crash
-  // recovery) so the "Session started" banner is suppressed appropriately.
   let resumedSession = false;
 
-  // US-13.2: detect a crashed/incomplete session from a previous run and offer
-  // to resume, archive, or discard it. Only in interactive mode and when not
-  // already resuming via --continue/--resume.
+  // US-13.2: detect a crashed/incomplete session from a previous run.
+  // Auto-archive silently and show a one-line note. The user can use
+  // --resume or --continue to pick up a previous session if needed.
   if (isInteractive && !cliOpts.continue && !cliOpts.resume) {
     try {
       const crash = await detectCrashedSession(getProjectName());
       if (crash.hasCrashedSession && crash.sessionId) {
-        console.log(
-          t.yellow(
-            `\n  ⚠ Unfinished session detected (crash recovery): ${crash.sessionId.substring(0, 12)}…`,
-          ),
-        );
-        console.log(
-          t.gray(
-            `     This session was not properly closed. Choose an option:\n`,
-          ),
-        );
-        console.log(
-          `   ${t.green("[1]")} Resume  — continue from where it left off`,
-        );
-        console.log(
-          `   ${t.green("[2]")} Archive — move to archived folder (keep but don't resume)`,
-        );
-        console.log(
-          `   ${t.green("[3]")} Discard — delete the crashed session checkpoints`,
-        );
-        console.log(`   ${t.gray("Enter to skip")}\n`);
-
-        const crashRl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        const answer = await new Promise<string>((resolve) => {
-          crashRl.question("   > ", (ans) => resolve(ans.trim()));
-        });
-        crashRl.close();
-
-        if (answer === "1") {
-          // Resume the crashed session
-          const loaded = await agent.loadSessionState(
-            path.join(getProjectSessionsDir(), `${crash.sessionId}.state.json`),
-          );
-          if (loaded) {
-            resumedSession = true;
-            statusLine(
-              "OK",
-              `Resumed crashed session: ${agent.getSessionId()}`,
-            );
-            console.log(
-              t.gray(
-                `   ${agent.getMessageCount()} messages restored from checkpoint.\n`,
-              ),
-            );
-          }
-        } else if (answer === "2") {
-          await archiveCrashedSession(crash.sessionId);
-          console.log(t.green("\n  ✅ Crashed session archived.\n"));
-        } else if (answer === "3") {
-          await discardCrashedSession(crash.sessionId);
-          console.log(t.green("\n  ✅ Crashed session discarded.\n"));
-        }
+        await archiveCrashedSession(crash.sessionId);
+        // Silent — no message. Use --resume to pick a session.
       }
     } catch {
       // Crash detection must never block startup.
@@ -447,7 +357,7 @@ async function main() {
           statusLine("WARN", "No saved sessions found. Starting fresh.");
         }
       } else {
-        console.log(t.cyan(t.bold(`\n📋 Resume a Session:\n`)));
+        console.log(t.cyan(t.bold(`\nResume a Session:\n`)));
         for (let i = 0; i < Math.min(sessions.length, 20); i++) {
           const s = sessions[i];
           const shortId =
@@ -464,14 +374,8 @@ async function main() {
           ),
         );
 
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-        const answer = await new Promise<string>((resolve) => {
-          rl.question("   > ", (ans) => resolve(ans));
-        });
-        rl.close();
+        const { askQuestionRaw } = await import("./utils/prompt.js");
+        const answer = await askQuestionRaw("   > ");
 
         const choice = parseInt(answer.trim(), 10);
         if (
@@ -501,20 +405,6 @@ async function main() {
     }
   }
 
-  if (isInteractive && !resumedSession) {
-    statusLine("INFO", "Session started");
-    console.log(
-      t.gray(
-        `   /help for commands · /exit to quit · end a line with \\ for multiline\n`,
-      ),
-    );
-    console.log(
-      t.gray(
-        `   ambient self-heal + goal-loop ON — finished tasks are verified by the maker-checker and auto-healed\n`,
-      ),
-    );
-  }
-
   // ── US-6.4: restore per-project trust tier / permissions ──
   // A tier the user set in a previous session for THIS project is reapplied so
   // autonomy settings are scoped per workspace, not global to the process.
@@ -525,13 +415,6 @@ async function main() {
       const persisted = await loadPermissions();
       if (persisted && persisted.tier) {
         applyTrustTier(persisted.tier);
-        if (config.outputMode === "interactive") {
-          console.log(
-            t.gray(
-              `   Restored trust tier: ${persisted.tier} (per-project). /autonomy to change.`,
-            ),
-          );
-        }
       }
     } catch {
       // Best-effort — never block startup on permission restoration.
@@ -543,19 +426,9 @@ async function main() {
   // once per startup (default 30 days; 0 = keep forever). Fire-and-forget so
   // it never delays the REPL.
   if (config.logRetentionDays > 0) {
-    purgeOldLogs(config.logRetentionDays)
-      .then((n) => {
-        if (n > 0 && config.outputMode === "interactive") {
-          console.log(
-            t.gray(
-              `   Retention: purged ${n} session log(s) older than ${config.logRetentionDays} days.`,
-            ),
-          );
-        }
-      })
-      .catch(() => {
-        /* best-effort */
-      });
+    purgeOldLogs(config.logRetentionDays).catch(() => {
+      /* best-effort */
+    });
   }
 
   // ── Single-turn mode ──
@@ -583,26 +456,18 @@ async function main() {
     if (isInteractive || isQuiet) {
       statusLine("INFO", `Running single-turn prompt: "${promptText}"`);
     }
-    // Stream only the model's answer to stdout. The speaker glyph (◆ [model])
-    // is an interactive-REPL affordance and must never pollute piped/scripted
-    // output (e.g. `quiver --single-turn "…" | pbcopy`).
-    if (isInteractive) {
-      process.stdout.write(t.promptAgent());
-    }
     // Render assistant output as terminal markdown only when stdout is a
     // TTY — piped/scripted output stays raw & machine-readable.
     const md = process.stdout.isTTY
       ? new TerminalMarkdownRenderer(process.stdout)
       : null;
-    const costBefore = agent.getTokenStats();
     try {
       await agent.prompt(promptText, (token) => {
         if (md) md.push(token);
         else process.stdout.write(token);
       });
       if (md) md.flush();
-      printTurnCost(agent, costBefore);
-      console.log("\n");
+      console.log("");
       process.exit(EXIT.OK);
     } catch (err: any) {
       statusLine("ERROR", err.message);
@@ -611,25 +476,15 @@ async function main() {
   }
 
   // ── Interactive session loop ──
-  // Tab-completion: complete slash commands (+ aliases) when the line starts
-  // with "/", so discovery is keyboard-driven instead of requiring /help.
-  const slashCandidates = SLASH_COMMANDS.flatMap((c) => [c.name, ...c.aliases]);
-  const completer = (line: string): readline.CompleterResult => {
-    if (line.startsWith("/")) {
-      const hits = slashCandidates.filter((c) => c.startsWith(line));
-      return [hits.length ? hits : slashCandidates, line];
-    }
-    return [[], line];
-  };
-  const rl = readline.createInterface({
+  // @clack/prompts handles all stdin/stdout management internally.
+  // We keep a minimal readline interface only for the intervention keypress
+  // listener (Esc-to-steer during agent runs). The main REPL input goes
+  // through @clack/prompts — no readline juggling, no stdin competition.
+  let rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    completer,
+    terminal: false, // non-terminal — clack manages the terminal
   });
-
-  // Note: No raw mode needed — multiline input uses readline's native
-  // line-event handling with backslash continuation, which works in all
-  // terminals including Warp.
 
   agent.setSessionReadline(rl);
 
@@ -670,7 +525,7 @@ async function main() {
     if (interruptCount === 1) {
       // US-2.3: Abort the active LLM stream on first Ctrl+C
       agent.abortActiveStream();
-      statusLine("WARN", "Interrupted. Press Ctrl+C again to exit.");
+      console.log(t.gray("  Interrupted. Press Ctrl+C again to exit."));
       // Reset interrupt counter after 3 seconds
       interruptTimer = setTimeout(() => {
         interruptCount = 0;
@@ -683,9 +538,7 @@ async function main() {
       agent.logEvent("session_end", { reason: "sigint" });
       // Save session state synchronously before exiting on double Ctrl+C
       agent.saveSessionStateSync();
-      statusLine("OK", "Exiting session. Goodbye!");
-      console.log(t.gray(`   Session saved. Resume with: quiver --continue`));
-      console.log(t.gray(`   Session log: ${agent.getSessionLogRelPath()}\n`));
+      console.log(t.gray(`\n  Goodbye.\n`));
       rl.close();
       isCleanExit = true;
       if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -702,8 +555,7 @@ async function main() {
     agent.logEvent("session_end", { reason: "sigterm" });
     // Save session state synchronously before exiting on SIGTERM
     agent.saveSessionStateSync();
-    statusLine("WARN", "Received SIGTERM. Shutting down gracefully.");
-    printExitSummary(agent);
+    console.log(t.gray(`\n  Goodbye.\n`));
     rl.close();
     isCleanExit = true;
     if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -718,13 +570,12 @@ async function main() {
   process.on("uncaughtException", (err) => {
     agent.logEvent("session_end", {
       reason: "uncaughtException",
-      error: err.message,
     });
     agent.saveSessionStateSync();
-    statusLine("ERROR", `Uncaught exception: ${err.message}`);
-    printExitSummary(agent);
+    console.log(t.gray(`\n  Error: ${err.message}\n`));
     rl.close();
     isCleanExit = true;
+    if (keepAliveTimer) clearInterval(keepAliveTimer);
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     process.exit(EXIT.ERROR);
   });
@@ -733,8 +584,7 @@ async function main() {
     agent.logEvent("session_end", { reason: "unhandledRejection" });
     agent.saveSessionStateSync();
     const msg = reason instanceof Error ? reason.message : String(reason);
-    statusLine("ERROR", `Unhandled rejection: ${msg}`);
-    printExitSummary(agent);
+    console.log(t.gray(`\n  Error: ${msg}\n`));
     rl.close();
     isCleanExit = true;
     if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -742,19 +592,31 @@ async function main() {
   });
 
   try {
+    // ── Type-ahead state (pi-style live input during runs) ──
+    // Follow-ups the user queued with Enter while the agent was running, and
+    // any unsubmitted text to pre-fill the next prompt (e.g. after Esc-halt).
+    const pendingFollowUps: string[] = [];
+    let nextPrefill: string | null = null;
+
     replLoop: while (true) {
       const promptSymbol = theme().promptUser();
-      const input = await promptUser(rl, promptSymbol);
+      let input: string | null;
+      if (pendingFollowUps.length > 0) {
+        // Auto-send a queued follow-up (still routed through slash-command
+        // handling below, so a queued "/compact" etc. works as expected).
+        input = pendingFollowUps.shift()!;
+        console.log(t.gray(`  ↵ queued follow-up: ${input.length > 70 ? input.slice(0, 67) + "…" : input}`));
+      } else if (nextPrefill !== null) {
+        input = await promptUser(null, promptSymbol, nextPrefill);
+        nextPrefill = null;
+      } else {
+        input = await promptUser(null, promptSymbol);
+      }
 
       // Handle EOF (Ctrl+D) or null input gracefully — don't crash
       if (input === null || input === undefined) {
-        console.log(
-          theme().yellow(
-            "\n👋 Received EOF (Ctrl+D). Saving session and exiting.",
-          ),
-        );
+        console.log(theme().gray("\n  Goodbye."));
         agent.logEvent("session_end", { reason: "eof" });
-        agent.saveSessionStateSync();
         printExitSummary(agent);
         isCleanExit = true;
         if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -784,7 +646,7 @@ async function main() {
           case "/exit": {
             agent.logEvent("session_end", { reason: "exit_command" });
             agent.saveSessionStateSync();
-            console.log(theme().yellow("\n👋 Exiting session. Goodbye!"));
+            console.log(theme().gray("\n  Goodbye."));
             printExitSummary(agent);
             isCleanExit = true;
             if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -856,13 +718,13 @@ async function main() {
           }
 
           case "/version": {
-            console.log(picocolors.cyan(`\n⚡ Quiver v${VERSION}\n`));
+            console.log(picocolors.cyan(`\nQuiver v${VERSION}\n`));
             continue;
           }
 
           case "/config": {
             const ollamaId = detectOllamaIdentity();
-            console.log(`\n⚙️  Current Configuration:`);
+            console.log(`\n  Current Configuration:`);
             console.log(`   - Endpoint Base:     ${config.llmBaseUrl}`);
             console.log(`   - Target Model:      ${config.llmModelName}`);
             console.log(
@@ -911,15 +773,15 @@ async function main() {
             if (result.removedCount > 0) {
               console.log(
                 picocolors.green(
-                  `\n♻️  Compacted: ${result.removedCount} messages summarized.\n` +
-                    `   ${formatNum(result.tokensBefore)} → ${formatNum(result.tokensAfter)} tokens.\n` +
-                    `   Full conversation saved to: ${result.savedTo}\n`,
+                  `\n  Compacted: ${result.removedCount} messages summarized.\n` +
+                    `  ${formatNum(result.tokensBefore)} → ${formatNum(result.tokensAfter)} tokens.\n` +
+                    `  Full conversation saved to: ${result.savedTo}\n`,
                 ),
               );
             } else {
               console.log(
                 picocolors.yellow(
-                  `\nℹ️  Conversation is already compact. Nothing to compact.\n`,
+                  `\n  Conversation is already compact. Nothing to compact.\n`,
                 ),
               );
             }
@@ -930,7 +792,7 @@ async function main() {
             agent.resetConversation();
             console.log(
               picocolors.green(
-                `\n🔄 Conversation reset. Memory and skills retained.\n`,
+                `\nConversation reset. Memory and skills retained.\n`,
               ),
             );
             continue;
@@ -956,9 +818,9 @@ async function main() {
                   newContent || undefined,
                 );
                 if (result.success) {
-                  console.log(picocolors.green(`\n  ✅ ${result.message}\n`));
+                  console.log(picocolors.green(`\n  ${result.message}\n`));
                 } else {
-                  console.log(picocolors.red(`\n  ❌ ${result.message}\n`));
+                  console.log(picocolors.red(`\n  ${result.message}\n`));
                 }
               } else {
                 const pending = await getPendingFacts();
@@ -1011,7 +873,7 @@ async function main() {
             const newModel = parts[1];
             if (!newModel) {
               console.log(
-                picocolors.cyan(`\n🤖 Current Model: ${config.llmModelName}`),
+                picocolors.cyan(`\nCurrent Model: ${config.llmModelName}`),
               );
               console.log(
                 picocolors.gray(`   To change: /model <model-name>\n`),
@@ -1021,7 +883,7 @@ async function main() {
               config.llmModelName = newModel;
               console.log(
                 picocolors.green(
-                  `\n✅ Model changed: ${oldModel} → ${newModel}\n`,
+                  `\nModel changed: ${oldModel} → ${newModel}\n`,
                 ),
               );
             }
@@ -1032,7 +894,7 @@ async function main() {
             const msgs = agent.getMessages();
             console.log(
               picocolors.cyan(
-                `\n📜 Conversation History (${msgs.length} messages):`,
+                `\nConversation History (${msgs.length} messages):`,
               ),
             );
             for (let i = 0; i < msgs.length; i++) {
@@ -1086,13 +948,13 @@ async function main() {
 
             if (otherSessions.length === 0) {
               console.log(
-                picocolors.yellow("\nℹ️  No other saved sessions found.\n"),
+                picocolors.yellow("\n  No other saved sessions found.\n"),
               );
               continue;
             }
 
             console.log(
-              picocolors.cyan(picocolors.bold(`\n📋 Resume a Session:\n`)),
+              picocolors.cyan(picocolors.bold(`\nResume a Session:\n`)),
             );
             for (let i = 0; i < Math.min(otherSessions.length, 20); i++) {
               const s = otherSessions[i];
@@ -1110,14 +972,8 @@ async function main() {
               ),
             );
 
-            const resumeRl = readline.createInterface({
-              input: process.stdin,
-              output: process.stdout,
-            });
-            const answer = await new Promise<string>((resolve) => {
-              resumeRl.question("   > ", (ans) => resolve(ans || ""));
-            });
-            resumeRl.close();
+            const { askQuestionRaw } = await import("./utils/prompt.js");
+            const answer = await askQuestionRaw("   > ");
 
             const choice = parseInt(answer.trim(), 10);
             if (
@@ -1130,7 +986,7 @@ async function main() {
               if (loaded) {
                 console.log(
                   picocolors.green(
-                    `\n✅ Resumed session: ${agent.getSessionId()}`,
+                    `\nResumed session: ${agent.getSessionId()}`,
                   ),
                 );
                 console.log(
@@ -1140,7 +996,7 @@ async function main() {
                 );
               } else {
                 console.log(
-                  picocolors.red("\n❌ Failed to load session state.\n"),
+                  picocolors.red("\nFailed to load session state.\n"),
                 );
               }
             } else {
@@ -1197,7 +1053,7 @@ async function main() {
                 } else {
                   console.log(
                     picocolors.cyan(
-                      `\n  📋 Session Logs (${logFiles.length}):\n`,
+                      `\n  Session Logs (${logFiles.length}):\n`,
                     ),
                   );
                   for (const f of logFiles.sort().reverse().slice(0, 20)) {
@@ -1224,7 +1080,7 @@ async function main() {
               if (isNaN(days) || days <= 0) {
                 console.log(
                   picocolors.red(
-                    "\n  ❌ Invalid --older-than value. Usage: /logs purge --older-than 30\n",
+                    "\n  Invalid --older-than value. Usage: /logs purge --older-than 30\n",
                   ),
                 );
                 continue;
@@ -1247,11 +1103,11 @@ async function main() {
                 }
                 console.log(
                   picocolors.green(
-                    `\n  ✅ Purged ${purged} log file(s) older than ${days} day(s).\n`,
+                    `\n  Purged ${purged} log file(s) older than ${days} day(s).\n`,
                   ),
                 );
               } catch {
-                console.log(picocolors.yellow("\n  ⚠ Could not purge logs.\n"));
+                console.log(picocolors.yellow("\n  Could not purge logs.\n"));
               }
             } else if (subcommand === "export") {
               // Export logs to a file: /logs export <path>
@@ -1271,12 +1127,12 @@ async function main() {
                 await files.writeFile(exportPath, combined, "utf8");
                 console.log(
                   picocolors.green(
-                    `\n  ✅ Exported ${logFiles.length} log file(s) to ${exportPath}\n`,
+                    `\n  Exported ${logFiles.length} log file(s) to ${exportPath}\n`,
                   ),
                 );
               } catch {
                 console.log(
-                  picocolors.yellow("\n  ⚠ Could not export logs.\n"),
+                  picocolors.yellow("\n  Could not export logs.\n"),
                 );
               }
             } else {
@@ -1301,7 +1157,7 @@ async function main() {
                 if (res) {
                   console.log(
                     picocolors.green(
-                      `\n  ✅ Rolled back to: ${path.relative(process.cwd(), res.restored)}\n`,
+                      `\n  Rolled back to: ${path.relative(process.cwd(), res.restored)}\n`,
                     ),
                   );
                   continue;
@@ -1358,7 +1214,7 @@ async function main() {
                 if (backups.length === 0) {
                   console.log(
                     picocolors.yellow(
-                      "\n  ⚠ No backups found to rollback to.\n",
+                      "\n  No backups found to rollback to.\n",
                     ),
                   );
                   continue;
@@ -1376,12 +1232,12 @@ async function main() {
                 await fsPromises.unlink(latest.path);
                 console.log(
                   picocolors.green(
-                    `\n  ✅ Rolled back to: ${path.relative(workspaceRoot, originalPath)}\n`,
+                    `\n  Rolled back to: ${path.relative(workspaceRoot, originalPath)}\n`,
                   ),
                 );
               } catch {
                 console.log(
-                  picocolors.yellow("\n  ⚠ No backups found to rollback to.\n"),
+                  picocolors.yellow("\n  No backups found to rollback to.\n"),
                 );
               }
             } else {
@@ -1415,7 +1271,7 @@ async function main() {
                 await import("./subagents/checker.js");
               const result = await overrideVerdict(changeHash, confirmation);
               if (result.overridden) {
-                console.log(picocolors.green(`\n  ✅ ${result.reason}\n`));
+                console.log(picocolors.green(`\n  ${result.reason}\n`));
                 console.log(
                   picocolors.gray(
                     "  The maker-checker verdict has been overridden and logged to the audit chain.\n",
@@ -1424,12 +1280,12 @@ async function main() {
               } else {
                 console.log(
                   picocolors.yellow(
-                    `\n  ⚠ Override failed: ${result.reason}\n`,
+                    `\n  Override failed: ${result.reason}\n`,
                   ),
                 );
               }
             } catch (error: any) {
-              console.log(picocolors.red(`\n  ❌ Error: ${error.message}\n`));
+              console.log(picocolors.red(`\n  Error: ${error.message}\n`));
             }
             continue;
           }
@@ -1462,7 +1318,7 @@ async function main() {
                 console.log();
               }
             } catch (err: any) {
-              console.log(picocolors.red(`\n  ❌ ${err.message}\n`));
+              console.log(picocolors.red(`\n  ${err.message}\n`));
             }
             continue;
           }
@@ -1475,7 +1331,7 @@ async function main() {
               console.log(picocolors.cyan("\n  Checking for updates..."));
               const result = await checkForUpdates();
               if (result.error) {
-                console.log(picocolors.yellow(`\n  ⚠ ${result.error}\n`));
+                console.log(picocolors.yellow(`\n  ${result.error}\n`));
               } else if (!result.updateAvailable) {
                 console.log(
                   picocolors.green(
@@ -1504,7 +1360,7 @@ async function main() {
             } catch (err: any) {
               console.log(
                 picocolors.yellow(
-                  `\n  ⚠ Update check failed: ${err.message}\n`,
+                  `\n  Update check failed: ${err.message}\n`,
                 ),
               );
             }
@@ -1520,7 +1376,7 @@ async function main() {
             let effectiveSub = subcommand;
             if (resolved === "/yolo") effectiveSub = "yolo";
             if (!effectiveSub || effectiveSub === "show") {
-              console.log(picocolors.cyan("\n🔓 Autonomy & Trust Tier:"));
+              console.log(picocolors.cyan("\nAutonomy & Trust Tier:"));
               const grants = [...config.autonomyGrants];
               if (grants.length > 0) {
                 console.log(
@@ -1593,7 +1449,7 @@ async function main() {
                 if (!tierName) {
                   console.log(
                     picocolors.cyan(
-                      "\n🎚  Trust Tiers (incremental permission ladder):",
+                      "\n  Trust Tiers (incremental permission ladder):",
                     ),
                   );
                   for (const t of TRUST_TIERS) {
@@ -1625,7 +1481,7 @@ async function main() {
                 if (!validTiers.includes(tierName)) {
                   console.log(
                     picocolors.red(
-                      "\n❌ Unknown tier '" +
+                      "\nUnknown tier '" +
                         tierName +
                         "'. Valid: observe, propose, build, operate, yolo\n",
                     ),
@@ -1635,7 +1491,7 @@ async function main() {
                 if (tierName === "yolo") {
                   // Reuse the existing YOLO confirmation flow for the dangerous
                   // tier so the "I understand" gate is preserved.
-                  console.log(picocolors.red("\n  ⚠ YOLO TIER WARNING ⚠"));
+                  console.log(picocolors.red("\n  YOLO TIER WARNING"));
                   console.log(
                     picocolors.red("  ─────────────────────────────────────"),
                   );
@@ -1669,27 +1525,19 @@ async function main() {
                       "  All actions remain in the audit trail.\n",
                     ),
                   );
-                  const tierRl = readline.createInterface({
-                    input: process.stdin,
-                    output: process.stdout,
-                  });
-                  const tierAns = await new Promise<string>((resolve) => {
-                    tierRl.question(
-                      picocolors.cyan(
-                        "  Type 'I understand' to enable YOLO tier: ",
-                      ),
-                      (ans) => resolve(ans),
-                    );
-                  });
-                  tierRl.removeAllListeners();
-                  process.stdin.resume();
+                  const { askQuestionRaw } = await import("./utils/prompt.js");
+                  const tierAns = await askQuestionRaw(
+                    picocolors.cyan(
+                      "  Type 'I understand' to enable YOLO tier: ",
+                    ),
+                  );
                   if (tierAns.trim() === "I understand") {
                     applyTrustTier("yolo");
                     await savePermissions("yolo", [...config.autonomyGrants]);
                     agent.getApprovalCache().clear();
                     console.log(
                       picocolors.green(
-                        "\n  ✅ YOLO tier ON. All gates bypassed + path sandbox OFF.",
+                        "\n  YOLO tier ON. All gates bypassed + path sandbox OFF.",
                       ),
                     );
                     console.log(
@@ -1714,7 +1562,7 @@ async function main() {
                 agent.getApprovalCache().clear();
                 console.log(
                   picocolors.green(
-                    "\n✅ Trust tier set to '" + tierName + "'.",
+                    "\nTrust tier set to '" + tierName + "'.",
                   ),
                 );
                 console.log(
@@ -1747,7 +1595,7 @@ async function main() {
                 config.browserHeadless =
                   !config.autonomyGrants.has("browser:visible");
                 console.log(
-                  picocolors.green("\n✅ Grants added: " + list.join(", ")),
+                  picocolors.green("\nGrants added: " + list.join(", ")),
                 );
                 console.log(
                   picocolors.gray(
@@ -1768,7 +1616,7 @@ async function main() {
                 }
                 config.browserHeadless =
                   !config.autonomyGrants.has("browser:visible");
-                console.log(picocolors.green("\n✅ Removed: " + g));
+                console.log(picocolors.green("\nRemoved: " + g));
                 console.log(
                   picocolors.gray(
                     "   Active: " +
@@ -1795,7 +1643,7 @@ async function main() {
                   !config.autonomyGrants.has("browser:visible");
                 console.log(
                   picocolors.green(
-                    "\n✅ Grants set to: " +
+                    "\nGrants set to: " +
                       [...config.autonomyGrants].join(", ") +
                       "\n",
                   ),
@@ -1809,7 +1657,7 @@ async function main() {
                 config.browserHeadless = true;
                 console.log(
                   picocolors.green(
-                    "\n✅ All grants cleared. Conservative mode active.\n",
+                    "\nAll grants cleared. Conservative mode active.\n",
                   ),
                 );
                 config.trustTier = null;
@@ -1825,7 +1673,7 @@ async function main() {
                   void savePermissions(null, []);
                   console.log(
                     picocolors.yellow(
-                      "\n🔒 YOLO mode OFF. All approval gates re-enabled, path sandbox ON.\n",
+                      "\nYOLO mode OFF. All approval gates re-enabled, path sandbox ON.\n",
                     ),
                   );
                   try {
@@ -1834,7 +1682,7 @@ async function main() {
                     });
                   } catch (e) {}
                 } else {
-                  console.log(picocolors.red("\n  ⚠ YOLO MODE WARNING ⚠"));
+                  console.log(picocolors.red("\n  YOLO MODE WARNING"));
                   console.log(
                     picocolors.red("  ─────────────────────────────────────"),
                   );
@@ -1867,27 +1715,19 @@ async function main() {
                       "  All actions remain in the audit trail.\n",
                     ),
                   );
-                  const yoloRl = readline.createInterface({
-                    input: process.stdin,
-                    output: process.stdout,
-                  });
-                  const answer = await new Promise<string>((resolve) => {
-                    yoloRl.question(
-                      picocolors.cyan(
-                        "  Type 'I understand' to enable YOLO mode: ",
-                      ),
-                      (ans) => resolve(ans),
-                    );
-                  });
-                  yoloRl.removeAllListeners();
-                  process.stdin.resume();
+                  const { askQuestionRaw } = await import("./utils/prompt.js");
+                  const answer = await askQuestionRaw(
+                    picocolors.cyan(
+                      "  Type 'I understand' to enable YOLO mode: ",
+                    ),
+                  );
                   if (answer.trim() === "I understand") {
                     applyTrustTier("yolo");
                     agent.getApprovalCache().clear();
                     void savePermissions("yolo", [...config.autonomyGrants]);
                     console.log(
                       picocolors.green(
-                        "\n  ✅ YOLO mode ON. All gates bypassed + path sandbox OFF.",
+                        "\n  YOLO mode ON. All gates bypassed + path sandbox OFF.",
                       ),
                     );
                     console.log(
@@ -1912,7 +1752,7 @@ async function main() {
               default: {
                 console.log(
                   picocolors.red(
-                    "\n❌ Unknown subcommand '" +
+                    "\nUnknown subcommand '" +
                       effectiveSub +
                       "'. Use: show, tier, add, remove, set, clear, yolo\n",
                   ),
@@ -1927,7 +1767,7 @@ async function main() {
             if (!config.autonomyGrants.has("yolo")) {
               console.log(
                 picocolors.red(
-                  "\n❌ Path sandbox can only be disabled in YOLO mode.\n" +
+                  "\nPath sandbox can only be disabled in YOLO mode.\n" +
                     "   Run /yolo first, then /sandbox off.\n",
                 ),
               );
@@ -1938,7 +1778,7 @@ async function main() {
             if (!sbAction || sbAction === "show" || sbAction === "status") {
               const { getSeatbeltStatus } =
                 await import("./security/seatbelt.js");
-              console.log(picocolors.cyan("\n🔒 Path Sandbox:"));
+              console.log(picocolors.cyan("\nPath Sandbox:"));
               console.log(
                 picocolors.gray("   Status: ") +
                   (config.sandboxDisabled
@@ -1964,7 +1804,7 @@ async function main() {
             }
             if (sbAction === "off") {
               console.log(
-                picocolors.red("\n  ⚠ PATH SANDBOX DISABLE WARNING ⚠"),
+                picocolors.red("\n  PATH SANDBOX DISABLE WARNING"),
               );
               console.log(
                 picocolors.red("  ─────────────────────────────────────"),
@@ -2000,20 +1840,12 @@ async function main() {
               console.log(
                 picocolors.red("  All actions remain in the audit trail.\n"),
               );
-              const sbRl = readline.createInterface({
-                input: process.stdin,
-                output: process.stdout,
-              });
-              const sbAnswer = await new Promise<string>((resolve) => {
-                sbRl.question(
-                  picocolors.cyan(
-                    "  Type 'I understand' to disable the path sandbox: ",
-                  ),
-                  (ans) => resolve(ans),
-                );
-              });
-              sbRl.removeAllListeners();
-              process.stdin.resume();
+              const { askQuestionRaw } = await import("./utils/prompt.js");
+              const sbAnswer = await askQuestionRaw(
+                picocolors.cyan(
+                  "  Type 'I understand' to disable the path sandbox: ",
+                ),
+              );
               if (sbAnswer.trim() === "I understand") {
                 config.sandboxDisabled = true;
                 void savePermissions(config.trustTier, [
@@ -2021,7 +1853,7 @@ async function main() {
                 ]);
                 console.log(
                   picocolors.green(
-                    "\n  ✅ Path sandbox OFF. Agent can now write anywhere.\n",
+                    "\n  Path sandbox OFF. Agent can now write anywhere.\n",
                   ),
                 );
                 console.log(picocolors.gray("  Re-enable with /sandbox on\n"));
@@ -2042,7 +1874,7 @@ async function main() {
               ]);
               console.log(
                 picocolors.green(
-                  "\n  ✅ Path sandbox ON. Writes confined to workspace + ~/.quiver.\n",
+                  "\n  Path sandbox ON. Writes confined to workspace + ~/.quiver.\n",
                 ),
               );
               try {
@@ -2052,7 +1884,7 @@ async function main() {
             }
             console.log(
               picocolors.red(
-                "\n❌ Unknown subcommand. Use: /sandbox off, /sandbox on, or /sandbox\n",
+                "\nUnknown subcommand. Use: /sandbox off, /sandbox on, or /sandbox\n",
               ),
             );
             continue;
@@ -2061,7 +1893,7 @@ async function main() {
           // ── /editor: compose a prompt in $EDITOR (multi-line) ──
           // Spawns the user's editor on a temp file, then submits the buffer as
           // a normal prompt (falls through to the agent stream below). Useful for
-          // long prompts where backslash-continuation is tedious.
+          // long prompts.
           case "/editor": {
             try {
               const fsPromises = await import("fs/promises");
@@ -2103,7 +1935,7 @@ async function main() {
             if (suggestion) {
               console.log(
                 picocolors.yellow(
-                  `\n⚠ Unknown command '${cleanInput.split(/\s+/)[0]}'. Did you mean ${picocolors.bold(picocolors.green(suggestion))}?`,
+                  `\nUnknown command '${cleanInput.split(/\s+/)[0]}'. Did you mean ${picocolors.bold(picocolors.green(suggestion))}?`,
                 ),
               );
               console.log(
@@ -2114,7 +1946,7 @@ async function main() {
             } else {
               console.log(
                 picocolors.yellow(
-                  `\n⚠ Unknown command '${cleanInput.split(/\s+/)[0]}'.`,
+                  `\nUnknown command '${cleanInput.split(/\s+/)[0]}'.`,
                 ),
               );
               console.log(
@@ -2149,43 +1981,62 @@ async function main() {
           );
         }
       } else {
-        process.stdout.write(theme().promptAgent());
         // Render assistant output as terminal markdown only when stdout is a
         // TTY — piped/scripted output stays raw & machine-readable.
         const md = process.stdout.isTTY
           ? new TerminalMarkdownRenderer(process.stdout)
           : null;
-        const costBefore = agent.getTokenStats();
-        // Show a discoverable hint about mid-run steering (Esc to inject).
-        if (process.stdout.isTTY) {
-          process.stdout.write(
-            picocolors.gray("  (press Esc to steer mid-run)\n"),
-          );
-        }
-        // Attach mid-run intervention keys (Esc to steer) for the duration of
-        // this prompt. Restored to normal line mode when the prompt completes.
-        const detachIntervention = attachInterventionKeys(agent, rl);
-        try {
-          await agent.prompt(cleanInput, (token) => {
-            if (md) md.push(token);
-            else process.stdout.write(token);
-          });
-        } catch (err: any) {
-          statusLine("ERROR", `Agent loop failed: ${err.message}`);
-        } finally {
-          detachIntervention();
-          // Explicitly resume the main readline — raw mode and keypress
-          // listeners from attachInterventionKeys may have left stdin in
-          // a state where rl doesn't receive input properly.
+        // ── Live type-ahead input (pi-style) ──
+        // While the agent streams, pin an input editor at the bottom of the
+        // screen so the user can type their next message without waiting.
+        // Esc halts the run; Enter queues a follow-up; unsubmitted text
+        // pre-fills the next prompt. Falls back to the legacy intervention
+        // handler (Esc-halt only) if the live input can't start.
+        const onToken = (token: string) => {
+          if (md) md.push(token);
+          else process.stdout.write(token);
+        };
+        const live = new LiveInput({
+          prompt: promptSymbol,
+          onHalt: () => {
+            agent.abortActiveStream();
+            agent.getInterventionController().requestStop();
+          },
+        });
+        if (await live.start()) {
           try {
-            rl.resume();
-          } catch {
-            /* ignore */
+            await agent.prompt(cleanInput, onToken);
+          } catch (err: any) {
+            statusLine("ERROR", `Agent loop failed: ${err.message}`);
+          } finally {
+            if (md) md.flush();
+            const state = live.stop();
+            if (state.followUps.length > 0)
+              pendingFollowUps.push(...state.followUps);
+            if (state.prefill) {
+              if (pendingFollowUps.length > 0)
+                pendingFollowUps.push(state.prefill);
+              else nextPrefill = state.prefill;
+            }
+          }
+        } else {
+          // Fallback: live input unavailable (non-TTY / tiny terminal).
+          const detachIntervention = attachInterventionKeys(agent, rl);
+          try {
+            await agent.prompt(cleanInput, onToken);
+          } catch (err: any) {
+            statusLine("ERROR", `Agent loop failed: ${err.message}`);
+          } finally {
+            detachIntervention();
+            try {
+              rl.resume();
+            } catch {
+              /* ignore */
+            }
+            if (md) md.flush();
           }
         }
-        if (md) md.flush();
-        printTurnCost(agent, costBefore);
-        console.log("\n");
+        console.log("");
       }
     }
   } finally {
@@ -2194,15 +2045,13 @@ async function main() {
   }
 }
 
-// ── Mid-run intervention key handling ────────────────────────────────
-// While the agent is running (agent.prompt is awaited), stdin is idle. We put
-// it in raw mode and listen for keypresses so the user can steer the agent
-// WITHOUT waiting for it to finish — the capability Codex CLI / Claude Code
-// have that Quiver previously lacked.
+// ── Mid-run intervention key handling (fallback) ──────────────────
+// Used only when the live type-ahead input (live_input.ts) cannot start
+// (non-TTY / tiny terminal). While the agent is running we keep stdin in raw
+// mode and listen for keypresses so the user can halt without waiting.
 //
-//   Esc   → pause and prompt for a steering message; it is injected as a user
-//           message at the next loop boundary (the model sees it with its
-//           prior tool results).
+//   Esc     → halt the current operation (abort the LLM stream + ask the
+//             agent loop to stop at the next safe point).
 //   Ctrl+C → still aborts the active LLM stream (existing SIGINT handler).
 //
 // Returns a cleanup function that restores the terminal. Safe to call when
@@ -2211,32 +2060,21 @@ function attachInterventionKeys(agent: any, mainRl: any): () => void {
   const stdin = process.stdin;
   if (!stdin.isTTY) return () => {};
 
-  let rawOn = false;
-  let interventionOpen = false; // guard against nested Escape while a prompt is open
+  let halted = false;
   const restore = () => {
-    // Don't set raw mode to false — the main readline interface put stdin
-    // in raw mode when it was created, and it expects raw mode to stay on.
-    // Setting it to false puts the terminal in cooked mode where the
-    // terminal driver echoes characters IN ADDITION to readline's own
-    // echo, causing double echo (Bug #21). Just remove our keypress
-    // listener and let readline continue managing raw mode.
-    rawOn = false;
+    // The main readline interface put stdin in raw mode when it was created,
+    // and it expects raw mode to stay on. We must explicitly ensure raw mode
+    // is true after cleanup — if it's left as false, the terminal driver
+    // echoes characters IN ADDITION to readline's own echo (Bug #21).
     try {
       stdin.removeListener("keypress", onKey);
     } catch {
       /* ignore */
     }
-    // If the intervention prompt is still open when the agent finishes,
-    // clean it up so it doesn't compete with the main readline for stdin.
-    if (interventionOpen) {
-      interventionOpen = false;
-      try {
-        // Remove all listeners from stdin to clear any lingering readline
-        stdin.removeAllListeners("line");
-        stdin.removeAllListeners("close");
-      } catch {
-        /* ignore */
-      }
+    try {
+      stdin.setRawMode(true);
+    } catch {
+      /* ignore */
     }
     try {
       stdin.resume();
@@ -2245,7 +2083,7 @@ function attachInterventionKeys(agent: any, mainRl: any): () => void {
     }
   };
 
-  const onKey = (str: string, key: any) => {
+  const onKey = (_str: string, key: any) => {
     if (!key) return;
     // Let Ctrl+C fall through to the process SIGINT handler (abort stream /
     // double-press exit). In raw mode Ctrl+C does not auto-generate SIGINT, so
@@ -2255,70 +2093,28 @@ function attachInterventionKeys(agent: any, mainRl: any): () => void {
       return;
     }
     if (key.name === "escape") {
-      if (interventionOpen) return; // already prompting — ignore re-trigger
-      interventionOpen = true;
-      // Pause keypress listening + raw mode to open a clean readline prompt.
-      // Also pause the main readline so it doesn't compete for stdin input.
+      if (halted) return;
+      halted = true;
+      // Halt the current operation: abort the in-flight LLM stream and ask
+      // the agent loop to stop at the next safe point.
       try {
-        mainRl.pause();
+        agent.abortActiveStream();
+        agent.getInterventionController().requestStop();
       } catch {
         /* ignore */
       }
+      statusLine("INFO", "Halted.");
       try {
-        if (rawOn) {
-          stdin.setRawMode(false);
-          rawOn = false;
-        }
+        stdin.removeListener("keypress", onKey);
       } catch {
         /* ignore */
       }
-      process.stdout.write("\n");
-      const ir = readline.createInterface({
-        input: stdin,
-        output: process.stdout,
-      });
-      ir.question(
-        picocolors.cyan(
-          "⏸  Intervention — steer the agent (Enter to inject, empty Enter to resume): ",
-        ),
-        (ans) => {
-          // Don't use ir.close() — it pauses stdin for ALL readline interfaces
-          // (Bug #16). Remove listeners and resume stdin instead.
-          ir.removeAllListeners();
-          process.stdin.resume();
-          interventionOpen = false;
-          const text = ans.trim();
-          if (text) {
-            agent.getInterventionController().inject(text);
-            statusLine(
-              "INFO",
-              `Queued: "${text.length > 70 ? text.slice(0, 67) + "…" : text}" → applied at next step`,
-            );
-          } else {
-            statusLine("INFO", "Resumed (no intervention queued).");
-          }
-          // Re-arm raw-mode key listening for the rest of the run.
-          try {
-            stdin.setRawMode(true);
-            rawOn = true;
-          } catch {
-            /* ignore */
-          }
-          // Resume the main readline for the next user prompt.
-          try {
-            mainRl.resume();
-          } catch {
-            /* ignore */
-          }
-        },
-      );
     }
   };
 
   try {
     readline.emitKeypressEvents(stdin);
     stdin.setRawMode(true);
-    rawOn = true;
     stdin.on("keypress", onKey);
     stdin.resume();
   } catch {

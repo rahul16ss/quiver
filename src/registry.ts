@@ -75,7 +75,7 @@ export class ToolRegistry {
 
       await Promise.all(loadPromises);
     } catch (error) {
-      console.error("❌ Failed to load registry:", error);
+      console.error("Failed to load registry:", error);
     }
   }
 
@@ -94,20 +94,20 @@ export class ToolRegistry {
       const module = await import(importUrl);
 
       if (!module.tool) {
-        console.warn(`⚠️  Skipped ${path.basename(filePath)}: Export 'tool' object not found.`);
+        console.warn(`  Skipped ${path.basename(filePath)}: Export 'tool' object not found.`);
         return null;
       }
 
       const tool: Tool = module.tool;
       if (!tool.name || !tool.description || !tool.parameters || typeof tool.execute !== "function") {
-        console.warn(`⚠️  Skipped ${path.basename(filePath)}: Exported 'tool' object has invalid structure.`);
+        console.warn(`  Skipped ${path.basename(filePath)}: Exported 'tool' object has invalid structure.`);
         return null;
       }
 
       this.tools.set(tool.name, tool);
       return tool;
     } catch (error) {
-      console.error(`❌ Error importing tool from ${path.basename(filePath)}:`, error);
+      console.error(`Error importing tool from ${path.basename(filePath)}:`, error);
       return null;
     }
   }

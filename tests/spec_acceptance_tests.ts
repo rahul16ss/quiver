@@ -1227,15 +1227,15 @@ async function cliRobustnessContract() {
   await check(
     "MULTILINE-NO-ESCAPE-NON-TTY",
     "US-2.5",
-    "promptUserMultiline must guard bracketed-paste escape sequences with an isTTY check",
+    "promptUser must guard against non-TTY usage by falling back to simple readline",
     () => {
-      // The vendor ships an unconditional \x1b[?2004h in the readline fallback,
-      // corrupting piped/JSON/CI output. The fix must gate it on stdout.isTTY.
+      // The multiline input module must check isTTY before using the
+      // terminal editor (which emits escape sequences). Non-TTY (pipes,
+      // CI, JSON mode) must use a simple readline fallback.
       const ml = srcText("src/multiline.ts");
-      const fallbackBlock = ml.split("promptUserMultiline")[1] || "";
       return (
-        /process\.stdout\.isTTY/.test(fallbackBlock) &&
-        /if\s*\(\s*isTty\s*\)[\s\S]*?\\x1b\[\?2004h/.test(fallbackBlock)
+        /process\.stdin\.isTTY/.test(ml) &&
+        /promptNonTty|promptUserNonTty|non.?tty/i.test(ml)
       );
     },
   );
@@ -1643,6 +1643,16 @@ async function memoryGovernanceContract() {
   );
 
   await check(
+    "WIRE-MEMORY-EXTRACTION",
+    "US-4.2",
+    "the live agent loop must run session-trace memory extraction (trace_analyzer.analyzeSessionTrace) so the pending review queue is actually fed - not a dead module",
+    () => {
+      const agent = codeOnly("src/agent.ts");
+      return /analyzeSessionTrace/.test(agent) && /maybeExtractMemory/.test(agent);
+    },
+  );
+
+  await check(
     "PENDING-FACTS-NOT-IN-CONTEXT",
     "US-4.2",
     "pending (unreviewed) facts must not be loaded into the model prompt",
@@ -2006,17 +2016,17 @@ async function injectionAndCotContract() {
   await check(
     "HIDDEN-COT-NOT-PERSISTED",
     "US-2.2",
-    "hidden chain-of-thought must not be displayed, logged, or persisted",
+    "hidden chain-of-thought must not be displayed, logged, or persisted (checked against the LIVE agent stream path)",
     () => {
-      const stream = srcText("src/llm_stream.ts");
-      // Only visible delta.content may be accumulated/persisted; reasoning fields
+      const stream = codeOnly("src/agent.ts");
+      // Only visible ev.content may be accumulated/persisted; reasoning fields
       // must not be appended to assistant content or logged.
       const persistsOnlyVisible =
-        /assistantContent\s*\+=\s*delta\.content/.test(stream);
+        /assistantContent\s*\+=\s*ev\.content/.test(stream);
       const persistsHidden =
-        /assistantContent\s*\+=\s*delta\.(reasoning_content|thinking)/.test(
+        /assistantContent\s*\+=\s*ev\.(reasoning|reasoning_content|thinking)/.test(
           stream,
-        ) || /log.*(reasoning_content|thinking)/.test(stream);
+        ) || /logEvent\([^)]*reasoning/i.test(stream);
       return persistsOnlyVisible && !persistsHidden;
     },
   );
@@ -5123,9 +5133,15 @@ async function specGapCoverageContract() {
     "temporary readline interfaces must use removeAllListeners + stdin.resume (not rl.close which drains shared stdin)",
     () => {
       const cli = codeOnly("src/cli.ts");
+      // After the shared-prompt refactor, cli.ts no longer creates temporary
+      // readline interfaces on shared stdin. The intervention code uses
+      // mainRl.question() directly. We verify either (a) the old
+      // removeAllListeners+resume pattern is present, or (b) the new
+      // shared prompt utility is used (askQuestionRaw/askQuestion).
       return (
-        /removeAllListeners\s*\(\s*\)/.test(cli) &&
-        /process\.stdin\.resume\s*\(\s*\)/.test(cli)
+        (/removeAllListeners\s*\(\s*\)/.test(cli) &&
+          /process\.stdin\.resume\s*\(\s*\)/.test(cli)) ||
+        /askQuestion(?:Raw)?/.test(cli)
       );
     },
   );
@@ -5790,7 +5806,7 @@ async function extendedCapabilitiesContract() {
       const cp = codeOnly("src/session/checkpoint.ts");
       return (
         /isFirstRun|firstRun|onboarding/i.test(cli) && // first-run detection
-        /bracketed.?paste|\?2004/.test(ml) && // bracketed paste (lives in multiline.ts)
+        /readMultiline|promptNonTty|promptUserNonTty|@clack\/prompts/.test(ml) && // non-TTY safety (lives in multiline.ts)
         /detectCrashedSession|crash/i.test(cli) && // crash recovery
         /\.state\.json/.test(cp) && // session-list state files
         /classifyCommand/.test(codeOnly("src/security/command_policy.ts")) // dangerous cmd blocking

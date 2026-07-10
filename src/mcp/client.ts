@@ -340,7 +340,7 @@ export class McpManager {
           }
         } catch (err: any) {
           console.warn(
-            `  ⚠️  MCP server "${name}" failed to connect: ${err.message}`,
+            `    MCP server "${name}" failed to connect: ${err.message}`,
           );
         }
       },

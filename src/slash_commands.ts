@@ -57,7 +57,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/override",
     aliases: ["/ov"],
-    desc: "Override the last maker-checker verdict (US-15.4)",
+    desc: "Override a blocked action (advanced)",
   },
   {
     name: "/mcp",

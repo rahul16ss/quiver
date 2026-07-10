@@ -20,7 +20,7 @@ export async function runCloudSync(): Promise<void> {
   );
 
   if (status.active) {
-    console.log(picocolors.green(`\n  ✅ Detected: ${status.provider}`));
+    console.log(picocolors.green(`\n  Detected: ${status.provider}`));
     console.log(picocolors.gray(`  Quiver folder: ${status.path}`));
     console.log(
       picocolors.gray(
@@ -28,7 +28,7 @@ export async function runCloudSync(): Promise<void> {
       ),
     );
   } else {
-    console.log(picocolors.yellow(`\n  ⚠️  No cloud sync folder detected.`));
+    console.log(picocolors.yellow(`\n    No cloud sync folder detected.`));
     console.log(
       picocolors.gray(
         `\n  Quiver is saving data locally at:\n    ${status.path}`,
@@ -57,7 +57,7 @@ export async function runCloudSync(): Promise<void> {
 
     if (result.uploaded.length > 0) {
       console.log(
-        picocolors.green(`  ✅ Uploaded (${result.uploaded.length}):`),
+        picocolors.green(`  Uploaded (${result.uploaded.length}):`),
       );
       for (const f of result.uploaded) {
         console.log(picocolors.gray(`     ↑ ${f}`));
@@ -66,7 +66,7 @@ export async function runCloudSync(): Promise<void> {
 
     if (result.downloaded.length > 0) {
       console.log(
-        picocolors.green(`\n  ✅ Downloaded (${result.downloaded.length}):`),
+        picocolors.green(`\n  Downloaded (${result.downloaded.length}):`),
       );
       for (const f of result.downloaded) {
         console.log(picocolors.gray(`     ↓ ${f}`));
@@ -75,7 +75,7 @@ export async function runCloudSync(): Promise<void> {
 
     if (result.errors.length > 0) {
       console.log(
-        picocolors.yellow(`\n  ⚠️  Errors (${result.errors.length}):`),
+        picocolors.yellow(`\n    Errors (${result.errors.length}):`),
       );
       for (const e of result.errors) {
         console.log(picocolors.red(`     ✗ ${e.file}: ${e.error}`));
@@ -84,7 +84,7 @@ export async function runCloudSync(): Promise<void> {
 
     if (result.conflicts && result.conflicts.length > 0) {
       console.log(picolorempty());
-      console.log(picocolors.yellow(`  ⚠️  Conflicts (${result.conflicts.length}) — both versions preserved:`));
+      console.log(picocolors.yellow(`    Conflicts (${result.conflicts.length}) — both versions preserved:`));
       for (const c of result.conflicts) console.log(picocolors.gray(`     • ${c}`));
       console.log(picocolors.gray(`     Resolve with: keep_local / keep_cloud / keep_both\n`));
     }
@@ -99,7 +99,7 @@ export async function runCloudSync(): Promise<void> {
       );
     }
   } catch (err: any) {
-    console.log(picocolors.red(`\n  ❌ Sync failed: ${err.message}\n`));
+    console.log(picocolors.red(`\n  Sync failed: ${err.message}\n`));
   }
 }
 
@@ -122,13 +122,13 @@ export async function runCleanupLeaks(rl?: import("readline").Interface): Promis
 
   const folder = detectCloudFolder();
   if (!folder) {
-    console.log(picocolors.yellow(`\n  ⚠️  No cloud sync folder detected — nothing to clean.\n`));
+    console.log(picocolors.yellow(`\n    No cloud sync folder detected — nothing to clean.\n`));
     return;
   }
 
   const leaked = await enumerateLeakedArtifacts();
   if (leaked.length === 0) {
-    console.log(picocolors.green(`\n  ✅ No leaked plaintext artifacts found in ${path.join(folder, "Quiver")}.\n`));
+    console.log(picocolors.green(`\n  No leaked plaintext artifacts found in ${path.join(folder, "Quiver")}.\n`));
     return;
   }
 
@@ -148,11 +148,11 @@ export async function runCleanupLeaks(rl?: import("readline").Interface): Promis
   }
 
   const result = await cleanupLeakedArtifacts(true);
-  console.log(picocolors.green(`\n  ✅ Removed ${result.removed.length} artifact(s).`));
+  console.log(picocolors.green(`\n  Removed ${result.removed.length} artifact(s).`));
   for (const f of result.removed) console.log(picocolors.gray(`     ✓ ${f}`));
   if (result.skipped.length) {
     console.log(picolorempty());
-    console.log(picocolors.yellow(`  ⚠️  Skipped ${result.skipped.length} (could not remove):`));
+    console.log(picocolors.yellow(`    Skipped ${result.skipped.length} (could not remove):`));
     for (const f of result.skipped) console.log(picocolors.gray(`     • ${f}`));
   }
   console.log(picocolors.gray(`\n  Removals logged to the audit chain (~/.quiver/sync_audit.json).\n`));
@@ -160,14 +160,9 @@ export async function runCleanupLeaks(rl?: import("readline").Interface): Promis
 
 function picolorempty(): string { return ""; }
 
-async function askYesNo(rl: import("readline").Interface | undefined, prompt: string): Promise<boolean> {
-  if (!rl) {
-    // Non-interactive: default to safe (no deletion) unless --json/CI sets a flag.
-    return false;
-  }
-  return new Promise((resolve) => {
-    rl.question(prompt, (ans: string) => {
-      resolve(/^y(es)?$/i.test(ans.trim()));
-    });
-  });
+async function askYesNo(_rl: import("readline").Interface | undefined, prompt: string): Promise<boolean> {
+  // Use the shared prompt utility for consistent input experience.
+  const { askQuestionRaw } = await import("./utils/prompt.js");
+  const ans = await askQuestionRaw(prompt);
+  return /^y(es)?$/i.test(ans.trim());
 }

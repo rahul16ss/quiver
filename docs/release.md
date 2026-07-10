@@ -34,7 +34,7 @@ Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
 
 1. Update version in `package.json`
 2. Update session schema version if needed (`src/session/schema.ts`)
-3. Run acceptance contract: `npm test` (must be 118/118 green — asserts the SPEC + WIRE-* integration)
+3. Run acceptance contract: `npm test` (must be 266/266 green — asserts the SPEC + WIRE-* integration)
 4. TypeScript compilation check: `npx tsc --noEmit`
 6. Update `docs/` if architecture changed
 7. Build/package Electron app: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)

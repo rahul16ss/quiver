@@ -40,11 +40,6 @@ export const tool: Tool = {
       return `Question asked but cannot wait for answer in non-interactive mode. Question: ${question}. Choices: ${choices?.join(", ") || "N/A"}. Please re-run in interactive mode or provide the answer in your prompt.`;
     }
 
-    // Dynamic import to avoid loading readline in non-interactive contexts
-    const readline = await import("readline");
-    const { Agent } = await import("../agent.js");
-    const activeRl = Agent.activeSessionReadline;
-
     const label = header || "Question";
 
     console.log(`\n  ┌── ${label} ──────────────────────────`);
@@ -58,83 +53,26 @@ export const tool: Tool = {
       console.log(`  │  [0] Type a custom answer`);
       console.log(`  └──────────────────────────────────────`);
 
-      if (activeRl) {
-        return new Promise((resolve) => {
-          activeRl.question(`  > `, (answer) => {
-            const trimmed = answer.trim();
-            const choiceIdx = parseInt(trimmed, 10);
-            if (
-              !isNaN(choiceIdx) &&
-              choiceIdx >= 1 &&
-              choiceIdx <= choices.length
-            ) {
-              resolve(`User selected: ${choices[choiceIdx - 1]}`);
-            } else if (trimmed) {
-              resolve(`User answered: ${trimmed}`);
-            } else {
-              resolve("User did not provide an answer.");
-            }
-          });
-        });
+      const { askQuestionRaw } = await import("../utils/prompt.js");
+      const answer = await askQuestionRaw(`  > `);
+      const trimmed = answer.trim();
+      const choiceIdx = parseInt(trimmed, 10);
+      if (!isNaN(choiceIdx) && choiceIdx >= 1 && choiceIdx <= choices.length) {
+        return `User selected: ${choices[choiceIdx - 1]}`;
+      } else if (trimmed) {
+        return `User answered: ${trimmed}`;
+      } else {
+        return "User did not provide an answer.";
       }
-
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-
-      return new Promise((resolve) => {
-        rl.question(`  > `, (answer) => {
-          rl.removeAllListeners();
-          process.stdin.resume();
-          const trimmed = answer.trim();
-          const choiceIdx = parseInt(trimmed, 10);
-          if (
-            !isNaN(choiceIdx) &&
-            choiceIdx >= 1 &&
-            choiceIdx <= choices.length
-          ) {
-            resolve(`User selected: ${choices[choiceIdx - 1]}`);
-          } else if (trimmed) {
-            resolve(`User answered: ${trimmed}`);
-          } else {
-            resolve("User did not provide an answer.");
-          }
-        });
-      });
     } else {
       console.log(`  └──────────────────────────────────────`);
 
-      if (activeRl) {
-        return new Promise((resolve) => {
-          activeRl.question(`  > `, (answer) => {
-            const trimmed = answer.trim();
-            resolve(
-              trimmed
-                ? `User answered: ${trimmed}`
-                : "User did not provide an answer.",
-            );
-          });
-        });
-      }
-
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
-
-      return new Promise((resolve) => {
-        rl.question(`  > `, (answer) => {
-          rl.removeAllListeners();
-          process.stdin.resume();
-          const trimmed = answer.trim();
-          resolve(
-            trimmed
-              ? `User answered: ${trimmed}`
-              : "User did not provide an answer.",
-          );
-        });
-      });
+      const { askQuestionRaw } = await import("../utils/prompt.js");
+      const answer = await askQuestionRaw(`  > `);
+      const trimmed = answer.trim();
+      return trimmed
+        ? `User answered: ${trimmed}`
+        : "User did not provide an answer.";
     }
   },
 };

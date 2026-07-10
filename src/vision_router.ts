@@ -365,7 +365,7 @@ export async function encodeImageAsDataURL(
     if (stat.size > MAX_IMAGE_SIZE) {
       console.error(
         picocolors.yellow(
-          `   ⚠️  Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
+          `     Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
         ),
       );
       return null;
@@ -375,7 +375,7 @@ export async function encodeImageAsDataURL(
     if (!ext) {
       console.error(
         picocolors.yellow(
-          `   ⚠️  Not a valid image file (magic bytes mismatch): ${resolved}`,
+          `     Not a valid image file (magic bytes mismatch): ${resolved}`,
         ),
       );
       return null;

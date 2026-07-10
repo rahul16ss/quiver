@@ -1,8 +1,7 @@
 /**
  * Mid-Run Intervention Controller
  *
- * Lets the user steer the agent *while it is running* — the capability Codex
- * CLI and Claude Code have that Quiver previously lacked. Once `agent.prompt()`
+ * Lets the user steer the agent *while it is running*. Once `agent.prompt()`
  * is awaiting the model/tool loop, the CLI keeps stdin in raw mode and listens
  * for an interrupt key (Escape). The user types a steering message; it lands
  * as a synthetic user message at the next loop boundary (between turns), so

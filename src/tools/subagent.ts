@@ -292,7 +292,7 @@ export const tool: Tool = {
       ];
 
       if (result.error) {
-        summary.push("", `⚠ Error: ${result.error}`);
+        summary.push("", `Error: ${result.error}`);
       }
 
       return summary.join("\n");

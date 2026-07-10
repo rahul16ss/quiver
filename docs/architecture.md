@@ -19,14 +19,13 @@ quiver/
 │   ├── cli.ts                # CLI entry point, slash commands
 │   ├── config.ts             # Configuration loading (.env + global config)
 │   ├── context_manager.ts    # LLM summarization, context offloading, compaction
-│   ├── context_manifest.ts   # HUD display before model calls
 │   ├── lifecycle.ts          # Lifecycle hooks (beforeAgent, beforeModel, etc.)
 │   ├── paths.ts              # Filesystem path resolution (~/.quiver/projects/)
 │   ├── registry.ts           # Tool registry, dynamic loading
 │   ├── state.ts              # Core memory load/save, agent file export
 │   ├── session_logger.ts     # Session logging with secret redaction
 │   ├── vision_router.ts      # Vision fallback routing for multimodal models
-│   ├── tool_selector.ts      # LLM-powered tool selection
+│   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
 │   ├── adapters/             # Harness adapter contract (Model-Harness-Fit)
 │   ├── providers/             # Model provider abstraction (transport layer)
 │   ├── security/              # Path policy, command classification, secrets
@@ -36,7 +35,7 @@ quiver/
 │   ├── context/               # Token budgeting
 │   ├── prompt/                # Deterministic prompt assembly
 │   ├── fs/                    # Atomic writes with rollback
-│   ├── subagents/             # Parallel subagent pool, sandbox, types
+│   ├── subagents/             # Maker-checker, targeted check filter, scratchpad helpers
 │   └── tools/                 # All tool implementations + sandbox
 ├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
@@ -49,7 +48,7 @@ quiver/
 ```
 User Input
   → Context Manager (load memory, skills, project context)
-  → Tool Selector (select relevant tools via LLM)
+  → Tool Definitions (sent to the model; the model selects via tool_choice: auto)
   → Prompt Assembler (deterministic 9-section assembly)
   → Token Budget (check 85% threshold, block if exceeded)
   → Lifecycle Hooks (beforeModel)
