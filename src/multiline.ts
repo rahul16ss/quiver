@@ -487,8 +487,49 @@ async function editLine(
     stdout.write("\x1b[J"); // clear from cursor to end of screen
 
     const lines = buffer.split("\n");
+
+    // Cursor line/col — computed up front so we can center the render window
+    // on the cursor when the buffer is large (huge paste).
+    const before = buffer.slice(0, cursor);
+    const beforeLines = before.split("\n");
+    const cLine = beforeLines.length - 1;
+    const cColText = beforeLines[beforeLines.length - 1];
+    const colInLine =
+      (cLine === 0 ? promptWidth : contWidth) + strWidth(cColText);
+
+    // ── Windowing (huge-paste UX) ────────────────────────────────────────
+    // Drawing the whole buffer on every keystroke floods the terminal on a
+    // big paste and makes editing O(buffer) — every key re-writes thousands
+    // of lines and the cursor-row math loops over all of them. Instead, when
+    // the buffer exceeds a line threshold, render only a window of lines
+    // around the cursor with dim ↑/↓ hidden-line summaries. The FULL buffer
+    // is still submitted on Enter — only the display is collapsed. The window
+    // always contains the cursor line (winStart ≤ cLine < winEnd), so cursor
+    // math stays correct and local.
+    const MAX_RENDER_LINES = 24;
+    const HALF_WIN = 9;
+    const collapsed = lines.length > MAX_RENDER_LINES;
+    let winStart = 0;
+    let winEnd = lines.length;
+    if (collapsed) {
+      winStart = Math.max(0, cLine - HALF_WIN);
+      winEnd = Math.min(lines.length, cLine + HALF_WIN + 1);
+    }
+
     let inputRows = 0;
-    for (let li = 0; li < lines.length; li++) {
+    let headerRows = 0;
+    let footerRows = 0;
+    let footerText = ""; // color-stripped footer text, for the phantom-row check
+
+    if (collapsed && winStart > 0) {
+      const above = winStart;
+      const hdr = `  ↑ ${above} line${above > 1 ? "s" : ""} hidden · ${lines.length} lines / ${buffer.length} chars total · full text sends on Enter`;
+      stdout.write(cGray(hdr) + "\n");
+      headerRows = rowsForLine(0, hdr);
+      inputRows += headerRows;
+    }
+
+    for (let li = winStart; li < winEnd; li++) {
       const prefix = li === 0 ? promptStr : contStr;
       const text = lines[li];
       // Empty first line: draw the friendly placeholder hint (visual only —
@@ -499,7 +540,16 @@ async function editLine(
         stdout.write(prefix + text);
       }
       inputRows += rowsForLine(li === 0 ? promptWidth : contWidth, text);
-      if (li < lines.length - 1) stdout.write("\n");
+      if (li < winEnd - 1) stdout.write("\n");
+    }
+
+    if (collapsed && winEnd < lines.length) {
+      const below = lines.length - winEnd;
+      const ftr = `  ↓ ${below} line${below > 1 ? "s" : ""} hidden`;
+      stdout.write("\n" + cGray(ftr));
+      footerText = ftr;
+      footerRows = rowsForLine(0, ftr);
+      inputRows += footerRows;
     }
 
     // ── Slash-command popup menu (below the input) ──
@@ -557,26 +607,24 @@ async function editLine(
       menuRows++;
       lastDrawnW = strWidth(footer);
     } else {
-      // No menu: the last drawn line is the last input line.
-      const lastLine = lines[lines.length - 1];
-      const lastPrefixW = lines.length - 1 === 0 ? promptWidth : contWidth;
-      lastDrawnW = lastPrefixW + strWidth(lastLine);
+      // No menu: the last drawn line is the collapsed footer (if any), else
+      // the last visible input line.
+      if (footerRows > 0) {
+        lastDrawnW = strWidth(footerText);
+      } else {
+        const lastLi = winEnd - 1;
+        const lastLine = lines[lastLi];
+        const lastPrefixW = lastLi === 0 ? promptWidth : contWidth;
+        lastDrawnW = lastPrefixW + strWidth(lastLine);
+      }
     }
 
-    // Compute the cursor's terminal row/col relative to prompt start.
-    const before = buffer.slice(0, cursor);
-    const beforeLines = before.split("\n");
-    const cLine = beforeLines.length - 1;
-    const cColText = beforeLines[beforeLines.length - 1];
-    const colInLine =
-      (cLine === 0 ? promptWidth : contWidth) + strWidth(cColText);
-
-    let crow = 0;
-    for (let li = 0; li < cLine; li++) {
-      crow += rowsForLine(
-        li === 0 ? promptWidth : contWidth,
-        lines[li],
-      );
+    // Cursor row/col relative to prompt start — O(window), with the header
+    // row offset included so the cursor lands on the right visible line even
+    // when content above is collapsed.
+    let crow = headerRows;
+    for (let li = winStart; li < cLine; li++) {
+      crow += rowsForLine(li === 0 ? promptWidth : contWidth, lines[li]);
     }
     crow += Math.floor(colInLine / c);
     const ccol = colInLine % c;
@@ -586,14 +634,6 @@ async function editLine(
     // to the cursor row and right to the cursor col. The menu lives below the
     // cursor, so it never affects crow/ccol.
     const drawnRows = inputRows + menuRows;
-    // The menu rows + footer are each written with a trailing "\n", so when the
-    // menu is open the cursor ends on a fresh row BELOW the content (row
-    // drawnRows). Without the menu, the last write is the input line itself
-    // (no trailing "\n"), so the cursor is at the end of that line — row
-    // drawnRows-1, or drawnRows if it exactly fills the terminal width (the
-    // cursor then wraps onto a fresh phantom row). Under-counting this up-move
-    // leaves the previous render's top line uncleared and the input drifts
-    // down a row every keystroke.
     let endRow: number;
     if (menu.length > 0) {
       endRow = drawnRows;

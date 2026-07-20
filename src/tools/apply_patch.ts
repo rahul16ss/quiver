@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { atomicWrite } from "../fs/atomic_write.js";
+import { isScratchModeActive } from "../security/scratch_area.js";
 
 /**
  * ApplyPatch — applies a unified diff patch to files.
@@ -157,7 +158,17 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
   }
 
   // File modification
-  const content = await fs.readFile(resolvedPath, "utf8");
+  // US-17.14: In scratch mode, read from the real file but write to scratch.
+  let readPath = resolvedPath;
+  if (isScratchModeActive() && patch.oldPath) {
+    const realAbs = path.resolve(patch.oldPath);
+    if (await fs.stat(resolvedPath).then(() => true).catch(() => false)) {
+      readPath = resolvedPath; // scratch copy exists — continue editing
+    } else {
+      readPath = realAbs; // read from real file
+    }
+  }
+  const content = await fs.readFile(readPath, "utf8");
   const oldLines = content.split("\n");
   const newLines: string[] = [];
   let oldIdx = 0;

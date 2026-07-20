@@ -22,6 +22,9 @@ let agentRunning = false;
 let assistantBubble = null;       // current streaming assistant message element
 let pendingApproval = null;       // the approval event awaiting a decision
 let pendingApprovalAll = false;
+// True between a live send and the corresponding done/error event. Used to
+// suppress consent-gate overlays that the daemon replays after a restart.
+let liveRunActive = false;
 let attachments = [];   // "allow all similar" requested
 
 // ─── element cache ────────────────────────────────────────────────────
@@ -225,18 +228,28 @@ async function loadMemoryList() {
     count.textContent = files.length ? `· ${files.length}` : "";
     list.innerHTML = "";
     if (!files.length) {
-      list.innerHTML = '<div class="ctx-value muted">No memory files yet</div>';
+      list.innerHTML = '<div class="ctx-value muted">No memory files</div>';
       return;
     }
     for (const f of files) {
       const item = document.createElement("div");
       item.className = "ctx-item";
       item.title = f.name;
+      // S2 / SPEC §6: exclude-before-run — veto button on each memory item
+      const vetoBtn = document.createElement("button");
+      vetoBtn.className = "ctx-veto-btn";
+      vetoBtn.title = "Exclude from next run";
+      vetoBtn.textContent = "×";
+      vetoBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        excludeFromRun(f.name, item);
+      });
       item.innerHTML =
         escapeHtml(f.name) +
         '<span class="ctx-sub"> · ' +
         Math.max(1, (f.content || "").split("\n").length) +
         " lines</span>";
+      item.prepend(vetoBtn);
       item.addEventListener("click", () => openMemoryEditor(f.name, f.content));
       list.appendChild(item);
     }
@@ -461,6 +474,7 @@ function ensureDocumentCard(filePath) {
     '<button type="button" class="ghost-btn doc-open">Open</button>' +
     '<button type="button" class="ghost-btn doc-reveal">Show in Folder</button>' +
     '<button type="button" class="ghost-btn doc-preview">Preview</button>' +
+    '<button type="button" class="ghost-btn doc-context">Context</button>' +
     "</div></div>";
   card.querySelector(".doc-open").addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -475,6 +489,10 @@ function ensureDocumentCard(filePath) {
   card.querySelector(".doc-preview").addEventListener("click", (e) => {
     e.stopPropagation();
     openPreview(filePath, name);
+  });
+  card.querySelector(".doc-context").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openDeliverableContext(filePath);
   });
   card.addEventListener("click", () => openPreview(filePath, name));
   chatArea.appendChild(card);
@@ -561,12 +579,36 @@ function handleAgentEvent(ev) {
       if (ev.data?.model) setModel(ev.data.model);
       if (ev.data?.tokens) updateTokenBar(ev.data.tokens);
       renderLoadedSkills(ev.data);
+      // The consent gate is now driven by the dedicated `consent_gate`
+      // event (below) so it can actually block. The manifest just feeds the
+      // context rail.
       // Don't re-announce an identical context on consecutive turns (P1-10).
       const entry = `Context loaded: ${ev.data?.memory || "—"} memory · ${ev.data?.skills || "—"} skills · ${ev.data?.tools || "—"} tools`;
       if (entry !== lastContextEntryText) {
         addActivity(entry, "tool");
         lastContextEntryText = entry;
       }
+      break;
+    }
+    case "consent_gate": {
+      // SPEC §6: the agent emits this before the model call and waits for a
+      // decision. Only show the overlay for a LIVE run — daemon replay after
+      // a window restart would otherwise re-prompt for an already-completed
+      // turn.
+      if (liveRunActive) showConsentGate(ev.data);
+      break;
+    }
+    case "consent_declined": {
+      liveRunActive = false;
+      setWorking(false);
+      addActivity("Consent declined — turn aborted", "warn");
+      break;
+    }
+    case "consent_exclude": {
+      liveRunActive = false;
+      setWorking(false);
+      addActivity("Routed back to the context rail — exclude items, then re-run", "warn");
+      focusContextRail();
       break;
     }
     case "token": {
@@ -577,6 +619,7 @@ function handleAgentEvent(ev) {
     case "tool_call": {
       const name = ev.data?.toolName || "tool";
       const hint = summarizeArgs(ev.data?.toolArgs);
+      setCurrentStatus(`${plainToolName(name)}${hint ? " — " + hint : ""}…`);
       addActivity(`Quiver wants to: ${plainToolName(name)}${hint ? " — " + hint : ""}`, "tool");
       setWorking(true);
       maybeDraftCard(name, ev.data?.toolArgs);
@@ -585,11 +628,25 @@ function handleAgentEvent(ev) {
     case "tool_result": {
       const name = ev.data?.toolName || "tool";
       const args = ev.data?.toolArgs || {};
-      const ok = !/^error/i.test(String(ev.data?.toolResult || ""));
+      const resultStr = String(ev.data?.toolResult || "");
+      const ok = !/^error/i.test(resultStr);
       const hint = summarizeArgs(args);
+      setCurrentStatus("");
       addActivity(`${plainToolName(name)}${hint ? " — " + hint : ""} ${ok ? "done" : "failed"}`, ok ? "ok" : "err");
       if (name === "office_doc") {
         handleOfficeDocResult(args, ok);
+      }
+      // S8/S9: If evidence tool recorded claims, render lineage chips
+      if (name === "evidence" && ok) {
+        try {
+          const parsed = JSON.parse(resultStr);
+          if (parsed?.claims && parsed?.docPath) {
+            renderLineageChipsForDocument(parsed.docPath, parsed.claims, parsed.sources);
+          }
+          if (parsed?.runRecord && parsed?.docPath) {
+            recordDeliverableContext(parsed.docPath, parsed);
+          }
+        } catch {}
       }
       break;
     }
@@ -602,7 +659,9 @@ function handleAgentEvent(ev) {
       break;
     }
     case "done": {
+      liveRunActive = false;
       setWorking(false);
+      setCurrentStatus("");
       statusDot.className = "status-dot ok";
       addActivity("Done", "ok");
       refreshReviewCount();
@@ -611,6 +670,7 @@ function handleAgentEvent(ev) {
       break;
     }
     case "error": {
+      liveRunActive = false;
       setWorking(false);
       statusDot.className = "status-dot error";
       addActivity("Error: " + (ev.data?.error || ""), "err");
@@ -916,6 +976,7 @@ async function sendPrompt() {
   renderAttachments();
   autoSize();
   await api.sendToAgent(message);
+  liveRunActive = true;
   setWorking(true);
 }
 function wireKeyboard() {
@@ -1529,7 +1590,452 @@ function renderInlineMarkdown(text) {
   return out;
 }
 
+// ─── S2 / SPEC §6: Exclude-before-run ───────────────────────────────────
+// The context rail is a CONTROL, not just a display. The user can exclude
+// a memory file from the next run with one click. The exclusion is recorded
+// and shown in the consent gate summary.
+const excludedFromRun = new Set(); // memory file names excluded from next run
+
+function excludeFromRun(memoryName, itemEl) {
+  if (excludedFromRun.has(memoryName)) {
+    // Un-exclude
+    excludedFromRun.delete(memoryName);
+    itemEl.classList.remove("excluded");
+    addActivity(`Re-included memory: ${memoryName}`, "ok");
+  } else {
+    excludedFromRun.add(memoryName);
+    itemEl.classList.add("excluded");
+    addActivity(`Excluded from next run: ${memoryName}`, "warn");
+  }
+  // Record the exclusion via IPC so the agent loop knows
+  try { api.excludeFromRun?.(memoryName); } catch {}
+}
+
+// ─── S5: Current status line ─────────────────────────────────────────────
+// A single glanceable line above the activity feed showing what Quiver is
+// doing right now ("Reading RevenueBuild sheet…"). Never a stack trace.
+function setCurrentStatus(text) {
+  const el = $("currentStatus");
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
+}
+
+// ─── S8/S9 / SPEC §8.1: Lineage chips ────────────────────────────────────
+// Drafted figures render as clickable lineage chips in the GUI. Clicking a
+// chip opens the verification rail showing the ACTUAL source (SPEC §8.3):
+// an Excel cell with its formula/value, a filing excerpt with the surrounding
+// paragraph, or a web page — not a placeholder.
+const lineageClaims = new Map(); // claimId → claim data
+const documentSources = new Map(); // filePath → Map(source_id → source record)
+const claimToDocument = new Map(); // claimId → filePath
+
+function renderLineageChip(claim) {
+  const chip = document.createElement("span");
+  chip.className = "lineage-chip";
+  chip.dataset.claimId = claim.claim_id || "";
+  chip.dataset.sourceIds = (claim.source_ids || []).join(",");
+  chip.dataset.reviewStatus = claim.review_status || "unverified";
+  chip.title = `Source: ${(claim.source_ids || []).join(", ") || "unsourced"}`;
+  const icon = claim.review_status === "verified" ? "✓" :
+               claim.review_status === "flagged" ? "⚑" :
+               claim.review_status === "needs_analyst" ? "?" : "·";
+  chip.innerHTML = `<span class="lineage-chip-icon">${icon}</span><span class="lineage-chip-text">${escapeHtml(claim.claim_text || claim.rendered_text || "")}</span>`;
+  chip.addEventListener("click", () => openVerificationRail(claim));
+  return chip;
+}
+
+function renderLineageChipsForDocument(filePath, claims, sources) {
+  const card = documentCards.get(filePath);
+  if (!card) return;
+  // Register the document's sources so the verification rail can render the
+  // actual provenance (file / sheet / cell / url / excerpt) per SPEC §8.3.
+  if (Array.isArray(sources)) {
+    const map = new Map();
+    for (const s of sources) map.set(s.source_id, s);
+    documentSources.set(filePath, map);
+  }
+  let chipRow = card.querySelector(".lineage-chips-row");
+  if (!chipRow) {
+    chipRow = document.createElement("div");
+    chipRow.className = "lineage-chips-row";
+    card.querySelector(".draft-meta").appendChild(chipRow);
+  }
+  chipRow.innerHTML = "";
+  for (const claim of claims) {
+    lineageClaims.set(claim.claim_id, claim);
+    claimToDocument.set(claim.claim_id, filePath);
+    chipRow.appendChild(renderLineageChip(claim));
+  }
+}
+
+// ─── S9 / SPEC §8.3: Verification rail ───────────────────────────────────
+// Clicking a figure/lineage chip opens a right-hand verification panel
+// showing the source IN PLACE: an Excel cell rendered with its formula and
+// value, a filing excerpt with the surrounding paragraph, or a web page.
+let currentVerificationClaim = null;
+let currentReviewDocument = null; // filePath of the document being reviewed
+
+function renderSourceInRail(sid, source) {
+  const src = document.createElement("div");
+  src.className = "source-panel";
+  if (!source) {
+    src.innerHTML = `<div class="ap-label">Source: ${escapeHtml(sid)}</div>` +
+      `<div class="ap-value muted">Source details not available.</div>`;
+    return src;
+  }
+  const type = source.source_type || "other";
+  const loc = source.location || {};
+  let body = "";
+  if (type === "excel_model" || loc.sheet || loc.cell) {
+    // Excel cell: render with its file, sheet, cell, and extracted value.
+    const cellRef = [loc.sheet, loc.cell].filter(Boolean).join("!") || "—";
+    const file = source.file || "—";
+    const value = source.extracted_value || "";
+    body =
+      `<div class="ap-row"><span class="ap-label">Excel cell</span><span class="ap-value">${escapeHtml(cellRef)}</span></div>` +
+      `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(file)}</span></div>` +
+      (value ? `<div class="ap-row"><span class="ap-label">Cell value</span><span class="ap-value code">${escapeHtml(value)}</span></div>` : "") +
+      (loc.description ? `<div class="ap-row"><span class="ap-label">Formula / notes</span><span class="ap-value code">${escapeHtml(loc.description)}</span></div>` : "") +
+      `<div class="ctx-hint">Dependents are read back from the model via officecli; the cited value must match the cell's current value.</div>`;
+  } else if (type === "filing" || type === "transcript" || type === "internal_note" || type === "research_report" || type === "news") {
+    const file = source.file || "";
+    const where = [loc.section, loc.page ? `p.${loc.page}` : null].filter(Boolean).join(" · ");
+    const excerpt = source.excerpt || "";
+    body =
+      (file ? `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(file)}</span></div>` : "") +
+      (where ? `<div class="ap-row"><span class="ap-label">Location</span><span class="ap-value">${escapeHtml(where)}</span></div>` : "") +
+      (excerpt ? `<div class="ap-excerpt">${escapeHtml(excerpt)}</div>` : `<div class="ap-value muted">No excerpt recorded.</div>`);
+  } else if (type === "web" || loc.url) {
+    const url = loc.url || "";
+    body =
+      `<div class="ap-row"><span class="ap-label">Web source</span><span class="ap-value">${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>` : "—"}</span></div>` +
+      (source.excerpt ? `<div class="ap-excerpt">${escapeHtml(source.excerpt)}</div>` : "");
+  } else {
+    body =
+      `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(source.file || "—")}</span></div>` +
+      (source.excerpt ? `<div class="ap-excerpt">${escapeHtml(source.excerpt)}</div>` : "");
+  }
+  src.innerHTML =
+    `<div class="ap-label">${escapeHtml(source.title || sid)} <span class="muted">(${escapeHtml(type)})</span></div>` +
+    body;
+  return src;
+}
+
+function openVerificationRail(claim) {
+  currentVerificationClaim = claim;
+  currentReviewDocument = claimToDocument.get(claim.claim_id) || null;
+  $("verificationRailTitle").textContent = claim.claim_text || claim.rendered_text || "Source";
+  const body = $("verificationRailBody");
+  const sourceIds = claim.source_ids || [];
+  if (!sourceIds.length) {
+    body.innerHTML = '<div class="ctx-value muted">No sources recorded for this figure — this is an unsourced claim.</div>';
+  } else {
+    body.innerHTML = "";
+    const sources = (currentReviewDocument && documentSources.get(currentReviewDocument)) || new Map();
+    for (const sid of sourceIds) {
+      body.appendChild(renderSourceInRail(sid, sources.get(sid)));
+    }
+  }
+  // Show review buttons based on current status
+  const status = claim.review_status || "unverified";
+  $("markVerifiedBtn").classList.toggle("active", status === "verified");
+  $("markFlaggedBtn").classList.toggle("active", status === "flagged");
+  $("markNeedsAnalystBtn").classList.toggle("active", status === "needs_analyst");
+  // Refresh the final/override row for this document
+  refreshFinalRow();
+  showOverlay("verificationRail");
+}
+
+// ─── S10 / SPEC §8.3: Review flow ────────────────────────────────────────
+// Marcus can mark each figure verified / flagged / needs-analyst. The memo
+// cannot be marked final while flags are open; an override is possible and is
+// logged to the tamper-evident audit chain. The reviewer's checks become the
+// review record that goes with the memo.
+const documentReviewStatus = new Map(); // filePath → Map(claimId → status)
+const documentOverrideLogged = new Map(); // filePath → boolean
+const documentMarkedFinal = new Map(); // filePath → boolean
+
+function reviewStatusFor(filePath) {
+  if (!documentReviewStatus.has(filePath)) documentReviewStatus.set(filePath, new Map());
+  return documentReviewStatus.get(filePath);
+}
+
+function openFlagsFor(filePath) {
+  const statuses = reviewStatusFor(filePath);
+  let n = 0;
+  for (const s of statuses.values()) if (s === "flagged" || s === "needs_analyst") n++;
+  return n;
+}
+
+function figureStatusesFor(filePath) {
+  const statuses = reviewStatusFor(filePath);
+  return [...statuses.entries()].map(([claimId, status]) => ({ claimId, status }));
+}
+
+function markVerified() {
+  if (!currentVerificationClaim) return;
+  const cid = currentVerificationClaim.claim_id;
+  const doc = currentReviewDocument;
+  reviewStatusFor(doc).set(cid, "verified");
+  currentVerificationClaim.review_status = "verified";
+  updateLineageChipStatus(cid, "verified");
+  refreshFinalRow();
+  addActivity(`Figure verified: ${currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "ok");
+}
+
+function markFlagged() {
+  if (!currentVerificationClaim) return;
+  const cid = currentVerificationClaim.claim_id;
+  const doc = currentReviewDocument;
+  reviewStatusFor(doc).set(cid, "flagged");
+  currentVerificationClaim.review_status = "flagged";
+  updateLineageChipStatus(cid, "flagged");
+  refreshFinalRow();
+  addActivity(`Figure flagged: ${currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "warn");
+}
+
+function markNeedsAnalyst() {
+  if (!currentVerificationClaim) return;
+  const cid = currentVerificationClaim.claim_id;
+  const doc = currentReviewDocument;
+  reviewStatusFor(doc).set(cid, "needs_analyst");
+  currentVerificationClaim.review_status = "needs_analyst";
+  updateLineageChipStatus(cid, "needs_analyst");
+  refreshFinalRow();
+  addActivity(`Figure needs analyst: ${currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "warn");
+}
+
+function updateLineageChipStatus(claimId, status) {
+  const chip = document.querySelector(`.lineage-chip[data-claim-id="${claimId}"]`);
+  if (!chip) return;
+  chip.dataset.reviewStatus = status;
+  const icon = status === "verified" ? "✓" : status === "flagged" ? "⚑" : "?";
+  const iconEl = chip.querySelector(".lineage-chip-icon");
+  if (iconEl) iconEl.textContent = icon;
+}
+
+// Refresh the Mark-final / Override row in the verification rail to reflect
+// the current document's open-flag state (SPEC §8.3 block-final).
+function refreshFinalRow() {
+  const doc = currentReviewDocument;
+  const openFlags = doc ? openFlagsFor(doc) : 0;
+  const overridden = doc ? documentOverrideLogged.get(doc) === true : false;
+  const finalBtn = $("markFinalBtn");
+  const overrideBtn = $("overrideBtn");
+  if (!finalBtn || !overrideBtn) return;
+  const blocked = openFlags > 0 && !overridden;
+  finalBtn.classList.toggle("disabled", blocked);
+  finalBtn.title = blocked ? "Resolve open flags first, or override (logged)" : "Mark this document final";
+  overrideBtn.hidden = openFlags === 0 || overridden;
+}
+
+// Mark the current document final. Blocked while open flags exist and the
+// reviewer has not overridden. The decision + the reviewer's per-figure
+// checks are logged to the tamper-evident audit chain via IPC.
+function markFinalForCurrentDocument() {
+  const doc = currentReviewDocument;
+  if (!doc) { addActivity("Open a figure first to review this document.", "warn"); return; }
+  const openFlags = openFlagsFor(doc);
+  const overridden = documentOverrideLogged.get(doc) === true;
+  if (openFlags > 0 && !overridden) {
+    addActivity(`Cannot mark final — ${openFlags} open flag(s). Resolve them, or override (the override is logged).`, "err");
+    refreshFinalRow();
+    return false;
+  }
+  api.reviewMarkFinal(doc, openFlags, figureStatusesFor(doc)).then((res) => {
+    documentMarkedFinal.set(doc, true);
+    addActivity(overridden ? "Document marked final with override — open flags explicitly overridden (logged)" : "Document marked final — all figures verified (logged)", overridden ? "warn" : "ok");
+    markCardFinal(doc);
+  }).catch(() => addActivity("Could not log the final decision.", "err"));
+  return true;
+}
+
+function overrideFinalForCurrentDocument() {
+  const doc = currentReviewDocument;
+  if (!doc) return;
+  const openFlags = openFlagsFor(doc);
+  api.reviewOverride(doc, openFlags, figureStatusesFor(doc)).then((res) => {
+    documentOverrideLogged.set(doc, true);
+    addActivity("Override logged — open flags explicitly overridden by reviewer (audit chain).", "warn");
+    refreshFinalRow();
+    // Mark final now that the override is logged.
+    markFinalForCurrentDocument();
+  }).catch(() => addActivity("Could not log the override.", "err"));
+}
+
+function markCardFinal(filePath) {
+  const card = documentCards.get(filePath);
+  if (!card) return;
+  card.classList.add("doc-final");
+  const meta = card.querySelector(".draft-meta");
+  if (meta && !meta.querySelector(".doc-final-badge")) {
+    const badge = document.createElement("span");
+    badge.className = "doc-final-badge";
+    badge.textContent = "✓ Marked final";
+    meta.appendChild(badge);
+  }
+}
+
+// ─── S11 / SPEC §6: Deliverable context view ─────────────────────────────
+// For each deliverable, a reviewer can see what informed THIS document —
+// files, sources, excluded material, where prompts went.
+const deliverableContextRecords = new Map(); // filePath → run record data
+
+function recordDeliverableContext(filePath, contextData) {
+  deliverableContextRecords.set(filePath, contextData);
+}
+
+function openDeliverableContext(filePath) {
+  const record = deliverableContextRecords.get(filePath);
+  const title = $("deliverableContextTitle");
+  const body = $("deliverableContextBody");
+  title.textContent = `Context used for ${filePath.split("/").pop()}`;
+  if (!record) {
+    body.innerHTML = '<div class="ctx-value muted">No context record available for this document.</div>';
+  } else {
+    body.innerHTML = "";
+    // Show input files
+    if (record.inputs?.length) {
+      const section = document.createElement("div");
+      section.className = "context-used-section";
+      section.innerHTML = "<h4>Input files</h4>";
+      for (const inp of record.inputs) {
+        section.innerHTML += `<div class="ap-row"><span class="ap-label">${escapeHtml(inp.file || inp)}</span></div>`;
+      }
+      body.appendChild(section);
+    }
+    // Show sources
+    if (record.sources?.length) {
+      const section = document.createElement("div");
+      section.className = "context-used-section";
+      section.innerHTML = "<h4>Sources</h4>";
+      for (const src of record.sources) {
+        section.innerHTML += `<div class="ap-row"><span class="ap-label">${escapeHtml(src.source_id || "")}</span><span class="ap-value">${escapeHtml(src.title || src.location?.description || "")}</span></div>`;
+      }
+      body.appendChild(section);
+    }
+    // Show excluded sources
+    if (record.excludedSources?.length) {
+      const section = document.createElement("div");
+      section.className = "context-used-section";
+      section.innerHTML = "<h4>Excluded sources</h4>";
+      for (const ex of record.excludedSources) {
+        section.innerHTML += `<div class="ap-row"><span class="ap-label">${escapeHtml(ex)}</span></div>`;
+      }
+      body.appendChild(section);
+    }
+    // Show run record reference
+    if (record.runRecord) {
+      const section = document.createElement("div");
+      section.className = "context-used-section";
+      section.innerHTML = `<h4>Run record</h4><div class="ap-row"><span class="ap-value">${escapeHtml(record.runRecord)}</span></div>`;
+      body.appendChild(section);
+    }
+  }
+  showOverlay("deliverableContextOverlay");
+}
+
+// ─── S2/S4 / SPEC §6: Consent gate surface ───────────────────────────────
+// The consent gate surfaces in the desktop app before Quiver runs, showing
+// what context will enter the model call. The agent emits a `consent_gate`
+// event and WAITS for the user to approve / decline / exclude before the
+// model call — a gate, not a post-hoc log. The decision is logged to the
+// tamper-evident audit chain by the agent.
+let consentGateActive = false;
+let consentGateShown = false; // tracks whether the gate has been shown this session
+
+function showConsentGate(manifestData) {
+  const summary = $("consentGateSummary");
+  if (!summary) return;
+  // The consent_gate event carries structured data (memoryFiles array,
+  // skills array, toolNames array); the legacy context_manifest carried
+  // pre-formatted strings. Handle both.
+  const model = manifestData?.model || "—";
+  const memRaw = manifestData?.memoryFiles || manifestData?.memory || [];
+  const mem = Array.isArray(memRaw) ? (memRaw.length ? `${memRaw.length} file${memRaw.length === 1 ? "" : "s"}: ${memRaw.join(", ")}` : "none") : String(memRaw || "—");
+  const skillsRaw = manifestData?.skills || manifestData?.skillsDetail || [];
+  const skills = Array.isArray(skillsRaw) ? (skillsRaw.length ? skillsRaw.map((s) => `${s.id} v${s.version}`).join(", ") : "none") : String(skillsRaw || "—");
+  const toolsRaw = manifestData?.toolNames || [];
+  const toolCount = manifestData?.toolCount || (Array.isArray(toolsRaw) ? toolsRaw.length : manifestData?.tools || 0);
+  const tools = Array.isArray(toolsRaw) && toolsRaw.length ? `${toolCount} tools: ${toolsRaw.join(", ")}` : `${toolCount || "—"} tools`;
+  const tier = manifestData?.trustTier ? ` · tier: ${manifestData.trustTier}` : "";
+  const tokens = manifestData?.tokenEstimate ? ` · ${manifestData.tokenEstimate}` : "";
+  const excluded = excludedFromRun.size > 0
+    ? `<div class="ap-row"><span class="ap-label">Excluded from this run:</span><span class="ap-value">${escapeHtml([...excludedFromRun].join(", "))}</span></div>`
+    : "";
+  summary.innerHTML =
+    `<div class="ap-row"><span class="ap-label">Model:</span><span class="ap-value">${escapeHtml(model)}${escapeHtml(tier)}${escapeHtml(tokens)}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Memory:</span><span class="ap-value">${escapeHtml(mem)}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Skills:</span><span class="ap-value">${escapeHtml(skills)}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Tools:</span><span class="ap-value">${escapeHtml(tools)}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">This turn:</span><span class="ap-value">${escapeHtml((manifestData?.userRequestPreview || "").slice(0, 80) || "—")}</span></div>` +
+    excluded;
+  showOverlay("consentGateOverlay");
+  consentGateActive = true;
+  consentGateShown = true;
+}
+
+// Send the consent decision to the agent so it can unblock (approve) or
+// abort the turn (decline/exclude). The agent logs it to the audit chain.
+function consentApprove() {
+  closeOverlay("consentGateOverlay");
+  consentGateActive = false;
+  addActivity("Consent gate approved — Quiver is running", "ok");
+  api.consentRespond("approve");
+}
+
+function consentDecline() {
+  closeOverlay("consentGateOverlay");
+  consentGateActive = false;
+  addActivity("Consent declined — turn aborted (nothing entered the model)", "warn");
+  api.consentRespond("decline");
+}
+
+function consentExclude() {
+  closeOverlay("consentGateOverlay");
+  consentGateActive = false;
+  addActivity("Routed back to the context rail — exclude items, then re-run", "warn");
+  api.consentRespond("exclude");
+  focusContextRail();
+}
+
+// Focus the context rail so the reviewer can exclude a memory/source before
+// re-running (SPEC §6 layer E veto).
+function focusContextRail() {
+  const rail = document.querySelector(".context-rail, #contextRail, aside.context-rail");
+  if (rail) {
+    rail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    rail.classList.add("ctx-focused");
+    setTimeout(() => rail.classList.remove("ctx-focused"), 1200);
+  }
+}
+
+// ─── Wire new buttons ────────────────────────────────────────────────────
+function wireNewButtons() {
+  const mv = $("markVerifiedBtn");
+  if (mv) mv.addEventListener("click", markVerified);
+  const mf = $("markFlaggedBtn");
+  if (mf) mf.addEventListener("click", markFlagged);
+  const mn = $("markNeedsAnalystBtn");
+  if (mn) mn.addEventListener("click", markNeedsAnalyst);
+  const ca = $("consentApproveBtn");
+  if (ca) ca.addEventListener("click", consentApprove);
+  const cd = $("consentDeclineBtn");
+  if (cd) cd.addEventListener("click", consentDecline);
+  const ce = $("consentExcludeBtn");
+  if (ce) ce.addEventListener("click", consentExclude);
+  const mf2 = $("markFinalBtn");
+  if (mf2) mf2.addEventListener("click", () => markFinalForCurrentDocument());
+  const ov = $("overrideBtn");
+  if (ov) ov.addEventListener("click", () => overrideFinalForCurrentDocument());
+}
 
 // ─── go ─────────────────────────────────────────────────────────────────
 wireAgentEvents();
+wireNewButtons();
 init();

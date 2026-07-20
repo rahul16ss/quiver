@@ -8,6 +8,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { config } from "../src/config.ts";
 import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
+import { AuditChain } from "../src/audit_chain.ts";
 import * as crypto from "crypto";
 import {
   connectOrLaunch,
@@ -69,12 +70,19 @@ interface QuiverConfig {
   visionModelBaseUrl?: string;
   sessionLogEnabled?: boolean;
   sessionLogMaxChars?: number;
+  /** SPEC §6 consent gate — when true the agent blocks on pre-action approval. */
+  consentGateEnabled?: boolean;
 }
 
 // ─── Globals ─────────────────────────────────────────────────────────
 
 let mainWindow: BrowserWindow | null = null;
 let agentProcess: ChildProcess | null = null;
+
+// S2 / SPEC §6: Memory exclusion set — files the user has vetoed from the
+// context rail. Passed to the agent via QUIVER_EXCLUDED_MEMORIES env var so
+// the agent's memory loader skips them when building context.
+let excludedMemories: Set<string> = new Set();
 
 // ─── Config Persistence ───────────────────────────────────────────────
 
@@ -144,6 +152,7 @@ const DEFAULT_CONFIG: QuiverConfig = {
   memoryDir: "./memory",
   skillsDir: "./skills",
   cloudSyncPath: "",
+  consentGateEnabled: false,
 };
 
 async function loadConfig(): Promise<QuiverConfig> {
@@ -417,6 +426,10 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     QUIVER_CLOUD_SYNC_PATH: config.cloudSyncPath || "",
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
+    QUIVER_EXCLUDED_MEMORIES: [...excludedMemories].join(","),
+    // Consent gate (SPEC §6): when enabled in settings, the agent blocks on a
+    // pre-action approval before each model call.
+    QUIVER_CONSENT_GATE: config.consentGateEnabled ? "1" : "0",
     // Self-modification guard (Epic 2 §2.5): the agent's path policy refuses
     // any write into Quiver's own installation/source tree when this is set.
     QUIVER_PROTECTED_DIR: getQuiverInstallDir(),
@@ -538,6 +551,73 @@ function approveToolCall(approve: boolean, note?: string): void {
   agentProcess.stdin.write(choice + "\n");
   if (!approve) {
     agentProcess.stdin.write((note ? note : "") + "\n");
+  }
+}
+
+// ─── Review flow audit (SPEC §8.3 — override is logged) ───────────────
+// The reviewer's mark-final / override decisions are appended to a
+// tamper-evident audit chain on disk (alongside the deliverable) and a
+// per-document review record is written. This is the review record that
+// goes with the memo: it records the reviewer's checks, whether the
+// document was marked final, and any override.
+function reviewAuditPath(filePath: string): string {
+  const dir = path.dirname(filePath || "");
+  const base = (path.basename(filePath || "document") || "document").replace(/\.(docx|xlsx|pptx)$/, "");
+  return path.join(dir, `${base}_Review_Audit.json`);
+}
+function reviewRecordPath(filePath: string): string {
+  const dir = path.dirname(filePath || "");
+  const base = (path.basename(filePath || "document") || "document").replace(/\.(docx|xlsx|pptx)$/, "");
+  return path.join(dir, `${base}_Review_Record.json`);
+}
+
+async function logReviewDecision(
+  filePath: string,
+  openFlags: number,
+  action: "marked_final" | "override",
+  figureStatuses?: any,
+): Promise<{ logged: boolean; blocked: boolean; action: string }> {
+  const auditPath = reviewAuditPath(filePath);
+  const recordPath = reviewRecordPath(filePath);
+  try {
+    let chain: AuditChain;
+    try {
+      const raw = await fsSync.promises.readFile(auditPath, "utf8");
+      chain = AuditChain.deserialize(raw);
+    } catch {
+      chain = new AuditChain();
+    }
+    chain.appendEntry(
+      "approval",
+      JSON.stringify({
+        review_decision: action,
+        deliverable: filePath,
+        open_flags: openFlags,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+    await fsSync.promises.mkdir(path.dirname(auditPath), { recursive: true });
+    await fsSync.promises.writeFile(auditPath, chain.serialize(), "utf8");
+    // Write / update the per-document review record.
+    let record: any = {};
+    try {
+      record = JSON.parse(await fsSync.promises.readFile(recordPath, "utf8"));
+    } catch {
+      record = {};
+    }
+    record.deliverable = filePath;
+    record.open_flags = openFlags;
+    record.final = action === "marked_final" ? true : Boolean(record.final) || openFlags === 0;
+    if (action === "override") record.override_logged = true;
+    record.last_action = action;
+    record.updated_at = new Date().toISOString();
+    // The reviewer's per-figure checks ARE the review record that goes with
+    // the memo (SPEC §8.3).
+    if (Array.isArray(figureStatuses)) record.figure_checks = figureStatuses;
+    await fsSync.promises.writeFile(recordPath, JSON.stringify(record, null, 2), "utf8");
+    return { logged: true, blocked: false, action };
+  } catch {
+    return { logged: false, blocked: false, action };
   }
 }
 
@@ -1067,6 +1147,8 @@ function registerIpcHandlers(): void {
     } else if (section === "memory") {
       config.sessionLogEnabled = values.sessionLogEnabled !== false;
       config.sessionLogMaxChars = values.sessionLogMaxChars || 512;
+    } else if (section === "consent") {
+      config.consentGateEnabled = values.consentGateEnabled === true;
     }
     await saveConfig(config);
     return true;
@@ -1129,6 +1211,53 @@ function registerIpcHandlers(): void {
     } catch (error: any) {
       return { action: payload.action, factId: payload.factId, success: false, message: error?.message || "Failed" };
     }
+  });
+
+  // S2 / SPEC §6: Memory exclude/veto — the user can exclude memory files
+  // from the next agent run via the context rail. The exclusion set is
+  // passed to the agent process via QUIVER_EXCLUDED_MEMORIES env var.
+  ipcMain.handle("memory:exclude", async (_evt, payload: { memoryName: string }) => {
+    if (payload?.memoryName) {
+      if (excludedMemories.has(payload.memoryName)) {
+        excludedMemories.delete(payload.memoryName);
+      } else {
+        excludedMemories.add(payload.memoryName);
+      }
+    }
+    return { excluded: [...excludedMemories] };
+  });
+
+  // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ───────────
+  // The renderer sends the user's approve/decline/exclude decision; main
+  // forwards it to the agent process so the gate can unblock (approve) or
+  // abort the turn (decline/exclude). The decision is logged to the
+  // tamper-evident audit chain by the agent.
+  ipcMain.handle("consent:respond", async (_evt, payload: { decision: string }) => {
+    const decision = String(payload?.decision || "approve").toLowerCase();
+    // Reuse the approval stdin channel: the agent reads one line and maps
+    // a→approve, d→decline, e→exclude. This keeps a single stdin reader.
+    const token = decision.startsWith("d") ? "decline" : decision.startsWith("e") ? "exclude" : "approve";
+    if (agentViaDaemon && daemonConn) {
+      void sendLine(daemonConn, token).then((ok) => {
+        if (!ok) mainWindow?.webContents.send("agent:error", { message: "Agent is not running" });
+      });
+      return { sent: true };
+    }
+    if (!agentProcess || !agentProcess.stdin) return { sent: false };
+    agentProcess.stdin.write(token + "\n");
+    return { sent: true };
+  });
+
+  // ── Review flow (SPEC §8.3 — override is logged) ───────────────────
+  // The reviewer's mark-final / override decisions are appended to a
+  // tamper-evident audit chain on disk and a per-document review record is
+  // written next to the deliverable. This is the review record that goes
+  // with the memo.
+  ipcMain.handle("review:markFinal", async (_evt, payload: any) => {
+    return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "marked_final", payload?.figureStatuses);
+  });
+  ipcMain.handle("review:override", async (_evt, payload: any) => {
+    return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "override", payload?.figureStatuses);
   });
 
   // Skills

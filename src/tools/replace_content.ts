@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { atomicWrite } from "../fs/atomic_write.js";
+import { isScratchModeActive, resolveScratchPath, ensureScratchDir } from "../security/scratch_area.js";
 
 export const tool: Tool = {
   name: "replace_content",
@@ -25,7 +26,23 @@ export const tool: Tool = {
       // US-9.2: sandbox the path before any filesystem access.
       const resolved = assertToolPathAllowed(filePath, "write");
       const resolvedPath = resolved.absolutePath;
-      const content = await fs.readFile(resolvedPath, "utf8");
+
+      // US-17.14: In scratch mode, read from the real file but write to scratch.
+      // assertToolPathAllowed already redirected resolvedPath to the scratch
+      // location, so we need to read from the original real path.
+      let readPath = resolvedPath;
+      if (isScratchModeActive()) {
+        const realAbs = path.resolve(filePath);
+        // If the scratch file already exists (continuing an edit), read from it.
+        // Otherwise, read from the real file.
+        if (await fs.stat(resolvedPath).then(() => true).catch(() => false)) {
+          readPath = resolvedPath;
+        } else {
+          readPath = realAbs;
+        }
+      }
+
+      const content = await fs.readFile(readPath, "utf8");
 
       if (!content.includes(targetContent)) {
         // Provide a helpful hint: show the first 80 chars of the target

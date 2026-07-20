@@ -16,6 +16,7 @@ import * as fsSync from "fs";
 import * as path from "path";
 import { config } from "./config.js";
 import { getProjectSessionsDir, getProjectName } from "./paths.js";
+import { AuditChain, type AuditEntry } from "./audit_chain.js";
 
 import { redactSecrets } from "./security/secrets.js";
 
@@ -135,10 +136,21 @@ export class SessionLogger {
   private logPath: string;
   private logs: any[] = [];
   private dirEnsured = false;
+  // ── Tamper-evident audit chain (SPEC §11.3 / US-9.5) ──
+  // The chain is the unified trust trail. It is persisted to
+  // `<sessionId>_audit.json` alongside the session log so a reviewer can
+  // replay the build of a deliverable and verify integrity.
+  private auditChain: AuditChain;
+  private auditLogPath: string;
 
   constructor() {
     this.sessionId = `session_${Date.now()}`;
     this.logPath = path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
+    this.auditLogPath = path.join(
+      getProjectSessionsDir(),
+      `${this.sessionId}_audit.json`,
+    );
+    this.auditChain = new AuditChain();
   }
 
   /** Accumulate event in memory — no disk I/O until flush(). */
@@ -152,17 +164,143 @@ export class SessionLogger {
     });
   }
 
+  /**
+   * Log evidence/provenance for a deliverable (SPEC §16 / §11.3 / §7.5).
+   * Records what context and sources produced a draft — the reproducibility
+   * statement required by the Definition of Done.
+   *
+   * The provenance is embedded in the tamper-evident audit chain's hashed
+   * payload, and the convenience fields on the entry are derived from that
+   * payload so verifyChain() can detect after-the-fact alteration.
+   */
+  public logEvidenceProvenance(entry: {
+    deliverablePath: string;
+    sourceIds: string[];
+    sourceRefs: string[];
+    contextUsed: string;
+    evidenceRef?: string;
+  }): void {
+    const provenance = `${entry.sourceIds.length} sources → ${entry.deliverablePath}`;
+    const payload = safeStringify({
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+      provenance,
+    });
+    const auditEntry = this.auditChain.appendEntry("evidence", payload);
+    // Derive convenience fields from the (redacted) payload the chain
+    // actually hashed, so they always match under verifyChain().
+    let reflected: any = {};
+    try {
+      reflected = JSON.parse(auditEntry.action_payload);
+    } catch {
+      reflected = {};
+    }
+    auditEntry.source_ids = reflected.source_ids;
+    auditEntry.source_refs = reflected.source_refs;
+    auditEntry.context_used = reflected.context_used;
+    auditEntry.provenance = reflected.provenance;
+    auditEntry.evidence_ref = reflected.evidence_ref;
+
+    this.logEvent("evidence_provenance", {
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+    });
+  }
+
+  /**
+   * Log a consent-gate decision to the tamper-evident audit chain
+   * (SPEC §6 — "a gate, not a post-hoc log"). The approval/decline/exclude
+   * decision is recorded so a reviewer can see the user explicitly approved
+   * the context that entered the model.
+   */
+  public logConsentDecision(decision: {
+    action: "approve" | "decline" | "exclude";
+    model?: string;
+    memoryCount?: number;
+    skillsCount?: number;
+    toolCount?: number;
+  }): void {
+    const payload = safeStringify({
+      consent_decision: decision.action,
+      model: decision.model,
+      memory_count: decision.memoryCount,
+      skills_count: decision.skillsCount,
+      tool_count: decision.toolCount,
+    });
+    this.auditChain.appendEntry("approval", payload);
+    this.logEvent("consent_decision", decision);
+  }
+
+  /**
+   * Log a reviewer's document-final decision to the tamper-evident audit
+   * chain (SPEC §8.3 — "override is logged"). `marked_final` records a
+   * sign-off; `override` records that open flags were explicitly
+   * overridden by the reviewer.
+   */
+  public logReviewDecision(decision: {
+    action: "marked_final" | "override" | "figure_verified" | "figure_flagged" | "figure_needs_analyst";
+    deliverablePath: string;
+    claimId?: string;
+    openFlags?: number;
+  }): void {
+    const payload = safeStringify({
+      review_decision: decision.action,
+      deliverable: decision.deliverablePath,
+      claim_id: decision.claimId,
+      open_flags: decision.openFlags,
+    });
+    this.auditChain.appendEntry("approval", payload);
+    this.logEvent("review_decision", decision);
+  }
+
+  /** Verify the tamper-evident audit chain (SPEC §11.3). */
+  public verifyAuditChain(): boolean {
+    return this.auditChain.verifyChain();
+  }
+
+  /** Get the audit chain entries (for the evidence package / reproducibility). */
+  public getAuditEntries(): AuditEntry[] {
+    return this.auditChain.getEntries();
+  }
+
+  /** Get the audit chain log path. */
+  public getAuditLogPath(): string {
+    return this.auditLogPath;
+  }
+
   /** Write accumulated logs to disk once. Call at session end or on error. */
   public async flush(): Promise<void> {
-    if (this.logs.length === 0) return;
     try {
       if (!this.dirEnsured) {
         await fs.mkdir(path.dirname(this.logPath), { recursive: true });
         this.dirEnsured = true;
       }
+    } catch {
+      // Fail silently — logging must never crash the agent
+    }
+    // Session log (event timeline)
+    if (this.logs.length > 0) {
+      try {
+        await fs.writeFile(
+          this.logPath,
+          JSON.stringify(this.logs, null, 2),
+          "utf8",
+        );
+      } catch {
+        // Fail silently — logging must never crash the agent
+      }
+    }
+    // Tamper-evident audit chain
+    try {
       await fs.writeFile(
-        this.logPath,
-        JSON.stringify(this.logs, null, 2),
+        this.auditLogPath,
+        this.auditChain.serialize(),
         "utf8",
       );
     } catch {
@@ -172,12 +310,26 @@ export class SessionLogger {
 
   /** Synchronous flush for use in exit handlers and SIGINT/SIGTERM contexts. */
   public flushSync(): void {
-    if (this.logs.length === 0) return;
     try {
       fsSync.mkdirSync(path.dirname(this.logPath), { recursive: true });
+    } catch {
+      // Fail silently
+    }
+    if (this.logs.length > 0) {
+      try {
+        fsSync.writeFileSync(
+          this.logPath,
+          JSON.stringify(this.logs, null, 2),
+          "utf8",
+        );
+      } catch {
+        // Fail silently — logging must never crash the agent
+      }
+    }
+    try {
       fsSync.writeFileSync(
-        this.logPath,
-        JSON.stringify(this.logs, null, 2),
+        this.auditLogPath,
+        this.auditChain.serialize(),
         "utf8",
       );
     } catch {

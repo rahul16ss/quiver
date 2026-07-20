@@ -84,6 +84,36 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ["/up"],
     desc: "Check for Quiver updates",
   },
+  {
+    name: "/watchdog",
+    aliases: ["/wd"],
+    desc: "Self-health queue (show findings / clear / status)",
+  },
+  {
+    name: "/promote",
+    aliases: ["/pm"],
+    desc: "Promote scratch drafts to real files (/promote all | <path> | list)",
+  },
+  {
+    name: "/consent",
+    aliases: ["/cg"],
+    desc: "Toggle consent gate (pre-action summary before model calls)",
+  },
+  {
+    name: "/memory-history",
+    aliases: ["/mh"],
+    desc: "Show version history for a memory file (/memory-history <filename>)",
+  },
+  {
+    name: "/memory-rollback",
+    aliases: ["/mr"],
+    desc: "Restore a previous version of a memory file (/memory-rollback <filename> <version>)",
+  },
+  {
+    name: "/memory-diff",
+    aliases: ["/md"],
+    desc: "Compare two versions of a memory file (/memory-diff <filename> <v1> <v2>)",
+  },
 ];
 
 export function resolveSlashCommand(input: string): string | null {

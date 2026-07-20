@@ -45,10 +45,10 @@
         <div id="ctxFraming" class="ctx-value muted">—</div>
       </div>
 
-      <!-- §6 layer B: Memory & persona -->
+      <!-- §6 layer B: Memory & persona — exclude/veto control (S2 / SPEC §6) -->
       <div class="ctx-section">
         <div class="ctx-label">Memory <span id="ctxMemCount" class="count"></span></div>
-        <div id="ctxMemList" class="ctx-list"></div>
+        <div id="ctxMemList" class="ctx-list" data-veto-hint="Click the veto button to exclude a memory from the next run"></div>
         <div class="ctx-sub-row">
           <span class="ctx-sub">Learned facts to review:</span>
           <span id="ctxReviewCount" class="ctx-sub">—</span>
@@ -127,10 +127,10 @@
         <div class="drop-msg">Drop an image or document for Quiver to read</div>
       </div>
     </main>
-
     <!-- C. Activity — what Quiver is doing -->
     <aside id="activity-plane" aria-label="What Quiver is doing">
       <div class="plane-head">
+        <div id="currentStatus" class="current-status-line" hidden></div>
         <h2>What Quiver is doing</h2>
         <button id="activityClearBtn" class="link-btn" title="Clear the activity stream" hidden>Clear</button>
       </div>
@@ -138,6 +138,53 @@
         <div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>
       </div>
     </aside>
+  </div>
+
+  <!-- ─── Verification rail (S9 / SPEC §8.3) ─────────────────────────── -->
+  <div id="verificationRail" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3 id="verificationRailTitle">Source</h3>
+        <button class="close-btn" data-close="verificationRail">×</button>
+      </div>
+      <div id="verificationRailBody" class="preview-body"></div>
+      <div class="overlay-actions">
+        <button id="markVerifiedBtn" class="primary-btn">✓ Verified</button>
+        <button id="markFlaggedBtn" class="ghost-btn">⚑ Flag</button>
+        <button id="markNeedsAnalystBtn" class="ghost-btn">Needs analyst</button>
+      </div>
+      <div class="overlay-actions final-actions">
+        <button id="markFinalBtn" class="primary-btn">Mark document final</button>
+        <button id="overrideBtn" class="danger-btn">Override & mark final (logged)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Consent gate overlay (S2/S4 / SPEC §6) ─────────────────────── -->
+  <div id="consentGateOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3>Before Quiver runs</h3>
+        <button class="close-btn" data-close="consentGateOverlay">×</button>
+      </div>
+      <div id="consentGateSummary" class="consent-gate-summary"></div>
+      <div class="overlay-actions">
+        <button id="consentApproveBtn" class="primary-btn">Approve</button>
+        <button id="consentExcludeBtn" class="ghost-btn">Exclude something first</button>
+        <button id="consentDeclineBtn" class="danger-btn">Decline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Deliverable context view (S11 / SPEC §6) ───────────────────── -->
+  <div id="deliverableContextOverlay" class="overlay" hidden>
+    <div class="overlay-card wide">
+      <div class="overlay-head">
+        <h3 id="deliverableContextTitle">Context used for this document</h3>
+        <button class="close-btn" data-close="deliverableContextOverlay">×</button>
+      </div>
+      <div id="deliverableContextBody" class="context-used-body"></div>
+    </div>
   </div>
 
   <!-- ─── Overlays ─── -->

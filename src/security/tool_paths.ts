@@ -18,7 +18,7 @@
 
 import * as path from "path";
 import * as os from "os";
-import { realpathSync } from "fs";
+import { realpathSync, mkdirSync } from "fs";
 import {
   resolveAndAssertPathAllowed,
   createDefaultPolicy,
@@ -27,6 +27,7 @@ import {
   type ResolvedPath,
 } from "./path_policy.js";
 import { config } from "../config.js";
+import { isScratchModeActive, resolveScratchPath, ensureScratchDir } from "./scratch_area.js";
 
 const QUIVER_HOME = path.join(os.homedir(), ".quiver");
 
@@ -90,6 +91,28 @@ export function assertToolPathAllowed(
           `('${workspaceRoot}') and outside Quiver's data home ('${QUIVER_HOME}'). ` +
           `Filesystem writes are sandboxed to the project workspace.`,
       );
+    }
+
+    // ── Scratch-area semantics (US-17.14) ──
+    // When the active trust tier is "build" (buyer-facing: "Draft & research"),
+    // redirect writes to .quiver/scratch/ so the user can review and promote.
+    // This does NOT apply to:
+    //   - Files already inside .quiver/ (memory, sessions, tools)
+    //   - Files inside ~/.quiver (Quiver's data home)
+    //   - Deletes (we don't redirect deletes, only writes)
+    if (operation === "write" && isScratchModeActive() && insideWorkspace) {
+      const scratchPath = resolveScratchPath(resolved.realPath, workspaceRoot);
+      if (scratchPath) {
+        ensureScratchDir(workspaceRoot);
+        const scratchParent = path.dirname(scratchPath);
+        try { mkdirSync(scratchParent, { recursive: true }); } catch {}
+        return {
+          inputPath: filePath,
+          absolutePath: scratchPath,
+          realPath: scratchPath,
+          insideWorkspace: true,
+        };
+      }
     }
   }
 

@@ -85,7 +85,13 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Trust tiers and approval gates (per-project, persisted) | Working |
 | Model adapters (GLM, Claude) over an OpenAI-compatible interface | Working |
 | Local-only model execution | Configurable (local endpoints supported); **the default model endpoint is a cloud service** — see Data handling below |
-| Redaction rules, sensitivity-based routing | Not implemented |
+| Redaction rules, sensitivity-based routing | Framework shipped — sensitivity classification, MNPI redaction, per-tier model routing (low→cloud, mid→cloud-redacted, high→local); wired into agent loop |
+| Evidence tracking (live lineage during agent drafting) | Framework shipped — source registry, claim records, validation, Evidence.json output |
+| Scratch-area semantics (draft writes redirect to scratch, human promotes) | Shipped — `/promote` command |
+| Consent gate (pre-action summary before model calls) | Shipped — `/consent` toggle |
+| Versioned memory (snapshots, diff, rollback) | Shipped — `/memory-history`, `/memory-rollback`, `/memory-diff` |
+| Data connectors (plugin framework for external data sources) | Framework shipped — sample EDGAR connector included |
+| Render→look→fix orchestration for Office documents | Shipped — `src/document/rlf_orchestrator.ts` |
 | Desktop app (Electron: chat, context panel, document preview, approvals) | Working, unsigned build |
 
 ## Data handling
@@ -153,8 +159,9 @@ npx tsc --noEmit    # Definition of done: clean typecheck
 npm run demo:ic-memo # Flagship workflow + acceptance checks
 ```
 
-The acceptance contract (`tests/spec_acceptance_tests.ts`) asserts both spec
-behavior and that the modules are actually wired into the agent and tools.
+The acceptance contract (`tests/spec_acceptance_tests.ts`) is a single checker-owned
+file of 328 behavioral assertions. It verifies both spec compliance and that modules
+are actually wired into the agent loop and tools — not just that the code exists.
 `npm test` is the only live verdict — re-run it before trusting any status text.
 See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.
 

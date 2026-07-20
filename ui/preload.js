@@ -64,6 +64,13 @@ const ALLOWED_CHANNELS = new Set([
   "agent:stderr",
   "agent:exit",
   "agent:error",
+  // Context rail exclude/veto (S2 / SPEC §6)
+  "memory:exclude",
+  // Consent gate (SPEC §6)
+  "consent:respond",
+  // Review flow (SPEC §8.3)
+  "review:markFinal",
+  "review:override",
 ]);
 
 /**
@@ -141,6 +148,16 @@ contextBridge.exposeInMainWorld("quiver", {
   memoryReviewList: () => safeInvoke("memory:review:list"),
   memoryReviewAction: (factId, action, content) =>
     safeInvoke("memory:review:action", { factId, action, content }),
+
+  // Context rail exclude/veto (S2 / SPEC §6)
+  excludeFromRun: (memoryName) => safeInvoke("memory:exclude", { memoryName }),
+
+  // Consent gate (SPEC §6) — send the user's approve/decline/exclude decision.
+  consentRespond: (decision) => safeInvoke("consent:respond", { decision }),
+
+  // Review flow (SPEC §8.3) — mark a document final / override open flags.
+  reviewMarkFinal: (filePath, openFlags, figureStatuses) => safeInvoke("review:markFinal", { filePath, openFlags, figureStatuses }),
+  reviewOverride: (filePath, openFlags, figureStatuses) => safeInvoke("review:override", { filePath, openFlags, figureStatuses }),
 
   // Skills
   listSkills: () => safeInvoke("skills:list"),

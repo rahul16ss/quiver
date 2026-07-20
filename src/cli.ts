@@ -1367,6 +1367,216 @@ async function main() {
             continue;
           }
 
+          // ── /watchdog: drain the self-health queue ──
+          case "/watchdog": {
+            try {
+              const { watchdogStatus } = await import("./watchdog.js");
+              const sub = cleanInput.split(/\s+/)[1]?.toLowerCase();
+              const clearAfter = sub === "clear";
+              console.log(watchdogStatus({ clearAfter }));
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Watchdog command failed: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
+          // ── /promote: promote scratch drafts to real files ──
+          case "/promote": {
+            try {
+              const { listScratchFiles, promoteFile, promoteAll, clearScratch, isScratchModeActive } =
+                await import("./security/scratch_area.js");
+              const sub = cleanInput.split(/\s+/)[1]?.toLowerCase() || "list";
+
+              if (!isScratchModeActive()) {
+                console.log(
+                  picocolors.yellow(
+                    "\n  Scratch mode is not active. Set trust tier to 'build' (Draft & research) to enable.\n" +
+                    "  Use: /autonomy tier build\n",
+                  ),
+                );
+                continue;
+              }
+
+              if (sub === "list") {
+                const files = listScratchFiles();
+                if (files.length === 0) {
+                  console.log(picocolors.gray("\n  No scratch drafts pending promotion.\n"));
+                } else {
+                  console.log(picocolors.cyan("\n  Scratch drafts pending promotion:\n"));
+                  for (const f of files) {
+                    console.log(
+                      picocolors.white("    ") +
+                      picocolors.gray(f.relative) +
+                      picocolors.gray(" → ") +
+                      picocolors.green(f.real),
+                    );
+                  }
+                  console.log(
+                    picocolors.gray(
+                      `\n  ${files.length} file${files.length === 1 ? "" : "s"} pending. Use /promote all or /promote <path>.\n`,
+                    ),
+                  );
+                }
+              } else if (sub === "all") {
+                const results = promoteAll();
+                if (results.length === 0) {
+                  console.log(picocolors.gray("\n  No scratch drafts to promote.\n"));
+                } else {
+                  console.log(picocolors.green(`\n  Promoted ${results.length} file${results.length === 1 ? "" : "s"}:\n`));
+                  for (const r of results) {
+                    console.log(
+                      picocolors.white("    ") +
+                      picocolors.gray(r.scratch) +
+                      picocolors.gray(" → ") +
+                      picocolors.green(r.real),
+                    );
+                  }
+                  console.log("");
+                }
+              } else if (sub === "clear") {
+                clearScratch();
+                console.log(picocolors.gray("\n  Scratch area cleared.\n"));
+              } else {
+                // Promote a specific file
+                const targetPath = cleanInput.split(/\s+/).slice(1).join(" ");
+                try {
+                  const real = promoteFile(targetPath);
+                  console.log(
+                    picocolors.green(`\n  Promoted: ${targetPath} → ${real}\n`),
+                  );
+                } catch (e: any) {
+                  console.log(
+                    picocolors.red(`\n  Failed to promote: ${e.message}\n`),
+                  );
+                }
+              }
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Promote command failed: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
+          // ── /consent: toggle consent gate ──
+          case "/consent": {
+            try {
+              const { toggleConsentGate, isConsentGateEnabled } =
+                await import("./security/consent_gate.js");
+              const newState = toggleConsentGate();
+              if (newState) {
+                console.log(
+                  picocolors.green(
+                    "\n  ✓ Consent gate enabled. A pre-action summary will be shown before each model call.\n" +
+                    "  You'll see: system prompt version, memory, skills, tools, conversation state, inputs, and operational metadata.\n",
+                  ),
+                );
+              } else {
+                console.log(
+                  picocolors.gray(
+                    "\n  Consent gate disabled. Model calls proceed without pre-action summary.\n",
+                  ),
+                );
+              }
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Consent command failed: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
+          // ── /memory-history: show version history for a memory file ──
+          case "/memory-history": {
+            const parts = cleanInput.split(/\s+/);
+            const filename = parts[1];
+            if (!filename) {
+              console.log(
+                picocolors.gray(
+                  "\n  Usage: /memory-history <filename>\n  Example: /memory-history persona.txt\n",
+                ),
+              );
+              continue;
+            }
+            try {
+              const { formatHistoryForCLI } = await import(
+                "./memory/versioned.js"
+              );
+              const output = await formatHistoryForCLI(filename);
+              console.log(`\n${output}\n`);
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Error: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
+          // ── /memory-rollback: restore a previous version ──
+          case "/memory-rollback": {
+            const parts = cleanInput.split(/\s+/);
+            const filename = parts[1];
+            const version = parseInt(parts[2] || "", 10);
+            if (!filename || !version) {
+              console.log(
+                picocolors.gray(
+                  "\n  Usage: /memory-rollback <filename> <version>\n  Example: /memory-rollback persona.txt 3\n",
+                ),
+              );
+              continue;
+            }
+            try {
+              const { rollbackToVersion } = await import(
+                "./memory/versioned.js"
+              );
+              const result = await rollbackToVersion(filename, version);
+              if (result.success) {
+                console.log(
+                  picocolors.green(`\n  ✓ ${result.message}\n`),
+                );
+              } else {
+                console.log(
+                  picocolors.yellow(`\n  ${result.message}\n`),
+                );
+              }
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Error: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
+          // ── /memory-diff: compare two versions ──
+          case "/memory-diff": {
+            const parts = cleanInput.split(/\s+/);
+            const filename = parts[1];
+            const v1 = parseInt(parts[2] || "", 10);
+            const v2 = parseInt(parts[3] || "", 10);
+            if (!filename || !v1 || !v2) {
+              console.log(
+                picocolors.gray(
+                  "\n  Usage: /memory-diff <filename> <v1> <v2>\n  Example: /memory-diff persona.txt 1 3\n",
+                ),
+              );
+              continue;
+            }
+            try {
+              const { diffVersions } = await import(
+                "./memory/versioned.js"
+              );
+              const output = await diffVersions(filename, v1, v2);
+              console.log(`\n${output}\n`);
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Error: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
           // ── /autonomy subcommand handling ──
           case "/autonomy":
           case "/yolo": {

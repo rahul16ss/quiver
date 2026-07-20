@@ -353,6 +353,12 @@ export const config: Config = {
   // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
   // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
   visionModelApiKey: process.env.OLLAMA_API_KEY || "",
+  // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
+  // When enabled, the agent surfaces a pre-action summary and WAITS for the
+  // user to approve / decline / exclude before the model call. Off by default
+  // so legacy behaviour is unchanged. Toggled at runtime via /consent or set
+  // persistently from the desktop settings (QUIVER_CONSENT_GATE=1).
+  consentGateEnabled: process.env.QUIVER_CONSENT_GATE === "1",
 };
 
 // Apply the env-specified trust tier AFTER config is fully initialized
@@ -392,6 +398,9 @@ export interface Config {
   visionModelName: string;
   visionModelBaseUrl: string;
   visionModelApiKey: string;
+  // Consent gate (SPEC §6). When true the agent blocks on a pre-action
+  // approval before each model call.
+  consentGateEnabled: boolean;
 }
 
 export function redactSecret(value: string): string {

@@ -14,7 +14,6 @@
  *   Any manual alteration of session logs breaks the verification chain.
  */
 
-import * as crypto from "crypto";
 import {
   SessionLogger,
   sanitizeLogData,
@@ -34,112 +33,11 @@ import * as fsSync from "fs";
 import * as path from "path";
 
 // ─── Audit Chain ─────────────────────────────────────────────────────
-
-export interface AuditEntry {
-  seq: number;
-  timestamp: string;
-  action_type: "file_read" | "file_write" | "command_exec" | "tool_call" | "approval" | "session_start" | "session_end" | "sync_conflict" | "sync_cleanup";
-  action_payload: string;
-  hash: string;
-  prev_hash: string;
-}
-
-export class AuditChain {
-  private chain: AuditEntry[] = [];
-  private currentHash: string = "0".repeat(64); // Genesis hash
-
-  constructor() {
-    // Genesis entry
-    this.appendEntry("session_start", "session initialized");
-  }
-
-  /**
-   * Append an action to the audit chain.
-   * H_n = SHA-256(H_{n-1} + action_payload)
-   */
-  appendEntry(actionType: AuditEntry["action_type"], payload: string): AuditEntry {
-    const redactedPayload = redactSecrets(payload);
-    const seq = this.chain.length;
-    const prevHash = this.currentHash;
-    const hash = crypto
-      .createHash("sha256")
-      .update(prevHash + redactedPayload)
-      .digest("hex");
-
-    const entry: AuditEntry = {
-      seq,
-      timestamp: new Date().toISOString(),
-      action_type: actionType,
-      action_payload: redactedPayload,
-      hash,
-      prev_hash: prevHash,
-    };
-
-    this.chain.push(entry);
-    this.currentHash = hash;
-    return entry;
-  }
-
-  /**
-   * Verify the integrity of the audit chain.
-   * Returns true if all hashes are consistent.
-   */
-  verifyChain(): boolean {
-    let expectedPrevHash = "0".repeat(64);
-
-    for (const entry of this.chain) {
-      if (entry.prev_hash !== expectedPrevHash) return false;
-
-      const computedHash = crypto
-        .createHash("sha256")
-        .update(entry.prev_hash + entry.action_payload)
-        .digest("hex");
-
-      if (entry.hash !== computedHash) return false;
-      expectedPrevHash = entry.hash;
-    }
-
-    return true;
-  }
-
-  /**
-   * Get all audit entries.
-   */
-  getEntries(): AuditEntry[] {
-    return [...this.chain];
-  }
-
-  /**
-   * Get the current (latest) hash.
-   */
-  getCurrentHash(): string {
-    return this.currentHash;
-  }
-
-  /**
-   * Serialize the chain to JSON for persistence.
-   */
-  serialize(): string {
-    return JSON.stringify(this.chain, null, 2);
-  }
-
-  /**
-   * Deserialize a chain from JSON.
-   */
-  static deserialize(data: string): AuditChain {
-    const chain = new AuditChain();
-    try {
-      const entries = JSON.parse(data) as AuditEntry[];
-      chain.chain = entries;
-      if (entries.length > 0) {
-        chain.currentHash = entries[entries.length - 1].hash;
-      }
-    } catch {
-      // Invalid data — start fresh
-    }
-    return chain;
-  }
-}
+// The AuditChain class lives in src/audit_chain.ts (extracted so the
+// SessionLogger can own a chain without a circular import). It is
+// re-exported here so existing imports (`from "./logger.js"`) keep working.
+export { AuditChain, type AuditEntry } from "./audit_chain.js";
+import { AuditChain, type AuditEntry } from "./audit_chain.js";
 
 // ─── Unified Logger ──────────────────────────────────────────────────
 
@@ -211,6 +109,58 @@ export class Logger {
     const payload = safeStringify({ action, approved, hash });
     this.auditChain.appendEntry("approval", payload);
     this.sessionLogger.logEvent("approval", { action, approved, hash });
+  }
+
+  /**
+   * Log evidence / provenance for a deliverable (SPEC §16 / §11.3 / §7.5).
+   * Records what context and sources produced a draft — the reproducibility
+   * statement required by the Definition of Done.
+   *
+   * The provenance fields are included in the hashed payload so the chain
+   * is tamper-evident — modifying source_ids or context_used after the fact
+   * would break the hash chain.
+   */
+  logEvidenceProvenance(entry: {
+    deliverablePath: string;
+    sourceIds: string[];
+    sourceRefs: string[];
+    contextUsed: string;
+    evidenceRef?: string;
+  }): void {
+    // Include provenance in the hashed payload so the chain covers it
+    // (SPEC §11.3 tamper-evidence). The provenance fields below are a
+    // cached copy DERIVED from the (redacted) payload the chain hashed,
+    // so verifyChain() can confirm they were not altered after the fact.
+    const provenance = `${entry.sourceIds.length} sources → ${entry.deliverablePath}`;
+    const payload = safeStringify({
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+      provenance,
+    });
+    const auditEntry = this.auditChain.appendEntry("evidence", payload);
+    // Derive the convenience fields from the payload the chain actually
+    // hashed (post-redaction) so they always match under verifyChain().
+    let reflected: any = {};
+    try {
+      reflected = JSON.parse(auditEntry.action_payload);
+    } catch {
+      reflected = {};
+    }
+    auditEntry.source_ids = reflected.source_ids;
+    auditEntry.source_refs = reflected.source_refs;
+    auditEntry.context_used = reflected.context_used;
+    auditEntry.provenance = reflected.provenance;
+    auditEntry.evidence_ref = reflected.evidence_ref;
+    this.sessionLogger.logEvent("evidence_provenance", {
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+    });
   }
 
   /**

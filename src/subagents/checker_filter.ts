@@ -82,6 +82,52 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "GUI-NAV-BLOCKING",
   ],
   "ui/ipc_contract.ts": ["GUI-IPC-CONTRACT"],
+  // Scratch area (Draft & research tier)
+  "src/security/scratch_area.ts": [
+    "SCRATCH-AREA-MODULE-EXISTS",
+    "SCRATCH-AREA-REDIRECT",
+    "SCRATCH-AREA-PROMOTE",
+    "SCRATCH-AREA-LIST",
+  ],
+  // Consent gate
+  "src/security/consent_gate.ts": [
+    "CONSENT-GATE-MODULE-EXISTS",
+    "CONSENT-GATE-RENDER",
+    "CONSENT-GATE-TOGGLE",
+  ],
+  // Sensitivity routing
+  "src/security/sensitivity.ts": [
+    "SENSITIVITY-MODULE-EXISTS",
+    "SENSITIVITY-CLASSIFY",
+    "SENSITIVITY-REDACT",
+    "SENSITIVITY-ROUTE",
+  ],
+  // Connector framework
+  "src/connectors/framework.ts": [
+    "CONNECTOR-FRAMEWORK-EXISTS",
+    "CONNECTOR-FRAMEWORK-INTERFACE",
+    "CONNECTOR-FRAMEWORK-CACHE",
+    "CONNECTOR-FRAMEWORK-REGISTRY",
+  ],
+  "src/tools/data_query.ts": [
+    "CONNECTOR-TOOL-EXISTS",
+    "CONNECTOR-TOOL-ACTIONS",
+    "CONNECTOR-TOOL-DISPLAY-NAME",
+  ],
+  // Evidence model (live lineage)
+  "src/evidence/model.ts": [
+    "EVIDENCE-MODEL-EXISTS",
+    "EVIDENCE-MODEL-TYPES",
+  ],
+  "src/evidence/tracker.ts": [
+    "EVIDENCE-TRACKER-EXISTS",
+    "EVIDENCE-TRACKER-VALIDATE",
+    "EVIDENCE-TRACKER-FINALIZE",
+  ],
+  "src/tools/evidence.ts": [
+    "EVIDENCE-TOOL-EXISTS",
+    "EVIDENCE-TOOL-ACTIONS",
+  ],
   // Config
   "src/config.ts": ["CONFIG-MODEL-DEFAULTS-IN-SOURCE", "CONFIG-SINGLE-API-KEY"],
   "src/config/schema.ts": [

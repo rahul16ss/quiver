@@ -25,6 +25,80 @@ import {
   resolveTargetedChecks,
   serializeCheckFilter,
 } from "./checker_filter.js";
+import { EvidenceTracker } from "../evidence/tracker.js";
+
+// ─── Evidence validation (US-17.13 / SPEC §9.3 / §16) ──────────────────
+// The checker must reject a document whose Evidence.json contains unsourced
+// quantitative claims. This is the "every number traceable to a source" DoD.
+// When the tool being checked is an office_doc write, we look for an
+// Evidence.json alongside the document and validate it via EvidenceTracker.
+
+async function validateEvidenceForDocument(
+  filePath: string,
+): Promise<{ valid: boolean; problems: string[]; evidencePath: string | null }> {
+  if (!filePath) return { valid: true, problems: [], evidencePath: null };
+  const dir = path.dirname(filePath);
+  const baseName = path.basename(filePath).replace(/\.(docx|xlsx|pptx)$/, "");
+
+  // EvidenceTracker.finalize() writes <base>_Evidence.json (e.g.
+  // IC_Memo_Evidence.json), not a bare Evidence.json. Search for both
+  // the named pattern and any *_Evidence.json in the same directory.
+  let evidencePath: string | null = null;
+
+  // Try the expected name first
+  const expectedPath = path.join(dir, `${baseName}_Evidence.json`);
+  try {
+    await fs.access(expectedPath);
+    evidencePath = expectedPath;
+  } catch {
+    // Fall back to scanning the directory for any *_Evidence.json
+    try {
+      const dirFiles = await fs.readdir(dir);
+      const evidenceFile = dirFiles.find(
+        (f) => f.endsWith("_Evidence.json") || f === "Evidence.json",
+      );
+      if (evidenceFile) {
+        evidencePath = path.join(dir, evidenceFile);
+      }
+    } catch {
+      // Directory not readable — no evidence to validate
+    }
+  }
+
+  if (!evidencePath) {
+    // No evidence file — not an error if the document has no quantitative claims
+    return { valid: true, problems: [], evidencePath: null };
+  }
+  try {
+    const raw = await fs.readFile(evidencePath, "utf8");
+    const model = JSON.parse(raw);
+    const tracker = new EvidenceTracker();
+    // Hydrate tracker from the persisted EvidenceModel
+    if (model.sources) {
+      for (const src of model.sources) {
+        tracker.registerSource(src);
+      }
+    }
+    if (model.claims) {
+      for (const claim of model.claims) {
+        tracker.recordClaim(claim);
+      }
+    }
+    const result = tracker.validateEvidence();
+    return {
+      valid: result.valid,
+      problems: result.problems,
+      evidencePath,
+    };
+  } catch {
+    // Malformed evidence file — flag as a problem
+    return {
+      valid: false,
+      problems: ["Evidence file exists but is malformed or unreadable"],
+      evidencePath,
+    };
+  }
+}
 
 // ─── Sandbox separation (US-15.2) ─────────────────────────────────────
 // The checker runs read-only: it may inspect the workspace but never mutate
@@ -509,6 +583,22 @@ export async function runChecker(
     ran = false;
   }
 
+  // ─── Evidence validation (SPEC §9.3 / §16) ──────────────────────────
+  // For office_doc writes, validate that any Evidence.json alongside the
+  // document has no unsourced quantitative claims. Unsourced figures cause
+  // a "revise" verdict — the maker must source or flag every number.
+  let evidenceProblems: string[] = [];
+  if (toolName === "office_doc" && toolArgs?.file) {
+    const docPath = String(toolArgs.file);
+    const evResult = await validateEvidenceForDocument(docPath);
+    if (!evResult.valid) {
+      evidenceProblems = evResult.problems;
+      failedChecks.push(...evidenceProblems.map((p) => `EVIDENCE/${p}`));
+      failed += evidenceProblems.length;
+      total += evidenceProblems.length;
+    }
+  }
+
   let verdict: CheckerVerdict;
   if (ran && failed === 0 && total > 0) verdict = "approve";
   else if (ran && failed > 0) verdict = "revise";
@@ -524,7 +614,7 @@ export async function runChecker(
     failedChecks,
     evidence: total === 0
       ? `acceptance criteria: could not run tests (0/0) — fail-open to avoid deadlock${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}`
-      : `acceptance criteria: ${passed}/${total} met${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}; failed=${failedChecks.join(", ") || "none"}`,
+      : `acceptance criteria: ${passed}/${total} met${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}; failed=${failedChecks.join(", ") || "none"}${evidenceProblems.length ? `; evidence problems: ${evidenceProblems.join("; ")}` : ""}`,
     timestamp,
   };
 

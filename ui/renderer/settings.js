@@ -25,6 +25,7 @@ async function loadSettings() {
       ? grants
       : grants;
   setToggle("browserVisible", grants.includes("browser:visible"));
+  setToggle("consentGateEnabled", currentConfig.consentGateEnabled === true);
   setToggle("syncEnabled", !!(currentConfig.cloudSyncPath && currentConfig.cloudSyncPath.length > 0));
   $("syncPath").value = currentConfig.cloudSyncPath || "";
   setToggle("sessionLogEnabled", currentConfig.sessionLogEnabled !== false);
@@ -94,6 +95,7 @@ async function saveSettings() {
     visionModelBaseUrl: $("visionModelBaseUrl").value.trim(),
     maxContextTokens: parseInt($("maxContextTokens").value, 10) || 120000,
     autonomyGrants: grants,
+    consentGateEnabled: isToggleActive("consentGateEnabled"),
     cloudSyncPath: syncOn ? syncPath : "",
     sessionLogEnabled: isToggleActive("sessionLogEnabled"),
     sessionLogMaxChars: parseInt($("sessionLogMaxChars").value, 10) || 512,
@@ -106,7 +108,7 @@ $("browseSyncBtn").addEventListener("click", browseSyncDir);
 $("saveBtn").addEventListener("click", saveSettings);
 $("cancelBtn").addEventListener("click", () => api.loadMain());
 
-["browserVisible", "syncEnabled", "sessionLogEnabled"].forEach((id) => {
+["browserVisible", "syncEnabled", "sessionLogEnabled", "consentGateEnabled"].forEach((id) => {
   const el = $(id);
   if (el) el.addEventListener("click", () => el.classList.toggle("active"));
 });

@@ -46,11 +46,17 @@ export interface Tool {
 - `github` — GitHub API operations (issues, PRs, files)
 
 ### Memory & Learning
-- `memory_append` — Append to persistent memory files
-- `memory_replace` — Rewrite persistent memory files
+- `memory_append` — Append to persistent memory files (auto-creates version snapshot)
+- `memory_replace` — Rewrite persistent memory files (auto-creates version snapshot)
 - `continual_learning` — Mine session transcripts for patterns
 - `prompt_update` — Propose system prompt updates
 - `log_tokens` — Parse session logs for token statistics
+
+### Evidence & Lineage
+- `evidence` — Track sources and claims during document drafting. Actions: `register_source`, `exclude_source`, `record_claim`, `update_claim`, `register_input`, `validate`, `finalize`, `status`. Writes `Evidence.json` and `Run_Record.json` alongside Office documents.
+
+### Data Connectors
+- `data_query` — Unified interface to registered data-vendor connectors. Actions: `list` (show connectors), `search` (find entities), `fetch` (get data), `status`. Auto-loads connectors from `.quiver/connectors/`. Every result carries provenance metadata.
 
 ### Agent Orchestration
 - `subagent` — Spawn isolated agent processes
@@ -154,3 +160,16 @@ The file/shell tools enforce the security modules directly, not just the agent:
 - **Generated-tool destination** — `create_tool` writes to
   `getProjectToolsDir()` (`~/.quiver/projects/{id}/tools/`), never to
   `src/tools/`.
+
+## Slash Commands
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/mcp` | | Show connected MCP servers and tool counts |
+| `/consent` | `/cg` | Toggle consent gate (pre-action summary before model calls) |
+| `/promote` | `/pm` | Promote scratch drafts to real files (`/promote all \| <path> \| list`) |
+| `/memory-history` | `/mh` | Show version history for a memory file |
+| `/memory-rollback` | `/mr` | Restore a previous version of a memory file |
+| `/memory-diff` | `/md` | Compare two versions of a memory file |
+| `/sandbox` | | Show OS sandbox status |
+| `/update` | | Check for Quiver updates |

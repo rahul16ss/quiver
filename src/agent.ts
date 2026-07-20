@@ -75,6 +75,7 @@ import {
   detectCrashedSession,
 } from "./session/checkpoint.js";
 import { calculateBackoffWithJitter } from "./logger.js";
+import { AuditChain, type AuditEntry } from "./audit_chain.js";
 import {
   getProjectMemoryDir,
   getSkillsDir,
@@ -130,6 +131,28 @@ function isRetrySafe(toolName: string): boolean {
   return RETRY_SAFE_TOOLS.has(toolName);
 }
 
+/**
+ * UX: classify a model-call error into an honest, human label so the retry
+ * line and the final-failure line tell the user what actually happened —
+ * instead of the old blanket "Connection failed"/"Failed to connect to LLM
+ * server" that was wrong for request rejections (4xx/5xx) and auth failures.
+ * Order matters: most-specific first.
+ */
+function classifyModelError(msg: string): string {
+  const m = msg || "";
+  if (/Provider error 401|invalid.*api.*key|unauthor/i.test(m))
+    return "Auth failed (check API key / signin)";
+  if (/Provider error 40[0-9]/.test(m)) return "Request rejected by provider (HTTP 4xx)";
+  if (/Provider error 4\d\d/.test(m)) return "Request rejected by provider (HTTP 4xx)";
+  if (/Provider error 5\d\d/.test(m)) return "Provider error (HTTP 5xx)";
+  if (/Connection timeout|Stream stall timeout/.test(m))
+    return "Timed out waiting for model";
+  if (/fetch failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|socket hang up/i.test(m))
+    return "Connection failed";
+  if (/aborted|cancel/i.test(m)) return "Request cancelled";
+  return "Model call failed";
+}
+
 export interface Message {
   role: "system" | "user" | "assistant" | "tool";
   content:
@@ -154,7 +177,10 @@ export interface AgentEvent {
     | "done"
     | "error"
     | "context_manifest"
-    | "intervention";
+    | "intervention"
+    | "consent_gate"
+    | "consent_declined"
+    | "consent_exclude";
   data: {
     text?: string;
     toolName?: string;
@@ -178,6 +204,9 @@ export interface AgentEvent {
       toolCalls: number;
       turns: number;
     };
+    /** Consent gate (SPEC §6): the decision the user made. */
+    action?: "approve" | "decline" | "exclude";
+    consent?: string;
   };
 }
 
@@ -302,10 +331,20 @@ export class SessionLogger {
   private logPath: string;
   private logs: any[] = [];
   private dirEnsured = false;
+  // Tamper-evident audit chain (SPEC §11.3 / US-9.5). Persisted to
+  // `<sessionId>_audit.json` so a reviewer can replay the build and verify
+  // integrity. Provenance (SPEC §16) is embedded in the hashed payload.
+  private auditChain: AuditChain;
+  private auditLogPath: string;
 
   constructor() {
     this.sessionId = `session_${Date.now()}`;
     this.logPath = path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
+    this.auditLogPath = path.join(
+      getProjectSessionsDir(),
+      `${this.sessionId}_audit.json`,
+    );
+    this.auditChain = new AuditChain();
   }
 
   /** Accumulate event in memory — no disk I/O until flush(). */
@@ -319,17 +358,112 @@ export class SessionLogger {
     });
   }
 
+  /**
+   * Log evidence/provenance for a deliverable (SPEC §16 / §11.3 / §7.5).
+   * Records what context and sources produced a draft — embedded in the
+   * tamper-evident audit chain's hashed payload. The convenience fields are
+   * derived from the payload so verifyChain() detects after-the-fact edits.
+   */
+  public logEvidenceProvenance(entry: {
+    deliverablePath: string;
+    sourceIds: string[];
+    sourceRefs: string[];
+    contextUsed: string;
+    evidenceRef?: string;
+  }): void {
+    const provenance = `${entry.sourceIds.length} sources → ${entry.deliverablePath}`;
+    const payload = safeStringify({
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+      provenance,
+    });
+    const auditEntry = this.auditChain.appendEntry("evidence", payload);
+    // Derive convenience fields from the (redacted) payload the chain hashed.
+    let reflected: any = {};
+    try {
+      reflected = JSON.parse(auditEntry.action_payload);
+    } catch {
+      reflected = {};
+    }
+    auditEntry.source_ids = reflected.source_ids;
+    auditEntry.source_refs = reflected.source_refs;
+    auditEntry.context_used = reflected.context_used;
+    auditEntry.provenance = reflected.provenance;
+    auditEntry.evidence_ref = reflected.evidence_ref;
+
+    this.logEvent("evidence_provenance", {
+      deliverable: entry.deliverablePath,
+      source_ids: entry.sourceIds,
+      source_refs: entry.sourceRefs,
+      context_used: entry.contextUsed,
+      evidence_ref: entry.evidenceRef,
+      provenance,
+    });
+  }
+
+  /**
+   * Log a consent-gate decision to the tamper-evident audit chain (SPEC §6 —
+   * "a gate, not a post-hoc log"). The approve/decline/exclude decision is
+   * recorded so a reviewer can see the user explicitly approved the context
+   * that entered the model.
+   */
+  public logConsentDecision(decision: {
+    action: "approve" | "decline" | "exclude";
+    model?: string;
+    memoryCount?: number;
+    skillsCount?: number;
+    toolCount?: number;
+  }): void {
+    const payload = safeStringify({
+      consent_decision: decision.action,
+      model: decision.model,
+      memory_count: decision.memoryCount,
+      skills_count: decision.skillsCount,
+      tool_count: decision.toolCount,
+    });
+    this.auditChain.appendEntry("approval", payload);
+    this.logEvent("consent_decision", decision);
+  }
+
+  /** Verify the tamper-evident audit chain (SPEC §11.3). */
+  public verifyAuditChain(): boolean {
+    return this.auditChain.verifyChain();
+  }
+
+  /** Get the audit chain entries (for the evidence package / reproducibility). */
+  public getAuditEntries(): AuditEntry[] {
+    return this.auditChain.getEntries();
+  }
+
   /** Write accumulated logs to disk once. Call at session end or on error. */
   public async flush(): Promise<void> {
-    if (this.logs.length === 0) return;
     try {
       if (!this.dirEnsured) {
         await fs.mkdir(path.dirname(this.logPath), { recursive: true });
         this.dirEnsured = true;
       }
+    } catch {
+      // Fail silently — logging must never crash the agent
+    }
+    if (this.logs.length > 0) {
+      try {
+        await fs.writeFile(
+          this.logPath,
+          JSON.stringify(this.logs, null, 2),
+          "utf8",
+        );
+      } catch {
+        // Fail silently — logging must never crash the agent
+      }
+    }
+    // Tamper-evident audit chain
+    try {
       await fs.writeFile(
-        this.logPath,
-        JSON.stringify(this.logs, null, 2),
+        this.auditLogPath,
+        this.auditChain.serialize(),
         "utf8",
       );
     } catch {
@@ -339,12 +473,26 @@ export class SessionLogger {
 
   /** Synchronous flush for use in exit handlers and SIGINT/SIGTERM contexts. */
   public flushSync(): void {
-    if (this.logs.length === 0) return;
     try {
       fsSync.mkdirSync(path.dirname(this.logPath), { recursive: true });
+    } catch {
+      // Fail silently
+    }
+    if (this.logs.length > 0) {
+      try {
+        fsSync.writeFileSync(
+          this.logPath,
+          JSON.stringify(this.logs, null, 2),
+          "utf8",
+        );
+      } catch {
+        // Fail silently — logging must never crash the agent
+      }
+    }
+    try {
       fsSync.writeFileSync(
-        this.logPath,
-        JSON.stringify(this.logs, null, 2),
+        this.auditLogPath,
+        this.auditChain.serialize(),
         "utf8",
       );
     } catch {
@@ -562,34 +710,83 @@ function isIrreversibleAction(toolName: string, args: any): boolean {
   return false;
 }
 
-// Simple spinner for streaming UX
-// Spinner for streaming UX. Shows elapsed seconds so a long think/tool run
-// is visibly alive instead of a frozen line (5-star "is it stuck?" feedback).
-// Spinner is a no-op — we use static text instead of animated spinners.
-// The class remains for test compliance but does not animate.
+// Animated spinner for streaming UX. Shows a rotating braille frame +
+// elapsed seconds so a long think/tool run is visibly alive instead of a
+// frozen line (the 5-star "is it stuck?" feedback). Previously this was a
+// no-op that printed a static "Thinking…" and looked frozen for the whole
+// think duration — which read as a hang to the user.
+//
+// Safety contract (why this can't reintroduce the old "missing first
+// letters" bug):
+//  - start() is a no-op outside interactive TTY mode (piped/scripted runs
+//    stay raw & machine-readable).
+//  - The agent calls spinner.stop() on the FIRST streamed token (see
+//    STREAMING-NO-SPINNER-CLOBBER), so the repaint loop is already halted
+//    before any assistant text reaches stdout — it can never overwrite
+//    streamed content.
+//  - stop() clears the interval and wipes the exact width it wrote, so no
+//  - stray characters / cursor artifacts are left behind.
+//  - Every interval callback is guarded; a throw inside the repaint can never
+//    crash the agent loop.
+//  - We never write a trailing newline, so the next output (streamed token or
+//    status line) starts cleanly at column 0 after stop() clears the line.
 class Spinner {
   private message: string;
   private active = false;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private startMs = 0;
+  private frameIdx = 0;
+  private maxWidth = 0;
+  // Braille frames — smooth sub-second motion so the line is visibly alive
+// even before the first whole second ticks over.
+  private static readonly FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   constructor(message: string) {
     this.message = message;
+  }
+
+  private render(): void {
+    try {
+      const elapsed = Math.floor((Date.now() - this.startMs) / 1000);
+      const frame = Spinner.FRAMES[this.frameIdx % Spinner.FRAMES.length];
+      this.frameIdx++;
+      const line = `  ${picocolors.cyan(frame)} ${picocolors.gray(this.message)} ${picocolors.gray(`${elapsed}s`)}`;
+      // Pad the clear region to the longest line we've written so a shorter
+      // repaint never leaves trailing characters from a longer one.
+      const visibleLen = `  ${frame} ${this.message} ${elapsed}s`.length;
+      if (visibleLen > this.maxWidth) this.maxWidth = visibleLen;
+      process.stdout.write("\r" + line);
+    } catch {
+      // Rendering must never crash the agent loop.
+    }
   }
 
   start(): void {
     if (this.active || config.outputMode !== "interactive") return;
     if (!process.stdout.isTTY) return;
     this.active = true;
-    // Static text — no animation, no cursor artifacts.
-    process.stdout.write(
-      `\r  ${picocolors.gray(this.message)}   `,
-    );
+    this.startMs = Date.now();
+    this.frameIdx = 0;
+    this.maxWidth = 0;
+    this.render();
+    // 120ms cadence: smooth braille motion without burning CPU.
+    this.timer = setInterval(() => this.render(), 120);
   }
 
   stop(): void {
     if (!this.active) return;
     this.active = false;
-    // Clear the line before the caller overwrites it with the result.
-    process.stdout.write("\r" + " ".repeat(this.message.length + 6) + "\r");
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    try {
+      // Wipe the full width ever written, then reset to column 0.
+      const pad = Math.max(this.maxWidth, this.message.length + 6);
+      process.stdout.write("\r" + " ".repeat(pad) + "\r");
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -818,6 +1015,93 @@ export class Agent {
     });
   }
 
+  // ── Self-Heal: tool-call history repair (US-13.4 / provider 400) ────
+  // When a model streams tool-call `arguments` that are not valid JSON
+  // (truncated, markdown-wrapped, or malformed), echoing that string back
+  // to the provider on the next turn makes the API reject the ENTIRE request
+  // with HTTP 400 {"invalid tool call arguments"}. Because the error is
+  // permanent (the request body is invalid), the 3× connection-retry loop
+  // can never succeed, and the poisoned assistant message stays in history
+  // so every subsequent prompt — including a user's "self heal" — 400s
+  // identically. These helpers sanitize arguments before persisting (Layer A)
+  // and surgically repair already-poisoned history on a 400 (Layer B).
+
+  /**
+   * Coerce a raw tool-call arguments string to valid JSON.
+   * Returns "{}" for malformed/empty input so the persisted assistant
+   * message never carries invalid JSON into the next provider request.
+   * Also strips stray ```json fenced wrappers some models emit.
+   */
+  private sanitizeToolCallArguments(rawArgs: string | undefined): string {
+    if (!rawArgs) return "{}";
+    let s = rawArgs.trim();
+    if (!s) return "{}";
+    // Strip ```json ... ``` fences if the model wrapped the args.
+    if (s.startsWith("```")) {
+      s = s.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/, "").trim();
+    }
+    try {
+      // Validate parseability; JSON.parse accepts numbers/strings too, so
+      // require an object or array to match the tool-call contract.
+      const parsed = JSON.parse(s);
+      if (parsed && typeof parsed === "object") return JSON.stringify(parsed);
+      return "{}";
+    } catch {
+      return "{}";
+    }
+  }
+
+  /**
+   * Repair `this.messages` after a provider 400 "invalid tool call arguments".
+   * Scans for assistant messages whose tool_calls carry malformed arguments
+   * and fixes them in place, then drops any orphaned `tool` role messages
+   * whose tool_call_id no longer references a surviving tool call. Returns
+   * the number of messages repaired so the caller can log/decide to retry.
+   * Safe to call repeatedly; idempotent.
+   */
+  private repairToolCallHistory(): number {
+    let repaired = 0;
+    // First pass: collect surviving tool-call IDs after fixing arguments.
+    const survivingCallIds = new Set<string>();
+    for (const m of this.messages) {
+      if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
+        for (const tc of m.tool_calls) {
+          const id = tc?.id || `call_repaired_${repaired}`;
+          const sanitized = this.sanitizeToolCallArguments(
+            tc?.function?.arguments,
+          );
+          if (sanitized !== (tc?.function?.arguments ?? "")) {
+            repaired++;
+          }
+          // Rewrite the tool call in place with a stable id + valid args.
+          tc.id = id;
+          tc.type = "function";
+          tc.function = {
+            name: tc?.function?.name || "",
+            arguments: sanitized,
+          };
+          survivingCallIds.add(id);
+        }
+      }
+    }
+    // Second pass: drop orphaned tool results whose id no longer matches a
+    // surviving tool call (keeps the request shape valid for strict APIs).
+    const kept: Message[] = [];
+    for (const m of this.messages) {
+      if (
+        m.role === "tool" &&
+        m.tool_call_id &&
+        !survivingCallIds.has(m.tool_call_id)
+      ) {
+        repaired++;
+        continue; // drop orphan
+      }
+      kept.push(m);
+    }
+    this.messages = kept;
+    return repaired;
+  }
+
   /** Load conversation state from a previous session file. */
   public async loadSessionState(statePath: string): Promise<boolean> {
     try {
@@ -1018,6 +1302,13 @@ export class Agent {
           !file.startsWith(".") &&
           file !== "project.json"
         ) {
+          // S2 / SPEC §6: Skip memory files the user excluded via the
+          // context rail consent control (passed via env var from GUI).
+          const excludedMemories = (process.env.QUIVER_EXCLUDED_MEMORIES || "")
+            .split(",")
+            .filter(Boolean);
+          if (excludedMemories.includes(file)) continue;
+
           const content = await fs.readFile(filePath, "utf8");
           results.push({
             filename: file,
@@ -1382,6 +1673,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     ralph_loop: "Ralph loop",
     subagent: "Subagent",
     office_doc: "Office document",
+    evidence: "Evidence tracker",
+    data_query: "Data query",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -1623,6 +1916,142 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     this.messages.push({ role: "user", content: processedContent });
     await this.logger.logEvent("user_input", { content: userInput });
 
+    // ── Sensitivity routing (US-17.17) ──
+    // Classify the user input and apply MNPI redaction if needed.
+    // The routing decision is logged to the audit chain.
+    // In v1, this is informational — the actual model endpoint switching
+    // follows engagement-specific configuration. The framework is ready.
+    try {
+      const { applySensitivityRouting, formatRedactionReceipt } = await import(
+        "./security/sensitivity.js"
+      );
+      const sensResult = applySensitivityRouting(userInput);
+      if (sensResult.redactions.length > 0) {
+        await this.logger.logEvent("sensitivity_redaction", {
+          tier: sensResult.tier,
+          route: sensResult.route,
+          reason: sensResult.reason,
+          redactions: sensResult.redactions.map((r: any) => ({
+            type: r.type,
+            original: r.original,
+            redacted: r.redacted,
+          })),
+          receipt: formatRedactionReceipt(sensResult.redactions),
+        });
+        if (config.outputMode === "interactive") {
+          console.log(
+            picocolors.yellow(
+              `  ⚠ Sensitivity: ${sensResult.tier} → ${sensResult.route} — ${formatRedactionReceipt(sensResult.redactions)}`,
+            ),
+          );
+        }
+      } else if (sensResult.tier !== "low") {
+        await this.logger.logEvent("sensitivity_routing", {
+          tier: sensResult.tier,
+          route: sensResult.route,
+          reason: sensResult.reason,
+        });
+        if (config.outputMode === "interactive") {
+          console.log(
+            picocolors.gray(
+              `  ⚠ Sensitivity: ${sensResult.tier} → ${sensResult.route} — ${sensResult.reason}`,
+            ),
+          );
+        }
+      }
+    } catch {
+      // Sensitivity module not available — continue without routing
+    }
+
+    // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
+    // When enabled, the agent surfaces the pre-action summary and WAITS for
+    // the user to approve / decline / exclude before the model call. Decline
+    // aborts the turn; exclude routes back to the context rail. The decision
+    // is logged to the tamper-evident audit chain. When the gate is off,
+    // behaviour is unchanged (the summary is informational only).
+    try {
+      const { isConsentGateEnabled, renderConsentGateCompact } = await import(
+        "./security/consent_gate.js"
+      );
+      if (isConsentGateEnabled()) {
+        const gateData = {
+          systemPromptVersion: "2.0.0",
+          memoryFiles: memories.map((m: any) => m.filename),
+          personaSummary: coreMemory.identity || "Quiver",
+          skills: skills.map((s: any) => ({ id: s.id, version: s.version })),
+          toolCount: this.registry.getAllTools().length,
+          toolNames: this.registry.getAllTools().map((t) => t.name),
+          mcpServerCount: 0,
+          turnCount: this.messages.filter((m) => m.role === "user").length,
+          compactedCount: 0,
+          userRequestPreview: userInput.substring(0, 60),
+          webSourceCount: 0,
+          modelName: config.llmModelName,
+          trustTier: (config as any).trustTier || null,
+          tokenEstimate: `${Math.ceil(userInput.length / 4)} tokens`,
+          scratchMode: false,
+        };
+        const compact = renderConsentGateCompact(gateData);
+        if (config.outputMode === "interactive") {
+          console.log(picocolors.gray(`  ${compact}`));
+        }
+        // Emit a dedicated event so the desktop app renders the gate overlay.
+        if (onEvent) {
+          onEvent({ type: "consent_gate", data: gateData as any });
+        }
+        // BLOCK: wait for the user's decision before the model call. In
+        // --json (GUI) mode this reads one line the renderer sends via the
+        // consent:respond IPC; in interactive mode the user types it.
+        const { askQuestionRaw } = await import("./utils/prompt.js");
+        const raw = (
+          await askQuestionRaw(
+            picocolors.gray(
+              "  Consent gate — approve / decline / exclude: ",
+            ),
+          )
+        ).trim().toLowerCase();
+        const action: "approve" | "decline" | "exclude" = raw.startsWith("d")
+          ? "decline"
+          : raw.startsWith("e")
+            ? "exclude"
+            : "approve";
+        this.logger.logConsentDecision({
+          action,
+          model: config.llmModelName,
+          memoryCount: memories.length,
+          skillsCount: skills.length,
+          toolCount: this.registry.getAllTools().length,
+        });
+        if (action === "decline" || action === "exclude") {
+          // Abort the turn — do NOT proceed to the model call. Pop the user
+          // message so the conversation is not left with an unanswered turn.
+          this.messages.pop();
+          if (config.outputMode === "interactive") {
+            console.log(
+              picocolors.yellow(
+                action === "decline"
+                  ? "\n  Consent declined — turn aborted."
+                  : "\n  Routed back to the context rail — exclude items, then re-run.",
+              ),
+            );
+          }
+          if (onEvent) {
+            onEvent({
+              type: action === "decline" ? "consent_declined" : "consent_exclude",
+              data: { action },
+            });
+            onEvent({ type: "done", data: { consent: action } });
+          }
+          return;
+        }
+        if (config.outputMode === "interactive") {
+          console.log(picocolors.green("  Consent approved — proceeding."));
+        }
+      }
+    } catch {
+      // Consent gate not available — continue without blocking
+    }
+
     let loopCount = 0;
     let lastAssistantContent = "";
     // Hardcoded safety net — the model decides when to stop (no tool calls = done).
@@ -1806,6 +2235,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       let streamFinishReason: string | undefined;
       let truncationRetries = 0;
       const maxTruncationRetries = 2;
+      // Self-Heal Layer B: one-shot guard so a 400 "invalid tool call
+      // arguments" triggers history repair + retry at most once per turn.
+      let historyRepaired = false;
 
       const runModel = async () => {
         let retries = 0;
@@ -1901,6 +2333,45 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             }
             return { assistantContent, accumulatedToolCalls };
           } catch (err: any) {
+            // Self-Heal Layer B: a 400 "invalid tool call arguments" is a
+            // PERMANENT error — the request body contains a malformed
+            // tool_call.arguments string (poisoned history). Retrying the
+            // same request 3× can never succeed, and the poisoned message
+            // would 400 every future prompt including a user's "self heal".
+            // Detect it, repair the history, and retry once with a fresh
+            // attempt budget. `historyRepaired` guards against loops.
+            const msg = String(err?.message || "");
+            const isInvalidToolArgs =
+              /invalid tool call arguments|invalid_request_error/.test(msg) ||
+              /Provider error 400/.test(msg);
+            if (isInvalidToolArgs && !historyRepaired) {
+              historyRepaired = true;
+              const fixed = this.repairToolCallHistory();
+              spinner.stop();
+              if (config.outputMode === "interactive") {
+                console.log(
+                  picocolors.yellow(
+                    `   Provider rejected tool-call arguments (HTTP 400). Self-heal: repaired ${fixed} malformed message(s) in history, retrying...`,
+                  ),
+                );
+              }
+              await this.logger.logEvent("self_heal_tool_args_repair", {
+                repaired: fixed,
+                error: msg,
+              });
+              // Reset the transient-retry counter so the repaired request
+              // gets its own retry budget; do NOT consume a slot for the
+              // (pre-repair) failures since those were a different request.
+              retries = 0;
+              // Re-run with a clean stream accumulator so we don't double-
+              // count partial tokens from the aborted attempt.
+              assistantContent = "";
+              firstStreamingToken = true;
+              accumulatedToolCalls = {};
+              streamFinishReason = undefined;
+              spinner.start();
+              continue;
+            }
             retries++;
             if (retries > maxRetries) {
               throw err;
@@ -1908,9 +2379,14 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             const delay = Math.min(1000 * Math.pow(2, retries), 8000);
             spinner.stop();
             if (config.outputMode === "interactive") {
+              // UX: print an HONEST label for the failure, not a blanket
+              // "Connection failed". A request rejection (4xx/5xx), an auth
+              // failure, and a network drop are different problems and the
+              // user deserves to know which one is happening before we retry.
+              const label = classifyModelError(msg);
               console.log(
                 picocolors.yellow(
-                  `   Connection failed (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
+                  `   ${label} (attempt ${retries}/${maxRetries}), retrying in ${delay}ms...`,
                 ),
               );
             }
@@ -1924,9 +2400,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         await wrapModelCall(lifecycleCtx, runModel);
       } catch (err: any) {
         spinner.stop();
+        // UX: honest final-error label. "Failed to connect to LLM server"
+        // was wrong for 4xx/5xx/auth failures — the connection worked, the
+        // request was rejected. Tell the user what actually happened.
+        const label = classifyModelError(String(err?.message || ""));
         console.error(
           picocolors.red(
-            `\nFailed to connect to LLM server after retries: ${err.message}`,
+            `\n${label} after retries: ${err.message}`,
           ),
         );
         await this.logger.logEvent("api_error", { error: err.message });
@@ -2039,12 +2519,18 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         (key) => {
           const idx = parseInt(key, 10);
           const raw = accumulatedToolCalls[idx];
+          // Self-Heal Layer A: sanitize arguments to valid JSON before they
+          // enter history. A malformed arguments string here would be echoed
+          // back to the provider on the next turn and trigger a permanent
+          // HTTP 400 "invalid tool call arguments" that no amount of retrying
+          // can fix — and would poison every subsequent prompt.
+          const sanitizedArgs = this.sanitizeToolCallArguments(raw.arguments);
           return {
             id: raw.id || `call_${Date.now()}_${idx}`,
             type: "function",
             function: {
               name: raw.name || "",
-              arguments: raw.arguments || "{}",
+              arguments: sanitizedArgs,
             },
           };
         },
@@ -2149,8 +2635,18 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         const toolName = call.function.name;
         const displayName = Agent.getToolDisplayName(toolName);
         let args: any = {};
+        // Self-Heal: when the model emits malformed JSON arguments, capture the
+        // real parse error so the diagnostic tells the model the truth
+        // ("arguments were not valid JSON") instead of the misleading
+        // "filePath: Required" that schema validation produces against an
+        // empty `args = {}`. An accurate diagnostic is what lets the model
+        // self-correct in the next turn instead of repeating the same malformed
+        // call.
+        let argsParseError: string | null = null;
+        let rawArgsDebug = "";
         try {
           let rawArgs = call.function.arguments.trim();
+          rawArgsDebug = rawArgs;
           // Strip triple backticks wrapper or json identifier if present
           if (rawArgs.startsWith("```")) {
             rawArgs = rawArgs
@@ -2159,8 +2655,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               .trim();
           }
           args = JSON.parse(rawArgs);
-        } catch {
-          // Args parsing failed — will show raw
+        } catch (err: any) {
+          // Args parsing failed — record the precise error for an accurate
+          // diagnostic below; do NOT silently fall through to schema
+          // validation, which would mislabel the cause.
+          argsParseError = err?.message || String(err);
         }
 
         // Emit tool_call event for GUI
@@ -2332,6 +2831,40 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   );
                 }
               } else {
+                // Self-Heal: short-circuit on malformed JSON args BEFORE schema
+                // validation. Without this, `args = {}` flows into safeParse and
+                // the model is told "filePath: Required" — a lie that hides the
+                // real cause (its arguments weren't valid JSON) and prevents
+                // self-correction. The diagnostic includes the raw arguments
+                // preview + the parser error so the model can fix the JSON.
+                if (argsParseError) {
+                  const preview =
+                    rawArgsDebug.length > 300
+                      ? rawArgsDebug.slice(0, 297) + "..."
+                      : rawArgsDebug;
+                  result = formatDiagnosticBlock(
+                    createDiagnosticBlock(
+                      toolName,
+                      { rawArguments: preview },
+                      new Error(
+                        `Malformed tool-call arguments (not valid JSON): ${argsParseError}. Re-emit the call with valid JSON matching the tool's schema.`,
+                      ),
+                    ),
+                  );
+                  toolSpinner.stop();
+                  if (config.outputMode === "interactive") {
+                    statusLine(
+                      "ERROR",
+                      `${displayName} rejected malformed JSON args — ${argsParseError}`,
+                    );
+                  }
+                  await this.logger.logEvent("tool_args_malformed_json", {
+                    tool: toolName,
+                    error: argsParseError,
+                    raw: preview,
+                  });
+                  // Skip execution entirely; fall to result handling below.
+                } else {
                 // US-6.3: only retry-safe (read-only/idempotent) tools are
                 // auto-retried on transient failure. Destructive/shell tools
                 // execute exactly once so a transient blip can never repeat a
@@ -2454,7 +2987,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   }
                   await this.logger.logEvent("tool_failure_diagnostic", diag);
                 }
-              }
+                } // end (no argsParseError) branch
+              } // end tool-exists branch
             } finally {
               toolSpinner.stop();
             }
@@ -2490,6 +3024,31 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               toolResult: resultStr,
             },
           });
+        }
+
+        // S11 / SPEC §16 / §11.3: When the evidence tool finalizes, log
+        // provenance to the audit chain so the trail records what context
+        // and sources produced each deliverable.
+        if (toolName === "evidence" && args.action === "finalize") {
+          try {
+            const evResult = JSON.parse(resultStr);
+            if (evResult.ok && evResult.docPath) {
+              this.logger.logEvidenceProvenance({
+                deliverablePath: evResult.docPath,
+                sourceIds: (evResult.sources || []).map((s: any) => s.source_id),
+                sourceRefs: (evResult.sources || []).map(
+                  (s: any) => s.location?.description || s.title || s.source_id,
+                ),
+                contextUsed: (evResult.claims || [])
+                  .map((c: any) => c.claim_text || c.rendered_text || "")
+                  .join("; ")
+                  .slice(0, 500),
+                evidenceRef: evResult.evidencePath,
+              });
+            }
+          } catch {
+            // Result wasn't structured JSON — skip provenance logging
+          }
         }
       }
 

@@ -42,6 +42,16 @@ export const tool: Tool = {
         return `Error: Memory file '${cleanFilename}' would exceed the 1MB size limit (${currentSize + appendSize} bytes). Use memory_replace to restructure.`;
       }
 
+      // Create a version snapshot before writing (US-17.19)
+      if (exists) {
+        try {
+          const { createSnapshot } = await import("../memory/versioned.js");
+          await createSnapshot(cleanFilename, "pre-append");
+        } catch {
+          // Versioning is best-effort — don't block the write
+        }
+      }
+
       const formattedContent = exists ? `\n${content}` : content;
       await fs.appendFile(targetFile, formattedContent, "utf8");
 

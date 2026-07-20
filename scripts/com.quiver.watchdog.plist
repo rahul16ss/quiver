@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.quiver.watchdog — keeps scripts/watchdog.ts running continuously.
+
+  Install:
+    cp scripts/com.quiver.watchdog.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.quiver.watchdog.plist
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.quiver.watchdog.plist
+    rm ~/Library/LaunchAgents/com.quiver.watchdog.plist
+
+  Behavior:
+    - RunAtLoad: starts immediately on load/login.
+    - KeepAlive: relaunches if the process exits (crash/exit) — a throttled
+      restart, so a hard-failing probe can't spin a tight loop.
+    - Throttle: 60s between restarts (KeepAlive.SuccessfulExit + throttle).
+    - Logs to <project>/.quiver/watchdog.{out,err}.log.
+    - Interval (300s) is controlled inside the script via
+      QUIVER_WATCHDOG_INTERVAL_MS; override here if needed.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.quiver.watchdog</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/rahul/.local/node/node-v22.19.0-darwin-arm64/bin/node</string>
+    <string>--require</string>
+    <string>/Users/rahul/quiver/node_modules/tsx/dist/preflight.cjs</string>
+    <string>--import</string>
+    <string>file:///Users/rahul/quiver/node_modules/tsx/dist/loader.mjs</string>
+    <string>/Users/rahul/quiver/scripts/watchdog.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/rahul/quiver</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/rahul/.local/node/node-v22.19.0-darwin-arm64/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>QUIVER_WATCHDOG_INTERVAL_MS</key>
+    <string>300000</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/rahul/quiver/.quiver/watchdog.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/rahul/quiver/.quiver/watchdog.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

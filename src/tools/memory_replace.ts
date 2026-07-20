@@ -18,6 +18,15 @@ export const tool: Tool = {
 
     try {
       await fs.mkdir(memoryDir, { recursive: true });
+
+      // Create a version snapshot before overwriting (US-17.19)
+      try {
+        const { createSnapshot } = await import("../memory/versioned.js");
+        await createSnapshot(cleanFilename, "pre-replace");
+      } catch {
+        // Versioning is best-effort — don't block the write
+      }
+
       await fs.writeFile(targetFile, content, "utf8");
       return `Successfully updated memory file '${cleanFilename}' with new content.`;
     } catch (error: any) {

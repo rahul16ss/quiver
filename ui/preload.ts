@@ -59,7 +59,6 @@ const ALLOWED_CHANNELS = new Set<string>([
   "nav:loadOnboarding",
   // Preview
   "preview:file",
-  // Deliverables (document card)
   "file:open",
   "file:showInFolder",
   // Agent events (main → renderer only)
@@ -68,6 +67,15 @@ const ALLOWED_CHANNELS = new Set<string>([
   "agent:stderr",
   "agent:exit",
   "agent:error",
+  // Context rail exclude/veto (S2 / SPEC §6)
+  "memory:exclude",
+  // Consent gate (SPEC §6) — renderer sends the approve/decline/exclude
+  // decision to the agent so it can block the model call until approved.
+  "consent:respond",
+  // Review flow (SPEC §8.3) — mark-final / override are logged to the
+  // tamper-evident audit chain.
+  "review:markFinal",
+  "review:override",
 ]);
 
 // ─── Safe IPC Wrappers ───────────────────────────────────────────────
@@ -130,12 +138,28 @@ const exposedApi = {
     safeInvoke("memory:save", name, content),
   deleteMemory: (name: string) => safeInvoke("memory:delete", name),
   loadCoreMemory: () => safeInvoke("memory:loadCore"),
-  saveCoreMemory: (core: any) => safeInvoke("memory:saveCore", core),
+  saveCoreMemory: (core: object) => safeInvoke("memory:saveCore", core),
 
   // Memory review
   memoryReviewList: () => safeInvoke("memory:review:list"),
   memoryReviewAction: (factId: string, action: string, content: string) =>
     safeInvoke("memory:review:action", { factId, action, content }),
+
+  // Context rail exclude/veto (S2 / SPEC §6)
+  excludeFromRun: (memoryName: string) =>
+    safeInvoke("memory:exclude", { memoryName }),
+
+  // Consent gate (SPEC §6) — send the user's approve/decline/exclude decision.
+  consentRespond: (decision: "approve" | "decline" | "exclude") =>
+    safeInvoke("consent:respond", { decision }),
+
+  // Review flow (SPEC §8.3) — mark a document final / override open flags.
+  // Both are logged to the tamper-evident audit chain by the main process.
+  // The reviewer's per-figure checks are carried as the review record.
+  reviewMarkFinal: (filePath: string, openFlags: number, figureStatuses?: any[]) =>
+    safeInvoke("review:markFinal", { filePath, openFlags, figureStatuses }),
+  reviewOverride: (filePath: string, openFlags: number, figureStatuses?: any[]) =>
+    safeInvoke("review:override", { filePath, openFlags, figureStatuses }),
 
   // Skills
   listSkills: () => safeInvoke("skills:list"),

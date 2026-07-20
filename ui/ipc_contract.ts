@@ -144,6 +144,37 @@ export const IPC_CHANNELS: IpcChannelDef[] = [
     payloadSchema: { factId: "string", action: "string", content: "string" },
     description: "Process a memory review action (accept/edit/reject/pin/expire)",
   },
+  {
+    channel: "memory:exclude",
+    direction: "renderer-to-main",
+    payloadSchema: { memoryName: "string" },
+    description: "Exclude a memory file from the next agent run (context rail consent control)",
+  },
+
+  // ── Consent gate (SPEC §6) ──
+  {
+    channel: "consent:respond",
+    direction: "renderer-to-main",
+    payloadSchema: { decision: "string" },
+    description:
+      "Send the user's approve/decline/exclude decision so the agent blocks the model call until approved",
+  },
+
+  // ── Review flow (SPEC §8.3) ──
+  {
+    channel: "review:markFinal",
+    direction: "renderer-to-main",
+    payloadSchema: { filePath: "string", openFlags: "number" },
+    description:
+      "Mark a document final (logged to the tamper-evident audit chain); blocked while open flags exist",
+  },
+  {
+    channel: "review:override",
+    direction: "renderer-to-main",
+    payloadSchema: { filePath: "string", openFlags: "number" },
+    description:
+      "Override the open-flags block and mark a document final (the override is logged to the audit chain)",
+  },
 
   // ── Skills ──
   {
