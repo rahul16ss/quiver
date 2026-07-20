@@ -50,9 +50,11 @@ firm's template, prior memos, my files, and where my prompts go (cloud/local),
 before I share anything sensitive. And it's a control, not a display: I can
 exclude a file or memory from this run in one click, and the exclusion is
 recorded.
-- 🟡 Partial: six-layer context rail exists with honest endpoint line; it is
-  read-only — the exclude-before-run gate does not exist (spec §6; build-order
-  #5).
+- ✅ Built: six-layer context rail with honest endpoint line; the consent gate
+  surfaces before a run and blocks until approved/declined/excluded when enabled;
+  exclude-before-run reaches the agent (context-rail veto → `memory:exclude` →
+  `QUIVER_EXCLUDED_MEMORIES` → agent skips the file). The one-calm-summary-line
+  UX (S2 "Apple-grade") is still being polished.
 - Gap to Apple-grade: the rail reads like an inspector, not a sentence. The
   moment should be: one calm summary line ("Using your IC template, 2 memory
   files, 28 tools · prompts go to ollama.com") that expands on demand into
@@ -87,11 +89,11 @@ it produced so far, and whether it's stuck — the way I'd glance at a junior
 across the desk. When it verifies its own work I see that too ("Verifying…
 ✓ 5 checks passed" / "Found an issue — fixing…"), never a stack trace. And I
 can interrupt: my typed message is queued and injected, Stop halts cleanly.
-- 🟡 Partial: activity feed with timestamps exists (honest, log-like); Stop
-  works; Esc-steering exists in the CLI path. Gaps: a single current-status
-  line above the feed ("Reading RevenueBuild sheet… 3 of 6 sections
-  drafted"); checker verification surfaced in plain language; queued-typing
-  steering in the GUI.
+- 🟡 Partial: activity feed with timestamps (honest, log-like); Stop works;
+  Esc-steering in the CLI path; a single current-status line above the feed
+  ("Reading RevenueBuild sheet…") is now wired to tool events; checker
+  verification surfaced in plain language. Remaining: queued-typing steering
+  in the GUI.
 
 **S6. "Closing my laptop costs nothing."**
 As Priya, I can close the window Monday evening and reopen Tuesday — the
@@ -115,9 +117,11 @@ file name, and one click to open or reveal it.
 **S8. "The draft never bluffs."**
 As Priya, every number in the draft is sourced or visibly flagged — the memo
 tells me what it does NOT know (unresolved items) instead of papering over it.
-- 🟡 Partial: fully real in the flagship example (evidence model + 8 checks,
-  Excel cells verified by read-back); NOT yet generated live during GUI
-  drafting. **This is build-order #3 and the single biggest product gap.**
+- ✅ Built: fully real in the flagship example (evidence model + 8 checks,
+  Excel cells verified by read-back) AND now generated live during drafting —
+  the `evidence` tool emits structured Evidence.json from a real agent run,
+  the checker rejects unsourced quantitative figures, and `npm run
+  demo:ic-memo:live` proves the trust story renders from live output (8/8).
 - Acceptance moments: draft arrives with N sourced figures, M flagged; the
   checker literally refuses to call unsourced numbers done.
 
@@ -127,23 +131,29 @@ tells me what it does NOT know (unresolved items) instead of papering over it.
 As Marcus, I click $48.2m and see the source in place: Model_v12.xlsx,
 RevenueBuild, the cell, its value — without opening Excel. I click the
 concentration claim and see the transcript excerpt. Two clicks, ten seconds.
-- 🔴 Gap: exists on the website demo and in the generated evidence HTML;
-  does NOT exist inside the GUI (no lineage chips, no verification rail).
-  This is the §8.3 verification view — the moment the entire trust story
-  exists for, and the demo climax for a buyer.
+- ✅ Built: lineage chips render in the desktop GUI from live agent output;
+  clicking a chip opens the §8.3 verification rail showing the source in place
+  (Excel cell with sheet/cell/value, filing excerpt, or web URL). This is the
+  moment the entire trust story exists for — the demo climax. (Unsigned build;
+  UX polish continues.)
 
 **S10. "My review is the record."**
 As Marcus, I mark each key figure verified / flagged / needs-analyst; the memo
 cannot be marked final while flags are open (an override is possible and
 logged). My checks become the review record that goes with the memo.
-- 🔴 Gap: review statuses exist in the evidence model; no GUI review flow.
+- ✅ Built: per-document review flow in the desktop GUI — mark each figure
+  verified / flagged / needs-analyst; mark-final is blocked while open flags
+  exist; override is logged to a per-document tamper-evident audit chain and a
+  review record is written next to the deliverable. (Unsigned build.)
 
 **S11. "What was it fed?"**
 As Marcus, in one click I see what informed this draft — files, sources,
 excluded material, and where prompts went — so I can answer compliance
 without a meeting.
-- 🟡 Partial: context rail + run record artifact exist; a per-deliverable
-  "context used for THIS document" view does not.
+- ✅ Built: context rail + run record artifact exist, and a per-deliverable
+  "context used for this document" view opens from the deliverable card
+  (inputs, sources, excluded sources, run record) populated from the evidence
+  tool's structured output. (Unsigned build.)
 
 ## Moment 6 — Running it again (Dana, next quarter)
 
@@ -187,11 +197,12 @@ shows me — before running — what would leave the machine and what stays
 local, strips the names it was told to strip (and shows me the receipt), and
 refuses to send configured MNPI to any remote endpoint. When compliance asks,
 the run record answers.
-- 🔴 Gap: honest endpoint disclosure and the run-record exist; redaction,
-  sensitivity routing, and the receipt do NOT (spec §11.2, build-order #7 —
-  scheduled before the first engagement touching sensitive material). Until
-  built, the engagement-level answer is contractual/data-boundary docs, and
-  no marketing may imply otherwise.
+- 🟡 Partial: honest endpoint disclosure and the run-record exist; redaction
+  (`redactMnpi`), sensitivity routing (classify/route, wired into the agent
+  loop), and the redaction receipt now exist as a framework. Per-engagement
+  pattern/tier config (`.quiver/sensitivity.json`) is engagement work, so the
+  engagement-level answer is still contractual/data-boundary docs until
+  configured; no marketing may imply otherwise.
 - Acceptance moments: mark-as-sensitive is one action; the pre-run summary
   says "3 client names redacted, model note stays local"; an attempted
   remote send of MNPI is refused and logged.

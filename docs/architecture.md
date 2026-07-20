@@ -23,29 +23,34 @@ quiver/
 │   ├── paths.ts              # Filesystem path resolution (~/.quiver/projects/)
 │   ├── registry.ts           # Tool registry, dynamic loading
 │   ├── state.ts              # Core memory load/save, agent file export
-│   ├── logger.ts             # Hash-chained tamper-evident audit log (AuditChain)
-│   ├── session_logger.ts     # Session logging with secret redaction
+│   ├── logger.ts             # Re-exports AuditChain; session + provenance logging
+│   ├── audit_chain.ts        # Tamper-evident AuditChain (provenance fields covered by the hash)
+│   ├── session_logger.ts     # Session logging with secret redaction + consent/review decisions
 │   ├── vision_router.ts      # Vision fallback routing for multimodal models
 │   ├── intervention.ts       # Mid-run steering (Esc injects a user message)
 │   ├── ambient.ts            # Ambient self-heal + goal loop at task completion
 │   ├── diagnostics.ts        # Structured diagnostic blocks, failure tracking
 │   ├── cloud_sync.ts         # Opt-in cloud-folder sync (legacy/advanced; off by default)
-│   ├── updates.ts            # Update checks
+│   ├── updates.ts            # Update checks (Ed25519-signed manifests)
+│   ├── watchdog.ts           # Self-health queue (findings/summary/status)
 │   ├── init.ts               # Project init / onboarding
 │   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
 │   ├── adapters/             # Harness adapter contract (Model-Harness-Fit)
 │   ├── providers/            # Model provider abstraction (transport layer)
-│   ├── security/             # Path policy, command classification, secrets, seatbelt
+│   ├── security/             # Path policy, command classification, secrets, seatbelt, scratch-area, sensitivity, consent gate
 │   ├── secrets/              # OS keychain integration + .env fallback
 │   ├── prompts/              # Security preamble, untrusted content wrapping
 │   ├── session/              # File access tracking, schema, checkpoints
-│   ├── memory/               # Schema, review queue, privacy, citations, decay
+│   ├── memory/               # Schema, review queue, privacy, citations, decay, versioned snapshots/diff/rollback
+│   ├── evidence/             # Live lineage: SourceRecord/ClaimRecord/EvidenceModel types + session-scoped EvidenceTracker
+│   ├── connectors/           # Data-vendor plugin framework (DataConnector interface, caching+TTLs, auto-load from .quiver/connectors/)
+│   ├── document/             # Render→Look→Fix orchestrator (officecli screenshot/validate/issues, 5-round cap)
 │   ├── context/              # Token budgeting
 │   ├── prompt/               # Deterministic prompt assembly
 │   ├── fs/                   # Atomic writes with rollback
 │   ├── mcp/                  # MCP client + server config (.quiver/mcp.json)
-│   ├── subagents/            # Maker-checker, targeted check filter, scratchpad helpers
-│   └── tools/                # All 29 tool implementations + sandbox
+│   ├── subagents/            # Maker-checker (validates Evidence.json, rejects unsourced), targeted check filter, scratchpad helpers
+│   └── tools/                # Tool implementations incl. office_doc, evidence, data_query, github, web research, memory (versioned) + sandbox
 ├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
 ├── examples/                 # Flagship example: investment-committee-memo

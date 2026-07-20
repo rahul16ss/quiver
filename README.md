@@ -80,18 +80,21 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Cell-level lineage for non-Excel sources | Not implemented — evidence is file / sheet / section / page / URL level |
 | Web research (search, scrape, deep research) | Working — requires a Parallel API key; sources pass through for review |
 | Verification gate (isolated checker reviews high-risk changes before commit) | Working, always on |
-| Tamper-evident audit log (hash-chained) | Working |
+| Tamper-evident audit log (hash-chained, provenance-covered) | Working — provenance fields are cached from the hash-covered payload; `verifyChain` detects post-hoc edits |
 | Secrets in OS keychain, secret redaction in logs | Working |
 | Trust tiers and approval gates (per-project, persisted) | Working |
 | Model adapters (GLM, Claude) over an OpenAI-compatible interface | Working |
 | Local-only model execution | Configurable (local endpoints supported); **the default model endpoint is a cloud service** — see Data handling below |
 | Redaction rules, sensitivity-based routing | Framework shipped — sensitivity classification, MNPI redaction, per-tier model routing (low→cloud, mid→cloud-redacted, high→local); wired into agent loop |
-| Evidence tracking (live lineage during agent drafting) | Framework shipped — source registry, claim records, validation, Evidence.json output |
+| Evidence tracking (live lineage during agent drafting) | Shipped — source registry, claim records, validation, Evidence.json output; lineage chips render in the desktop GUI and the §8.3 verification rail shows the source (Excel cell, filing excerpt, or web page) |
+| Reviewer sign-off flow (verify / flag / needs-analyst) | Shipped in the desktop app — mark-final is blocked while a document has open flags; override is logged to a per-document tamper-evident audit chain + review record |
+| Checker rejects unsourced quantitative figures | Working — the isolated checker validates the evidence file for Office documents and returns "revise" on unsourced quantitative claims |
 | Scratch-area semantics (draft writes redirect to scratch, human promotes) | Shipped — `/promote` command |
-| Consent gate (pre-action summary before model calls) | Shipped — `/consent` toggle |
+| Consent gate (pre-action summary that blocks until approved) | Shipped — `/consent` toggle; when enabled, the agent waits for approve / decline / exclude before each model call |
 | Versioned memory (snapshots, diff, rollback) | Shipped — `/memory-history`, `/memory-rollback`, `/memory-diff` |
 | Data connectors (plugin framework for external data sources) | Framework shipped — sample EDGAR connector included |
 | Render→look→fix orchestration for Office documents | Shipped — `src/document/rlf_orchestrator.ts` |
+| Live-draft demo (real tool run, not replayed fixtures) | Shipped — `npm run demo:ic-memo:live` drives the real evidence tracker + audit chain + OfficeCLI end-to-end (8/8) |
 | Desktop app (Electron: chat, context panel, document preview, approvals) | Working, unsigned build |
 
 ## Data handling
@@ -160,7 +163,7 @@ npm run demo:ic-memo # Flagship workflow + acceptance checks
 ```
 
 The acceptance contract (`tests/spec_acceptance_tests.ts`) is a single checker-owned
-file of 328 behavioral assertions. It verifies both spec compliance and that modules
+file of 355 behavioral assertions. It verifies both spec compliance and that modules
 are actually wired into the agent loop and tools — not just that the code exists.
 `npm test` is the only live verdict — re-run it before trusting any status text.
 See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.

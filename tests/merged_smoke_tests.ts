@@ -32,6 +32,7 @@ import { config, applyTrustTier, needsApprovalFor, hasGrant } from "../src/confi
 import { createDefaultPolicy, checkPathAllowed } from "../src/security/path_policy.js";
 import { ApprovalCache } from "../src/security/approval_cache.js";
 import { AmbientEngine } from "../src/ambient.js";
+import { readQueue, summarizeQueue, watchdogStatus } from "../src/watchdog.js";
 
 interface CheckResult {
   id: string;
@@ -312,5 +313,223 @@ export async function mergedSmokeContract(
       /assistantContent\s*=\s*""\s*;[\s\S]*?firstStreamingToken\s*=\s*true\s*;[\s\S]*?accumulatedToolCalls\s*=\s*\{\s*\}/.test(
         codeOnly("src/agent.ts"),
       ),
+  );
+
+  // ─── Self-Heal: tool-call argument poisoning recovery (provider 400) ──
+  // Regression coverage for the un-healable 400 loop: a malformed tool-call
+  // arguments string persisted into history made every subsequent prompt
+  // (including a user's "self heal") fail with HTTP 400 "invalid tool call
+  // arguments". Two layers must be wired in src/agent.ts: (A) sanitize
+  // arguments before they enter history, and (B) repair history + retry on
+  // a 400 so an already-poisoned session recovers instead of looping.
+
+  await check(
+    "SELF-HEAL-SANITIZE-ON-PERSIST",
+    "US-13.4",
+    "The assistant tool_calls pushed into history must pass arguments through sanitizeToolCallArguments so malformed JSON never enters the message log (prevents a permanent provider 400 on the next turn)",
+    () =>
+      /sanitizeToolCallArguments\(raw\.arguments\)/.test(
+        codeOnly("src/agent.ts"),
+      ),
+  );
+
+  await check(
+    "SELF-HEAL-REPAIR-METHOD",
+    "US-13.4",
+    "A repairToolCallHistory method must exist that fixes malformed tool_calls.arguments in place and drops orphaned tool results whose tool_call_id no longer references a surviving call",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /repairToolCallHistory\(\)/.test(a) &&
+        /survivingCallIds/.test(a) &&
+        /orphan/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "SELF-HEAL-400-RETRY",
+    "US-13.4",
+    "On a provider 400 \"invalid tool call arguments\" the agent must repair history and retry the model call once (guarded by historyRepaired) rather than treating it as a transient connection failure and retrying the same poisoned request 3x",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /invalid tool call arguments/.test(a) &&
+        /historyRepaired/.test(a) &&
+        /self_heal_tool_args_repair/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "SELF-HEAL-SANITIZE-VALID-JSON",
+    "US-13.4",
+    "sanitizeToolCallArguments must coerce non-JSON / markdown-fenced / empty input to a valid \"{}\" string so the persisted tool call is always a parseable JSON object",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /sanitizeToolCallArguments/.test(a) &&
+        /```(?:json)?/.test(a) &&
+        /return "\{\}"/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "SELF-HEAL-MALFORMED-JSON-DIAGNOSTIC",
+    "US-13.4",
+    "When the model emits malformed JSON arguments, the agent must short-circuit before schema validation and return an accurate 'Malformed tool-call arguments (not valid JSON)' diagnostic (with the parse error) instead of the misleading 'filePath: Required' from validating an empty args object",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /argsParseError/.test(a) &&
+        /Malformed tool-call arguments \(not valid JSON\)/.test(a) &&
+        /tool_args_malformed_json/.test(a)
+      );
+    },
+  );
+
+  // ── UX: animated "working" indicator (no more frozen "Thinking…") ──
+  // The Spinner was a no-op that printed a static line for the whole think
+  // duration, which read as a hang. It must now animate: a rotating frame +
+  // elapsed seconds via setInterval, with stop() clearing the interval and
+  // the exact width written so no stray characters leak into streamed output.
+
+  await check(
+    "SPINNER-ANIMATES-ELAPSED",
+    "US-2.2",
+    "The Spinner must animate (setInterval repaint + elapsed seconds) so a long think is visibly alive, not a frozen 'Thinking…' line",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /class Spinner/.test(a) &&
+        /setInterval\(.*Spinner|setInterval\(/.test(a) &&
+        /FRAMES/.test(a) &&
+        /elapsed/.test(a) &&
+        !/is a no-op/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "SPINNER-STOP-CLEARS-INTERVAL-AND-WIDTH",
+    "US-2.2",
+    "Spinner.stop() must clearInterval and wipe the max width written (not just message.length+6) so a shorter repaint never leaves stray characters and no timer leaks",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /clearInterval\(this\.timer\)/.test(a) &&
+        /maxWidth/.test(a) &&
+        /this\.maxWidth/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "MODEL-ERROR-HONEST-LABEL",
+    "US-2.2",
+    "Model-call failures must be labeled honestly (classifyModelError: auth / 4xx / 5xx / timeout / connection / cancelled) instead of the blanket 'Connection failed' that was wrong for request rejections",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      return (
+        /classifyModelError/.test(a) &&
+        /Auth failed/.test(a) &&
+        /Request rejected by provider/.test(a) &&
+        /Provider error \(HTTP 5xx\)/.test(a)
+      );
+    },
+  );
+
+  // ── UX: huge-paste handling in the multiline editor ───────────────────
+  // Pasting a large blob used to flood the terminal and make every subsequent
+  // keystroke O(buffer) because render() redraw the entire buffer each frame.
+  // The editor must now window the render around the cursor (collapsed ↑/↓
+  // hidden-line summaries) so display + edits are O(window), while still
+  // submitting the full text on Enter.
+
+  await check(
+    "MULTILINE-WINDOWED-RENDER",
+    "US-2.2",
+    "The multiline editor must collapse large buffers in render() — render only a cursor-centered window of lines with ↑/↓ hidden-line summaries, never the whole buffer — so a huge paste doesn't flood the terminal or lag per-keystroke",
+    () => {
+      const a = codeOnly("src/multiline.ts");
+      return (
+        /MAX_RENDER_LINES/.test(a) &&
+        /winStart/.test(a) &&
+        /winEnd/.test(a) &&
+        /hidden/.test(a) &&
+        /full text sends on Enter/.test(a)
+      );
+    },
+  );
+
+  await check(
+    "MULTILINE-WINDOW-CURSOR-MATH",
+    "US-2.2",
+    "The windowed render must keep cursor positioning correct and O(window) — crow starts at headerRows and the row loop iterates only the visible window (winStart..cLine), not the whole buffer",
+    () => {
+      const a = codeOnly("src/multiline.ts");
+      return (
+        /let crow = headerRows/.test(a) &&
+        /for \(let li = winStart; li < cLine; li\+\+\)/.test(a)
+      );
+    },
+  );
+
+  // ── Watchdog: continuous self-health monitor (behavioral) ──
+  // The watchdog writes a JSONL findings queue that the agent can read via
+  // /watchdog. These checks verify the read/summarize/status surface used by
+  // the slash command actually works against a real queue file, so the
+  // triage loop (watchdog → /watchdog → fix) is end-to-end wired.
+
+  await check(
+    "WATCHDOG-QUEUE-READ-PARSE",
+    "US-13.4",
+    "readQueue must parse the JSONL findings queue into structured WatchdogFinding objects (skipping blank/malformed lines)",
+    () => {
+      const findings = readQueue();
+      return Array.isArray(findings) && findings.every(
+        (f) => f && typeof f.kind === "string" && typeof f.severity === "string",
+      );
+    },
+  );
+
+  await check(
+    "WATCHDOG-SUMMARIZE-GROUPS-BY-KIND",
+    "US-13.4",
+    "summarizeQueue must group findings by kind and include every finding's key + detail so the /watchdog display is complete and non-empty when findings exist",
+    () => {
+      const findings = readQueue();
+      const summary = summarizeQueue(findings);
+      // When the queue has findings, every finding's key must appear in the summary.
+      if (findings.length === 0) return true; // nothing to summarize is valid
+      return findings.every((f) => summary.includes(f.key)) && summary.length > 0;
+    },
+  );
+
+  await check(
+    "WATCHDOG-STATUS-ALIVE-LINE",
+    "US-13.4",
+    "watchdogStatus must render an alive/not-alive liveness line and list queue findings (or the empty-queue message), matching the slash-command output",
+    () => {
+      const out = watchdogStatus();
+      return /Watchdog/.test(out) && /(alive|not alive|no heartbeat)/.test(out) && /Queue/.test(out);
+    },
+  );
+
+  await check(
+    "WATCHDOG-COMMAND-REGISTERED",
+    "US-13.4",
+    "The /watchdog slash command must be registered (with /wd alias) and dispatched in the CLI so the in-agent triage loop works",
+    () => {
+      const cmds = codeOnly("src/slash_commands.ts");
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /name: "\/watchdog"/.test(cmds) &&
+        /aliases: \["\/wd"\]/.test(cmds) &&
+        /case "\/watchdog":/.test(cli) &&
+        /watchdogStatus/.test(cli)
+      );
+    },
   );
 }

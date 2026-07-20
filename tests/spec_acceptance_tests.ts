@@ -133,6 +133,51 @@ import {
 } from "../src/security/seatbelt.js";
 import { describeUnknownChunk } from "../src/providers/types.js";
 import { ApprovalCache } from "../src/security/approval_cache.js";
+// Behavioral imports for the US-17.13–17.20 audit (checker-owned).
+// These let the contract assert spec-required BEHAVIOR by importing and
+// calling the real modules, instead of grepping for identifiers the vendor
+// happened to ship (anti-fitting).
+import { EvidenceTracker } from "../src/evidence/tracker.js";
+import type { SourceRecord, ClaimRecord } from "../src/evidence/model.js";
+import {
+  isScratchModeActive,
+  resolveScratchPath,
+  promoteFile,
+  promoteAll,
+  listScratchFiles,
+  clearScratch,
+  ensureScratchDir,
+  getScratchDir,
+} from "../src/security/scratch_area.js";
+import {
+  classifySensitivity,
+  redactMnpi,
+  routeForTier,
+  applySensitivityRouting,
+  formatRedactionReceipt,
+  type SensitivityConfig,
+} from "../src/security/sensitivity.js";
+import {
+  renderConsentGate,
+  isConsentGateEnabled,
+  toggleConsentGate,
+  type ConsentGateData,
+} from "../src/security/consent_gate.js";
+import {
+  ConnectorRegistry,
+  type DataConnector,
+  type ConnectorResult,
+  type SearchResult,
+} from "../src/connectors/framework.js";
+import { renderLookFixCycle } from "../src/document/rlf_orchestrator.js";
+import {
+  createSnapshot,
+  rollbackToVersion,
+  diffVersions,
+  getHistory,
+  getVersionContent,
+} from "../src/memory/versioned.js";
+import { resolveTargetedChecks } from "../src/subagents/checker_filter.js";
 import { architectReviewContract } from "./architect_review_tests.js";
 import { mergedSmokeContract } from "./merged_smoke_tests.js";
 
@@ -189,7 +234,13 @@ async function check(
 }
 
 function srcText(rel: string): string {
-  const p = path.join(ROOT, rel);
+  // Accept both project-relative paths ("src/agent.ts") and absolute paths
+  // (passed by grepCodeTree, which walks the tree with path.join(ROOT,...)).
+  // Without the absolute-path branch, path.join(ROOT, abs) doubles the path
+  // into a non-existent file and every grepCodeTree-based check silently
+  // returns false — a harness bug that falsely fails wiring checks the code
+  // actually satisfies.
+  const p = path.isAbsolute(rel) ? rel : path.join(ROOT, rel);
   if (!existsSync(p)) return "";
   return readFileSync(p, "utf8");
 }
@@ -219,7 +270,7 @@ function grepCodeTree(pattern: RegExp): string[] {
         (e.name.endsWith(".ts") || e.name.endsWith(".js")) &&
         !e.name.endsWith(".d.ts")
       ) {
-        if (pattern.test(codeOnly(p))) hits.push(path.relative(ROOT, p));
+        if (pattern.test(codeOnly(path.relative(ROOT, p)))) hits.push(path.relative(ROOT, p));
       }
     }
   };
@@ -5714,6 +5765,1386 @@ async function extendedCapabilitiesContract() {
       const c = codeOnly("src/tools/browser_control.ts");
       // The navigate path must invoke isPrivateUrl and abort when it returns true.
       return /isPrivateUrl\s*\(/.test(c) && /Blocked|blocked|private\/internal/i.test(c);
+    },
+  );
+
+  // ─── US-17.13: Live Lineage v1 (Evidence Model) ──────────────────────
+  // Build-order #3: the agent must emit Evidence.json during live drafting
+  // with the same schema as the flagship example, and the checker must be
+  // able to reject unsourced quantitative figures.
+
+  await check(
+    "EVIDENCE-MODEL-EXISTS",
+    "US-17.13",
+    "Evidence model types module must exist at src/evidence/model.ts",
+    () => existsSync(path.join(ROOT, "src", "evidence", "model.ts")),
+  );
+
+  await check(
+    "EVIDENCE-MODEL-TYPES",
+    "US-17.13",
+    "Evidence model must define SourceRecord, ClaimRecord, EvidenceModel, and RunRecord types",
+    () => {
+      const c = srcText("src/evidence/model.ts");
+      return (
+        /interface SourceRecord/.test(c) &&
+        /interface ClaimRecord/.test(c) &&
+        /interface EvidenceModel/.test(c) &&
+        /interface RunRecord/.test(c) &&
+        /source_id/.test(c) &&
+        /claim_id/.test(c) &&
+        /review_status/.test(c) &&
+        /is_quantitative/.test(c) &&
+        /draft_for_review/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "EVIDENCE-TRACKER-EXISTS",
+    "US-17.13",
+    "Evidence tracker module must exist at src/evidence/tracker.ts with EvidenceTracker class",
+    () => {
+      const c = srcText("src/evidence/tracker.ts");
+      return /class EvidenceTracker/.test(c);
+    },
+  );
+
+  await check(
+    "EVIDENCE-TRACKER-VALIDATE",
+    "US-17.13",
+    "Behavioral: EvidenceTracker.validateEvidence() must (a) pass a sourced quantitative claim, (b) reject a quantitative claim with no approved source, (c) allow it when flagged/unresolved, and (d) flag a claim that cites an excluded source — per SPEC §9.3 / §8.1",
+    () => {
+      const mkSource = (over: Partial<SourceRecord>): SourceRecord => ({
+        source_id: "", source_type: "excel_model", title: "", file: "",
+        as_of: "", location: {}, sensitivity: "low", approved: true, ...over,
+      });
+      const mkClaim = (over: Partial<ClaimRecord>): ClaimRecord => ({
+        claim_id: "", rendered_text: "", source_ids: [], relationship: "sourced",
+        review_status: "verified", reviewer_decision: null, is_quantitative: true, ...over,
+      });
+
+      // (a) sourced quantitative claim → valid
+      const t1 = new EvidenceTracker();
+      t1.registerSource(mkSource({ source_id: "s1", approved: true }));
+      t1.recordClaim(mkClaim({ claim_id: "c1", source_ids: ["s1"] }));
+      if (!t1.validateEvidence().valid) return false;
+
+      // (b) quantitative claim with no approved source and not flagged → invalid
+      const t2 = new EvidenceTracker();
+      t2.registerSource(mkSource({ source_id: "s1", approved: false }));
+      t2.recordClaim(mkClaim({ claim_id: "c1", source_ids: ["s1"], review_status: "verified" }));
+      const v2 = t2.validateEvidence();
+      if (v2.valid) return false;
+      if (!v2.problems.some((p) => p.includes("c1"))) return false;
+
+      // (c) an unsourced quantitative claim that is flagged is allowed (the checker must not block flagged/unresolved)
+      const t3 = new EvidenceTracker();
+      t3.recordClaim(mkClaim({ claim_id: "c1", source_ids: [], review_status: "flagged" }));
+      if (!t3.validateEvidence().valid) return false;
+
+      // (c2) but a flagged claim that cites an excluded source is still a problem: the user vetoed that source
+      const t3b = new EvidenceTracker();
+      t3b.registerSource(mkSource({ source_id: "s1", approved: true }));
+      t3b.excludeSource("s1", "user vetoed before run");
+      t3b.recordClaim(mkClaim({ claim_id: "c1", source_ids: ["s1"], review_status: "flagged" }));
+      if (t3b.validateEvidence().valid) return false;
+
+      // (d) a claim citing an excluded source is flagged as a problem
+      const t4 = new EvidenceTracker();
+      t4.registerSource(mkSource({ source_id: "s1", approved: true }));
+      t4.excludeSource("s1", "user vetoed before run");
+      t4.recordClaim(mkClaim({ claim_id: "c1", source_ids: ["s1"], review_status: "flagged" }));
+      const v4 = t4.validateEvidence();
+      if (!v4.problems.some((p) => p.includes("excluded"))) return false;
+
+      return true;
+    },
+  );
+
+  await check(
+    "EVIDENCE-TRACKER-FINALIZE",
+    "US-17.13",
+    "Behavioral: EvidenceTracker.finalize() must write <base>_Evidence.json and <base>_Run_Record.json to the output dir with review_status=draft_for_review, generated_by=live_agent, and the registered claims/sources — per SPEC §8.1 / §9.4",
+    async () => {
+      const t = new EvidenceTracker();
+      t.setMetadata({ company: "Acme Co", title: "IC Memo", asOf: "2026-12-31" });
+      t.registerSource({
+        source_id: "s1", source_type: "excel_model", title: "RevenueBuild",
+        file: "Model_v12.xlsx", as_of: "2026-12-31", location: { sheet: "RevenueBuild", cell: "F87" },
+        sensitivity: "low", approved: true, extracted_value: "48200000",
+      });
+      t.recordClaim({
+        claim_id: "c1", rendered_text: "$48.2M", source_ids: ["s1"],
+        relationship: "sourced", review_status: "verified", reviewer_decision: null,
+        is_quantitative: true,
+      });
+      const out = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-evidence-"));
+      tmpDirs.push(out);
+      const res = t.finalize(out, "IC_Memo.docx");
+      const ev = JSON.parse(readFileSync(res.evidencePath, "utf8"));
+      const rr = JSON.parse(readFileSync(res.runRecordPath || "", "utf8"));
+      return (
+        ev.review_status === "draft_for_review" &&
+        ev.generated_by === "live_agent" &&
+        Array.isArray(ev.claims) && ev.claims.length === 1 &&
+        Array.isArray(ev.sources) && ev.sources.length === 1 &&
+        ev.sources[0].source_id === "s1" &&
+        rr.review_status === "draft_for_review" &&
+        res.evidencePath.endsWith("IC_Memo_Evidence.json") &&
+        (res.runRecordPath || "").endsWith("IC_Memo_Run_Record.json")
+      );
+    },
+  );
+
+  await check(
+    "EVIDENCE-TOOL-EXISTS",
+    "US-17.13",
+    "Evidence tool must exist at src/tools/evidence.ts and export a tool object with name 'evidence'",
+    () => {
+      const c = srcText("src/tools/evidence.ts");
+      return /name:\s*"evidence"/.test(c) && /export const tool/.test(c);
+    },
+  );
+
+  await check(
+    "EVIDENCE-TOOL-ACTIONS",
+    "US-17.13",
+    "Evidence tool must support all required actions: register_source, exclude_source, record_claim, update_claim, register_input, validate, finalize, status",
+    () => {
+      const c = codeOnly("src/tools/evidence.ts");
+      return (
+        /register_source/.test(c) &&
+        /exclude_source/.test(c) &&
+        /record_claim/.test(c) &&
+        /update_claim/.test(c) &&
+        /register_input/.test(c) &&
+        /validate/.test(c) &&
+        /finalize/.test(c) &&
+        /status/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "EVIDENCE-TOOL-DISPLAY-NAME",
+    "US-17.13",
+    "Agent must have 'evidence' in TOOL_DISPLAY_NAMES for human-friendly CLI/GUI display",
+    () => {
+      const c = codeOnly("src/agent.ts");
+      return /evidence:\s*"/.test(c);
+    },
+  );
+
+  await check(
+    "EVIDENCE-SYSTEM-PROMPT",
+    "US-17.13",
+    "System prompt must instruct the agent to use the evidence tool when drafting Office documents with quantitative figures",
+    () => {
+      const c = srcText("skills/system-prompt/SKILL.md");
+      return (
+        /evidence/i.test(c) &&
+        /register_source/.test(c) &&
+        /record_claim/.test(c) &&
+        /finalize/.test(c) &&
+        /quantitative/i.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CHECKER-FILTER-RESOLVES",
+    "US-15.3",
+    "Behavioral: resolveTargetedChecks must return the file-specific acceptance checks (not the full suite) for a known source file, and fall back to full=true for an unknown file — per SPEC §15.3 (targeted checker, not keyword theater)",
+    () => {
+      const known = resolveTargetedChecks("replace_content", { filePath: "src/evidence/tracker.ts" });
+      if (known.full) return false;
+      if (!known.checkIds.some((id) => id.startsWith("EVIDENCE-"))) return false;
+      const known2 = resolveTargetedChecks("replace_content", { filePath: "src/security/sensitivity.ts" });
+      if (known2.full) return false;
+      if (!known2.checkIds.some((id) => id.startsWith("SENSITIVITY-"))) return false;
+      const unknown = resolveTargetedChecks("replace_content", { filePath: "some/unknown/file.ts" });
+      if (!unknown.full) return false; // safe fallback = full suite
+      const cmd = resolveTargetedChecks("run_command", { command: "rm -rf /" });
+      if (cmd.full) return false;
+      if (!cmd.checkIds.some((id) => id.startsWith("CMD-"))) return false;
+      return true;
+    },
+  );
+
+  // ─── US-17.14: Scratch-area semantics for "Draft & research" tier ────
+  // Build-order #4: when trust tier is "build" (buyer-facing: "Draft &
+  // research"), writes redirect to .quiver/scratch/. The user reviews and
+  // promotes with /promote.
+
+  await check(
+    "SCRATCH-AREA-MODULE-EXISTS",
+    "US-17.14",
+    "Scratch area module must exist at src/security/scratch_area.ts with core functions",
+    () => {
+      const c = srcText("src/security/scratch_area.ts");
+      return (
+        /isScratchModeActive/.test(c) &&
+        /resolveScratchPath/.test(c) &&
+        /promoteFile/.test(c) &&
+        /promoteAll/.test(c) &&
+        /listScratchFiles/.test(c) &&
+        /clearScratch/.test(c) &&
+        /SCRATCH_DIR_NAME/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-REDIRECT",
+    "US-17.14",
+    "tool_paths.ts must redirect writes to scratch area when scratch mode is active (import scratch_area, check isScratchModeActive, call resolveScratchPath)",
+    () => {
+      const c = codeOnly("src/security/tool_paths.ts");
+      return (
+        /scratch_area/.test(c) &&
+        /isScratchModeActive/.test(c) &&
+        /resolveScratchPath/.test(c) &&
+        /ensureScratchDir/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-RESOLVE-BEHAVIOR",
+    "US-17.14",
+    "Behavioral: with trust tier 'build' (Draft & research), resolveScratchPath must map a workspace file to .quiver/scratch/...; with a non-scratch tier it must return null — per SPEC §11.1 / build-order #4",
+    () => {
+      const prev = config.trustTier;
+      try {
+        config.trustTier = "build";
+        if (!isScratchModeActive()) return false;
+        const ws = "/tmp/quiver-scratch-ws";
+        const mapped = resolveScratchPath(path.join(ws, "src", "cli.ts"), ws);
+        if (!mapped || !mapped.includes(".quiver/scratch")) return false;
+        if (!mapped.endsWith(path.join("src", "cli.ts"))) return false;
+        const inside = resolveScratchPath(getScratchDir(ws), ws);
+        if (inside !== null) return false;
+        const outside = resolveScratchPath("/etc/passwd", ws);
+        if (outside !== null) return false;
+        config.trustTier = "operate";
+        if (isScratchModeActive()) return false;
+        if (resolveScratchPath(path.join(ws, "src", "cli.ts"), ws) !== null) return false;
+        return true;
+      } finally {
+        config.trustTier = prev;
+      }
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-PROMOTE",
+    "US-17.14",
+    "/promote slash command must be registered and wired in CLI for promoting scratch drafts",
+    () => {
+      const cmds = srcText("src/slash_commands.ts");
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /\/promote/.test(cmds) &&
+        /\/pm/.test(cmds) &&
+        /case "\/promote"/.test(cli) &&
+        /promoteAll|promoteFile/.test(cli) &&
+        /listScratchFiles/.test(cli)
+      );
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-PROMOTE-BEHAVIOR",
+    "US-17.14",
+    "Behavioral: promoteFile must move a scratch draft to its real workspace path (creating parent dirs) and remove the scratch copy; promoteAll must promote every draft — per SPEC §11.1 (human promotes, never auto-touches real files)",
+    async () => {
+      const prev = config.trustTier;
+      const ws = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-scratch-promote-"));
+      tmpDirs.push(ws);
+      try {
+        config.trustTier = "build";
+        ensureScratchDir(ws);
+        const scratchFile = path.join(getScratchDir(ws), "drafts", "memo.docx");
+        await fs.mkdir(path.dirname(scratchFile), { recursive: true });
+        await fs.writeFile(scratchFile, "draft content");
+        const real = promoteFile(scratchFile, ws);
+        if (real !== path.join(ws, "drafts", "memo.docx")) return false;
+        if (!existsSync(real)) return false;
+        if (existsSync(scratchFile)) return false;
+        const s2 = path.join(getScratchDir(ws), "notes.txt");
+        await fs.writeFile(s2, "notes");
+        const all = promoteAll(ws);
+        if (all.length !== 1) return false;
+        if (!existsSync(path.join(ws, "notes.txt"))) return false;
+        if (listScratchFiles(ws).length !== 0) return false;
+        return true;
+      } finally {
+        config.trustTier = prev;
+        clearScratch(ws);
+      }
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-LIST",
+    "US-17.14",
+    "Behavioral: listScratchFiles must return {scratch, real, relative} for each pending draft so the user can see what waits for promotion — per SPEC §11.1",
+    async () => {
+      const prev = config.trustTier;
+      const ws = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-scratch-list-"));
+      tmpDirs.push(ws);
+      try {
+        config.trustTier = "build";
+        ensureScratchDir(ws);
+        await fs.mkdir(path.join(getScratchDir(ws), "sub"), { recursive: true });
+        await fs.writeFile(path.join(getScratchDir(ws), "sub", "a.docx"), "x");
+        const list = listScratchFiles(ws);
+        if (list.length !== 1) return false;
+        const item = list[0];
+        if (!item.relative || !item.real || !item.scratch) return false;
+        if (item.relative !== path.join("sub", "a.docx")) return false;
+        if (!existsSync(item.scratch)) return false;
+        return true;
+      } finally {
+        config.trustTier = prev;
+        clearScratch(ws);
+      }
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-SYSTEM-PROMPT",
+    "US-17.14",
+    "System prompt must document scratch-area semantics for the Draft & research tier",
+    () => {
+      const c = srcText("skills/system-prompt/SKILL.md");
+      return (
+        /Scratch Area/i.test(c) &&
+        /Draft.*Research/i.test(c) &&
+        /promote/i.test(c) &&
+        /scratch/i.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-REPLACE-CONTENT",
+    "US-17.14",
+    "replace_content tool must handle scratch mode (read from real file, write to scratch)",
+    () => {
+      const c = codeOnly("src/tools/replace_content.ts");
+      return (
+        /isScratchModeActive/.test(c) &&
+        /resolveScratchPath/.test(c) ||
+        /isScratchModeActive/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SCRATCH-AREA-APPLY-PATCH",
+    "US-17.14",
+    "apply_patch tool must handle scratch mode (read from real file, write to scratch)",
+    () => {
+      const c = codeOnly("src/tools/apply_patch.ts");
+      return /isScratchModeActive/.test(c);
+    },
+  );
+
+  // ─── US-17.15: Consent Gate v1 ───────────────────────────────────────
+  // Build-order #5: pre-action summary rendered from manifest data. The
+  // gate shows the six layers (framing, memory, skills, conversation, inputs,
+  // operational metadata) before each model call. User can approve/edit/decline.
+
+  await check(
+    "CONSENT-GATE-MODULE-EXISTS",
+    "US-17.15",
+    "Consent gate module must exist at src/security/consent_gate.ts with ConsentGateData interface and core functions",
+    () => {
+      const c = srcText("src/security/consent_gate.ts");
+      return (
+        /interface ConsentGateData/.test(c) &&
+        /isConsentGateEnabled/.test(c) &&
+        /renderConsentGate/.test(c) &&
+        /toggleConsentGate/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONSENT-GATE-RENDER",
+    "US-17.15",
+    "Behavioral: renderConsentGate must render all six SPEC §6.1 layers (Framing, Memory, Skills, Conversation, Inputs, Operational metadata) with the model name and trust tier — not just contain those tokens in source",
+    () => {
+      const data: ConsentGateData = {
+        systemPromptVersion: "2.0.0",
+        memoryFiles: ["persona.txt", "workspace-facts.md"],
+        personaSummary: "firm-house voice",
+        skills: [{ id: "firm-ic-memo", version: "1.1" }],
+        toolCount: 6,
+        toolNames: [],
+        mcpServerCount: 0,
+        turnCount: 38,
+        compactedCount: 0,
+        userRequestPreview: "draft the IC memo",
+        webSourceCount: 0,
+        modelName: "gemini-2.5-pro",
+        trustTier: "build",
+        tokenEstimate: "12k",
+        scratchMode: false,
+      };
+      const out = renderConsentGate(data);
+      return (
+        /A\. Framing/.test(out) &&
+        /B\. Memory/.test(out) &&
+        /C\. Skills/.test(out) &&
+        /D\. Convo/.test(out) &&
+        /E\. Inputs/.test(out) &&
+        /F\. Ops/.test(out) &&
+        /gemini-2\.5-pro/.test(out) &&
+        /build/.test(out) &&
+        /firm-ic-memo v1\.1/.test(out) &&
+        /38 turns/.test(out)
+      );
+    },
+  );
+
+  await check(
+    "CONSENT-GATE-TOGGLE",
+    "US-17.15",
+    "/consent slash command must be registered and wired in CLI for toggling the consent gate",
+    () => {
+      const cmds = srcText("src/slash_commands.ts");
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /\/consent/.test(cmds) &&
+        /\/cg/.test(cmds) &&
+        /case "\/consent"/.test(cli) &&
+        /toggleConsentGate/.test(cli)
+      );
+    },
+  );
+
+  // ─── US-17.16: Connector Framework (Build Order #6) ──────────────────
+  // SPEC §4.4: Plugin architecture for data-vendor integrations. Each vendor
+  // is a connector plugin with search() and fetch(). The agent calls
+  // connectors through a unified data_query tool. Provenance built into every
+  // response. Local caching with TTLs. Data normalization to common schemas.
+
+  await check(
+    "CONNECTOR-FRAMEWORK-EXISTS",
+    "US-17.16",
+    "Connector framework module must exist at src/connectors/framework.ts with core types and registry",
+    () => {
+      const c = srcText("src/connectors/framework.ts");
+      return (
+        /interface DataConnector/.test(c) &&
+        /interface ConnectorResult/.test(c) &&
+        /interface Provenance/.test(c) &&
+        /class ConnectorRegistry/.test(c) &&
+        /globalConnectorRegistry/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONNECTOR-FRAMEWORK-INTERFACE",
+    "US-17.16",
+    "DataConnector interface must define search() and fetch() methods, name, label, dataTypes, requiresAuth, sendsIdentifiers",
+    () => {
+      const c = codeOnly("src/connectors/framework.ts");
+      return (
+        /search\(query: string\)/.test(c) &&
+        /fetch\(identifier: string/.test(c) &&
+        /requiresAuth/.test(c) &&
+        /sendsIdentifiers/.test(c) &&
+        /ConnectorDataType/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONNECTOR-FRAMEWORK-CACHE",
+    "US-17.16",
+    "Behavioral: ConnectorRegistry.fetch must cache results locally and serve the second call from cache (connector.fetch invoked once), with cachedAt set on the hit; clearCache empties it — per SPEC §4.4 (local caching with TTLs)",
+    async () => {
+      const reg = new ConnectorRegistry(3600);
+      const counter: { n: number } = { n: 0 };
+      const fake: DataConnector = {
+        name: "acceptance-fake-" + Date.now(),
+        label: "Acceptance Fake",
+        dataTypes: ["Generic"],
+        requiresAuth: false,
+        sendsIdentifiers: false,
+        async search() { return []; },
+        async fetch(identifier: string): Promise<ConnectorResult> {
+          counter.n++;
+          return {
+            identifier,
+            dataType: "Generic",
+            data: { v: counter.n },
+            provenance: { vendor: "fake", dataset: "d", timestamp: new Date().toISOString(), apiRef: "r" },
+          };
+        },
+      };
+      reg.register(fake);
+      const r1 = await reg.fetch(fake.name, "ID1");
+      const afterFirst = counter.n;
+      const r2 = await reg.fetch(fake.name, "ID1");
+      const afterSecond = counter.n;
+      if (afterSecond !== afterFirst) return false; // cache hit: connector NOT called again
+      if (!r2.cachedAt) return false;
+      if (r1.cachedAt) return false; // first call was a cache miss
+      reg.clearCache();
+      await reg.fetch(fake.name, "ID1");
+      if (counter.n === afterSecond) return false; // re-fetched after clear
+      return true;
+    },
+  );
+
+  await check(
+    "CONNECTOR-FRAMEWORK-REGISTRY",
+    "US-17.16",
+    "Connector registry must support register, unregister, get, list, and loadConnectors from .quiver/connectors/",
+    () => {
+      const c = codeOnly("src/connectors/framework.ts");
+      return (
+        /register\(connector: DataConnector\)/.test(c) &&
+        /unregister/.test(c) &&
+        /loadConnectors/.test(c) &&
+        /\.quiver.{0,5}connectors/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONNECTOR-TOOL-EXISTS",
+    "US-17.16",
+    "data_query tool must exist at src/tools/data_query.ts with the unified agent-facing interface",
+    () => {
+      const c = srcText("src/tools/data_query.ts");
+      return (
+        /export const tool/.test(c) &&
+        /name: "data_query"/.test(c) &&
+        /globalConnectorRegistry/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONNECTOR-TOOL-ACTIONS",
+    "US-17.16",
+    "data_query tool must support actions: search, fetch, list, status",
+    () => {
+      const c = codeOnly("src/tools/data_query.ts");
+      return (
+        /"search"/.test(c) &&
+        /"fetch"/.test(c) &&
+        /"list"/.test(c) &&
+        /"status"/.test(c) &&
+        /globalConnectorRegistry/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONNECTOR-TOOL-DISPLAY-NAME",
+    "US-17.16",
+    "data_query tool must have a human-friendly display name in agent.ts TOOL_DISPLAY_NAMES",
+    () => {
+      const c = codeOnly("src/agent.ts");
+      return /data_query.*Data query/.test(c);
+    },
+  );
+
+  await check(
+    "CONNECTOR-SYSTEM-PROMPT",
+    "US-17.16",
+    "System prompt must document the data_query tool and connector framework",
+    () => {
+      const c = srcText("skills/system-prompt/SKILL.md");
+      return /Data Connectors/.test(c) && /data_query/.test(c);
+    },
+  );
+
+  // ─── US-17.17: Sensitivity Routing & MNPI Redaction (Build Order #7) ─
+  // SPEC §4.3: Per-sensitivity model routing. Low → cloud, Mid → cloud after
+  // redaction, High → local. MNPI redaction strips identifiers. User sees a
+  // redaction receipt. Audit chain records the route and reason.
+
+  await check(
+    "SENSITIVITY-MODULE-EXISTS",
+    "US-17.17",
+    "Sensitivity routing module must exist at src/security/sensitivity.ts with core types and functions",
+    () => {
+      const c = srcText("src/security/sensitivity.ts");
+      return (
+        /type SensitivityTier/.test(c) &&
+        /type ModelRoute/.test(c) &&
+        /interface SensitivityConfig/.test(c) &&
+        /applySensitivityRouting/.test(c) &&
+        /formatRedactionReceipt/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SENSITIVITY-CLASSIFY",
+    "US-17.17",
+    "Behavioral: classifySensitivity must return 'high' for live-deal/MNPI text, 'mid' for client/acquisition text, and 'low' for generic research — per SPEC §4.3 sensitivity tiers",
+    () => {
+      const cfg: SensitivityConfig = {
+        defaultTier: "low",
+        modelEndpoints: { cloud: "cloud", local: "local" },
+        mnpiPatterns: [],
+        highSensitivityKeywords: ["live deal", "client name", "mnpi"],
+        midSensitivityKeywords: ["client", "acquisition", "valuation"],
+      };
+      if (classifySensitivity("this is a live deal model", cfg).tier !== "high") return false;
+      if (classifySensitivity("client acquisition analysis", cfg).tier !== "mid") return false;
+      if (classifySensitivity("generic macroeconomic research", cfg).tier !== "low") return false;
+      return true;
+    },
+  );
+
+  await check(
+    "SENSITIVITY-REDACT",
+    "US-17.17",
+    "Behavioral: redactMnpi must strip MNPI patterns (client names, deal terms, financial figures), return a per-redaction record, and leave a redaction receipt a user can read — per SPEC §11.2 (the consent gate itemizes what was stripped, not a silent strip)",
+    () => {
+      const cfg: SensitivityConfig = {
+        defaultTier: "low",
+        modelEndpoints: { cloud: "cloud", local: "local" },
+        mnpiPatterns: [
+          { type: "client_name", pattern: "\\b(?:Client|Customer)\\s+[A-Z][a-z]+\\b", replacement: "[CLIENT_NAME]" },
+          { type: "deal_term", pattern: "\\bdeal value of \\$[\\d,]+", replacement: "[DEAL_TERM]" },
+          { type: "financial_figure", pattern: "\\$[\\d,]+(?:\\.\\d+)?(?:\\s*(?:million|billion|M|B))?", replacement: "[FIGURE]" },
+        ],
+        highSensitivityKeywords: [], midSensitivityKeywords: [],
+      };
+      const { redactedText, redactions } = redactMnpi("Client Acme signed a term sheet; deal value of $50; revenue $48.2 million.", cfg);
+      if (!redactions.some((r) => r.type === "client_name")) return false;
+      if (!redactions.some((r) => r.type === "deal_term")) return false;
+      if (!redactions.some((r) => r.type === "financial_figure")) return false;
+      if (!/\[CLIENT_NAME\]/.test(redactedText)) return false;
+      if (!/\[FIGURE\]/.test(redactedText)) return false;
+      const receipt = formatRedactionReceipt(redactions);
+      if (receipt === "No redactions applied.") return false;
+      if (!/client name/.test(receipt)) return false;
+      return true;
+    },
+  );
+
+  await check(
+    "SENSITIVITY-ROUTE",
+    "US-17.17",
+    "Behavioral: routeForTier maps high→local, mid→cloud-redacted, low→cloud; and applySensitivityRouting on high-sens text routes local with NO redactions, while mid-sens text routes cloud-redacted WITH redactions applied — per SPEC §4.3 / §11.2",
+    () => {
+      if (routeForTier("high") !== "local") return false;
+      if (routeForTier("mid") !== "cloud-redacted") return false;
+      if (routeForTier("low") !== "cloud") return false;
+      const cfg: SensitivityConfig = {
+        defaultTier: "low",
+        modelEndpoints: { cloud: "cloud", local: "local" },
+        mnpiPatterns: [
+          { type: "client_name", pattern: "\\bClient\\s+[A-Z][a-z]+\\b", replacement: "[CLIENT_NAME]" },
+        ],
+        highSensitivityKeywords: ["live deal"],
+        midSensitivityKeywords: ["client"],
+      };
+      const high = applySensitivityRouting("this is a live deal model", cfg);
+      if (high.route !== "local" || high.redactions.length !== 0) return false;
+      const mid = applySensitivityRouting("client Acme analysis", cfg);
+      if (mid.route !== "cloud-redacted" || mid.redactions.length === 0) return false;
+      if (!/\[CLIENT_NAME\]/.test(mid.redactedText)) return false;
+      const low = applySensitivityRouting("generic macro research", cfg);
+      if (low.route !== "cloud" || low.redactions.length !== 0) return false;
+      return true;
+    },
+  );
+
+  await check(
+    "SENSITIVITY-SYSTEM-PROMPT",
+    "US-17.17",
+    "System prompt must document sensitivity routing and MNPI redaction",
+    () => {
+      const c = srcText("skills/system-prompt/SKILL.md");
+      return /Sensitivity.*MNPI/.test(c) && /redaction/i.test(c);
+    },
+  );
+
+  // ─── US-17.18: Agent loop integration (sensitivity + consent gate) ────
+  // The sensitivity routing and consent gate modules must be wired into
+  // the agent loop, not just exist as standalone modules.
+
+  await check(
+    "SENSITIVITY-AGENT-WIRED",
+    "US-17.18",
+    "Agent loop must call applySensitivityRouting on user input and log the routing decision",
+    () => {
+      const c = codeOnly("src/agent.ts");
+      return (
+        /applySensitivityRouting/.test(c) &&
+        /sensitivity_redaction/.test(c) &&
+        /sensitivity_routing/.test(c) &&
+        /formatRedactionReceipt/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "CONSENT-GATE-AGENT-WIRED",
+    "US-17.18",
+    "Agent loop must check isConsentGateEnabled and render compact gate when enabled",
+    () => {
+      const c = codeOnly("src/agent.ts");
+      return (
+        /isConsentGateEnabled/.test(c) &&
+        /renderConsentGateCompact/.test(c)
+      );
+    },
+  );
+
+  // ─── US-17.19: Versioned memory (Epic 6) ─────────────────────────────
+  // Memory files must be versioned with diff/rollback support.
+
+  await check(
+    "VERSIONED-MEMORY-MODULE-EXISTS",
+    "US-17.19",
+    "Versioned memory module must exist at src/memory/versioned.ts",
+    () => {
+      try {
+        const src = readFileSync(
+          path.join(ROOT, "src/memory/versioned.ts"),
+          "utf8",
+        );
+        return (
+          src.includes("createSnapshot") &&
+          src.includes("rollbackToVersion") &&
+          src.includes("diffVersions") &&
+          src.includes("getHistory") &&
+          src.includes("formatHistoryForCLI") &&
+          src.includes("MemoryVersion")
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-SNAPSHOT-DEDUP",
+    "US-17.19",
+    "Behavioral: createSnapshot must (a) create v1 for a new memory file, (b) skip a duplicate snapshot when content hash matches, and (c) create v2 only when content changes — per SPEC §7.3 (versioned persona/memory, no silent rewrite)",
+    async () => {
+      const proj = "accept-versioned-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+      const prevProj = process.env.QUIVER_PROJECT_NAME;
+      process.env.QUIVER_PROJECT_NAME = proj;
+      try {
+        const memDir = path.join(os.homedir(), ".quiver", "projects", proj, "memory");
+        await fs.mkdir(memDir, { recursive: true });
+        const file = path.join(memDir, "persona.txt");
+        await fs.writeFile(file, "v1 content");
+        const s1 = await createSnapshot("persona.txt", "pre-write");
+        if (!s1 || s1.version !== 1) return false;
+        const s1b = await createSnapshot("persona.txt", "pre-write");
+        if (s1b && s1b.version !== 1) return false; // dedup: no v2 created
+        if ((await getHistory("persona.txt")).length !== 1) return false;
+        await fs.writeFile(file, "v2 different content");
+        const s2 = await createSnapshot("persona.txt", "pre-write");
+        if (!s2 || s2.version !== 2) return false;
+        if ((await getHistory("persona.txt")).length !== 2) return false;
+        return true;
+      } finally {
+        process.env.QUIVER_PROJECT_NAME = prevProj;
+        await fs.rm(path.join(os.homedir(), ".quiver", "projects", proj), { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-ROLLBACK-CREATES-SNAPSHOT",
+    "US-17.19",
+    "Behavioral: rollbackToVersion must restore the target version's content AND leave the pre-rollback state recoverable (so rollback is itself reversible). After rolling back v2→v1, the pre-rollback 'modified' content must still be retrievable and re-restorable — per SPEC §7.3 (rollback to any prior version).",
+    async () => {
+      const proj = "accept-rollback-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+      const prevProj = process.env.QUIVER_PROJECT_NAME;
+      process.env.QUIVER_PROJECT_NAME = proj;
+      try {
+        const memDir = path.join(os.homedir(), ".quiver", "projects", proj, "memory");
+        await fs.mkdir(memDir, { recursive: true });
+        const file = path.join(memDir, "persona.txt");
+        await fs.writeFile(file, "original");
+        await createSnapshot("persona.txt", "pre-write"); // v1
+        await fs.writeFile(file, "modified");
+        await createSnapshot("persona.txt", "pre-write"); // v2
+        // roll back to v1
+        const res = await rollbackToVersion("persona.txt", 1);
+        if (!res.success) return false;
+        if ((await fs.readFile(file, "utf8")) !== "original") return false;
+        // the pre-rollback state ('modified') must still be recoverable as v2 — rollback is reversible
+        if ((await getVersionContent("persona.txt", 2)) !== "modified") return false;
+        // and re-restoring v2 brings 'modified' back
+        const res2 = await rollbackToVersion("persona.txt", 2);
+        if (!res2.success) return false;
+        if ((await fs.readFile(file, "utf8")) !== "modified") return false;
+        return true;
+      } finally {
+        process.env.QUIVER_PROJECT_NAME = prevProj;
+        await fs.rm(path.join(os.homedir(), ".quiver", "projects", proj), { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-APPEND-WIRED",
+    "US-17.19",
+    "memory_append tool must create a snapshot before appending",
+    () => {
+      const c = codeOnly("src/tools/memory_append.ts");
+      return (
+        /createSnapshot/.test(c) &&
+        /pre-append/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-REPLACE-WIRED",
+    "US-17.19",
+    "memory_replace tool must create a snapshot before overwriting",
+    () => {
+      const c = codeOnly("src/tools/memory_replace.ts");
+      return (
+        /createSnapshot/.test(c) &&
+        /pre-replace/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-SLASH-COMMANDS",
+    "US-17.19",
+    "Slash commands /memory-history, /memory-rollback, /memory-diff must be registered",
+    () => {
+      const c = codeOnly("src/slash_commands.ts");
+      return (
+        /\/memory-history/.test(c) &&
+        /\/memory-rollback/.test(c) &&
+        /\/memory-diff/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "VERSIONED-MEMORY-CLI-WIRED",
+    "US-17.19",
+    "CLI must handle /memory-history, /memory-rollback, /memory-diff commands",
+    () => {
+      const c = codeOnly("src/cli.ts");
+      return (
+        /case "\/memory-history"/.test(c) &&
+        /case "\/memory-rollback"/.test(c) &&
+        /case "\/memory-diff"/.test(c) &&
+        /formatHistoryForCLI/.test(c) &&
+        /rollbackToVersion/.test(c) &&
+        /diffVersions/.test(c)
+      );
+    },
+  );
+
+  // ─── US-17.20: Render→Look→Fix orchestration (Epic 9) ────────────────
+  // The RLF orchestrator renders documents to PNG, checks validity/issues,
+  // and returns feedback for the agent to make surgical fixes.
+
+  await check(
+    "RLF-MODULE-EXISTS",
+    "US-17.20",
+    "Render→Look→Fix orchestrator module must exist at src/document/rlf_orchestrator.ts",
+    () => {
+      try {
+        const src = readFileSync(
+          path.join(ROOT, "src/document/rlf_orchestrator.ts"),
+          "utf8",
+        );
+        return (
+          src.includes("renderLookFixCycle") &&
+          src.includes("renderDocument") &&
+          src.includes("checkDocument") &&
+          src.includes("formatRlfResult") &&
+          src.includes("RlfStep") &&
+          src.includes("RlfResult")
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "RLF-RENDER-SCREENSHOT",
+    "US-17.20",
+    "renderDocument must use officecli view screenshot to produce a PNG",
+    () => {
+      const c = codeOnly("src/document/rlf_orchestrator.ts");
+      return (
+        /screenshot/.test(c) &&
+        /png/i.test(c) &&
+        /view/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "RLF-VALIDATE-AND-ISSUES",
+    "US-17.20",
+    "checkDocument must run both validate and view issues via officecli",
+    () => {
+      const c = codeOnly("src/document/rlf_orchestrator.ts");
+      return (
+        /validate/.test(c) &&
+        /issues/.test(c) &&
+        /valid/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "RLF-MAX-ROUNDS-CAP",
+    "US-17.20",
+    "Behavioral: renderLookFixCycle must refuse to run a round beyond maxRounds and return passed=false with a 'Max rounds' message WITHOUT invoking OfficeCLI — per SPEC §10 (capped rounds, no unbounded fix loop)",
+    async () => {
+      const out = await renderLookFixCycle("/tmp/quiver-no-such-file.docx", 6, { maxRounds: 5 });
+      if (out.passed) return false;
+      if (!out.issues.some((i) => /Max rounds/i.test(i))) return false;
+      // the guard must short-circuit before rendering — no render step recorded
+      if (out.steps.some((s) => s.step === "render")) return false;
+      // a within-budget round is allowed to proceed (and will fail on a missing file, not crash)
+      const inside = await renderLookFixCycle("/tmp/quiver-no-such-file.docx", 1, { maxRounds: 5 });
+      if (inside.passed) return false;
+      return true;
+    },
+  );
+
+  await check(
+    "RLF-SYSTEM-PROMPT",
+    "US-17.20",
+    "System prompt must include render→look→fix instructions for Office documents",
+    () => {
+      const c = readFileSync(
+        path.join(ROOT, "skills/system-prompt/SKILL.md"),
+        "utf8",
+      );
+      return (
+        /Render.*Look.*Fix/i.test(c) &&
+        /screenshot/.test(c) &&
+        /validate/.test(c) &&
+        /issues/.test(c)
+      );
+    },
+  );
+
+  // ─── PRODUCT-REQUIREMENT CHECKS (checker-owned audit 2026-07-17) ───
+  // The checks below assert buyer-surface moments from docs/product/user-stories.md
+  // and SPEC §16 (Definition of Done) that the prior vendor-authored suite never
+  // covered. They assert the PRODUCT REQUIREMENT, not the shipped code: where the
+  // GUI has not yet built a required moment, the check FAILS today and remains a
+  // release blocker until the vendor closes it. This is the honest acceptance
+  // gate — a GREEN gate while S9/S10 are unbuilt would itself be the defect.
+  //
+  // Source-text checks here are intentional: the moments are GUI-surface
+  // requirements (DOM/JS constructs), and the contract cannot drive a live
+  // Electron renderer in-unit. The patterns are specific enough that a vendor
+  // cannot pass them with a comment or an unrelated token.
+
+  await check(
+    "GUI-SEND-ENABLED-AT-LAUNCH",
+    "S1 / Epic-2 §2.2",
+    "The Send button must be enabled the moment the window opens — launch state is idle, 'Working' is a per-task state. The Send button must NOT ship with a disabled attribute (SPEC Epic-2 §2.2 / user-stories S1)",
+    () => {
+      const html = srcText("ui/renderer/index.html");
+      const m = html.match(/<button[^>]*id="sendBtn"[^>]*>/);
+      if (!m) return false;
+      return !/\bdisabled\b/.test(m[0]);
+    },
+  );
+
+  await check(
+    "GUI-DELIVERABLE-CARD-ACTIONS",
+    "S7 / Epic-2 §2.4",
+    "The deliverable moment must surface a document card with Open, Show in Folder, and Preview actions — the demo climax (SPEC Epic-2 §2.4 / user-stories S7)",
+    () => {
+      const app = srcText("ui/renderer/app.js");
+      return (
+        /showInFolder|show-in-folder|revealInFolder/i.test(app) &&
+        /preview|Preview/.test(app) &&
+        /openFile|openInApp|open-in-app|openDoc/i.test(app)
+      );
+    },
+  );
+
+  await check(
+    "GUI-EXCLUDE-BEFORE-RUN",
+    "S2 / SPEC §6",
+    "The context rail must be a CONTROL, not a display: the user can exclude a memory file or source from the next run in one click, and the exclusion is recorded. SPEC §6: 'Nothing enters the AI that the user cannot see, edit, approve' — user-stories S2 marks this as a real gap (the rail is read-only today).",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      // An exclude/veto affordance on a context-rail item, plus an IPC to record it.
+      return (
+        /(exclude|veto|excludeFromRun|toggleMemory|removeFromContext)/i.test(app) &&
+        /(exclude|veto)/i.test(html) &&
+        /exclude|veto/i.test(srcText("ui/preload.ts"))
+      );
+    },
+  );
+
+  await check(
+    "GUI-CURRENT-STATUS-LINE",
+    "S5 / SPEC Epic-2 §2.2",
+    "Above the activity feed there must be a single current-status line a preparer can glance at ('Reading RevenueBuild sheet…') — never a stack trace, with checker verification surfaced in plain language. user-stories S5 marks this as a real gap.",
+    () => {
+      const html = srcText("ui/renderer/index.html");
+      const app = codeOnly("ui/renderer/app.js");
+      return (
+        /(currentStatus|current-status|statusLine|status-line|currentTask)/i.test(html) ||
+        /(currentStatus|current-status|statusLine|status-line|currentTask)/i.test(app)
+      );
+    },
+  );
+
+  await check(
+    "GUI-LINEAGE-CHIPS",
+    "S8 / S9 / SPEC §8.1",
+    "Drafted figures must render as lineage chips in the GUI (clickable, showing source/confidence). SPEC §8.1: 'Rendered as a clickable chip in the GUI preview.' user-stories S9: this is the moment the entire trust story exists for — currently a 🔴 gap.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      return (
+        /(lineage|lineageChip|lineage-chip|claimChip|renderClaim|sourceChip)/i.test(app) ||
+        /(lineage|lineage-chip|claim-chip)/i.test(html)
+      );
+    },
+  );
+
+  await check(
+    "GUI-VERIFICATION-RAIL",
+    "S9 / SPEC §8.3",
+    "Clicking a figure must open its source in a right-hand verification panel (Excel cell with formula, filing excerpt, or web page). SPEC §8.3: 'The reviewer's verification view.' Currently a 🔴 gap and the demo climax for a buyer.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      return (
+        /(verificationRail|verification-rail|sourcePanel|source-panel|openSource|verifyClaim|figureSource)/i.test(app) ||
+        /(verification-rail|source-panel|figure-source)/i.test(html)
+      );
+    },
+  );
+
+  await check(
+    "GUI-REVIEW-FLOW",
+    "S10 / SPEC §8.3",
+    "Marcus must be able to mark each figure verified / flagged / needs-analyst, and the memo cannot be marked final while flags are open (an override is logged). SPEC §8.3: 'A flagged figure blocks the document from being marked final until resolved or explicitly overridden (override is logged).' Currently a 🔴 gap.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      return (
+        /(needs_analyst|markVerified|markFlagged|markNeedsAnalyst|reviewStatus|verifyFigure)/i.test(app) &&
+        /(blockFinal|markFinal|finalDisabled|cannotFinal|openFlags|overrideLogged)/i.test(app)
+      );
+    },
+  );
+
+  await check(
+    "GUI-DELIVERABLE-CONTEXT-VIEW",
+    "S11 / SPEC §6",
+    "For each deliverable, a reviewer can see in one click what informed THIS document — files, sources, excluded material, where prompts went. SPEC §6 / user-stories S11: a per-deliverable 'context used for THIS document' view (currently a 🟡 gap).",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      return (
+        /(contextUsed|context-used|deliverableContext|contextForDocument|runRecord|run_record)/i.test(app) ||
+        /(context-used|deliverable-context)/i.test(html)
+      );
+    },
+  );
+
+  await check(
+    "GUI-CONSENT-GATE-SURFACE",
+    "S2 / S4 / SPEC §6",
+    "The consent gate must surface in the desktop app (the one buyer surface), not only as CLI text. SPEC §6 / Epic-2 §2.3: 'No blind approvals, ever' applies to the GUI. The CLI-only consent gate does not meet the product requirement for a buyer.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      return (
+        /(consentGate|consent-gate|ConsentGate|consentSummary)/i.test(app) ||
+        /(consent-gate|consent-overlay)/i.test(html)
+      );
+    },
+  );
+
+  await check(
+    "CHECKER-REJECTS-UNSOURCED-FIGURES",
+    "S8 / SPEC §9.3 / §16",
+    "The maker-checker must reject a document whose Evidence.json contains unsourced quantitative claims — not merely register an evidence tracker. SPEC §9.3: 'Every numeric figure has a non-unsourced lineage tag' and §16 DoD: 'Every number ... traceable to a source, or flagged unsourced and rejected by the checker.' SPEC §19 lists this as a remaining gap.",
+    () => {
+      const checker = codeOnly("src/subagents/checker.ts");
+      // The checker must actually validate evidence — not just have an 'evidence' verdict field.
+      return /(validateEvidence|EvidenceTracker|readEvidence|evidencePath|finalizeEvidence|EvidenceModel)/.test(checker);
+    },
+  );
+
+  await check(
+    "DOD-CONFIDENTIAL-NOT-TRANSMITTED",
+    "S15 / SPEC §16 / §11.2",
+    "Definition of Done: client-confidential (high-sensitivity) data must be provably NOT transmitted to any remote endpoint — routed to the local model with no redactions leaked. SPEC §16 / §11.2 / §4.3.",
+    () => {
+      const cfg: SensitivityConfig = {
+        defaultTier: "low",
+        modelEndpoints: { cloud: "cloud", local: "local" },
+        mnpiPatterns: [
+          { type: "client_name", pattern: "\\bClient\\s+[A-Z][a-z]+\\b", replacement: "[CLIENT_NAME]" },
+        ],
+        highSensitivityKeywords: ["live deal", "client name", "mnpi"],
+        midSensitivityKeywords: ["client", "acquisition"],
+      };
+      const high = applySensitivityRouting("live deal model with client name Acme", cfg);
+      if (high.route !== "local") return false; // never sent to a remote endpoint
+      // high-tier must NOT silently redact-and-send; it stays local untouched
+      if (high.redactedText !== high.originalText) return false;
+      return true;
+    },
+  );
+
+  await check(
+    "DOD-NATIVE-FORMAT-OUTPUT",
+    "S7 / SPEC §16",
+    "Definition of Done: the output is the firm's format (native Office document conforming to template), not markdown. SPEC §16 / §9.4. Asserted via the office_doc tool formats + the flagship example's template-driven .docx output.",
+    () => {
+      const office = codeOnly("src/tools/office_doc.ts");
+      const exampleExists = existsSync(path.join(ROOT, "examples", "investment-committee-memo"));
+      return /\.docx/.test(office) && /\.xlsx/.test(office) && /\.pptx/.test(office) && exampleExists;
+    },
+  );
+
+  await check(
+    "DOD-AUDIT-TRAIL-RECORDS-CONTEXT",
+    "S11 / SPEC §16",
+    "Definition of Done: 'The audit trail records what context and sources produced the draft.' The audit chain must record context/source provenance per deliverable, not just tool calls. SPEC §16 / §11.3 / §7.5 (reproducibility statement).",
+    () => {
+      const logger = codeOnly("src/logger.ts");
+      // The audit chain must carry source/context provenance fields, not only tool-call entries.
+      return /(source_id|source_ref|provenance|context_used|reproducib|evidence)/i.test(logger);
+    },
+  );
+
+  // ─── WIRING-INTEGRITY CHECKS (checker re-audit 2026-07-18) ────────
+  // The vendor closed the 9 surface gaps above by adding DOM elements and
+  // token identifiers that satisfy the source-text patterns — but several
+  // are THEATER: the pieces exist but do not interconnect into working
+  // product behavior. These checks assert the WIRING, so a vendor cannot
+  // pass by adding a token. They FAIL today where the wiring is missing; the
+  // vendor must wire the pieces, not edit this contract.
+
+  await check(
+    "GUI-APP-JS-PARSES",
+    "Epic-2 / SPEC §16",
+    "The desktop app is the ONE buyer surface. ui/renderer/app.js must be syntactically valid JavaScript that node can parse — a green gate over an app.js that throws a SyntaxError at load ships a blank window. Regression guard.",
+    () => {
+      try {
+        for (const f of ["ui/renderer/app.js", "ui/renderer/onboarding.js", "ui/renderer/settings.js"]) {
+          execSync(`node --check ${path.join(ROOT, f)}`, { stdio: "pipe" });
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "GUI-CONSENT-GATE-INVOKED",
+    "S2 / S4 / SPEC §6",
+    "The consent gate must actually be SHOWN before a run, not merely defined. showConsentGate must be called from a run-start path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const calls = (app.match(/\bshowConsentGate\s*\(/g) || []).length;
+      return calls >= 2; // one definition + at least one invocation
+    },
+  );
+
+  await check(
+    "GUI-EXCLUDE-IPC-HANDLED",
+    "S2 / SPEC §6",
+    "The exclude-before-run control must reach the agent: ui/main.ts must register a memory:exclude IPC handler, and the agent loop must consume the exclusion list so the excluded memory does NOT enter the model call. A renderer-only Set that never reaches the agent is theater.",
+    () => {
+      const main = codeOnly("ui/main.ts");
+      const agent = codeOnly("src/agent.ts");
+      const handlerOk = /ipcMain\.handle\(\s*["']memory:exclude["']/.test(main);
+      // The agent (or a context-loading module it calls) must honor an exclusion set.
+      const agentHonors = /excludedMemor|excludeFromRun|excludedFromRun|memoryExclude|excluded_files|excludedMemories/.test(agent);
+      return handlerOk && agentHonors;
+    },
+  );
+
+  await check(
+    "PRELOAD-CORE-API-PRESENT",
+    "Epic-2 §2.6 / IPC drift",
+    "preload.ts and preload.js must both expose the core-memory editor + memory review list API. A prior patch deleted loadCoreMemory/saveCoreMemory/memoryReviewList from preload.ts while preload.js kept them — silent drift the IPC-IN-SYNC channel-set check does not catch.",
+    () => {
+      const ts = srcText("ui/preload.ts");
+      const js = srcText("ui/preload.js");
+      return (
+        /loadCoreMemory/.test(ts) && /saveCoreMemory/.test(ts) && /memoryReviewList/.test(ts) &&
+        /loadCoreMemory/.test(js) && /saveCoreMemory/.test(js) && /memoryReviewList/.test(js)
+      );
+    },
+  );
+
+  await check(
+    "CHECKER-READS-REAL-EVIDENCE-FILE",
+    "S8 / SPEC §9.3 / §16",
+    "The checker must validate the Evidence.json the agent's evidence tool ACTUALLY writes. EvidenceTracker.finalize() writes <base>_Evidence.json (e.g. IC_Memo_Evidence.json); a checker that hardcodes a bare 'Evidence.json' never finds the real file and never rejects unsourced figures. The checker must look for _Evidence.json (or dynamically discover it).",
+    () => {
+      const checker = codeOnly("src/subagents/checker.ts");
+      const tracker = codeOnly("src/evidence/tracker.ts");
+      const trackerNaming = /_Evidence\.json/.test(tracker);
+      // The checker must reference the tracker's actual naming scheme, not a bare Evidence.json that the tracker never produces.
+      const checkerMatchesReal = /_Evidence\.json/.test(checker) || /readdir|glob|_Evidence/.test(checker);
+      return trackerNaming && checkerMatchesReal;
+    },
+  );
+
+  await check(
+    "EVIDENCE-TOOL-STRUCTURED-RESULT",
+    "S8 / S9 / S11 / SPEC §8.1 / §9.4",
+    "The evidence tool's finalize must return STRUCTURED data (claims + docPath + runRecord) the GUI can parse to render lineage chips and the deliverable-context view. Returning a human multi-line string makes the GUI's JSON.parse throw (silently caught) — chips and context never render. SPEC §8.1/§9.4 require the lineage to surface in the GUI.",
+    () => {
+      const tool = codeOnly("src/tools/evidence.ts");
+      // The finalize case must return an object/JSON carrying claims + docPath, not a joined human string.
+      const finalizeBlock = tool.match(/case ["']finalize["'][\s\S]{0,1200}?\breturn\b/);
+      if (!finalizeBlock) return false;
+      const block = finalizeBlock[0];
+      const returnsStructured = /claims\s*[:\]]/.test(block) && /docPath|doc_path|doc_file/.test(block);
+      const returnsHumanString = /lines\.join\s*\(/.test(block);
+      return returnsStructured && !returnsHumanString;
+    },
+  );
+
+  await check(
+    "AUDIT-PROVENANCE-WIRED",
+    "S11 / SPEC §16 / §11.3 / §7.5",
+    "logEvidenceProvenance (or equivalent) must actually be CALLED from the agent or evidence flow, not merely defined in logger.ts. A provenance method that is never called means the audit trail does not record what context/sources produced each deliverable — the DoD is unmet in practice.",
+    () => {
+      const hits = grepCodeTree(/logEvidenceProvenance\s*\(/);
+      // Must be referenced in logger.ts (definition) AND at least one call site outside logger.ts.
+      const outside = hits.filter((p) => p !== "src/logger.ts");
+      return outside.length > 0;
+    },
+  );
+
+  // ─── PHASE B WIRING CHECKS (checker audit 2026-07-20) ──────────────
+  // The vendor committed Phase B ("complete the buyer-facing trust story to
+  // demo-ready") in commit 7a277cb. A bottom-up review confirmed all five
+  // items are genuinely implemented end-to-end. These checks lock that
+  // behavior in so a regression cannot pass the gate — the 349-check gate
+  // above does NOT test Phase B on its own.
+
+  await check(
+    "CONSENT-GATE-BLOCKS",
+    "S2 / S4 / SPEC §6",
+    "Behavioral wiring: when the consent gate is enabled, the agent loop must BLOCK before the model call — wait for the user's decision, and on decline/exclude abort the turn (pop the unanswered user message and return) instead of proceeding. SPEC §6: the gate is a control, not a post-hoc log.",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      const blocks = /isConsentGateEnabled\(\)/.test(a) && /askQuestionRaw/.test(a);
+      const aborts = /consent_declined|consent_exclude/.test(a) && /this\.messages\.pop\(\)/.test(a);
+      const logged = /logConsentDecision/.test(a);
+      return blocks && aborts && logged;
+    },
+  );
+
+  await check(
+    "CONSENT-DECISION-REACHES-AGENT",
+    "S2 / S4 / SPEC §6",
+    "The GUI's Approve/Decline/Exclude buttons must route the decision to the blocked agent's stdin, and ui/main.ts must forward consent:respond to the agent process (daemon sendLine or agentProcess.stdin.write). Otherwise the agent blocks forever.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const main = codeOnly("ui/main.ts");
+      const guiWired = /consentRespond\s*\(/.test(app) && /consentApproveBtn|consentRejectBtn/.test(app);
+      const mainForwards = /ipcMain\.handle\(\s*["']consent:respond["']/.test(main) && /sendLine\(|agentProcess\.stdin\.write/.test(main);
+      return guiWired && mainForwards;
+    },
+  );
+
+  await check(
+    "VERIFICATION-RAIL-SHOWS-REAL-SOURCE",
+    "S9 / SPEC §8.3",
+    "The §8.3 verification rail must render the ACTUAL source in place — an Excel cell (sheet/cell/value), a filing excerpt, or a web URL — pulled from the evidence sources the agent emits, not a 'Source details not available' placeholder. This is the demo climax.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const rendersExcel = /loc\.sheet|loc\.cell/.test(app) && /extracted_value/.test(app);
+      const rendersExcerpt = /source\.excerpt|\.excerpt/.test(app);
+      const rendersWeb = /loc\.url/.test(app);
+      const populates = /documentSources|sources\.set|sources\.get/.test(app);
+      return rendersExcel && rendersExcerpt && rendersWeb && populates;
+    },
+  );
+
+  await check(
+    "REVIEW-FLOW-ENFORCED-PER-DOCUMENT",
+    "S10 / SPEC §8.3",
+    "The review flow must be enforced on a REAL deliverable: mark-final is blocked while a document has open flags (flagged/needs-analyst) and the reviewer has not overridden; the override + final decision + per-figure statuses are sent via IPC and appended to a tamper-evident AuditChain on disk (the review record that goes with the memo).",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const main = codeOnly("ui/main.ts");
+      const blocks = /openFlags[\s\S]{0,200}overridden|openFlags > 0 && !overridden/.test(app);
+      const appIpc = /reviewMarkFinal|reviewOverride/.test(app) && /api\.reviewMarkFinal|api\.reviewOverride/.test(app);
+      const mainHandles = /ipcMain\.handle\(\s*["']review:markFinal["']/.test(main) && /ipcMain\.handle\(\s*["']review:override["']/.test(main);
+      const mainLogs = /logReviewDecision/.test(main) && /appendEntry|AuditChain/.test(main);
+      return blocks && appIpc && mainHandles && mainLogs;
+    },
+  );
+
+  await check(
+    "PROVENANCE-TAMPER-EVIDENT",
+    "S11 / SPEC §11.3 / §16",
+    "Behavioral: the audit chain must be tamper-evident for PROVENANCE fields. Append an evidence entry whose payload carries source_ids/source_refs/context_used/evidence_ref, mirror them onto the entry as convenience fields, verifyChain() must pass; then tamper a provenance convenience field and verifyChain() must FAIL. SPEC §11.3 — a reviewer trusts entry.source_ids only because altering it breaks the chain.",
+    () => {
+      const chain = new AuditChain();
+      const payload = JSON.stringify({
+        deliverable: "Memo.docx",
+        source_ids: ["s1", "s2"],
+        source_refs: ["Model_v12.xlsx!RevenueBuild!C8"],
+        context_used: "8 claims",
+        evidence_ref: "Memo_Evidence.json",
+      });
+      const e = chain.appendEntry("evidence", payload);
+      const parsed = JSON.parse(e.action_payload);
+      e.source_ids = parsed.source_ids;
+      e.source_refs = parsed.source_refs;
+      e.context_used = parsed.context_used;
+      e.evidence_ref = parsed.evidence_ref;
+      if (!chain.verifyChain()) return false;
+      e.source_ids = ["s1", "s2", "s3"];
+      if (chain.verifyChain()) return false;
+      return true;
+    },
+  );
+
+  await check(
+    "LIVE-DEMO-PATH-EXISTS",
+    "S8 / S9 / S10 / SPEC §16",
+    "A second demo path that drafts an IC-memo .docx from a REAL tool run (the live EvidenceTracker + AuditChain + officecli), not replayed fixtures, must exist and be wired as an npm script. This is the end-to-end proof that the trust story renders from live agent output.",
+    () => {
+      const script = path.join(ROOT, "examples", "investment-committee-memo", "scripts", "run-live-demo.ts");
+      if (!existsSync(script)) return false;
+      const src = readFileSync(script, "utf8");
+      const usesRealTracker = /new EvidenceTracker\(/.test(src) && /\.finalize\(/.test(src);
+      const usesRealChain = /new AuditChain\(/.test(src) && /verifyChain\(\)/.test(src);
+      const assertsRender = /renders|lineage|claims|sources/.test(src) && /throw new Error/.test(src);
+      const pkg = srcText("package.json");
+      const wired = /demo:ic-memo:live/.test(pkg);
+      return usesRealTracker && usesRealChain && assertsRender && wired;
     },
   );
 
