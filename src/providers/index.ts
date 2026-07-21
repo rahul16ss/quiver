@@ -3,4 +3,4 @@
  */
 
 export * from "./types.js";
-export { getActiveProvider, getVisionProvider, OpenAICompatibleProvider } from "./types.js";
+export { getActiveProvider, getLocalProvider, getVisionProvider, OpenAICompatibleProvider } from "./types.js";

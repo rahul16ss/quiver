@@ -51,7 +51,7 @@ import { AuditChain } from "../../../src/audit_chain.js";
 // `evidence` tool uses) to emit Evidence.json + Run_Record.json.
 // ---------------------------------------------------------------------------
 
-function driveLiveTracker(memo: MemoContent, registry: SourceRegistry): void {
+async function driveLiveTracker(memo: MemoContent, registry: SourceRegistry): Promise<void> {
   const tracker = new EvidenceTracker();
   tracker.setMetadata({
     workflow: memo.workflow,
@@ -106,7 +106,7 @@ function driveLiveTracker(memo: MemoContent, registry: SourceRegistry): void {
     "inputs/internal-model-note.md",
     "inputs/comps.csv",
   ]) {
-    tracker.registerInput(f);
+    await tracker.registerInput(f);
   }
 
   // Validate live: every quantitative claim has an approved source or is flagged.
@@ -289,7 +289,7 @@ async function main(): Promise<void> {
   console.log("[1/6] Driving the live EvidenceTracker (register sources → record claims → finalize)");
   fs.rmSync(p(OUTPUT.dir), { recursive: true, force: true });
   fs.mkdirSync(p(OUTPUT.dir), { recursive: true });
-  driveLiveTracker(memo, registry);
+  await driveLiveTracker(memo, registry);
 
   console.log("[2/6] Building the memo .docx via officecli (live office_doc tool path)");
   buildDocx(memo);

@@ -6917,6 +6917,29 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "SENSITIVITY-ENFORCED-AT-MODEL-CALL",
+    "S15 / SPEC §11.2 / §4.3",
+    "Wiring: sensitivity routing must be ENFORCED at the model call, not just logged. The agent loop must (a) send the redacted text (not the raw input) for the mid tier, and (b) route the high tier to a local model endpoint — refusing the turn if no local endpoint is configured rather than sending high-sensitivity content to the cloud. SPEC §11.2: refuse to send configured MNPI to any remote endpoint.",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      // mid tier: the redacted text actually becomes the user message sent to the model
+      const midRedacted = /effectiveUserInput\s*=\s*sensResult\.redactedText/.test(a)
+        || /route\s*===\s*"cloud-redacted"[\s\S]{0,120}redactedText/.test(a);
+      // high tier: a local provider is resolved and used for the model call
+      const highLocal = /getLocalProvider/.test(a)
+        && /localProvider/.test(a)
+        && /turnProvider/.test(a)
+        && /turnModel/.test(a);
+      // high tier with no local endpoint configured must REFUSE (not fall back to cloud)
+      const refuseIfUnconfigured = /sensitivity_refused/.test(a) || /no local model endpoint/.test(a);
+      // config carries the local endpoint fields
+      const cfg = codeOnly("src/config.ts");
+      const configFields = /localLlmBaseUrl/.test(cfg) && /localLlmModelName/.test(cfg);
+      return midRedacted && highLocal && refuseIfUnconfigured && configFields;
+    },
+  );
+
+  await check(
     "DOD-NATIVE-FORMAT-OUTPUT",
     "S7 / SPEC §16",
     "Definition of Done: the output is the firm's format (native Office document conforming to template), not markdown. SPEC §16 / §9.4. Asserted via the office_doc tool formats + the flagship example's template-driven .docx output.",

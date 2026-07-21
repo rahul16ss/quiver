@@ -243,10 +243,13 @@ export class McpConnection {
     const id = this.nextId++;
     const body: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
 
+    // M2: cap a stalled MCP HTTP server — without this a slow/unresponsive
+    // server hangs the agent indefinitely. 30s mirrors the stdio rpc timeout.
     const response = await fetch(this.httpUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.httpHeaders },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (!response.ok) {

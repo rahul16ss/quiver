@@ -180,7 +180,8 @@ export interface AgentEvent {
     | "intervention"
     | "consent_gate"
     | "consent_declined"
-    | "consent_exclude";
+    | "consent_exclude"
+    | "sensitivity_refused";
   data: {
     text?: string;
     toolName?: string;
@@ -207,6 +208,9 @@ export interface AgentEvent {
     /** Consent gate (SPEC §6): the decision the user made. */
     action?: "approve" | "decline" | "exclude";
     consent?: string;
+    /** Sensitivity routing (US-17.17): a high-sensitivity turn was refused. */
+    reason?: string;
+    refused?: boolean;
   };
 }
 
@@ -826,6 +830,16 @@ export class Agent {
   private adapter: HarnessAdapter | null = null;
   // US-2.2A: the active model provider (transport layer).
   private provider: import("./providers/index.js").ModelProvider | null = null;
+  // US-17.17: per-turn sensitivity routing decision. Set by the sensitivity
+  // block before the model call; read at the call site to pick the endpoint
+  // (high→local) and to send the redacted text (mid→cloud-redacted).
+  private pendingSensitivity: {
+    route: "cloud" | "cloud-redacted" | "local";
+    redactedText: string;
+    refused?: boolean;
+  } | null = null;
+  // Local provider (US-17.17 high-sensitivity escape hatch). Lazily built.
+  private localProvider: import("./providers/index.js").ModelProvider | null = null;
   // US-13.2: checkpoint/crash-recovery manager for this session.
   private checkpointManager: CheckpointManager | null = null;
   // Cloud sync: show notice once per session
@@ -1321,6 +1335,23 @@ export class Agent {
             .filter(Boolean);
           if (excludedMemories.includes(file)) continue;
 
+          // H1: cap per-file memory size so a huge file in the memory dir
+          // can't blow the context budget. Skip (with a log) above 256 KB.
+          if (stats.size > 256 * 1024) {
+            await this.logger.logEvent("memory_file_skipped", {
+              file,
+              sizeBytes: stats.size,
+              reason: "exceeds 256 KB memory-file cap; not loaded into context",
+            });
+            if (config.outputMode === "interactive") {
+              console.log(
+                picocolors.gray(
+                  `  ⚠ Memory file '${file}' is ${(stats.size / 1024).toFixed(0)} KB — exceeds the 256 KB cap, not loaded.`,
+                ),
+              );
+            }
+            continue;
+          }
           const content = await fs.readFile(filePath, "utf8");
           results.push({
             filename: file,
@@ -1923,21 +1954,31 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       });
     }
 
-    // Append the user message — process [Image: path] markers for vision
-    const processedContent = await processImageMarkers(userInput);
-    this.messages.push({ role: "user", content: processedContent });
-    await this.logger.logEvent("user_input", { content: userInput });
-
-    // ── Sensitivity routing (US-17.17) ──
-    // Classify the user input and apply MNPI redaction if needed.
-    // The routing decision is logged to the audit chain.
-    // In v1, this is informational — the actual model endpoint switching
-    // follows engagement-specific configuration. The framework is ready.
+    // ── Sensitivity routing (US-17.17 / SPEC §4.3 + §11.2) ──
+    // Classify the user input, redact MNPI for the mid tier, and route the
+    // high tier to a LOCAL model endpoint. This is ENFORCED, not just logged:
+    //   - low          → cloud, raw text
+    //   - mid          → cloud, REDACTED text (sensResult.redactedText is what
+    //                    enters the model — identifiers stripped before the
+    //                    remote call, with a receipt shown to the user)
+    //   - high         → LOCAL endpoint, raw text (never the cloud); if no
+    //                    local endpoint is configured, REFUSE the turn rather
+    //                    than send MNPI to a remote provider (SPEC §11.2).
+    let effectiveUserInput = userInput;
+    this.pendingSensitivity = null;
     try {
       const { applySensitivityRouting, formatRedactionReceipt } = await import(
         "./security/sensitivity.js"
       );
       const sensResult = applySensitivityRouting(userInput);
+      this.pendingSensitivity = {
+        route: sensResult.route,
+        redactedText: sensResult.redactedText,
+      };
+      if (sensResult.route === "cloud-redacted") {
+        // Mid tier: send the redacted text, not the raw input.
+        effectiveUserInput = sensResult.redactedText;
+      }
       if (sensResult.redactions.length > 0) {
         await this.logger.logEvent("sensitivity_redaction", {
           tier: sensResult.tier,
@@ -1949,11 +1990,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             redacted: r.redacted,
           })),
           receipt: formatRedactionReceipt(sensResult.redactions),
+          enforced: sensResult.route === "cloud-redacted",
         });
         if (config.outputMode === "interactive") {
           console.log(
             picocolors.yellow(
-              `  ⚠ Sensitivity: ${sensResult.tier} → ${sensResult.route} — ${formatRedactionReceipt(sensResult.redactions)}`,
+              `  ⚠ Sensitivity: ${sensResult.tier} → ${sensResult.route} — ${formatRedactionReceipt(sensResult.redactions)}${sensResult.route === "cloud-redacted" ? " (redacted before send)" : ""}`,
             ),
           );
         }
@@ -1971,9 +2013,52 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           );
         }
       }
+      // High tier: route to a local model endpoint. If none is configured,
+      // REFUSE the turn — never send high-sensitivity content to the cloud.
+      if (sensResult.route === "local") {
+        const { getLocalProvider } = await import("./providers/index.js");
+        this.localProvider = getLocalProvider();
+        if (!this.localProvider || !config.localLlmModelName) {
+          this.pendingSensitivity = { route: "local", redactedText: sensResult.redactedText, refused: true };
+          await this.logger.logEvent("sensitivity_refused", {
+            tier: sensResult.tier,
+            reason:
+              "high-sensitivity input but no local model endpoint configured (set QUIVER_LOCAL_LLM_API_BASE_URL + QUIVER_LOCAL_LLM_MODEL_NAME); refused rather than send to the cloud",
+          });
+          if (config.outputMode === "interactive") {
+            console.log(
+              picocolors.red(
+                "\n  ⚠ Refused: this input is high-sensitivity and no local model endpoint is configured. Set QUIVER_LOCAL_LLM_API_BASE_URL and QUIVER_LOCAL_LLM_MODEL_NAME (e.g. a localhost Ollama) so high-sensitivity content never goes to the cloud. Your message was not sent.",
+              ),
+            );
+          }
+          if (onEvent) {
+            onEvent({ type: "sensitivity_refused", data: { reason: "no local model endpoint configured" } });
+            onEvent({ type: "done", data: { refused: true } });
+          }
+          return;
+        }
+        if (config.outputMode === "interactive") {
+          console.log(
+            picocolors.gray(
+              `  ↳ routing to local model (${config.localLlmModelName} @ ${config.localLlmBaseUrl}) — content does not leave this machine.`,
+            ),
+          );
+        }
+      }
     } catch {
       // Sensitivity module not available — continue without routing
     }
+
+    // Append the user message — the EFFECTIVE input (redacted for mid tier),
+    // with [Image: path] markers processed for vision. For high tier the raw
+    // text is used (it goes to the local endpoint, not the cloud).
+    const processedContent = await processImageMarkers(effectiveUserInput);
+    this.messages.push({ role: "user", content: processedContent });
+    await this.logger.logEvent("user_input", {
+      content: effectiveUserInput,
+      redacted: effectiveUserInput !== userInput,
+    });
 
     // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
     // When enabled, the agent surfaces the pre-action summary and WAITS for
@@ -2145,14 +2230,22 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       if (!this.provider) {
         this.provider = getActiveProvider();
       }
+      // US-17.17: per-turn sensitivity routing. High-sensitivity turns route
+      // to the local model endpoint (this.localProvider, set by the
+      // sensitivity block); everything else uses the cached cloud provider.
+      const route = this.pendingSensitivity?.route;
+      const turnProvider =
+        route === "local" && this.localProvider ? this.localProvider : this.provider;
+      const turnModel =
+        route === "local" && this.localProvider ? config.localLlmModelName : config.llmModelName;
       let modelInfo: ModelInfo;
       try {
-        modelInfo = await this.provider.getModelInfo(config.llmModelName);
+        modelInfo = await turnProvider!.getModelInfo(turnModel);
       } catch {
         modelInfo = {
-          id: config.llmModelName,
-          displayName: config.llmModelName,
-          providerId: this.provider.id,
+          id: turnModel,
+          displayName: turnModel,
+          providerId: turnProvider!.id,
           contextWindowTokens: config.maxContextTokens,
           supportsTools: true,
           supportsParallelToolCalls: true,
@@ -2161,13 +2254,19 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           supportsReasoningSummaries: false,
         };
       }
-      if (!this.adapter) {
-        this.adapter = getAdapterForModel(modelInfo);
+      // Use a per-turn adapter for the local model without disturbing the
+      // cached cloud adapter (a local model id may map to a different adapter).
+      const turnAdapter =
+        route === "local" && this.localProvider
+          ? getAdapterForModel(modelInfo)
+          : this.adapter ?? getAdapterForModel(modelInfo);
+      if (route !== "local" && !this.adapter) {
+        this.adapter = turnAdapter;
       }
-      const adapterDefaults = this.adapter.getDefaults(modelInfo);
+      const adapterDefaults = turnAdapter.getDefaults(modelInfo);
 
       // Route tool definitions through the adapter's format mapping (US-2.2B).
-      const tools = this.adapter.formatTools(
+      const tools = turnAdapter.formatTools(
         activeTools.map((t, idx) => ({
           name: t.name,
           description: t.description,
@@ -2176,7 +2275,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       ) as any[];
 
       const payload: any = {
-        model: config.llmModelName,
+        model: turnModel,
         messages: this.messages,
         temperature: 0.2,
         max_tokens: adapterDefaults.maxOutputTokens,
@@ -2218,7 +2317,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           conversationBuffer: conversationText,
         },
         modelInfo,
-        this.adapter,
+        turnAdapter,
       );
       if (shouldBlockSubmission(budget)) {
         spinner.stop();
@@ -2234,7 +2333,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         messages: this.messages,
         systemPrompt: systemPromptStr,
         tools,
-        model: config.llmModelName,
+        model: turnModel,
         isVision: false,
         sessionId: this.logger.getSessionId(),
         loopCount,
@@ -2263,7 +2362,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         this.activeAbortController = new AbortController();
         while (true) {
           try {
-            for await (const ev of this.provider!.streamChat(
+            for await (const ev of turnProvider!.streamChat(
               {
                 model: config.llmModelName,
                 messages: this.messages as any[],

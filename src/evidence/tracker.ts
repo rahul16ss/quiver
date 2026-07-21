@@ -96,12 +96,13 @@ export class EvidenceTracker {
 
   // ─── Input File Tracking ────────────────────────────────────────────
 
-  registerInput(file: string): { file: string; sha256: string | null } {
+  // M4: async so a large input file doesn't block the event loop while
+  // hashing (every other file op in the codebase uses fs.promises).
+  async registerInput(file: string): Promise<{ file: string; sha256: string | null }> {
     try {
       const abs = path.resolve(file);
-      const hash = createHash("sha256")
-        .update(fs.readFileSync(abs))
-        .digest("hex");
+      const buf = await fs.promises.readFile(abs);
+      const hash = createHash("sha256").update(buf).digest("hex");
       this.inputFiles.set(file, hash);
       return { file, sha256: hash };
     } catch {

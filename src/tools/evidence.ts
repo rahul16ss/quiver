@@ -334,10 +334,20 @@ export const tool: Tool = {
       // ─── register_input ─────────────────────────────────────────────
       case "register_input": {
         if (!args.file) return "Error: file is required for register_input.";
-        const result = tracker.registerInput(args.file);
+        const result = await tracker.registerInput(args.file);
         return result.sha256
           ? `✓ Input registered: ${args.file} (SHA-256: ${result.sha256.slice(0, 12)}…)`
           : `Error: Could not hash file ${args.file} — file may not exist.`;
+      }
+
+      // ─── reset ─────────────────────────────────────────────────────
+      // H4: the tracker is a process-global singleton. Call reset before
+      // starting a NEW document so the previous document's sources/claims
+      // do not contaminate it (the agent also resets automatically after
+      // finalize, but use this if a document is abandoned mid-draft).
+      case "reset": {
+        resetEvidenceTracker();
+        return "✓ Evidence tracker reset — ready for a new document.";
       }
 
       // ─── validate ───────────────────────────────────────────────────
@@ -354,7 +364,7 @@ export const tool: Tool = {
         tracker.setMetadata({ workflow: args.workflow, company: args.company, title: args.title, subtitle: args.subtitle });
         const result = tracker.finalize(args.output_dir || "", args.doc_file);
         const docPath = args.doc_file ? path.join(args.output_dir || "", args.doc_file) : args.output_dir || "";
-        const structured = { ok: Boolean(args.output_dir), action: "finalize", docPath, evidencePath: result.evidencePath, runRecord: result.runRecordPath, claims: tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, is_quantitative: c.is_quantitative, review_status: c.review_status, relationship: c.relationship })), sources: tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, source_type: s.source_type, file: s.file, location: s.location, approved: s.approved, excerpt: s.excerpt, extracted_value: s.extracted_value, sensitivity: s.sensitivity })), excludedSources: tracker.getExcludedSources().map((e) => e.source_id), validation: result.validation };
+        const structured = { ok: !!(result.evidencePath), action: "finalize", docPath, evidencePath: result.evidencePath, runRecord: result.runRecordPath, claims: tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, is_quantitative: c.is_quantitative, review_status: c.review_status, relationship: c.relationship })), sources: tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, source_type: s.source_type, file: s.file, location: s.location, approved: s.approved, excerpt: s.excerpt, extracted_value: s.extracted_value, sensitivity: s.sensitivity })), excludedSources: tracker.getExcludedSources().map((e) => e.source_id), validation: result.validation };
         return JSON.stringify(structured, null, 2);
       }
 

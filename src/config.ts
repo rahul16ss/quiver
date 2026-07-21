@@ -301,6 +301,13 @@ export const config: Config = {
   llmBaseUrl: process.env.LLM_API_BASE_URL || "https://ollama.com/v1",
   llmModelName: process.env.LLM_MODEL_NAME || "glm-5.2:cloud",
   llmApiKey: process.env.OLLAMA_API_KEY || "",
+  // Local model endpoint (US-17.17 / SPEC §4.3 high-sensitivity escape hatch).
+  // When sensitivity routing classifies a turn as "high", the agent routes
+  // the model call here instead of the cloud endpoint. Empty = not configured;
+  // a high-sensitivity turn with no local endpoint is REFUSED rather than
+  // sent to the cloud (SPEC §11.2: refuse to send configured MNPI remotely).
+  localLlmBaseUrl: process.env.QUIVER_LOCAL_LLM_API_BASE_URL || "",
+  localLlmModelName: process.env.QUIVER_LOCAL_LLM_MODEL_NAME || "",
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
@@ -373,6 +380,9 @@ export interface Config {
   llmBaseUrl: string;
   llmModelName: string;
   llmApiKey: string;
+  // Local model endpoint (US-17.17 high-sensitivity escape hatch).
+  localLlmBaseUrl: string;
+  localLlmModelName: string;
   parallelApiKey: string;
   browserHeadless: boolean;
   autonomyGrants: Set<AutonomyGrant>;

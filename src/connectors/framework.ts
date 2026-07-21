@@ -237,7 +237,12 @@ export class ConnectorRegistry {
   private writeCache(key: string, result: ConnectorResult): void {
     const cachePath = path.join(this.cacheDir, `${key}.json`);
     try {
-      fs.writeFileSync(cachePath, JSON.stringify(result, null, 2));
+      // C2: cap cache entry size so a single huge connector response (e.g. a
+      // full multi-year SEC filing) can't write a multi-GB file to disk. Skip
+      // caching oversized results rather than writing them.
+      const serialized = JSON.stringify(result, null, 2);
+      if (serialized.length > 50 * 1024 * 1024) return; // 50 MB cap
+      fs.writeFileSync(cachePath, serialized);
     } catch {}
   }
 }

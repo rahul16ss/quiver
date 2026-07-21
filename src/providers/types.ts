@@ -457,6 +457,21 @@ export function getActiveProvider(): ModelProvider {
 }
 
 /**
+ * Get the LOCAL model provider (US-17.17 / SPEC §4.3 high-sensitivity escape
+ * hatch). Returns null if no local endpoint is configured — callers MUST refuse
+ * the turn rather than fall back to the cloud endpoint for high-sensitivity
+ * content (SPEC §11.2).
+ */
+export function getLocalProvider(): ModelProvider | null {
+  if (!config.localLlmBaseUrl) return null;
+  return new OpenAICompatibleProvider(
+    "local",
+    config.localLlmBaseUrl,
+    config.llmApiKey, // single API key (US-1.3); local Ollama ignores it
+  );
+}
+
+/**
  * Get the vision model provider (for vision fallback routing).
  */
 export function getVisionProvider(): ModelProvider | null {
