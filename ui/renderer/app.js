@@ -611,6 +611,26 @@ function handleAgentEvent(ev) {
       focusContextRail();
       break;
     }
+    case "sensitivity_refused": {
+      // US-17.17 / SPEC §11.2: a high-sensitivity turn was refused because no
+      // local model endpoint is configured. Surface the reason — never a blank
+      // "Done" (empty states are product; silent failure is the anti-pattern).
+      liveRunActive = false;
+      setWorking(false);
+      setCurrentStatus("");
+      statusDot.className = "status-dot error";
+      const reason = ev.data?.reason
+        ? ev.data.reason
+        : "This input is high-sensitivity and no local model endpoint is configured.";
+      addActivity(`Refused — not sent: ${reason}`, "err");
+      startAssistantBubble();
+      if (assistantBubble) {
+        assistantBubble.textContent =
+          "⚠ I didn't send this to the model. " + reason +
+          " Set a local model endpoint (QUIVER_LOCAL_LLM_API_BASE_URL + QUIVER_LOCAL_LLM_MODEL_NAME, e.g. a localhost Ollama) so high-sensitivity content never leaves this machine, then re-run.";
+      }
+      break;
+    }
     case "token": {
       if (ev.data?.text) appendAssistantToken(ev.data.text);
       setWorking(true);
@@ -662,8 +682,16 @@ function handleAgentEvent(ev) {
       liveRunActive = false;
       setWorking(false);
       setCurrentStatus("");
-      statusDot.className = "status-dot ok";
-      addActivity("Done", "ok");
+      // If the turn was refused (e.g. high-sensitivity with no local endpoint),
+      // the sensitivity_refused case already surfaced the reason — don't paint
+      // a misleading green "Done" over a refusal.
+      if (ev.data?.refused) {
+        statusDot.className = "status-dot error";
+        addActivity("Turn refused — nothing was sent to the model.", "err");
+      } else {
+        statusDot.className = "status-dot ok";
+        addActivity("Done", "ok");
+      }
       refreshReviewCount();
       updateTurnCount();
       assistantBubble = null;

@@ -6919,23 +6919,41 @@ async function extendedCapabilitiesContract() {
   await check(
     "SENSITIVITY-ENFORCED-AT-MODEL-CALL",
     "S15 / SPEC §11.2 / §4.3",
-    "Wiring: sensitivity routing must be ENFORCED at the model call, not just logged. The agent loop must (a) send the redacted text (not the raw input) for the mid tier, and (b) route the high tier to a local model endpoint — refusing the turn if no local endpoint is configured rather than sending high-sensitivity content to the cloud. SPEC §11.2: refuse to send configured MNPI to any remote endpoint.",
+    "Wiring + call-site: sensitivity routing must be ENFORCED at the model call, not just logged. (a) mid tier sends the redacted text; (b) high tier routes to a local provider AND passes the LOCAL model name to the actual streamChat call (not the cloud model name — a previous bug swapped the endpoint but kept config.llmModelName, so the local server was asked for the cloud model and failed); (c) high tier with no local endpoint is refused, not sent to the cloud. This check inspects the streamChat call-site arguments, not just vocabulary presence.",
     () => {
       const a = codeOnly("src/agent.ts");
-      // mid tier: the redacted text actually becomes the user message sent to the model
+      // mid tier: the redacted text becomes the user message sent to the model
       const midRedacted = /effectiveUserInput\s*=\s*sensResult\.redactedText/.test(a)
         || /route\s*===\s*"cloud-redacted"[\s\S]{0,120}redactedText/.test(a);
-      // high tier: a local provider is resolved and used for the model call
-      const highLocal = /getLocalProvider/.test(a)
-        && /localProvider/.test(a)
-        && /turnProvider/.test(a)
-        && /turnModel/.test(a);
+      // high tier: a local provider is resolved and selected for the call
+      const highLocal = /getLocalProvider/.test(a) && /localProvider/.test(a)
+        && /turnProvider/.test(a) && /turnModel/.test(a);
+      // THE CALL SITE: extract the turnProvider!.streamChat( request object and
+      // assert its `model:` argument is `turnModel`, NOT config.llmModelName.
+      // A presence-only check cannot catch the endpoint-swapped/model-forgot bug.
+      const callBlock = a.match(/turnProvider!\.streamChat\(\s*\{[\s\S]{0,400}?\}\s*,\s*this\.activeAbortController/);
+      if (!callBlock) return false;
+      const modelArg = callBlock[0].match(/model:\s*([A-Za-z_.]+)/);
+      if (!modelArg || modelArg[1] !== "turnModel") return false;
+      if (/model:\s*config\.llmModelName/.test(callBlock[0])) return false;
       // high tier with no local endpoint configured must REFUSE (not fall back to cloud)
       const refuseIfUnconfigured = /sensitivity_refused/.test(a) || /no local model endpoint/.test(a);
       // config carries the local endpoint fields
       const cfg = codeOnly("src/config.ts");
       const configFields = /localLlmBaseUrl/.test(cfg) && /localLlmModelName/.test(cfg);
       return midRedacted && highLocal && refuseIfUnconfigured && configFields;
+    },
+  );
+
+  await check(
+    "GUI-SENSITIVITY-REFUSED-SURFACED",
+    "S15 / SPEC §11.2 / Epic-2 §2.6",
+    "When a high-sensitivity turn is refused (no local model endpoint), the desktop app must surface the reason — not render a blank turn ending in a green 'Done'. The GUI must handle the sensitivity_refused event and/or honor done{refused:true}. Empty states are product; silent failure is the anti-pattern (PROJECTS.md §9).",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const handlesRefusedEvent = /case\s+"sensitivity_refused"/.test(app);
+      const doneHonorsRefused = /case\s+"done"[\s\S]{0,400}?refused/.test(app);
+      return handlesRefusedEvent && doneHonorsRefused;
     },
   );
 

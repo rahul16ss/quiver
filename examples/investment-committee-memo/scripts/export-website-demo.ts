@@ -24,15 +24,20 @@ const EXPORT_DIR = p("website-export");
 
 interface ExportItem {
   src: string; // relative to example dir
-  text: boolean; // text artifacts get label + secret-pattern checks
+  text: boolean; // text artifacts get secret-pattern checks (+ label, unless requiresLabel is false)
   buyerPage?: boolean; // HTML pages a buyer opens: no developer vocabulary
+  // Machine artifacts (e.g. Evidence.json) ship for transparency but are not
+  // buyer-facing pages, so they must pass path + secret checks but are exempt
+  // from the illustrative-LABEL requirement (their own `label` field is a
+  // different concept and must not be forced to contain the marketing label).
+  requiresLabel?: boolean;
 }
 
 const ITEMS: ExportItem[] = [
   { src: OUTPUT.evidenceHtml, text: true, buyerPage: true },
   { src: OUTPUT.reviewChecklistHtml, text: true, buyerPage: true },
   { src: OUTPUT.provenanceHtml, text: true, buyerPage: true },
-  { src: OUTPUT.evidenceJson, text: true },
+  { src: OUTPUT.evidenceJson, text: true, requiresLabel: false },
 ];
 
 /** Words that mark a page as developer output rather than a business document. */
@@ -67,8 +72,10 @@ function verify(item: ExportItem): void {
       const m = text.match(re);
       if (m) fail(`${item.src} matches secret pattern "${label}": ${m[0].slice(0, 40)}...`);
     }
-    // 2. Illustrative label present.
-    if (!text.includes(LABEL)) fail(`${item.src} is missing the label "${LABEL}"`);
+    // 2. Illustrative label present (buyer-facing text artifacts only;
+    //    machine JSON like Evidence.json is exempt — see `requiresLabel`).
+    if (item.requiresLabel !== false && !text.includes(LABEL))
+      fail(`${item.src} is missing the label "${LABEL}"`);
     // 3. Buyer-facing pages carry no developer vocabulary.
     if (item.buyerPage) {
       const m = text.match(DEV_VOCABULARY);

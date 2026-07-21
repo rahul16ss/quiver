@@ -2274,16 +2274,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         })),
       ) as any[];
 
-      const payload: any = {
-        model: turnModel,
-        messages: this.messages,
-        temperature: 0.2,
-        max_tokens: adapterDefaults.maxOutputTokens,
-      };
-      if (tools.length > 0) {
-        payload.tools = tools;
-        payload.tool_choice = "auto";
-      }
+      // Note: the request actually sent to the provider is built inline at the
+      // streamChat call below (model: turnModel). An earlier `payload` object
+      // here was dead code (built but never consumed) — removed.
 
       // Spinner for better UX while waiting for API response
       const spinner = new Spinner(loopCount === 1 ? "Thinking…" : "Working…");
@@ -2364,7 +2357,10 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           try {
             for await (const ev of turnProvider!.streamChat(
               {
-                model: config.llmModelName,
+                // US-17.17: use the per-turn model (local model for high-tier,
+                // cloud model otherwise) — NOT config.llmModelName, which would
+                // ask the local endpoint for the cloud model name and fail.
+                model: turnModel,
                 messages: this.messages as any[],
                 tools,
                 temperature: 0.2,
