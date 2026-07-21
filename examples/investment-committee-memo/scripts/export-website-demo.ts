@@ -82,7 +82,8 @@ function verify(item: ExportItem): void {
       if (m) fail(`${item.src} contains developer vocabulary "${m[0]}" on a buyer-facing page`);
     }
   }
-  console.log(`  verified ${item.src}${item.text ? " (paths, secrets, label)" : " (paths)"}${item.buyerPage ? " + buyer language" : ""}`);
+  const checks = item.text ? (item.requiresLabel === false ? " (paths, secrets)" : " (paths, secrets, label)") : " (paths)";
+  console.log(`  verified ${item.src}${checks}${item.buyerPage ? " + buyer language" : ""}`);
 }
 
 console.log("Website export — Illustrative workflow, synthetic data\n");

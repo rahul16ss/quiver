@@ -833,6 +833,10 @@ export class Agent {
   // US-17.17: per-turn sensitivity routing decision. Set by the sensitivity
   // block before the model call; read at the call site to pick the endpoint
   // (high→local) and to send the redacted text (mid→cloud-redacted).
+  // The model actually used for the most recent turn (cloud model, or the
+  // local model when a high-sensitivity turn routed to the local endpoint).
+  // Recorded into saved session state so .state.json reflects reality.
+  private lastUsedModel: string = config.llmModelName;
   private pendingSensitivity: {
     route: "cloud" | "cloud-redacted" | "local";
     redactedText: string;
@@ -909,7 +913,7 @@ export class Agent {
         version: "1.0.0",
         sessionId: this.logger.getSessionId(),
         savedAt: new Date().toISOString(),
-        model: config.llmModelName,
+        model: this.lastUsedModel,
         messages: this.getRedactedMessages(),
         tokenStats: this.tokenStats,
       };
@@ -958,7 +962,7 @@ export class Agent {
         version: "1.0.0",
         sessionId: this.logger.getSessionId(),
         savedAt: new Date().toISOString(),
-        model: config.llmModelName,
+        model: this.lastUsedModel,
         messages: this.getRedactedMessages(),
         tokenStats: this.tokenStats,
       };
@@ -2238,6 +2242,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         route === "local" && this.localProvider ? this.localProvider : this.provider;
       const turnModel =
         route === "local" && this.localProvider ? config.localLlmModelName : config.llmModelName;
+      this.lastUsedModel = turnModel;
       let modelInfo: ModelInfo;
       try {
         modelInfo = await turnProvider!.getModelInfo(turnModel);
