@@ -2,7 +2,13 @@
 
 ## Distribution Channels
 
-### Homebrew (macOS)
+> **Honest status.** The Electron build is currently **unsigned** (the
+> update-manifest Ed25519 pubkey is a placeholder — see SPEC §19). Homebrew and
+> `npm install -g` are developer-convenience channels; the buyer path is a
+> signed installer or engagement-led install (SPEC §15). Do not ship a signed
+> release until the signing key is real.
+
+### Homebrew (macOS) — developer convenience
 ```bash
 brew tap rahul16ss/quiver
 brew install quiver

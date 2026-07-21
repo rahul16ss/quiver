@@ -90,6 +90,21 @@ decay_score = hit_count × 0.5^(elapsed_days / half_life_days)
 
 Default half-life: 30 days. Memories below the archival threshold (0.5) are candidates for archival.
 
+## Versioned memory
+
+Every memory file is versioned — `memory_append` and `memory_replace` create an
+automatic snapshot (deduplicated by content hash) in
+`~/.quiver/projects/<project>/memory/versions/` before each write, so no edit is
+ever destructive. Slash commands:
+
+- `/memory-history <file>` — list versions (timestamp, size, reason).
+- `/memory-rollback <file> <version>` — restore a prior version (a pre-rollback
+  snapshot of the current state is taken first, so rollback is itself reversible).
+- `/memory-diff <file> <v1> <v2>` — line-by-line diff between two versions.
+
+Implementation: `src/memory/versioned.ts`. This is the "versioned · visible ·
+editable · consented" requirement of SPEC §6.1 layer B for memory.
+
 ## Learning from sessions
 
 Learning is **opt-in and user-gated**, not an automatic background hook:
