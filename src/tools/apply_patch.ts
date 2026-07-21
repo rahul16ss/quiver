@@ -99,7 +99,13 @@ function parsePatch(patchText: string): PatchFile[] {
       }
     }
 
-    // Hunk content
+    // Hunk content. A bare empty line is ambiguous: standard diff tools
+    // represent a blank context line as a single space " ", so a truly
+    // empty line is usually a trailing-newline artifact or a hunk separator.
+    // Treat it as context ONLY when it sits inside a hunk (the next line is
+    // also hunk content); a trailing empty line at EOF / before a non-hunk
+    // line ends the hunk instead of being applied as a spurious context line
+    // (which would silently consume the next real line — M8).
     if (
       currentHunk &&
       (line.startsWith(" ") ||
@@ -107,6 +113,21 @@ function parsePatch(patchText: string): PatchFile[] {
         line.startsWith("-") ||
         line === "")
     ) {
+      if (line === "") {
+        const next = lines[i + 1];
+        const interior =
+          next !== undefined &&
+          (next.startsWith(" ") ||
+            next.startsWith("+") ||
+            next.startsWith("-") ||
+            next === "");
+        if (!interior) {
+          // trailing artifact / separator — end the hunk here
+          currentHunk = null;
+          i++;
+          continue;
+        }
+      }
       currentHunk.lines.push(line);
       i++;
       continue;
@@ -184,14 +205,31 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
     // Apply hunk
     for (const line of hunk.lines) {
       if (line.startsWith("-")) {
-        // Removed line — skip (advance oldIdx but don't add)
+        // Removed line — must match the file's current content. If the file
+        // drifted since the diff was generated, applying blindly would
+        // delete the wrong line and silently corrupt it. Reject instead
+        // (standard `patch` behavior) with the offending line number.
+        const expected = line.substring(1);
+        if (oldIdx >= oldLines.length || oldLines[oldIdx] !== expected) {
+          throw new Error(
+            `Patch context mismatch at line ${oldIdx + 1}: hunk expects to remove "${expected.slice(0, 80)}" but the file has "${(oldLines[oldIdx] ?? "<EOF>").slice(0, 80)}". The file changed since the diff was generated — re-read and re-diff.`,
+          );
+        }
         oldIdx++;
       } else if (line.startsWith("+")) {
         // Added line
         newLines.push(line.substring(1));
       } else {
-        // Context line — add and advance
-        newLines.push(line.substring(1));
+        // Context line — must match the file's current content (same drift
+        // guard as removed lines). A bare "" line is treated as a blank
+        // context line (content ""), matching standard unified-diff parsing.
+        const expected = line.substring(1);
+        if (oldIdx >= oldLines.length || oldLines[oldIdx] !== expected) {
+          throw new Error(
+            `Patch context mismatch at line ${oldIdx + 1}: hunk expects context "${expected.slice(0, 80)}" but the file has "${(oldLines[oldIdx] ?? "<EOF>").slice(0, 80)}". The file changed since the diff was generated — re-read and re-diff.`,
+          );
+        }
+        newLines.push(expected);
         oldIdx++;
       }
     }

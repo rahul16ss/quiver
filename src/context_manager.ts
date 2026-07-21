@@ -161,6 +161,11 @@ ${conversationText}`;
         temperature: 0.1,
         max_tokens: 2000,
       }),
+      // C1: bound the compaction call so a stalled LLM endpoint cannot hang
+      // the agent forever mid-session. The stream timeouts (US-17.2) only
+      // cover streamChat(); this is a separate one-shot fetch. On timeout we
+      // fall through to the structural fallback summary (caught below).
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!response.ok) {

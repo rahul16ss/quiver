@@ -695,6 +695,18 @@ async function askUserApproval(
 /** Detect irreversible actions that warrant a stronger warning. */
 function isIrreversibleAction(toolName: string, args: any): boolean {
   if (toolName === "run_command" && args?.command) {
+    // H6: use the hardened command classifier (command_policy.ts), which
+    // normalizes bash quote obfuscation (r""m, r'm', $'rm') BEFORE pattern
+    // matching. The old raw-regex check missed `r""m -rf /` — the exact
+    // bypass the command classifier was built to close — so a destructive
+    // command got only the weak warning. Destructive/privileged commands are
+    // irreversible for warning purposes.
+    try {
+      const { risk } = classifyCommand(String(args.command));
+      if (risk === "destructive" || risk === "privileged") return true;
+    } catch {
+      // classifier unavailable — fall through to the raw-regex guard below
+    }
     const cmd = args.command.toLowerCase();
     // Check for rm -rf, force push, drop, delete, format, dd, mkfs
     if (
@@ -2002,6 +2014,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         // BLOCK: wait for the user's decision before the model call. In
         // --json (GUI) mode this reads one line the renderer sends via the
         // consent:respond IPC; in interactive mode the user types it.
+        // H3: a consent gate must default to DENY — an empty line, "ok",
+        // "no", or any unrecognized input must NOT approve sending context
+        // to the model. Only an explicit approve/yes/a/y proceeds.
         const { askQuestionRaw } = await import("./utils/prompt.js");
         const raw = (
           await askQuestionRaw(
@@ -2010,11 +2025,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             ),
           )
         ).trim().toLowerCase();
-        const action: "approve" | "decline" | "exclude" = raw.startsWith("d")
-          ? "decline"
-          : raw.startsWith("e")
-            ? "exclude"
-            : "approve";
+        const action: "approve" | "decline" | "exclude" = raw.startsWith("e")
+          ? "exclude"
+          : /^(a|y|yes|approve|allow)$/.test(raw)
+            ? "approve"
+            : "decline";
         this.logger.logConsentDecision({
           action,
           model: config.llmModelName,
@@ -3045,6 +3060,19 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   .slice(0, 500),
                 evidenceRef: evResult.evidencePath,
               });
+              // H4: the evidence tracker is a process-global singleton. Once a
+              // deliverable is finalized the tracker is locked (further
+              // register/record calls are silently dropped), so a SECOND
+              // document in the same session would be contaminated / empty.
+              // Reset it so the next document starts clean.
+              try {
+                const { resetEvidenceTracker } = await import(
+                  "./tools/evidence.js"
+                );
+                resetEvidenceTracker();
+              } catch {
+                // reset is best-effort — provenance was already logged
+              }
             }
           } catch {
             // Result wasn't structured JSON — skip provenance logging

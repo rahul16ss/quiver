@@ -1233,10 +1233,14 @@ function registerIpcHandlers(): void {
   // abort the turn (decline/exclude). The decision is logged to the
   // tamper-evident audit chain by the agent.
   ipcMain.handle("consent:respond", async (_evt, payload: { decision: string }) => {
-    const decision = String(payload?.decision || "approve").toLowerCase();
-    // Reuse the approval stdin channel: the agent reads one line and maps
-    // a→approve, d→decline, e→exclude. This keeps a single stdin reader.
-    const token = decision.startsWith("d") ? "decline" : decision.startsWith("e") ? "exclude" : "approve";
+    const decision = String(payload?.decision || "").toLowerCase();
+    // H3: forward an explicit token to the blocked agent. Default to DENY on
+    // any unrecognized input so a malformed/empty decision cannot approve.
+    const token = decision.startsWith("e")
+      ? "exclude"
+      : /^(a|y|yes|approve|allow)$/.test(decision)
+        ? "approve"
+        : "decline";
     if (agentViaDaemon && daemonConn) {
       void sendLine(daemonConn, token).then((ok) => {
         if (!ok) mainWindow?.webContents.send("agent:error", { message: "Agent is not running" });
