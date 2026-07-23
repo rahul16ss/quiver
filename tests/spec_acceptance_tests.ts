@@ -6958,6 +6958,30 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "SIGNED-UPDATE-ROUNDTRIP",
+    "Epic / SPEC §19 signed Electron build infra",
+    "Behavioral: the update signing infrastructure works end-to-end — generate an Ed25519 keypair, sign a manifest, verify against the public key (true), then tamper the manifest and verify (false). Plus a scripts/sign-release.ts that mints the keypair + signs, and keys/ is gitignored so the private key never commits. The verify path (verifyEd25519Signature) is already wired into the auto-updater.",
+    async () => {
+      const { generateEd25519KeyPair, signEd25519, verifyEd25519Signature } = await import("../src/updates.js");
+      const { privateKeyPem, publicKeyBase64 } = generateEd25519KeyPair();
+      const manifest = JSON.stringify({ version: "1.2.0", url: "https://example/quiver.zip", sha256: "abc" });
+      const sig = signEd25519(manifest, privateKeyPem);
+      if (!sig) return false;
+      if (!verifyEd25519Signature(manifest, sig, publicKeyBase64)) return false; // valid → true
+      // tamper → must fail
+      if (verifyEd25519Signature(manifest.replace("1.2.0", "9.9.9"), sig, publicKeyBase64)) return false;
+      // wrong key → must fail
+      const other = generateEd25519KeyPair();
+      if (verifyEd25519Signature(manifest, sig, other.publicKeyBase64)) return false;
+      // sign script exists + keys/ gitignored
+      if (!existsSync(path.join(ROOT, "scripts", "sign-release.ts"))) return false;
+      const gi = readFileSync(path.join(ROOT, ".gitignore"), "utf8");
+      if (!/^keys\//m.test(gi)) return false;
+      return true;
+    },
+  );
+
+  await check(
     "DMS-EXPORT-FRAMEWORK",
     "S7 / SPEC §9.4 (Phase 2)",
     "Behavioral: a DMS export framework exists (SharePoint + NetDocuments adapters) and an agent `dms_export` tool drives it. An UNCONFIGURED adapter must return ok:false with a configuration hint — never a silent success — and a configured adapter would upload via the vendor API (Microsoft Graph / NetDocuments REST). Proven by exercising the unconfigured path (no network needed).",

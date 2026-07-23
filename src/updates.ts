@@ -152,6 +152,32 @@ export function verifyEd25519Signature(
 }
 
 /**
+ * Sign a message with an Ed25519 private key (the counterpart to
+ * verifyEd25519Signature). Used by `scripts/sign-release.ts` to produce signed
+ * update manifests. The private key is the release signing key — keep it
+ * secret; only the public key is embedded in the binary / committed.
+ */
+export function signEd25519(message: string | Buffer, privateKeyPem: string): string {
+  const msgBuf = typeof message === "string" ? Buffer.from(message, "utf8") : message;
+  const keyObj = crypto.createPrivateKey({ key: privateKeyPem, format: "pem", type: "pkcs8" });
+  return crypto.sign(null, msgBuf, keyObj).toString("base64");
+}
+
+/**
+ * Generate an Ed25519 keypair. Returns { privateKeyPem, publicKeyBase64 }.
+ * The owner runs this once to mint the release signing key; the private key
+ * is written to a gitignored file, the public key is committed/embedded.
+ */
+export function generateEd25519KeyPair(): { privateKeyPem: string; publicKeyBase64: string } {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  const privateKeyPem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+  const publicKeyDer = publicKey.export({ format: "der", type: "spki" }) as Buffer;
+  // Extract the raw 32-byte public key from the SPKI DER (last 32 bytes).
+  const publicKeyBase64 = publicKeyDer.subarray(-32).toString("base64");
+  return { privateKeyPem, publicKeyBase64 };
+}
+
+/**
  * Verify a SHA-256 checksum.
  */
 export function verifySha256(
