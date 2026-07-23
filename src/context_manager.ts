@@ -307,6 +307,78 @@ export async function compactWithSummarization(
   };
 }
 
+export interface CompactionProposal {
+  needed: boolean;
+  summary: string;
+  removedCount: number;
+  savedTo: string;
+  tokensBefore: number;
+  tokensAfter: number;
+  newMessages: Message[];
+  keptRecent: number;
+}
+
+/**
+ * Propose a compaction WITHOUT mutating the conversation (SPEC §7.3 consent):
+ * save the original (full history preserved regardless of the decision), generate
+ * the LLM summary, and build the would-be compacted message array. Decline → the
+ * live conversation is untouched; the saved copy is the accessible full history.
+ */
+export async function proposeCompaction(
+  messages: Message[],
+  keepRecent: number,
+  sessionId: string,
+): Promise<CompactionProposal> {
+  const empty: CompactionProposal = {
+    needed: false, summary: "", removedCount: 0, savedTo: "",
+    tokensBefore: 0, tokensAfter: 0, newMessages: [], keptRecent: 0,
+  };
+  if (messages.length <= keepRecent + 1) return empty;
+  const tokensBefore = estimateConversationTokens(messages);
+  const systemMessages = messages.filter((m) => m.role === "system");
+  const nonSystemMessages = messages.filter((m) => m.role !== "system");
+  if (nonSystemMessages.length <= keepRecent) {
+    return { ...empty, tokensBefore, tokensAfter: tokensBefore };
+  }
+  const oldMessages = nonSystemMessages.slice(0, -keepRecent);
+  let recentMessages = nonSystemMessages.slice(-keepRecent);
+  while (
+    recentMessages.length > 0 &&
+    recentMessages[0].role === "tool" &&
+    !recentMessages.some(
+      (m) => m.role === "assistant" &&
+        m.tool_calls?.some((tc) => tc.id === recentMessages[0].tool_call_id),
+    )
+  ) {
+    recentMessages = recentMessages.slice(1);
+  }
+  const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
+  const summary = await generateSummary(
+    oldMessages, config.llmModelName, config.llmApiKey, config.llmBaseUrl,
+  );
+  const summaryContent =
+    "[Context Compacted \u2014 " + oldMessages.length + " messages summarized]\n\n" +
+    "The full conversation was saved to: " + savedTo + "\n\n" +
+    "You can read it with view_file if you need specific details from earlier in the conversation.\n\n" +
+    "SUMMARY OF PREVIOUS CONVERSATION:\n" + summary;
+  const newMessages: Message[] = [
+    ...systemMessages,
+    { role: "system", content: summaryContent },
+    ...recentMessages,
+  ];
+  return {
+    needed: true, summary, removedCount: oldMessages.length, savedTo,
+    tokensBefore, tokensAfter: estimateConversationTokens(newMessages),
+    newMessages, keptRecent: recentMessages.length,
+  };
+}
+
+/** Apply a compaction proposal: replace the live message array in place. */
+export function applyCompaction(messages: Message[], proposal: CompactionProposal): void {
+  messages.length = 0;
+  messages.push(...proposal.newMessages);
+}
+
 /**
  * Offload large tool results to files, replacing them in the conversation
  * with file path references + previews.

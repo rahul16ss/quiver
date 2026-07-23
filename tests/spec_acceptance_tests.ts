@@ -6958,6 +6958,42 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "COMPACTION-CONSENT-GATE",
+    "SPEC §7.3",
+    "Wiring + behavioral: compaction is a CONSENT gate, not a silent rewrite. manageContextIfNeeded must propose (proposeCompaction — save full history + generate summary, NON-mutating), surface a compaction_proposed event + wait for approval, and apply (applyCompaction) ONLY if approved; decline retains the full conversation. Behavioral: applyCompaction replaces the message array with the proposal's newMessages.",
+    async () => {
+      // Behavioral: applyCompaction mutates the live array to the proposal's newMessages.
+      const { applyCompaction } = await import("../src/context_manager.js");
+      const live: any[] = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "old1" },
+        { role: "assistant", content: "old2" },
+        { role: "user", content: "recent" },
+      ];
+      const proposal = {
+        needed: true, summary: "s", removedCount: 2, savedTo: "/tmp/x.json",
+        tokensBefore: 100, tokensAfter: 40,
+        newMessages: [
+          { role: "system", content: "sys" },
+          { role: "system", content: "[compacted] s" },
+          { role: "user", content: "recent" },
+        ],
+        keptRecent: 1,
+      };
+      applyCompaction(live, proposal as any);
+      if (live.length !== 3 || live[2].content !== "recent") return false;
+      // Wiring: manageContextIfNeeded does propose -> consent -> apply (not direct compact).
+      const a = codeOnly("src/agent.ts");
+      const proposes = /proposeCompaction\(/.test(a);
+      const consents = /compaction_proposed/.test(a) && /askQuestionRaw/.test(a) && /Approve\?/.test(a);
+      const appliesIfApproved = /applyCompaction\(this\.messages/.test(a) && /approved/.test(a);
+      const declines = /Compaction declined/.test(a);
+      const logs = /compaction_decision/.test(a);
+      return proposes && consents && appliesIfApproved && declines && logs;
+    },
+  );
+
+  await check(
     "SIGNED-UPDATE-ROUNDTRIP",
     "Epic / SPEC §19 signed Electron build infra",
     "Behavioral: the update signing infrastructure works end-to-end — generate an Ed25519 keypair, sign a manifest, verify against the public key (true), then tamper the manifest and verify (false). Plus a scripts/sign-release.ts that mints the keypair + signs, and keys/ is gitignored so the private key never commits. The verify path (verifyEd25519Signature) is already wired into the auto-updater.",

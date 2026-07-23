@@ -15,6 +15,8 @@ import {
 } from "./diff.js";
 import {
   compactWithSummarization,
+  proposeCompaction,
+  applyCompaction,
   offloadLargeToolResults,
   needsCompaction,
   calculateKeepRecent,
@@ -181,7 +183,8 @@ export interface AgentEvent {
     | "consent_gate"
     | "consent_declined"
     | "consent_exclude"
-    | "sensitivity_refused";
+    | "sensitivity_refused"
+    | "compaction_proposed";
   data: {
     text?: string;
     toolName?: string;
@@ -211,6 +214,13 @@ export interface AgentEvent {
     /** Sensitivity routing (US-17.17): a high-sensitivity turn was refused. */
     reason?: string;
     refused?: boolean;
+    /** Compaction consent (SPEC §7.3): a compaction is proposed, awaiting approval. */
+    removedCount?: number;
+    keptRecent?: number;
+    tokensBefore?: number;
+    tokensAfter?: number;
+    savedTo?: string;
+    summary?: string;
   };
 }
 
@@ -837,6 +847,9 @@ export class Agent {
   // local model when a high-sensitivity turn routed to the local endpoint).
   // Recorded into saved session state so .state.json reflects reality.
   private lastUsedModel: string = config.llmModelName;
+  // The onEvent sink for the current prompt() turn, so helpers like
+  // manageContextIfNeeded can emit events (e.g. compaction_proposed).
+  private currentOnEvent: ((e: AgentEvent) => void) | null = null;
   private pendingSensitivity: {
     route: "cloud" | "cloud-redacted" | "local";
     redactedText: string;
@@ -1662,29 +1675,82 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       return { offloaded, compacted: 0, summary: "", savedTo: "" };
     }
 
-    // Step 3: LLM-powered summarization
+    // SPEC §7.3: compaction is a CONSENT gate, not a silent rewrite. Propose
+    // (save the full history + generate the summary, WITHOUT mutating), surface
+    // the proposal, and apply ONLY if the user approves. Decline → the live
+    // conversation stays full; the saved copy is the accessible full history.
     const keepRecent = calculateKeepRecent(this.messages);
-    const result = await compactWithSummarization(
+    const proposal = await proposeCompaction(
       this.messages,
       keepRecent,
       this.logger.getSessionId(),
     );
+    if (!proposal.needed) {
+      return { offloaded, compacted: 0, summary: "", savedTo: "" };
+    }
 
-    if (result.removedCount > 0 && config.outputMode === "interactive") {
+    // Surface the proposal (GUI event + CLI prompt) and wait for a decision.
+    if (this.currentOnEvent) {
+      this.currentOnEvent({
+        type: "compaction_proposed",
+        data: {
+          removedCount: proposal.removedCount,
+          keptRecent: proposal.keptRecent,
+          tokensBefore: proposal.tokensBefore,
+          tokensAfter: proposal.tokensAfter,
+          savedTo: proposal.savedTo,
+          summary: proposal.summary,
+        },
+      });
+    }
+    let approved = true;
+    if (config.outputMode === "interactive") {
+      try {
+        const { askQuestionRaw } = await import("./utils/prompt.js");
+        const ans = (await askQuestionRaw(
+          picocolors.gray(
+            `     Context compaction proposed: ${proposal.removedCount} messages → summary, ` +
+              `keep ${proposal.keptRecent} recent (${proposal.tokensBefore.toLocaleString()} → ${proposal.tokensAfter.toLocaleString()} tokens). ` +
+              `Full history saved to ${proposal.savedTo}. Approve? [Y/n]: `,
+          ),
+        )).trim().toLowerCase();
+        approved = !ans.startsWith("n");
+      } catch {
+        approved = true; // non-interactive / no prompt → proceed (fail-open)
+      }
+    }
+    await this.logger.logEvent("compaction_decision", {
+      approved,
+      removedCount: proposal.removedCount,
+      keptRecent: proposal.keptRecent,
+      tokensBefore: proposal.tokensBefore,
+      tokensAfter: proposal.tokensAfter,
+      savedTo: proposal.savedTo,
+    });
+    if (!approved) {
+      if (config.outputMode === "interactive") {
+        console.log(picocolors.gray("     Compaction declined — full conversation retained."));
+      }
+      return { offloaded, compacted: 0, summary: "", savedTo: proposal.savedTo };
+    }
+
+    // Approved — apply the proposal (replace the live message array).
+    applyCompaction(this.messages, proposal);
+    if (config.outputMode === "interactive") {
       console.log(
         picocolors.gray(
-          `     Context compacted: ${result.removedCount} messages summarized, ` +
-            `${result.tokensBefore.toLocaleString()} → ${result.tokensAfter.toLocaleString()} tokens. ` +
-            `Full conversation saved to: ${result.savedTo}`,
+          `     Context compacted: ${proposal.removedCount} messages summarized, ` +
+            `${proposal.tokensBefore.toLocaleString()} → ${proposal.tokensAfter.toLocaleString()} tokens. ` +
+            `Full conversation saved to: ${proposal.savedTo}`,
         ),
       );
     }
 
     return {
       offloaded,
-      compacted: result.removedCount,
-      summary: result.summary,
-      savedTo: result.savedTo,
+      compacted: proposal.removedCount,
+      summary: proposal.summary,
+      savedTo: proposal.savedTo,
     };
   }
 
@@ -1881,6 +1947,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     onToken: (token: string) => void,
     onEvent?: (event: AgentEvent) => void,
   ): Promise<void> {
+    this.currentOnEvent = onEvent ?? null;
     // Cloud sync: show first-run notice + ensure folder exists (once per session)
     if (!this.cloudSyncInitialized) {
       this.cloudSyncInitialized = true;
