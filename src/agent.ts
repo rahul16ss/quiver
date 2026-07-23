@@ -2358,6 +2358,28 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         // halt generation. Stored on the instance so abortActiveStream()
         // can signal it from the SIGINT handler.
         this.activeAbortController = new AbortController();
+        // US-17.17 (mid-tier memory/context redaction): for a cloud-redacted
+        // turn, send a REDACTED copy of the messages so loaded memory, core
+        // context, and tool results don't leak identifiers to the cloud. The
+        // system prompt (which holds the memory + skills + core memory) and
+        // tool results are redacted with the configured MNPI patterns; the
+        // user message is already redacted (effectiveUserInput). This does NOT
+        // mutate this.messages — the original history is preserved for low/high
+        // turns and for the audit record.
+        let messagesToSend: any[] = this.messages as any[];
+        if (route === "cloud-redacted") {
+          try {
+            const { redactMnpi } = await import("./security/sensitivity.js");
+            messagesToSend = this.messages.map((m) => {
+              if (typeof m.content === "string" && m.role !== "assistant") {
+                return { ...m, content: redactMnpi(m.content).redactedText };
+              }
+              return m;
+            });
+          } catch {
+            // redaction unavailable — send as-is (fail-open, logged elsewhere)
+          }
+        }
         while (true) {
           try {
             for await (const ev of turnProvider!.streamChat(
@@ -2366,7 +2388,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                 // cloud model otherwise) — NOT config.llmModelName, which would
                 // ask the local endpoint for the cloud model name and fail.
                 model: turnModel,
-                messages: this.messages as any[],
+                messages: messagesToSend as any[],
                 tools,
                 temperature: 0.2,
                 maxTokens: adapterDefaults.maxOutputTokens,

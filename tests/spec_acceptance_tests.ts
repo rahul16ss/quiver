@@ -6958,6 +6958,22 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "SENSITIVITY-MIDTIER-CONTEXT-REDACTED",
+    "S15 / SPEC §11.2",
+    "Wiring: for a mid-tier (cloud-redacted) turn, the model call must send a REDACTED copy of the messages — the system prompt (which holds loaded memory, core context, skills) and tool results, not just the current user input — so identifiers don't leak to the cloud via context. This must not mutate this.messages (history preserved). Inspects the call-site redaction block.",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      // a cloud-redacted branch at the call site that maps messages through redactMnpi
+      const branch = /route\s*===\s*"cloud-redacted"[\s\S]{0,400}?messagesToSend\s*=\s*this\.messages\.map\([\s\S]{0,300}?redactMnpi/.test(a);
+      // it sends the redacted copy (messagesToSend), not this.messages, to streamChat
+      const sendsCopy = /messages:\s*messagesToSend\s*as\s*any\[\]/.test(a);
+      // non-mutating (uses .map on a copy, sets messagesToSend, doesn't assign back to this.messages)
+      const nonMutating = !/this\.messages\s*=\s*messagesToSend/.test(a);
+      return branch && sendsCopy && nonMutating;
+    },
+  );
+
+  await check(
     "WORD-LINEAGE-APPENDIX",
     "S8 / SPEC §8.1",
     "Behavioral: the evidence finalize appends a 'Lineage & Sources' appendix (endnote form, SPEC §8.1 allows 'Word comment or endnote') to the .docx so a reviewer opening the memo in Word sees the lineage inline. Copy the flagship template, call appendLineageAppendix with sample claims, read the doc back via officecli, and assert the appendix heading is present — not just that the code exists.",
