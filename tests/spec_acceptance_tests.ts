@@ -6958,6 +6958,24 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "DRIFT-DETECTION-WORKS",
+    "S12.4 / SPEC §12.4",
+    "Behavioral: drift detection reads the workflow's expected-structure.json and checks the live sources via officecli; on the committed flagship fixtures it reports NO drift, and the demo halts before drafting if drift is detected. SPEC §12.4: on run, if the source has drifted, the harness halts and surfaces the mismatch rather than producing a draft with broken lineage.",
+    async () => {
+      const { loadExpectedStructure, checkDrift } = await import("../src/workflow/drift.js");
+      const exDir = path.join(ROOT, "examples", "investment-committee-memo");
+      const expected = loadExpectedStructure(exDir);
+      if (!expected) return false; // expected-structure.json must exist
+      const res = checkDrift(expected, path.join(exDir, "inputs"));
+      if (res.drifted) return false; // committed fixtures must NOT drift
+      // the demo wires the check before drafting (step 2/6)
+      const runDemo = srcText("examples/investment-committee-memo/scripts/run-demo.ts");
+      const wired = /checkDrift/.test(runDemo) && /HALT.*source drift/.test(runDemo);
+      return wired;
+    },
+  );
+
+  await check(
     "SENSITIVITY-MIDTIER-CONTEXT-REDACTED",
     "S15 / SPEC §11.2",
     "Wiring: for a mid-tier (cloud-redacted) turn, the model call must send a REDACTED copy of the messages — the system prompt (which holds loaded memory, core context, skills) and tool results, not just the current user input — so identifiers don't leak to the cloud via context. This must not mutate this.messages (history preserved). Inspects the call-site redaction block.",

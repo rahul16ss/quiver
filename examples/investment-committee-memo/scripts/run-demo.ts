@@ -174,15 +174,33 @@ async function main(): Promise<void> {
   const memo = loadMemoContent();
   const registry = loadSources();
 
-  console.log("[1/5] Validating fixtures");
+  console.log("[1/6] Validating fixtures");
   validateFixtures(memo, registry);
 
-  console.log("[2/5] Building the memo .docx");
+  // SPEC §12.4 drift detection: halt before drafting if a source's structure
+  // has changed since the workflow was authored, so we never silently produce
+  // a memo with broken lineage.
+  console.log("[2/6] Checking source drift against expected-structure.json");
+  const { checkDrift, loadExpectedStructure } = await import("../../../src/workflow/drift.js");
+  const expected = loadExpectedStructure(p("."));
+  if (expected) {
+    const drift = checkDrift(expected, p("inputs"));
+    console.log(`  ${drift.summary}`);
+    if (drift.drifted) {
+      console.error("\n  HALT — source drift detected. Fix the source or update expected-structure.json.");
+      for (const m of drift.mismatches) console.error(`    • ${m.source}: expected ${m.expected}, actual ${m.actual} — ${m.reason}`);
+      process.exit(1);
+    }
+  } else {
+    console.log("  no expected-structure.json — drift check skipped");
+  }
+
+  console.log("[3/6] Building the memo .docx");
   fs.rmSync(p(OUTPUT.dir), { recursive: true, force: true });
   fs.mkdirSync(p(OUTPUT.dir), { recursive: true });
   buildDocx(memo);
 
-  console.log("[3/5] Generating evidence map, review checklist, run record");
+  console.log("[4/6] Generating evidence map, review checklist, run record");
   const evidence = buildEvidenceMap(memo, registry);
   writeArtifacts(evidence);
   console.log(`  wrote ${OUTPUT.evidenceJson}`);
@@ -191,7 +209,7 @@ async function main(): Promise<void> {
   console.log(`  wrote ${OUTPUT.reviewChecklistHtml}`);
   console.log(`  wrote ${OUTPUT.runRecord}`);
 
-  console.log("[4/5] Running acceptance checks");
+  console.log("[5/6] Running acceptance checks");
   const checklist = loadChecklist();
   const results: CheckResult[] = [];
   for (const entry of checklist) {

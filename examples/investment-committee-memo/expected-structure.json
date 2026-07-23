@@ -1,0 +1,18 @@
+{
+  "excel_model": {
+    "file": "inputs/Model_v12.xlsx",
+    "sheets": [
+      { "name": "RevenueBuild", "cells": [
+        { "cell": "C8", "expected_raw": 48200000, "expected_text": "48200000" }
+      ]},
+      { "name": "P&L", "cells": [
+        { "cell": "B4", "expected_raw": 48200000 },
+        { "cell": "B8", "expected_raw": 10796800 }
+      ]}
+    ]
+  },
+  "filings": [
+    { "file": "inputs/10q-excerpt.md", "sections": ["Revenue", "EBITDA"] },
+    { "file": "inputs/earnings-call-q2-transcript.md", "sections": ["Section 7 — Q&A: customer base"] }
+  ]
+}
