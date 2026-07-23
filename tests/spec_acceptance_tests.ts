@@ -6958,6 +6958,31 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "DMS-EXPORT-FRAMEWORK",
+    "S7 / SPEC §9.4 (Phase 2)",
+    "Behavioral: a DMS export framework exists (SharePoint + NetDocuments adapters) and an agent `dms_export` tool drives it. An UNCONFIGURED adapter must return ok:false with a configuration hint — never a silent success — and a configured adapter would upload via the vendor API (Microsoft Graph / NetDocuments REST). Proven by exercising the unconfigured path (no network needed).",
+    async () => {
+      const { SharePointExporter, NetDocumentsExporter, getActiveDmsExporter, loadDmsConfig, listDmsExporters } = await import("../src/export/dms.js");
+      // unconfigured SharePoint → clear hint, not silent success
+      const sp = new SharePointExporter(); // no env → unconfigured
+      if (sp.isConfigured()) return false;
+      const r = await sp.export({ name: "Memo.docx", deliverablePath: "/tmp/x.docx" });
+      if (r.ok) return false; // must NOT silently succeed
+      if (!/SharePoint not configured/.test(r.detail)) return false;
+      // framework shape: registry lists both adapters
+      const list = listDmsExporters();
+      if (!list.some((a) => a.id === "sharepoint") || !list.some((a) => a.id === "netdocuments")) return false;
+      // no .quiver/dms.json → active is null (no silent exporter)
+      loadDmsConfig(path.join(os.tmpdir(), "quiver-no-dms-config-" + Date.now()));
+      if (getActiveDmsExporter() !== null) return false;
+      // the agent tool exists with the right actions
+      const tool = codeOnly("src/tools/dms_export.ts");
+      if (!/name:\s*"dms_export"/.test(tool) || !/("export"|"list"|"status")/.test(tool)) return false;
+      return true;
+    },
+  );
+
+  await check(
     "DAEMON-AUTOSTART-INSTALL",
     "Epic 1 / SPEC §4.1",
     "Wiring: the daemon ships a launchd LaunchAgent template + install/uninstall/status so it can start at login and survive a logout/reboot (stage-1 daemon was window/app-restart only). A `quiver daemon install|uninstall|status` CLI command wires it. (Other platforms are no-ops pending a Windows service / Linux unit.)",
