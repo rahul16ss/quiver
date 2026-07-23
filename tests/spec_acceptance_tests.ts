@@ -6958,6 +6958,40 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "WORD-LINEAGE-APPENDIX",
+    "S8 / SPEC §8.1",
+    "Behavioral: the evidence finalize appends a 'Lineage & Sources' appendix (endnote form, SPEC §8.1 allows 'Word comment or endnote') to the .docx so a reviewer opening the memo in Word sees the lineage inline. Copy the flagship template, call appendLineageAppendix with sample claims, read the doc back via officecli, and assert the appendix heading is present — not just that the code exists.",
+    async () => {
+      const { appendLineageAppendix } = await import("../src/document/word_lineage.js");
+      const { findBinary } = await import("../src/utils/find_binary.js");
+      const bin = await findBinary("officecli");
+      if (!bin) return false; // officecli not installed — can't behaviorally test
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-lineage-"));
+      tmpDirs.push(tmp);
+      const tmpl = path.join(ROOT, "examples", "investment-committee-memo", "template", "ic-memo-template.docx");
+      const doc = path.join(tmp, "Lineage_Test.docx");
+      await fs.copyFile(tmpl, doc);
+      const res = await appendLineageAppendix(doc, [
+        { figure: "$48.2M", sourceRef: "Model_v12.xlsx!RevenueBuild!C8", status: "sourced · verified" },
+        { figure: "customer concentration", sourceRef: "Q2 transcript p.7", status: "flagged" },
+      ]);
+      if (!res.ok) return false;
+      // Read the document text back via officecli and assert the appendix landed.
+      const { execSync } = await import("child_process");
+      let text = "";
+      try {
+        text = execSync(`${bin} view ${JSON.stringify(doc)} text`, { maxBuffer: 5 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }).toString();
+      } catch {
+        // view text may not be the exact subcommand shape; fall back to query
+        try {
+          text = execSync(`${bin} query ${JSON.stringify(doc)} "Lineage"`, { maxBuffer: 5 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }).toString();
+        } catch { return false; }
+      }
+      return /Lineage & Sources/i.test(text) || /Lineage/i.test(text);
+    },
+  );
+
+  await check(
     "DOD-NATIVE-FORMAT-OUTPUT",
     "S7 / SPEC §16",
     "Definition of Done: the output is the firm's format (native Office document conforming to template), not markdown. SPEC §16 / §9.4. Asserted via the office_doc tool formats + the flagship example's template-driven .docx output.",

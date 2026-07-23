@@ -364,7 +364,23 @@ export const tool: Tool = {
         tracker.setMetadata({ workflow: args.workflow, company: args.company, title: args.title, subtitle: args.subtitle });
         const result = tracker.finalize(args.output_dir || "", args.doc_file);
         const docPath = args.doc_file ? path.join(args.output_dir || "", args.doc_file) : args.output_dir || "";
-        const structured = { ok: !!(result.evidencePath), action: "finalize", docPath, evidencePath: result.evidencePath, runRecord: result.runRecordPath, claims: tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, is_quantitative: c.is_quantitative, review_status: c.review_status, relationship: c.relationship })), sources: tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, source_type: s.source_type, file: s.file, location: s.location, approved: s.approved, excerpt: s.excerpt, extracted_value: s.extracted_value, sensitivity: s.sensitivity })), excludedSources: tracker.getExcludedSources().map((e) => e.source_id), validation: result.validation };
+        // SPEC §8.1: append a "Lineage & Sources" appendix (endnote form) to the
+        // .docx so a reviewer opening the memo in Word sees the lineage inline,
+        // not only in the companion Evidence.json / GUI chips.
+        let lineageAppendix = { ok: false, detail: "skipped" };
+        try {
+          const { appendLineageAppendix, entriesFromEvidence } = await import("../document/word_lineage.js");
+          lineageAppendix = await appendLineageAppendix(
+            docPath,
+            entriesFromEvidence(
+              tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, review_status: c.review_status, is_quantitative: c.is_quantitative })),
+              tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, file: s.file, location: s.location })),
+            ),
+          );
+        } catch (e: any) {
+          lineageAppendix = { ok: false, detail: `lineage appendix error: ${e?.message || e}` };
+        }
+        const structured = { ok: !!(result.evidencePath), action: "finalize", docPath, evidencePath: result.evidencePath, runRecord: result.runRecordPath, claims: tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, is_quantitative: c.is_quantitative, review_status: c.review_status, relationship: c.relationship })), sources: tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, source_type: s.source_type, file: s.file, location: s.location, approved: s.approved, excerpt: s.excerpt, extracted_value: s.extracted_value, sensitivity: s.sensitivity })), excludedSources: tracker.getExcludedSources().map((e) => e.source_id), validation: result.validation, lineageAppendix };
         return JSON.stringify(structured, null, 2);
       }
 
