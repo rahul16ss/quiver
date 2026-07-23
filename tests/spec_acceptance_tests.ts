@@ -6958,6 +6958,43 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "EPISODIC-EXAMPLES-STORE",
+    "SPEC §7.4",
+    "Behavioral: a praised deliverable can be promoted into an episodic examples store (structure snapshot + lineage provenance), listed, loaded into context as episodic memory, and removed. On future runs the loaded examples are a consent-gate-visible episodic-memory component. Proven end-to-end on a temp project: promote → list → context → remove.",
+    async () => {
+      const { promoteExample, listExamples, loadExampleContext, removeExample } = await import("../src/memory/examples_store.js");
+      const proj = "accept-examples-" + Date.now();
+      const prev = process.env.QUIVER_PROJECT_NAME;
+      process.env.QUIVER_PROJECT_NAME = proj;
+      try {
+        // temp deliverable + a companion Evidence.json (provenance)
+        const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-ex-"));
+        const doc = path.join(tmp, "Praised_Memo.docx");
+        await fs.writeFile(doc, "fake docx bytes");
+        await fs.writeFile(doc.replace(/\.docx$/, "_Evidence.json"), JSON.stringify({ claims: [{ claim_id: "c1" }], sources: [{ source_id: "s1" }], review_status: "draft_for_review" }));
+        const rec = promoteExample(doc, "tightest IC memo we shipped");
+        if (!rec || rec.kind !== "docx" || !rec.provenance.includes("1 claims")) return false;
+        const list = listExamples();
+        if (!list.some((e) => e.id === rec.id)) return false;
+        const ctx = loadExampleContext();
+        if (!ctx || !/Praised_Memo/.test(ctx) || !/EPISODIC EXAMPLES/.test(ctx)) return false;
+        if (!removeExample(rec.id)) return false;
+        if (listExamples().some((e) => e.id === rec.id)) return false;
+        // the agent tool exists with the right actions
+        const tool = codeOnly("src/tools/examples.ts");
+        if (!/name:\s*"examples"/.test(tool) || !/("promote"|"list"|"remove"|"context")/.test(tool)) return false;
+        // wired into the agent context (memoryContext + manifest)
+        const a = codeOnly("src/agent.ts");
+        if (!/loadExampleContext/.test(a) || !/examples: String\(listExamples/.test(a)) return false;
+        return true;
+      } finally {
+        process.env.QUIVER_PROJECT_NAME = prev;
+        await fs.rm(path.join(os.homedir(), ".quiver", "projects", proj), { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  );
+
+  await check(
     "COMPACTION-CONSENT-GATE",
     "SPEC §7.3",
     "Wiring + behavioral: compaction is a CONSENT gate, not a silent rewrite. manageContextIfNeeded must propose (proposeCompaction — save full history + generate summary, NON-mutating), surface a compaction_proposed event + wait for approval, and apply (applyCompaction) ONLY if approved; decline retains the full conversation. Behavioral: applyCompaction replaces the message array with the proposal's newMessages.",

@@ -39,6 +39,7 @@ import {
   type ApprovalScope,
 } from "./security/approval_cache.js";
 import { AmbientEngine } from "./ambient.js";
+import { loadExampleContext, listExamples } from "./memory/examples_store.js";
 import { SECURITY_PREAMBLE } from "./prompts/security.js";
 import {
   FileReadHistory,
@@ -221,6 +222,8 @@ export interface AgentEvent {
     tokensAfter?: number;
     savedTo?: string;
     summary?: string;
+    /** Episodic examples (SPEC §7.4): count of promoted examples loaded. */
+    examples?: string;
   };
 }
 
@@ -1589,6 +1592,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         memoryContext += `[Memory Snippet: ${m.filename}]\n${m.content}\n\n`;
       }
     }
+    // SPEC §7.4: episodic examples (promoted past deliverables) are an
+    // episodic-memory component — visible/editable/excludable in the consent
+    // gate (§6 layer B) and consulted by the agent on future runs.
+    const exampleContext = loadExampleContext();
+    if (exampleContext) memoryContext += exampleContext + "\n";
 
     // Append active skills (excluding the system-prompt skill itself)
     const activeSkills = skills.filter((s) => s.id !== "quiver-system-prompt");
@@ -2016,6 +2024,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             version: s.version,
           })),
           tools: String(this.registry.getAllTools().length),
+          examples: String(listExamples().length),
           // Tool names let the GUI show the actual tool catalog (spec §6
           // layer C) instead of a bare count.
           toolNames: this.registry.getAllTools().map((t) => t.name),
