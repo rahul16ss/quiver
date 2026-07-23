@@ -33,6 +33,8 @@ const KNOWN_FLAGS = [
   "-ls",
   "--model",
   "--yolo",
+  "--daemon",
+  "daemon",
 ];
 
 export interface CliOptions {
@@ -45,6 +47,7 @@ export interface CliOptions {
   signin: boolean;
   cloudSync: boolean;
   cleanupLeaks: boolean;
+  daemon?: string; // 'install' | 'uninstall' | 'status'
   singleTurn?: string;
   continue?: boolean;
   resume?: boolean;
@@ -255,6 +258,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     signin: false,
     cloudSync: false,
     cleanupLeaks: false,
+    daemon: undefined,
     continue: false,
     resume: false,
     listSessions: false,
@@ -321,6 +325,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg === "--cleanup-leaks") {
       opts.cleanupLeaks = true;
+      continue;
+    }
+    if (arg === "daemon" || arg === "--daemon") {
+      const next = expanded[i + 1];
+      opts.daemon = next && !next.startsWith("-") ? next : "status";
+      if (next && !next.startsWith("-")) i++;
       continue;
     }
     if (arg === "--single-turn") {

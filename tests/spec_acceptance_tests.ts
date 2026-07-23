@@ -6958,6 +6958,23 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "DAEMON-AUTOSTART-INSTALL",
+    "Epic 1 / SPEC §4.1",
+    "Wiring: the daemon ships a launchd LaunchAgent template + install/uninstall/status so it can start at login and survive a logout/reboot (stage-1 daemon was window/app-restart only). A `quiver daemon install|uninstall|status` CLI command wires it. (Other platforms are no-ops pending a Windows service / Linux unit.)",
+    async () => {
+      const plist = path.join(ROOT, "scripts", "com.quiver.daemon.plist");
+      if (!existsSync(plist)) return false;
+      const tpl = readFileSync(plist, "utf8");
+      if (!/<plist/.test(tpl) || !/com.quiver.daemon/.test(tpl) || !/RunAtLoad/.test(tpl)) return false;
+      const { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } = await import("../src/daemon/client.js");
+      if (typeof installDaemonAutostart !== "function" || typeof uninstallDaemonAutostart !== "function" || typeof isDaemonAutostartInstalled !== "function") return false;
+      const cli = codeOnly("src/cli.ts");
+      const wired = /cliOpts\.daemon/.test(cli) && /installDaemonAutostart/.test(cli) && /uninstallDaemonAutostart/.test(cli);
+      return wired;
+    },
+  );
+
+  await check(
     "DRIFT-DETECTION-WORKS",
     "S12.4 / SPEC §12.4",
     "Behavioral: drift detection reads the workflow's expected-structure.json and checks the live sources via officecli; on the committed flagship fixtures it reports NO drift, and the demo halts before drafting if drift is detected. SPEC §12.4: on run, if the source has drifted, the harness halts and surfaces the mismatch rather than producing a draft with broken lineage.",

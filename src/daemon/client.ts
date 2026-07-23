@@ -188,3 +188,57 @@ export function subscribe(
   req.end();
   return () => req.destroy();
 }
+
+// ─── LaunchAgent autostart (SPEC §4.1 / Epic 1) ──────────────────────────
+// Install/uninstall the daemon as a macOS LaunchAgent so it starts at login
+// and stays alive (KeepAlive). On other platforms these are no-ops (a Windows
+// service / Linux systemd unit would be the equivalent — future work).
+
+import * as fsSync from "fs";
+import * as path from "path";
+import * as os from "os";
+import { execFileSync } from "child_process";
+
+const LAUNCH_AGENT_LABEL = "com.quiver.daemon";
+
+export function daemonPlistPath(): string {
+  return path.join(os.homedir(), "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
+}
+
+export function isDaemonAutostartInstalled(): boolean {
+  return fsSync.existsSync(daemonPlistPath());
+}
+
+export function installDaemonAutostart(repoRoot: string): { installed: boolean; detail: string } {
+  if (process.platform !== "darwin") {
+    return { installed: false, detail: `launchd autostart is macOS-only (platform: ${process.platform}); on other platforms use the OS service manager` };
+  }
+  const template = path.join(repoRoot, "scripts", "com.quiver.daemon.plist");
+  if (!fsSync.existsSync(template)) {
+    return { installed: false, detail: `plist template not found: ${template}` };
+  }
+  // Fill in REPO_ROOT with the real repo root (the daemon source path).
+  let plist = fsSync.readFileSync(template, "utf8").replace(/REPO_ROOT/g, repoRoot);
+  const dest = daemonPlistPath();
+  fsSync.mkdirSync(path.dirname(dest), { recursive: true });
+  // Unload if already loaded, then write + load.
+  try { execFileSync("launchctl", ["unload", dest], { stdio: "ignore" }); } catch {}
+  fsSync.writeFileSync(dest, plist, { mode: 0o644 });
+  try {
+    execFileSync("launchctl", ["load", dest], { stdio: "ignore" });
+  } catch (e: any) {
+    return { installed: false, detail: `wrote ${dest} but launchctl load failed: ${e?.message || e}` };
+  }
+  return { installed: true, detail: `daemon LaunchAgent installed at ${dest} (starts at login, KeepAlive)` };
+}
+
+export function uninstallDaemonAutostart(): { removed: boolean; detail: string } {
+  if (process.platform !== "darwin") {
+    return { removed: false, detail: `launchd autostart is macOS-only (platform: ${process.platform})` };
+  }
+  const dest = daemonPlistPath();
+  if (!fsSync.existsSync(dest)) return { removed: true, detail: "no LaunchAgent installed" };
+  try { execFileSync("launchctl", ["unload", dest], { stdio: "ignore" }); } catch {}
+  fsSync.unlinkSync(dest);
+  return { removed: true, detail: `removed ${dest}` };
+}

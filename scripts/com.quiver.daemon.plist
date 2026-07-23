@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent template for the Quiver daemon (SPEC §4.1 / Epic 1 — login
+  autostart). Install with `quiver daemon install` (see src/daemon/client.ts),
+  which fills in REPO_ROOT and removes this comment, then copies the plist to
+  ~/Library/LaunchAgents/com.quiver.daemon.plist and runs `launchctl load`.
+
+  The daemon is a localhost-only service (127.0.0.1, bearer-token 0600 info
+  file). Running it at login means the session/memory/audit survive a window
+  or app restart AND a logout/login — "close Friday, open Monday". The token
+  file is per-launch; on a new boot the daemon starts fresh (prior in-process
+  state is gone, but memory/audit/session persist on disk).
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quiver.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>node</string>
+        <string>--import</string>
+        <string>tsx</string>
+        <string>REPO_ROOT/src/daemon/daemon.ts</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/quiver-daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/quiver-daemon.err.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

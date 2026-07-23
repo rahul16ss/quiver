@@ -55,6 +55,7 @@ import { LiveInput } from "./live_input.js";
 // @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
+import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
 import { runCloudSync, runCleanupLeaks } from "./cloud_sync_ui.js";
 import {
   getProjectName,
@@ -145,6 +146,22 @@ async function main() {
     await runCloudSync();
     process.exit(EXIT.OK);
   }
+  if (cliOpts.daemon) {
+    const sub = cliOpts.daemon;
+    const repoRoot = path.resolve(".");
+    if (sub === "install") {
+      const r = installDaemonAutostart(repoRoot);
+      console.log(r.detail);
+      process.exit(r.installed ? 0 : 1);
+    } else if (sub === "uninstall") {
+      const r = uninstallDaemonAutostart();
+      console.log(r.detail);
+      process.exit(0);
+    } else {
+      console.log(`daemon autostart: ${isDaemonAutostartInstalled() ? "installed" : "not installed"} (${process.platform})`);
+      process.exit(0);
+    }
+  }
 
   if (cliOpts.cleanupLeaks) {
     // Pass undefined — runCleanupLeaks defaults to safe (no deletion)
@@ -171,6 +188,7 @@ async function main() {
     cliOpts.init ||
     cliOpts.signin ||
     cliOpts.cloudSync ||
+    !!cliOpts.daemon ||
     cliOpts.cleanupLeaks ||
     cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
   if (
