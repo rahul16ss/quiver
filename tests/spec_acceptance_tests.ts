@@ -7196,13 +7196,18 @@ async function extendedCapabilitiesContract() {
     "The evidence tool's finalize must return STRUCTURED data (claims + docPath + runRecord) the GUI can parse to render lineage chips and the deliverable-context view. Returning a human multi-line string makes the GUI's JSON.parse throw (silently caught) — chips and context never render. SPEC §8.1/§9.4 require the lineage to surface in the GUI.",
     () => {
       const tool = codeOnly("src/tools/evidence.ts");
-      // The finalize case must return an object/JSON carrying claims + docPath, not a joined human string.
-      const finalizeBlock = tool.match(/case ["']finalize["'][\s\S]{0,1200}?\breturn\b/);
-      if (!finalizeBlock) return false;
-      const block = finalizeBlock[0];
-      const returnsStructured = /claims\s*[:\]]/.test(block) && /docPath|doc_path|doc_file/.test(block);
-      const returnsHumanString = /lines\.join\s*\(/.test(block);
-      return returnsStructured && !returnsHumanString;
+      // Capture the finalize block INCLUDING the return statement (up to the
+      // first ";" after `return`) so we can assert what is actually returned.
+      const m = tool.match(/case ['"]finalize['"][\s\S]{0,3000}?return\s+[\s\S]{0,400}?(?:;\s*\n)/);
+      if (!m) return false;
+      const block = m[0];
+      // The return must be JSON.stringify(structured) — structured JSON the GUI parses.
+      const returnsJson = /return\s+JSON\.stringify\s*\(/.test(block);
+      // A human-string return (lines.join / string concat) must NOT be used.
+      const returnsHuman = /return\s+(?:[A-Za-z_$.\s]*\.(join|repeat|concat)\s*\()/.test(block) || /return\s+["`]/.test(block);
+      // The structured object must carry claims + docPath + runRecord.
+      const hasFields = /claims\s*[:,\]]/.test(block) && /docPath|doc_file/.test(block) && /runRecord|run_record/.test(block);
+      return returnsJson && !returnsHuman && hasFields;
     },
   );
 

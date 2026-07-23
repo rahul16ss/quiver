@@ -120,3 +120,21 @@ export function entriesFromEvidence(
     status: statusFor(c.review_status),
   }));
 }
+
+/**
+ * Convenience: build lineage entries from the tracker's claims/sources and
+ * append the appendix to the .docx in one call. Returns the appendix result
+ * (best-effort; failures are returned as {ok:false, detail}, never thrown).
+ * Used by the evidence tool's finalize so the finalize case stays short.
+ */
+export async function appendLineageForTracker(
+  docPath: string,
+  claims: Array<{ claim_id: string; rendered_text: string; source_ids: string[]; review_status: string; is_quantitative: boolean }>,
+  sources: Array<{ source_id: string; title: string; file: string; location?: any }>,
+): Promise<{ ok: boolean; detail: string }> {
+  try {
+    return await appendLineageAppendix(docPath, entriesFromEvidence(claims, sources));
+  } catch (e: any) {
+    return { ok: false, detail: `lineage appendix error: ${e?.message || e}` };
+  }
+}
