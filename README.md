@@ -95,6 +95,14 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Data connectors (plugin framework for external data sources) | Framework shipped — sample EDGAR connector included |
 | Render→look→fix orchestration for Office documents | Shipped — `src/document/rlf_orchestrator.ts` |
 | Live-draft demo (real tool run, not replayed fixtures) | Shipped — `npm run demo:ic-memo:live` drives the real evidence tracker + audit chain + OfficeCLI end-to-end (8/8) |
+| Word-comment lineage (endnote form) | Shipped — `evidence finalize` appends a "Lineage & Sources" appendix to the .docx (SPEC §8.1) |
+| Compaction consent gate | Shipped — compaction proposes, surfaces, and applies only if approved; full history saved first (SPEC §7.3) |
+| Episodic examples store | Shipped — promote a praised deliverable; loaded as episodic memory in the consent gate (SPEC §7.4) |
+| Drift detection | Shipped — `expected-structure.json` + halt before drafting if a source structure changed (SPEC §12.4) |
+| DMS export framework | Shipped — SharePoint + NetDocuments adapters + `dms_export` tool; endpoints configured per engagement (SPEC §9.4) |
+| Mid-tier context redaction | Shipped — a cloud-redacted turn redacts the whole message (memory + skills + tool results), non-mutating (SPEC §11.2) |
+| Daemon login autostart | Shipped — launchd plist + `quiver daemon install\|uninstall\|status` (SPEC §4.1) |
+| Signed update infra | Shipped — Ed25519 sign + keypair mint; the production signing key is the owner's secret (SPEC §19) |
 | Desktop app (Electron: chat, context panel, document preview, approvals) | Working, unsigned build |
 
 ## Data handling
@@ -163,7 +171,7 @@ npm run demo:ic-memo # Flagship workflow + acceptance checks
 ```
 
 The acceptance contract (`tests/spec_acceptance_tests.ts`) is a single checker-owned
-file of 355 behavioral assertions. It verifies both spec compliance and that modules
+file of 365 behavioral assertions. It verifies both spec compliance and that modules
 are actually wired into the agent loop and tools — not just that the code exists.
 `npm test` is the only live verdict — re-run it before trusting any status text.
 See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.
