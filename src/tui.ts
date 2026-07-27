@@ -55,6 +55,7 @@ interface TranscriptLine {
 
 export class Tui {
   private readonly stdout = process.stdout;
+  private readonly rawWrite: typeof process.stdout.write;
   private readonly stdin = process.stdin as NodeJS.Socket & {
     setRawMode?(mode: boolean): void;
   };
@@ -78,6 +79,10 @@ export class Tui {
   constructor(opts: TuiOptions) {
     this.t = theme();
     this.statusText = opts.model + (opts.modeSuffix ?? "");
+    // Capture the real write BEFORE cli.ts intercepts process.stdout.write,
+    // so render() and leave() write directly to the terminal without
+    // re-entering tui.write() (which would infinite-recurse).
+    this.rawWrite = process.stdout.write.bind(process.stdout);
     this.refreshSize();
   }
 
@@ -87,7 +92,7 @@ export class Tui {
     if (this.entered || !this.stdout.isTTY) return;
     this.entered = true;
     this.refreshSize();
-    this.stdout.write(HIDE + CLEAR + HOME);
+    this.rawWrite(HIDE + CLEAR + HOME);
     this.render();
     this.startRawInput();
   }
@@ -97,13 +102,13 @@ export class Tui {
     if (!this.entered) return;
     this.entered = false;
     this.stopRawInput();
-    this.stdout.write(SHOW + RESTORE + "\n");
+    this.rawWrite(SHOW + RESTORE + "\n");
   }
 
   /** Write text to the transcript region (agent output, tool cards, etc.). */
   write(text: string): void {
     if (!this.entered) {
-      this.stdout.write(text);
+      this.rawWrite(text);
       return;
     }
     const lines = text.split("\n");
@@ -150,23 +155,23 @@ export class Tui {
     // Render from top: clear screen, home, draw transcript lines, then status,
     // then input box. We use absolute cursor positioning so the input box is
     // always pinned at the bottom regardless of transcript length.
-    this.stdout.write(HIDE + HOME + CLEAR);
+    this.rawWrite(HIDE + HOME + CLEAR);
 
     // Transcript: last N lines
     const visible = this.transcript.slice(-transcriptRows);
     for (const line of visible) {
-      this.stdout.write(line.text + "\n");
+      this.rawWrite(line.text + "\n");
     }
 
     // Status bar (1 row)
-    this.stdout.write(this.t.muted("─".repeat(this.cols)) + "\n");
+    this.rawWrite(this.t.muted("─".repeat(this.cols)) + "\n");
     const status = this.t.muted(this.statusText);
-    this.stdout.write(status + "\n");
+    this.rawWrite(status + "\n");
 
     // Input box (pinned at bottom)
-    this.stdout.write(this.t.muted("─".repeat(this.cols)) + "\n");
+    this.rawWrite(this.t.muted("─".repeat(this.cols)) + "\n");
     this.renderInputBox();
-    this.stdout.write(SHOW);
+    this.rawWrite(SHOW);
   }
 
   private renderInputBox(): void {
@@ -178,7 +183,7 @@ export class Tui {
     // Render the visible input lines
     for (let i = 0; i < this.inputRows; i++) {
       const prefix = i === 0 ? promptSym : "  ";
-      this.stdout.write(prefix + (wrapped[i] || "") + CLEAR_LINE + "\n");
+      this.rawWrite(prefix + (wrapped[i] || "") + CLEAR_LINE + "\n");
     }
   }
 
