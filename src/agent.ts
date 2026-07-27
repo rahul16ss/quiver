@@ -1905,7 +1905,8 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // Compact one-line manifest (Principle: Seeing — show what enters the
     // model call before each prompt, as a single dim line so a long session
     // is not drowned in chrome). Memory + skills fold onto the same line when
-    // present, separated by "·". No bar graph — a tick scale reads calmer.
+    // present, separated by "·". Block progress bar like opencode:
+    // ■⬝⬝⬝⬝⬝⬝⬝ (8 chars, filled = context usage).
     const tokColor =
       pct < 60
         ? picocolors.gray
@@ -1921,13 +1922,15 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
       );
     }
-    const tick = "▁▂▃▄▅▆▇█"[Math.min(7, Math.floor(pct / 12.5))];
+    const barWidth = 8;
+    const barFilled = Math.round((pct / 100) * barWidth);
+    const bar = "■".repeat(barFilled) + "⬝".repeat(barWidth - barFilled);
     console.log(
       dim(`  `) +
         dim(bits.join(" · ")) +
         dim(" · ") +
         tokColor(`${pct}% (${formatNum(estTokens)}/${formatNum(maxTokens)})`) +
-        dim(` ${tick}`),
+        dim(` ${bar}`),
     );
   }
 
