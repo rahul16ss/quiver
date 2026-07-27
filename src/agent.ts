@@ -1988,9 +1988,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // This offloads large tool results and triggers L-powered summarization
     await this.manageContextIfNeeded();
 
-    // Context manifest is emitted as a JSON event for the GUI only.
-    // The interactive CLI no longer prints it — too noisy.
-    // The printContextManifest method remains for test compliance and /context.
+    // Context manifest — a single dim line showing what enters the model call
+    // (memory, skills, tools, model, context % with a block progress bar).
+    // Printed before each turn so the user sees what Quiver will use.
+    if (config.outputMode === "interactive") {
+      this.printContextManifest(memories, skills, coreMemory);
+    }
 
     // In JSON mode, emit context manifest as an event for the GUI
     if (config.outputMode === "json" && onEvent) {
