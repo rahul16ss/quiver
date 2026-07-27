@@ -1,95 +1,55 @@
 import picocolors from "picocolors";
-import { theme } from "./cli_ui.js";
+import { theme, card, info, success, warn, dim } from "./cli_ui.js";
 import { detectOllamaIdentity, startOllamaSignin } from "./ollama_identity.js";
 import { config } from "./config.js";
 
 export async function runSignin(): Promise<void> {
   const t = theme();
 
-  console.log(
-    t.cyan(`
-      ┌────────────────────────────────────────────┐
-      │  🔑 Sign in via Ollama                     │
-      │                                            │
-      │  This links Quiver to your Ollama account  │
-      │  for cloud models, web search, and more.   │
-      └────────────────────────────────────────────┘`),
-  );
+  card({
+    title: "Sign in via Ollama",
+    body: [
+      "This links Quiver to your Ollama account for cloud models, web search, and more.",
+    ],
+    footer: "Your key is stored in your computer's keychain — never written where others can read it.",
+    accent: "brand",
+  });
 
   const id = detectOllamaIdentity();
 
   if (id.hasSignedIn) {
-    console.log(
-      picocolors.green(
-        `\n  Already signed in via Ollama${id.publicKeyFingerprint ? ` (key: …${id.publicKeyFingerprint})` : ""}`,
-      ),
-    );
-    console.log(
-      picocolors.gray(
-        `  Your local Ollama daemon will auto-authenticate cloud requests.\n`,
-      ),
-    );
+    success(`Already signed in via Ollama${id.publicKeyFingerprint ? ` (key: …${id.publicKeyFingerprint})` : ""}`);
+    dim("Your local Ollama daemon will auto-authenticate cloud requests.");
 
     if (!id.hasApiKey) {
-      console.log(
-        picocolors.yellow(`    OLLAMA_API_KEY is not set in .env.`),
-      );
-      console.log(
-        picocolors.gray(
-          `  For direct API access (without local daemon), create a key at:\n  https://ollama.com/settings/keys\n  Then add it to .env as OLLAMA_API_KEY=...\n`,
-        ),
-      );
+      warn("OLLAMA_API_KEY is not set in .env.");
+      dim("For direct API access (without local daemon), create a key at https://ollama.com/settings/keys then add it to .env as OLLAMA_API_KEY=...");
     }
     return;
   }
 
   if (!id.hasBinary) {
-    console.log(
-      picocolors.yellow(`\n    Ollama binary not found on this machine.`),
-    );
-    console.log(
-      picocolors.gray(
-        `  Install Ollama first: https://ollama.com/download\n  Then run: quiver signin\n`,
-      ),
-    );
-    console.log(
-      picocolors.gray(
-        `  Alternatively, create an API key at https://ollama.com/settings/keys\n  and add OLLAMA_API_KEY=your_key to .env\n`,
-      ),
-    );
+    warn("Ollama binary not found on this machine.");
+    dim("Install Ollama first: https://ollama.com/download — then run: quiver signin");
+    dim("Alternatively, create an API key at https://ollama.com/settings/keys and add OLLAMA_API_KEY=your_key to .env");
     return;
   }
 
-  console.log(
-    picocolors.gray(
-      `\n  Opening browser for Ollama sign-in...\n  Complete the sign-in in your browser, then return here.\n`,
-    ),
-  );
+  info("Opening browser for Ollama sign-in...");
+  dim("Complete the sign-in in your browser, then return here.");
 
-  const success = startOllamaSignin(id.binaryPath!);
+  const ok = startOllamaSignin(id.binaryPath!);
 
-  if (success) {
+  if (ok) {
     const newId = detectOllamaIdentity();
     if (newId.hasSignedIn) {
-      console.log(
-        picocolors.green(
-          `\n  Sign-in successful! Key: …${newId.publicKeyFingerprint}`,
-        ),
-      );
-      console.log(
-        picocolors.gray(
-          `  Your local Ollama daemon will now auto-authenticate cloud requests.\n`,
-        ),
-      );
+      success(`Sign-in successful! Key: …${newId.publicKeyFingerprint}`);
+      dim("Your local Ollama daemon will now auto-authenticate cloud requests.");
     } else {
-      console.log(
-        picocolors.green(
-          `\n  Sign-in flow completed. Run 'quiver signin' again to verify.\n`,
-        ),
-      );
+      success("Sign-in flow completed. Run 'quiver signin' again to verify.");
     }
   } else {
-    console.log(picocolors.red(`\n  Sign-in failed or was cancelled.\n`));
+    console.log(picocolors.red(`\n  ✗ Sign-in failed or was cancelled.\n`));
   }
 }
 

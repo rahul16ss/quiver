@@ -85,8 +85,8 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Trust tiers and approval gates (per-project, persisted) | Working |
 | Model adapters (GLM, Claude) over an OpenAI-compatible interface | Working |
 | Local-only model execution | Configurable (local endpoints supported); **the default model endpoint is a cloud service** — see Data handling below |
-| Redaction rules, sensitivity-based routing | Framework shipped — sensitivity classification, MNPI redaction, per-tier model routing (low→cloud, mid→cloud-redacted, high→local); wired into agent loop |
-| Evidence tracking (live lineage during agent drafting) | Shipped — source registry, claim records, validation, Evidence.json output; lineage chips render in the desktop GUI and the §8.3 verification rail shows the source (Excel cell, filing excerpt, or web page) |
+| Data handling configuration | Framework shipped — model use and approved sources are configured around the workflow's sensitivity (per-engagement configuration) |
+| Evidence tracking (source registry, claim records, evidence report) | Working in the flagship example — sources, claims, and review status recorded in Evidence.json; lineage chips render in the desktop GUI and the verification rail shows the source (Excel cell, filing excerpt, or web page) |
 | Reviewer sign-off flow (verify / flag / needs-analyst) | Shipped in the desktop app — mark-final is blocked while a document has open flags; override is logged to a per-document tamper-evident audit chain + review record |
 | Checker rejects unsourced quantitative figures | Working — the isolated checker validates the evidence file for Office documents and returns "revise" on unsourced quantitative claims |
 | Scratch-area semantics (draft writes redirect to scratch, human promotes) | Shipped — `/promote` command |
@@ -100,8 +100,8 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Episodic examples store | Shipped — promote a praised deliverable; loaded as episodic memory in the consent gate (SPEC §7.4) |
 | Drift detection | Shipped — `expected-structure.json` + halt before drafting if a source structure changed (SPEC §12.4) |
 | DMS export framework | Shipped — SharePoint + NetDocuments adapters + `dms_export` tool; endpoints configured per engagement (SPEC §9.4) |
-| Mid-tier context redaction | Shipped — a cloud-redacted turn redacts the whole message (memory + skills + tool results), non-mutating (SPEC §11.2) |
-| Daemon login autostart | Shipped — launchd plist + `quiver daemon install\|uninstall\|status` (SPEC §4.1) |
+| Mid-tier data handling | Configurable — the workflow's sensitivity tier determines how each turn is handled (SPEC §11.2) |
+| Background service login autostart | Shipped — autostart commands + system plist (SPEC §4.1) |
 | Signed update infra | Shipped — Ed25519 sign + keypair mint; the production signing key is the owner's secret (SPEC §19) |
 | Desktop app (Electron: chat, context panel, document preview, approvals) | Working, unsigned build |
 
@@ -128,15 +128,15 @@ Do not treat the defaults as a confidentiality guarantee.
     └── .sessions/                   # Session logs + state
 ```
 
-Key modules: agent loop with approval gates (`src/agent.ts`), context assembly and
-token budgeting, harness adapters per model family, security layer (command
-classifier, path sandbox, macOS seatbelt, permissions store), isolated checker for
-verification, hash-chained audit log, Office document tool (OfficeCLI), web research
-tools, and an Electron desktop app sharing the same memory and sessions as the CLI.
+Key modules: agent loop with approval gates (`src/agent.ts`), context assembly,
+model adapters per model family, security layer (command classifier, path sandbox,
+macOS seatbelt, permissions store), isolated checker for verification, hash-chained
+audit log, Office document tool (OfficeCLI), web research tools, and an Electron
+desktop app sharing the same memory and sessions as the CLI.
 
 See [`docs/architecture.md`](docs/architecture.md) for detail and
 [`docs/advanced.md`](docs/advanced.md) for developer-oriented capabilities
-(MCP servers, GitHub tooling, runtime tool creation, subagents, cloud folder sync)
+(external tool servers, GitHub tooling, runtime tool creation, subagents, cloud folder sync)
 that are intentionally not part of the finance-workflow surface.
 
 ## Quick start

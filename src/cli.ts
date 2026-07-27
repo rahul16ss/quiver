@@ -23,6 +23,13 @@ import {
   emitJson,
   printUnknownFlagHints,
   formatNum,
+  welcome,
+  card,
+  info,
+  success,
+  warn,
+  error as logError,
+  dim as logDim,
 } from "./cli_ui.js";
 import {
   loadPermissions,
@@ -237,17 +244,14 @@ async function main() {
     config.browserHeadless = false;
   }
 
-  // ── Banner — minimal, two lines max ──
+  // ── Banner — calm welcome (one product line + one model line + one hint) ──
   if (isInteractive) {
-    console.log(
-      t.cyan(t.bold(`\n  Quiver v${VERSION}`)) +
-        t.gray(` · ${config.llmModelName}`) +
-        (config.autonomyGrants.has("yolo")
-          ? t.red(` · yolo`)
-          : config.autonomyGrants.size > 0
-            ? t.cyan(` · auto`)
-            : ""),
-    );
+    const modeSuffix = config.autonomyGrants.has("yolo")
+      ? t.red(` · yolo`)
+      : config.autonomyGrants.size > 0
+        ? t.cyan(` · auto`)
+        : "";
+    welcome({ version: VERSION, model: config.llmModelName, modeSuffix });
   }
 
   // ── Auto-update check (non-blocking, once per 24h) ──
@@ -295,9 +299,7 @@ async function main() {
     // MCP errors are non-blocking
   }
 
-  if (isInteractive) {
-    console.log(t.gray(`  /help for commands\n`));
-  }
+  // (welcome() already prints the /help hint above)
 
   // ── List sessions mode ──
   if (cliOpts.listSessions) {

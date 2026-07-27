@@ -1,5 +1,7 @@
 import picocolors from "picocolors";
 import { distance } from "fastest-levenshtein";
+import stringWidth from "string-width";
+import wrapAnsi from "wrap-ansi";
 import { config } from "./config.js";
 
 export const EXIT = {
@@ -407,4 +409,97 @@ export function printUnknownFlagHints(flags: string[]): void {
       );
     }
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Unified output primitives — one visual rhythm for the whole TUI.
+// All call sites should use these instead of raw picocolors/console.log so
+// indentation, color, and glyphs stay consistent (opencode-grade calm).
+// ───────────────────────────────────────────────────────────────────────
+
+/** Card — one box style across the TUI (signin/init/deliverable/update/ask). */
+export function card(
+  opts: {
+    title?: string;
+    body: string[];
+    footer?: string;
+    accent?: "brand" | "success" | "warning" | "danger" | "muted";
+    stream?: NodeJS.WriteStream;
+  },
+): void {
+  const s = opts.stream ?? process.stdout;
+  const t = theme(s);
+  const cols = Math.min(s.columns && s.columns > 0 ? s.columns : 80, 100);
+  const innerW = Math.max(40, cols - 4);
+  const accentFn =
+    opts.accent === "success"
+      ? t.success
+      : opts.accent === "warning"
+        ? t.warning
+        : opts.accent === "danger"
+          ? t.danger
+          : opts.accent === "muted"
+            ? t.muted
+            : t.brand;
+
+  const wrap = (line: string) =>
+    wrapAnsi(line, innerW - 2, { hard: true })
+      .split("\n")
+      .map((l) => l.padEnd(stringWidth(l) + Math.max(0, innerW - 2 - stringWidth(l))))
+      .join("\n");
+
+  const tl = "╭", tr = "╮", bl = "╰", br = "╯", side = "│", mid = "├", midr = "┤";
+
+  if (opts.title) {
+    const titleLine = ` ${opts.title} `;
+    const pad = innerW - stringWidth(titleLine);
+    s.write(accentFn(tl + "─".repeat(Math.max(0, pad)) + titleLine + tr) + "\n");
+  } else {
+    s.write(accentFn(tl + "─".repeat(innerW) + tr) + "\n");
+  }
+
+  const bodyLines = opts.body.flatMap((l) => wrap(l).split("\n"));
+  for (const line of bodyLines) {
+    s.write(accentFn(side) + " " + line + "\n");
+  }
+
+  if (opts.footer) {
+    s.write(accentFn(mid + "─".repeat(innerW) + midr) + "\n");
+    const footLines = wrap(opts.footer).split("\n");
+    for (const line of footLines) {
+      s.write(accentFn(side) + " " + t.muted(line) + "\n");
+    }
+  }
+  s.write(accentFn(bl + "─".repeat(innerW) + br) + "\n");
+}
+
+/** Calm single-line log helpers — one 2-space indent, one glyph per level. */
+export function info(msg: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(theme(stream).info("  • ") + msg + "\n");
+}
+export function success(msg: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(theme(stream).success("  ✓ ") + msg + "\n");
+}
+export function warn(msg: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(theme(stream).warning("  ⚠ ") + msg + "\n");
+}
+export function error(msg: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(theme(stream).danger("  ✗ ") + msg + "\n");
+}
+export function dim(msg: string, stream: NodeJS.WriteStream = process.stdout): void {
+  stream.write(theme(stream).muted("  ") + theme(stream).muted(msg) + "\n");
+}
+
+/** Calm welcome — dim product line, accent model/mode line, dim hint. */
+export function welcome(opts: {
+  version: string;
+  model: string;
+  modeSuffix?: string;
+  stream?: NodeJS.WriteStream;
+}): void {
+  const s = opts.stream ?? process.stdout;
+  const t = theme(s);
+  s.write("\n");
+  s.write(t.muted("  Quiver ") + t.bold(t.brand(`v${opts.version}`)) + t.muted(` · ${opts.model}`) + (opts.modeSuffix ?? "") + "\n");
+  s.write(t.muted("  /help for commands") + "\n\n");
 }

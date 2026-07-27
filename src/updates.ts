@@ -397,9 +397,22 @@ export async function silentUpdateCheck(): Promise<void> {
     }
 
     if (result.updateAvailable) {
-      const notification = formatUpdateNotification(result);
-      if (notification) {
-        console.log(notification);
+      try {
+        const { card } = await import("./cli_ui.js");
+        const body = [`Update available: v${result.latestVersion} (current: v${result.currentVersion})`];
+        if (result.releaseNotes) {
+          const notes = result.releaseNotes.split("\n").slice(0, 3);
+          body.push(...notes);
+        }
+        if (result.downloadUrl) body.push(`Download: ${result.downloadUrl}`);
+        card({
+          title: "Update available",
+          body,
+          footer: "Run `quiver --update` to install",
+          accent: "warning",
+        });
+      } catch {
+        // card() must never interrupt the session
       }
     }
   } catch {

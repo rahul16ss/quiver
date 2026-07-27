@@ -42,17 +42,18 @@ export const tool: Tool = {
 
     const label = header || "Question";
 
-    console.log(`\n  ┌── ${label} ──────────────────────────`);
-    console.log(`  │  ${question}`);
+    const { card } = await import("../cli_ui.js");
+    const body = [question];
+    if (choices && choices.length > 0) {
+      body.push("");
+      for (let i = 0; i < choices.length; i++) {
+        body.push(`[${i + 1}] ${choices[i]}`);
+      }
+      body.push("[0] Type a custom answer");
+    }
+    card({ title: label, body, accent: "brand" });
 
     if (choices && choices.length > 0) {
-      console.log(`  │`);
-      for (let i = 0; i < choices.length; i++) {
-        console.log(`  │  [${i + 1}] ${choices[i]}`);
-      }
-      console.log(`  │  [0] Type a custom answer`);
-      console.log(`  └──────────────────────────────────────`);
-
       const { askQuestionRaw } = await import("../utils/prompt.js");
       const answer = await askQuestionRaw(`  > `);
       const trimmed = answer.trim();
@@ -65,8 +66,6 @@ export const tool: Tool = {
         return "User did not provide an answer.";
       }
     } else {
-      console.log(`  └──────────────────────────────────────`);
-
       const { askQuestionRaw } = await import("../utils/prompt.js");
       const answer = await askQuestionRaw(`  > `);
       const trimmed = answer.trim();

@@ -113,13 +113,13 @@ async function loadContextSurfaces(config) {
   const endpointEl = $("ctxEndpoint");
   if (endpointEl) {
     const baseUrl = config?.provider?.baseUrl || "";
-    let where = "Endpoint not configured";
+    let where = "Not configured";
     try {
       const host = new URL(baseUrl).hostname;
       where =
         host === "localhost" || host === "127.0.0.1"
-          ? "Local endpoint — prompts stay on this machine"
-          : `Cloud endpoint — prompts go to ${host}`;
+          ? "Local — prompts stay on this machine"
+          : `Cloud — prompts go to ${host}`;
     } catch {}
     endpointEl.textContent = where;
     endpointEl.title = baseUrl;
@@ -384,7 +384,8 @@ async function refreshReviewCount() {
     $("ctxReviewCount").textContent = n ? `${n} waiting` : "Nothing pending";
     $("openReviewBtn").hidden = n === 0;
   } catch {
-    $("ctxReviewCount").textContent = "—";
+    $("ctxReviewCount").textContent = "Not available";
+    $("openReviewBtn").hidden = true;
   }
 }
 
@@ -583,7 +584,10 @@ function handleAgentEvent(ev) {
       // event (below) so it can actually block. The manifest just feeds the
       // context rail.
       // Don't re-announce an identical context on consecutive turns (P1-10).
-      const entry = `Context loaded: ${ev.data?.memory || "—"} memory · ${ev.data?.skills || "—"} skills · ${ev.data?.tools || "—"} tools`;
+      const mem = ev.data?.memory ?? 0;
+      const sk = ev.data?.skills ?? 0;
+      const tl = ev.data?.tools ?? 0;
+      const entry = `Context loaded: ${mem} memory · ${sk} skills · ${tl} tools`;
       if (entry !== lastContextEntryText) {
         addActivity(entry, "tool");
         lastContextEntryText = entry;
@@ -621,13 +625,13 @@ function handleAgentEvent(ev) {
       statusDot.className = "status-dot error";
       const reason = ev.data?.reason
         ? ev.data.reason
-        : "This input is high-sensitivity and no local model endpoint is configured.";
+        : "This input is high-sensitivity and no local model is configured.";
       addActivity(`Refused — not sent: ${reason}`, "err");
       startAssistantBubble();
       if (assistantBubble) {
         assistantBubble.textContent =
-          "⚠ I didn't send this to the model. " + reason +
-          " Set a local model endpoint (QUIVER_LOCAL_LLM_API_BASE_URL + QUIVER_LOCAL_LLM_MODEL_NAME, e.g. a localhost Ollama) so high-sensitivity content never leaves this machine, then re-run.";
+          "I didn't send this to the model. " + reason +
+          " Set a local model in Settings (a localhost Ollama) so high-sensitivity content is handled by your local model, then re-run.";
       }
       break;
     }
@@ -1446,7 +1450,7 @@ function wireButtons() {
 
   // suggestion chips
   const chips = [
-    "Draft an investment memo from example files",
+    "Draft an IC memo from my files",
     "Research a company and write a 2-page brief",
     "Build a competitive matrix from public sources",
   ];

@@ -6,8 +6,9 @@
  * connects over HTTP + Server-Sent Events using a bearer token stored in
  * ~/.quiver/daemon.json (0600). Binding is strictly 127.0.0.1.
  *
- * Deliberately NOT yet: launchd/login autostart, multi-frontend fanout
- * guarantees beyond SSE broadcast, model routing. Those are later stages.
+ * Deliberately NOT yet: multi-frontend fanout guarantees beyond SSE
+ * broadcast, model routing. Those are later stages. launchd/login autostart
+ * shipped in Phase C (see cli.ts `daemon install` + com.quiver.daemon.plist).
  *
  * Trust model: the token file is readable only by the local user; anyone who
  * can read it can already run commands as that user. POST /start accepts a

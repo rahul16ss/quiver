@@ -42,18 +42,18 @@
     <section class="settings-section">
       <h2>API Credentials</h2>
       <p class="settings-help">Your keys are stored securely and never shared.</p>
-      <label>API key <input id="apiKey" class="field" type="password" placeholder="Your Quiver API key" /></label>
+      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="The key from your Ollama account" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
       <details class="settings-advanced">
         <summary>Advanced</summary>
-        <label>GitHub token (optional) <input id="githubToken" class="field" type="password" placeholder="Only if you use GitHub" /></label>
+        <label>Developer integrations <input id="githubToken" class="field" type="password" placeholder="Only if your workflow needs GitHub" /></label>
       </details>
     </section>
 
     <!-- Vision Model -->
     <section class="settings-section">
       <h2>Vision Model</h2>
-      <p class="settings-help">Used when you attach an image. Quiver reads images privately on your computer.</p>
+      <p class="settings-help">Used when you attach an image. Quiver reads images using the configured vision model.</p>
       <label>Vision model <input id="visionModelName" class="field" placeholder="The model that reads images" /></label>
       <label>Vision model address <input id="visionModelBaseUrl" class="field" placeholder="http://localhost:11434/v1" /></label>
     </section>
@@ -101,12 +101,12 @@
       <div class="toggle-row">
         <button id="sessionLogEnabled" class="toggle">Keep a session log</button>
       </div>
-      <label>Log detail (characters per message) <input id="sessionLogMaxChars" class="field" type="number" /></label>
+      <label>Session log length <input id="sessionLogMaxChars" class="field" type="number" /><span class="field-hint">How much of each message Quiver keeps in the session log. The default suits most work.</span></label>
       <div class="memory-stats" id="memoryStats">
         <span class="memory-stats-label">Learned facts:</span>
-        <span id="memPending">Pending: —</span>
-        <span id="memReviewed">Reviewed: —</span>
-        <span id="memTotal">Total: —</span>
+        <span id="memPending">Pending: 0</span>
+        <span id="memReviewed">Reviewed: 0</span>
+        <span id="memTotal">Total: 0</span>
       </div>
     </section>
   </div>

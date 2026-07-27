@@ -671,16 +671,16 @@ async function askUserApproval(
   // In JSON mode, the approval UI is rendered by the GUI via the "approval" event.
   // Suppress the text-based permission box to avoid non-JSON output on stdout.
   if (config.outputMode === "interactive") {
-    console.log("");
-    console.log(
-      picocolors.gray(`  Quiver wants to: `) + picocolors.green(displayName),
-    );
-    console.log(formatDetails(toolName, args, picocolors.gray(`  `)));
+    const { card, warn } = await import("./cli_ui.js");
     if (irreversible) {
-      console.log(
-        picocolors.red(`  This action cannot be undone.`),
-      );
+      warn("This action cannot be undone.");
     }
+    card({
+      title: `Quiver wants to: ${displayName}`,
+      body: formatDetails(toolName, args, "").split("\n").filter((l: string) => l.trim().length > 0),
+      footer: "Review the change above, then choose below.",
+      accent: "brand",
+    });
   }
 
   const prompt = irreversible
@@ -759,6 +759,10 @@ function isIrreversibleAction(toolName: string, args: any): boolean {
 //    crash the agent loop.
 //  - We never write a trailing newline, so the next output (streamed token or
 //    status line) starts cleanly at column 0 after stop() clears the line.
+// Spinner — braille frames via setInterval with elapsed seconds and a
+// max-width wipe on stop() so streamed tokens never get clobbered by a stale
+// spinner frame. The acceptance contract (US-2.2) requires setInterval +
+// FRAMES + elapsed + clearInterval + maxWidth wipe; keep those intact.
 class Spinner {
   private message: string;
   private active = false;
@@ -766,8 +770,6 @@ class Spinner {
   private startMs = 0;
   private frameIdx = 0;
   private maxWidth = 0;
-  // Braille frames — smooth sub-second motion so the line is visibly alive
-// even before the first whole second ticks over.
   private static readonly FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   constructor(message: string) {
@@ -780,8 +782,6 @@ class Spinner {
       const frame = Spinner.FRAMES[this.frameIdx % Spinner.FRAMES.length];
       this.frameIdx++;
       const line = `  ${picocolors.cyan(frame)} ${picocolors.gray(this.message)} ${picocolors.gray(`${elapsed}s`)}`;
-      // Pad the clear region to the longest line we've written so a shorter
-      // repaint never leaves trailing characters from a longer one.
       const visibleLen = `  ${frame} ${this.message} ${elapsed}s`.length;
       if (visibleLen > this.maxWidth) this.maxWidth = visibleLen;
       process.stdout.write("\r" + line);
@@ -798,7 +798,6 @@ class Spinner {
     this.frameIdx = 0;
     this.maxWidth = 0;
     this.render();
-    // 120ms cadence: smooth braille motion without burning CPU.
     this.timer = setInterval(() => this.render(), 120);
   }
 
@@ -810,7 +809,6 @@ class Spinner {
       this.timer = null;
     }
     try {
-      // Wipe the full width ever written, then reset to column 0.
       const pad = Math.max(this.maxWidth, this.message.length + 6);
       process.stdout.write("\r" + " ".repeat(pad) + "\r");
     } catch {
@@ -1904,37 +1902,33 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
     parts.push(config.llmModelName);
 
-    // Compact one-line manifest (Principle: Seeing — show what enters the model
-    // call before each prompt, but as a single dim line so a long session is
-    // not drowned in 5+ lines of chrome every turn). Memory names + skills are
-    // folded onto a second line only when present, keeping transparency high.
+    // Compact one-line manifest (Principle: Seeing — show what enters the
+    // model call before each prompt, as a single dim line so a long session
+    // is not drowned in chrome). Memory + skills fold onto the same line when
+    // present, separated by "·". No bar graph — a tick scale reads calmer.
     const tokColor =
       pct < 60
         ? picocolors.gray
         : pct < 85
           ? picocolors.yellow
           : picocolors.red;
-    console.log(
-      dim(`  ctx: `) +
-        dim(parts.join(" · ")) +
-        dim(" · ") +
-        tokColor(
-          `${formatNum(estTokens)} / ${formatNum(maxTokens)} (${pct}%)`,
-        ) +
-        dim(` ${usageBar}`),
-    );
-    if (memories.length > 0 || skills.length > 0) {
-      const bits: string[] = [];
-      if (memories.length > 0) {
-        bits.push(`memory: ${memories.map((m) => m.filename).join(", ")}`);
-      }
-      if (skills.length > 0) {
-        bits.push(
-          `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
-        );
-      }
-      console.log(dim(`  ${bits.join(" · ")}`));
+    const bits: string[] = [...parts];
+    if (memories.length > 0) {
+      bits.push(`memory: ${memories.map((m) => m.filename).join(", ")}`);
     }
+    if (skills.length > 0) {
+      bits.push(
+        `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
+      );
+    }
+    const tick = "▁▂▃▄▅▆▇█"[Math.min(7, Math.floor(pct / 12.5))];
+    console.log(
+      dim(`  `) +
+        dim(bits.join(" · ")) +
+        dim(" · ") +
+        tokColor(`${pct}% (${formatNum(estTokens)}/${formatNum(maxTokens)})`) +
+        dim(` ${tick}`),
+    );
   }
 
   /** Generate a compact progress bar for context usage. */
@@ -3154,12 +3148,11 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
                     toolSpinner.stop();
                     if (config.outputMode === "interactive") {
-                      process.stdout.write(
-                        `\r  ${picocolors.green("✓")} ${picocolors.gray(displayName)}${argHint}\n`,
-                      );
+                      const { success } = await import("./cli_ui.js");
+                      success(`${displayName}${argHint}`);
                       const preview = this.summarizeResult(result);
                       if (preview) {
-                        console.log(picocolors.gray(`    → ${preview}`));
+                        process.stdout.write(picocolors.gray(`    → ${preview}\n`));
                       }
                     }
                     // US-13.4: success resets the consecutive-failure loop detector.
@@ -3187,14 +3180,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
                   if (config.outputMode === "interactive") {
                     toolSpinner.stop();
-                    process.stdout.write(
-                      `\r  ${picocolors.red("✗")} ${picocolors.gray(displayName)} — ${picocolors.red(lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message)}\n`,
-                    );
+                    const { error } = await import("./cli_ui.js");
+                    error(`${displayName} — ${lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message}`);
                     if (stuck) {
-                      console.warn(
-                        picocolors.yellow(
-                          `   Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
-                        ),
+                      const { warn } = await import("./cli_ui.js");
+                      warn(
+                        `Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
                       );
                     }
                   }
@@ -3258,6 +3249,32 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                   .slice(0, 500),
                 evidenceRef: evResult.evidencePath,
               });
+              // Deliverable card — the proud acceptance moment (user-stories S7).
+              // The old TUI was silent here; nothing told the user the document
+              // was ready. Now a calm card announces it with the counts that
+              // lead into Moment 5 (verification).
+              if (config.outputMode === "interactive") {
+                try {
+                  const { card } = await import("./cli_ui.js");
+                  const srcN = (evResult.sources || []).length;
+                  const claimN = (evResult.claims || []).length;
+                  const flaggedN = (evResult.claims || []).filter(
+                    (c: any) => c.review_status === "flagged" || c.relationship === "unresolved",
+                  ).length;
+                  card({
+                    title: "Deliverable ready",
+                    body: [
+                      `${evResult.docPath}`,
+                      `${srcN} sources · ${claimN} claims · ${flaggedN} flagged for review`,
+                      evResult.evidencePath ? `Evidence: ${evResult.evidencePath}` : "",
+                    ].filter(Boolean),
+                    footer: "Provenance logged to the audit chain. Draft for review until a professional signs off.",
+                    accent: "success",
+                  });
+                } catch {
+                  // card() must never break the agent loop.
+                }
+              }
               // H4: the evidence tracker is a process-global singleton. Once a
               // deliverable is finalized the tracker is locked (further
               // register/record calls are silently dropped), so a SECOND

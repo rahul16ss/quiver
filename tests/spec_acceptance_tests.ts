@@ -2123,6 +2123,69 @@ async function absorbedContract(tmpWs: string) {
     },
   );
 
+  // US-9.2 self-modification guard: GUI-spawned agents must never write into
+  // Quiver's own installation/source tree (AGENTS.md hard rule #6 / PROJECTS.md
+  // §9 lesson #2). Negative check: with QUIVER_PROTECTED_DIR set to the repo
+  // root, a write inside it is refused; positive check: a write outside still
+  // succeeds.
+  await check(
+    "PATH-PROTECTED-DIR-BLOCKS-WRITE",
+    "US-9.2",
+    "writes inside QUIVER_PROTECTED_DIR must be refused when the env var is set",
+    async () => {
+      const prevProtected = process.env.QUIVER_PROTECTED_DIR;
+      try {
+        process.env.QUIVER_PROTECTED_DIR = ROOT;
+        const policy = createDefaultPolicy(tmpWs);
+        const target = path.join(ROOT, "should-not-write.txt");
+        let blocked = false;
+        try {
+          resolveAndAssertPathAllowed(target, "write", policy);
+        } catch (err: any) {
+          blocked =
+            /write-protected|Quiver's own installation|will not modify its own source/i.test(
+              err.message,
+            );
+        }
+        return blocked;
+      } finally {
+        if (prevProtected === undefined) {
+          delete process.env.QUIVER_PROTECTED_DIR;
+        } else {
+          process.env.QUIVER_PROTECTED_DIR = prevProtected;
+        }
+      }
+    },
+  );
+  await check(
+    "PATH-PROTECTED-DIR-READ-ALLOWED",
+    "US-9.2",
+    "reads inside QUIVER_PROTECTED_DIR must still be allowed (with filesystem read scope)",
+    async () => {
+      const prevProtected = process.env.QUIVER_PROTECTED_DIR;
+      try {
+        process.env.QUIVER_PROTECTED_DIR = ROOT;
+        const policy = createDefaultPolicy(tmpWs);
+        policy.readScope = "filesystem";
+        const target = path.join(ROOT, "package.json");
+        let allowed = false;
+        try {
+          resolveAndAssertPathAllowed(target, "read", policy);
+          allowed = true;
+        } catch {
+          allowed = false;
+        }
+        return allowed;
+      } finally {
+        if (prevProtected === undefined) {
+          delete process.env.QUIVER_PROTECTED_DIR;
+        } else {
+          process.env.QUIVER_PROTECTED_DIR = prevProtected;
+        }
+      }
+    },
+  );
+
   // US-9.3 secret detection/redaction
   await check(
     "SECRET-DETECT-REDACT",
