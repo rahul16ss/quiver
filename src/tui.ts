@@ -56,10 +56,12 @@ interface TranscriptLine {
 export class Tui {
   private readonly stdout = process.stdout;
   private readonly rawWrite: typeof process.stdout.write;
-  private readonly stdin = process.stdin as NodeJS.Socket & {
-    setRawMode?(mode: boolean): void;
-  };
   private readonly t: QuiverTheme;
+  // Input may come from /dev/tty (bypasses Warp's stdin interception) or
+  // process.stdin (standard terminals). Set in startRawInput().
+  private ttyInput: NodeJS.ReadStream | null = null;
+  private ttyOutput: NodeJS.WriteStream | null = null;
+  private ttyFds: number[] = [];
   private entered = false;
   private transcript: TranscriptLine[] = [];
   private inputBuffer = "";
@@ -188,31 +190,64 @@ export class Tui {
   }
 
   // ── Input handling (raw mode) ────────────────────────────────────────
+  // Opens /dev/tty directly for input, bypassing any terminal wrapper
+  // (Warp, tmux, etc.) that intercepts process.stdin. This is the same
+  // approach opencode uses. Falls back to process.stdin on non-Unix or
+  // if /dev/tty isn't available.
 
   private startRawInput(): void {
-    if (!this.stdin.setRawMode) return;
     try {
-      // readline may have left stdin paused; resume so our data listener fires.
-      this.stdin.resume();
-      this.stdin.setRawMode(true);
+      // Try /dev/tty first — this is the real terminal device, bypassing
+      // Warp's block-based stdin interception. Same approach opencode uses.
+      const fs = require("fs") as typeof import("fs");
+      const ttyMod = require("tty") as typeof import("tty");
+      const fd = fs.openSync("/dev/tty", "r+");
+      // tty.ReadStream has setRawMode() — use it, not readline's ReadStream.
+      const input = new ttyMod.ReadStream(fd) as unknown as NodeJS.ReadStream & {
+        setRawMode(mode: boolean): void;
+      };
+      const output = new ttyMod.WriteStream(fd) as unknown as NodeJS.WriteStream;
+      input.setRawMode(true);
+      input.setEncoding("utf8");
+      input.resume();
+      input.on("data", this.onData);
+      this.ttyInput = input as any;
+      this.ttyOutput = output as any;
+      this.ttyFds = [fd];
       this.rawMode = true;
-      this.stdin.setEncoding("utf8");
-      // Remove any stale data listeners (e.g. readline's) so we get every byte.
-      this.stdin.removeAllListeners("data");
-      this.stdin.on("data", this.onData);
     } catch {
-      // Non-interactive fallback
+      // Fallback: use process.stdin directly (works in standard terminals)
+      try {
+        const stdin = process.stdin as any;
+        if (!stdin.setRawMode) return;
+        stdin.resume();
+        stdin.setRawMode(true);
+        stdin.setEncoding("utf8");
+        stdin.removeAllListeners("data");
+        stdin.on("data", this.onData);
+        this.ttyInput = stdin;
+        this.rawMode = true;
+      } catch {
+        // Non-interactive fallback
+      }
     }
   }
 
   private stopRawInput(): void {
     if (!this.rawMode) return;
     try {
-      this.stdin.setRawMode?.(false);
+      if (this.ttyInput) {
+        (this.ttyInput as any).setRawMode?.(false);
+        this.ttyInput.removeListener("data", this.onData);
+        this.ttyInput.destroy?.();
+      }
+      for (const fd of this.ttyFds) {
+        try { (require("fs") as typeof import("fs")).closeSync(fd); } catch { /* ignore */ }
+      }
+      this.ttyFds = [];
     } catch {
       // ignore
     }
-    this.stdin.removeListener("data", this.onData);
     this.rawMode = false;
   }
 

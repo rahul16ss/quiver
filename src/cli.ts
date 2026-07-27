@@ -618,12 +618,7 @@ async function main() {
   // The existing scrolling-REPL path (LiveInput + promptUser) is the fallback
   // for non-TTY / JSON / single-turn. The TUI captures stdout writes and
   // routes them to the transcript; the input box replaces promptUser.
-  const useTui = isInteractive && !cliOpts.singleTurn && !cliOpts.json
-    // Warp uses a non-standard block-based input model that doesn't deliver
-    // raw-mode keystrokes to child processes the way traditional terminals do.
-    // The TUI's stdin.on("data") never fires in Warp. Fall back to the
-    // scrolling REPL (promptUser + @clack/prompts) which Warp handles fine.
-    && process.env.TERM_PROGRAM !== "WarpTerminal";
+  const useTui = isInteractive && !cliOpts.singleTurn && !cliOpts.json;
   let tui: Tui | null = null;
   let originalWrite: typeof process.stdout.write | null = null;
   if (useTui) {
