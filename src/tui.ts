@@ -192,10 +192,13 @@ export class Tui {
   private startRawInput(): void {
     if (!this.stdin.setRawMode) return;
     try {
+      // readline may have left stdin paused; resume so our data listener fires.
+      this.stdin.resume();
       this.stdin.setRawMode(true);
       this.rawMode = true;
-      this.stdin.resume();
       this.stdin.setEncoding("utf8");
+      // Remove any stale data listeners (e.g. readline's) so we get every byte.
+      this.stdin.removeAllListeners("data");
       this.stdin.on("data", this.onData);
     } catch {
       // Non-interactive fallback
