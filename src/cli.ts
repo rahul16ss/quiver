@@ -622,6 +622,13 @@ async function main() {
   let tui: Tui | null = null;
   let originalWrite: typeof process.stdout.write | null = null;
   if (useTui) {
+    // Pause the readline interface so it stops consuming stdin — the TUI's
+    // own raw-mode handler takes over. rl is resumed on TUI leave.
+    try {
+      rl.pause();
+      // Remove readline's data listeners from stdin so the TUI gets every byte.
+      process.stdin.removeAllListeners("data");
+    } catch { /* ignore */ }
     tui = new Tui({
       model: config.llmModelName,
       modeSuffix: config.autonomyGrants.has("yolo")
@@ -2325,6 +2332,7 @@ async function main() {
     if (tui) tui.leave();
     if (originalWrite) process.stdout.write = originalWrite as any;
     if (keepAliveTimer) clearInterval(keepAliveTimer);
+    try { rl.resume(); } catch { /* ignore */ }
     rl.close();
   }
 }
