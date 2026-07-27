@@ -200,7 +200,8 @@ export const tool: Tool = {
   execute: async (args: any) => {
     // Path-policy guard (US-9.2): reject sensitive paths.
     // Use "write" for mutating actions, "read" for read-only actions.
-    const _writeActions = new Set(["create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import", "close", "validate"]);
+    // "validate" and "close" are read-only — they don't modify the file.
+    const _writeActions = new Set(["create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import"]);
     const _operation = _writeActions.has(args.action) ? "write" : "read";
     try {
       const _checkPath = args.file || args.filePath || args.directory || args.path || "";

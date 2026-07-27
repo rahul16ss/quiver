@@ -209,8 +209,18 @@ export function assertNotProtectedInstallDir(
 function isBlockedHomePath(resolvedPath: string): boolean {
   const home = os.homedir();
   for (const blocked of DEFAULT_BLOCKED_HOME_PATHS) {
-    const blockedAbs = path.join(home, blocked);
-    if (resolvedPath.startsWith(blockedAbs)) return true;
+    // Strip trailing separator — DEFAULT_BLOCKED_HOME_PATHS entries like
+    // ".aws/" cause path.join to preserve the slash, which would create a
+    // double-separator when we append path.sep below.
+    const blockedAbs = path.join(home, blocked).replace(/\/+$/, "");
+    // Use path.sep boundary to prevent false positives:
+    // "/Users/rahul/.ssh" should block "/Users/rahul/.ssh/keys" but
+    // should NOT block "/Users/rahul/.ssh_backup" or "/Users/rahul/.sshrc"
+    if (
+      resolvedPath === blockedAbs ||
+      resolvedPath.startsWith(blockedAbs + path.sep)
+    )
+      return true;
   }
   return false;
 }

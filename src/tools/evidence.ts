@@ -58,6 +58,7 @@ export const tool: Tool = {
         "validate",
         "finalize",
         "status",
+        "reset",
       ])
       .describe("The evidence operation to perform."),
     source_id: z

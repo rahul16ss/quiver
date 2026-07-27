@@ -262,9 +262,18 @@ export function classifyCommand(
  * Returns true if the command appears to operate on files outside the workspace root.
  */
 export function targetsOutsideWorkspace(command: string, workspaceRoot: string): boolean {
+  // Expand ~ and $HOME in the command before checking, so that paths like
+  // ~/../../etc/passwd or $HOME/../etc/passwd are caught.
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const expanded = command
+    .replace(/(^|\s)~\//g, `$1${home}/`)
+    .replace(/(^|\s)~$/g, `$1${home}`)
+    .replace(/\$HOME\b/g, home)
+    .replace(/\$USERPROFILE\b/g, home);
+
   // Check for absolute paths that are outside workspace
   const absPathPattern = /(?:^|\s)(\/(?:[^/\s]+\/)*[^/\s]+)/g;
-  const matches = command.match(absPathPattern);
+  const matches = expanded.match(absPathPattern);
   if (!matches) return false;
 
   for (const match of matches) {
