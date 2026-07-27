@@ -190,27 +190,35 @@ export function redactMnpi(
 ): { redactedText: string; redactions: RedactionRecord[] } {
   const cfg = config || getSensitivityConfig();
   const redactions: RedactionRecord[] = [];
-  let redactedText = text;
+  let workingText = text;
 
   for (const pattern of cfg.mnpiPatterns) {
     try {
-      const regex = new RegExp(pattern.pattern, "gi");
+      // Use separate regex instances for exec and replace to avoid
+      // lastIndex state contamination between the two passes.
+      const execRegex = new RegExp(pattern.pattern, "gi");
+      const replaceRegex = new RegExp(pattern.pattern, "gi");
       let match: RegExpExecArray | null;
-      while ((match = regex.exec(redactedText)) !== null) {
+      // Collect redaction records from the CURRENT text state (which may
+      // already have been modified by prior patterns). Indices are relative
+      // to the text at this point in the pipeline.
+      while ((match = execRegex.exec(workingText)) !== null) {
         redactions.push({
           type: pattern.type,
           original: match[0],
           redacted: pattern.replacement,
           index: match.index,
         });
+        // Prevent infinite loop on zero-length matches
+        if (match.index === execRegex.lastIndex) execRegex.lastIndex++;
       }
-      redactedText = redactedText.replace(regex, pattern.replacement);
+      workingText = workingText.replace(replaceRegex, pattern.replacement);
     } catch {
       // Invalid regex — skip this pattern
     }
   }
 
-  return { redactedText, redactions };
+  return { redactedText: workingText, redactions };
 }
 
 /**

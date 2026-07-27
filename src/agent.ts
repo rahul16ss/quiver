@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import * as fsSync from "fs";
 import * as path from "path";
+import * as os from "os";
 import picocolors from "picocolors";
 import readline from "readline";
 import { config, needsApprovalFor } from "./config.js";
@@ -1723,13 +1724,21 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     let approved = true;
     if (config.outputMode === "interactive") {
       try {
+        const { card } = await import("./cli_ui.js");
         const { askQuestionRaw } = await import("./utils/prompt.js");
+        const shortPath = proposal.savedTo.replace(os.homedir(), "~");
+        card({
+          title: "Context compaction proposed",
+          body: [
+            `${proposal.removedCount} messages → summary, keep ${proposal.keptRecent} recent`,
+            `${proposal.tokensBefore.toLocaleString("en-US")} → ${proposal.tokensAfter.toLocaleString("en-US")} tokens`,
+            `Full history saved to ${shortPath}`,
+          ],
+          footer: "The summary replaces old messages in this session. Your full history is preserved in the file above.",
+          accent: "brand",
+        });
         const ans = (await askQuestionRaw(
-          picocolors.gray(
-            `     Context compaction proposed: ${proposal.removedCount} messages → summary, ` +
-              `keep ${proposal.keptRecent} recent (${proposal.tokensBefore.toLocaleString()} → ${proposal.tokensAfter.toLocaleString()} tokens). ` +
-              `Full history saved to ${proposal.savedTo}. Approve? [Y/n]: `,
-          ),
+          picocolors.bold(picocolors.cyan("  Approve? [Y/n]: ")),
         )).trim().toLowerCase();
         approved = !ans.startsWith("n");
       } catch {

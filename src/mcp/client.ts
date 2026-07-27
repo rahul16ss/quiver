@@ -59,6 +59,7 @@ export class McpConnection {
     number,
     { resolve: (v: any) => void; reject: (e: any) => void }
   >();
+  private pendingTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private buffer = "";
   public instructions: string | undefined;
   public serverName: string;
@@ -174,6 +175,12 @@ export class McpConnection {
       const handler = this.pending.get(msg.id);
       if (handler) {
         this.pending.delete(msg.id);
+        // Clear the timeout timer to prevent dangling handles
+        const timer = this.pendingTimers.get(msg.id);
+        if (timer) {
+          clearTimeout(timer);
+          this.pendingTimers.delete(msg.id);
+        }
         if (msg.error) {
           handler.reject(
             new Error(`MCP error [${msg.error.code}]: ${msg.error.message}`),
@@ -196,10 +203,12 @@ export class McpConnection {
       const req: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
       this.pending.set(id, { resolve, reject });
       this.proc.stdin.write(JSON.stringify(req) + "\n");
-      // Timeout after 30s
-      setTimeout(() => {
+      // Timeout after 30s — clear the timer when the response arrives to
+      // prevent dangling timer handles accumulating over long sessions.
+      const timer = setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
+          this.pendingTimers.delete(id);
           reject(
             new Error(
               `MCP request "${method}" to "${this.name}" timed out (30s)`,
@@ -207,6 +216,7 @@ export class McpConnection {
           );
         }
       }, 30000);
+      this.pendingTimers.set(id, timer);
     });
   }
 
@@ -305,6 +315,9 @@ export class McpConnection {
       this.proc.kill("SIGTERM");
       this.proc = null;
     }
+    // Clear all pending timers to prevent dangling handles
+    for (const timer of this.pendingTimers.values()) clearTimeout(timer);
+    this.pendingTimers.clear();
     this.pending.clear();
   }
 }
