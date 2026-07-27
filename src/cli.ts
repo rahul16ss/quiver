@@ -61,6 +61,7 @@ import { promptUser } from "./multiline.js";
 import { LiveInput } from "./live_input.js";
 // @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
+import { Tui } from "./tui.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
 import { runCloudSync, runCleanupLeaks } from "./cloud_sync_ui.js";
@@ -611,12 +612,63 @@ async function main() {
     process.exit(EXIT.ERROR);
   });
 
+  // ── Full-screen TUI (interactive TTY only) ──
+  // When the terminal supports it, enter a persistent full-screen layout:
+  // a scrolling transcript region + a pinned input box + a status bar.
+  // The existing scrolling-REPL path (LiveInput + promptUser) is the fallback
+  // for non-TTY / JSON / single-turn. The TUI captures stdout writes and
+  // routes them to the transcript; the input box replaces promptUser.
+  const useTui = isInteractive && !cliOpts.singleTurn && !cliOpts.json;
+  let tui: Tui | null = null;
+  let originalWrite: typeof process.stdout.write | null = null;
+  if (useTui) {
+    tui = new Tui({
+      model: config.llmModelName,
+      modeSuffix: config.autonomyGrants.has("yolo")
+        ? t.red(` · yolo`)
+        : config.autonomyGrants.size > 0
+          ? t.cyan(` · auto`)
+          : "",
+    });
+    // Intercept stdout writes → transcript
+    originalWrite = process.stdout.write.bind(process.stdout);
+    const tr = tui;
+    process.stdout.write = ((data: any, ...args: any[]) => {
+      tr.write(typeof data === "string" ? data : data.toString("utf8"));
+      return true;
+    }) as any;
+    tui.enter();
+  }
+
   try {
+
     // ── Type-ahead state (pi-style live input during runs) ──
     // Follow-ups the user queued with Enter while the agent was running, and
     // any unsubmitted text to pre-fill the next prompt (e.g. after Esc-halt).
     const pendingFollowUps: string[] = [];
     let nextPrefill: string | null = null;
+
+    /** Read user input — TUI pinned box when active, promptUser fallback otherwise. */
+    const readInput = async (promptSymbol: string): Promise<string | null> => {
+      if (tui) {
+        // TUI mode: the input box is already pinned at the bottom; wait for
+        // the user to press Enter (onSend callback fires). Return null on
+        // halt/Esc/Ctrl+C/Ctrl+D (onHalt fires).
+        return new Promise<string | null>((resolve) => {
+          let resolved = false;
+          const finish = (v: string | null) => {
+            if (resolved) return;
+            resolved = true;
+            resolve(v);
+          };
+          tui!.setHandlers(
+            (text: string) => finish(text),
+            () => finish(null),
+          );
+        });
+      }
+      return promptUser(null, promptSymbol, nextPrefill ?? undefined);
+    };
 
     replLoop: while (true) {
       const promptSymbol = theme().promptUser();
@@ -627,10 +679,10 @@ async function main() {
         input = pendingFollowUps.shift()!;
         console.log(t.gray(`  ↵ queued follow-up: ${input.length > 70 ? input.slice(0, 67) + "…" : input}`));
       } else if (nextPrefill !== null) {
-        input = await promptUser(null, promptSymbol, nextPrefill);
+        input = await readInput(promptSymbol);
         nextPrefill = null;
       } else {
-        input = await promptUser(null, promptSymbol);
+        input = await readInput(promptSymbol);
       }
 
       // Handle EOF (Ctrl+D) or null input gracefully — don't crash
@@ -2270,6 +2322,8 @@ async function main() {
       }
     }
   } finally {
+    if (tui) tui.leave();
+    if (originalWrite) process.stdout.write = originalWrite as any;
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     rl.close();
   }
