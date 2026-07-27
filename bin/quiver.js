@@ -17,7 +17,7 @@ const tsxEntry = path.join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs"
 if (existsSync(tsxEntry)) {
   const result = spawnSync(
     process.execPath,
-    ["--import", tsxEntry, path.join(projectRoot, "src", "cli.ts"), ...args],
+    ["--import", "tsx", path.join(projectRoot, "src", "cli.ts"), ...args],
     {
       stdio: "inherit",
       cwd: projectRoot,
