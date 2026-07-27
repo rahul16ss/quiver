@@ -781,8 +781,19 @@ class Spinner {
       const elapsed = Math.floor((Date.now() - this.startMs) / 1000);
       const frame = Spinner.FRAMES[this.frameIdx % Spinner.FRAMES.length];
       this.frameIdx++;
-      const line = `  ${picocolors.cyan(frame)} ${picocolors.gray(this.message)} ${picocolors.gray(`${elapsed}s`)}`;
-      const visibleLen = `  ${frame} ${this.message} ${elapsed}s`.length;
+      // Animated block progress bar (opencode-style): 8 blocks that sweep
+      // left-to-right then right-to-left (ping-pong), ~6s per direction.
+      const barWidth = 8;
+      const loopSec = 6;
+      const stepsPerLoop = Math.round(loopSec * 1000 / 120);
+      const step = this.frameIdx % (stepsPerLoop * 2);
+      const phase = step < stepsPerLoop
+        ? step / stepsPerLoop                     // left → right
+        : (stepsPerLoop * 2 - step) / stepsPerLoop; // right → left
+      const filled = Math.round(phase * barWidth);
+      const bar = "■".repeat(filled) + "⬝".repeat(barWidth - filled);
+      const line = `  ${picocolors.cyan(frame)} ${picocolors.gray(this.message)} ${picocolors.gray(`${elapsed}s`)} ${picocolors.cyan(bar)}`;
+      const visibleLen = `  ${frame} ${this.message} ${elapsed}s ${bar}`.length;
       if (visibleLen > this.maxWidth) this.maxWidth = visibleLen;
       process.stdout.write("\r" + line);
     } catch {
