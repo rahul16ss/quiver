@@ -47,6 +47,14 @@ const RISK_PATTERNS: RiskPattern[] = [
       /\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+.*--force\b/i,
       /\brm\s+--recursive\s+.*--force\b/i,
       /\brm\s+(-r\s+--force|--force\s+-r)\b/i,
+      // Backslash-escaped rm (r\m → rm in bash): catch the escaped form
+      /\\r\\?m\s+(-[a-zA-Z]*[rf])/i,
+      // Variable indirection: x=rm; $x -rf /
+      /\$\w+\s+(-[a-zA-Z]*[rf].*--force|-[a-zA-Z]*rf|--recursive)/i,
+      // find -delete (recursive destructive delete)
+      /\bfind\b.*\s-delete\b/i,
+      // find -exec rm (any form, not just -rf)
+      /\bfind\b.*\s-exec\s+rm\b/i,
       /\bgit\s+reset\s+--hard\b/i,
       /\bgit\s+clean\s+-[a-zA-Z]*f/i,
       /\bdd\s+if=/i,
@@ -152,10 +160,10 @@ const RISK_PATTERNS: RiskPattern[] = [
   {
     band: "safe",
     patterns: [
-      /^(\s*)(pwd|ls|cat|echo|grep|find|head|tail|wc|tree|du|df|file|which|whereis|whoami|date|uptime|uname|env)(\s|$)/i,
+      /^(\s*)(pwd|ls|echo|grep|find|head|tail|wc|tree|du|df|file|which|whereis|whoami|date|uptime|uname|env)(\s|$)/i,
       /^(\s*)(git\s+(status|log|diff|branch|show|blame|remote|config\s+--list|rev-parse))(?!\s+--hard)(\s|$)/i,
       /^(\s*)(node\s+--version|npm\s+--version|npm\s+list|npx\s+--version|bun\s+--version|tsc\s+--version|python3?\s+--version|pip3?\s+--version)(\s|$)/i,
-      /^(\s*)(mkdir\s+-p|rmdir|touch|cp|mv)(\s|$)/i,
+      /^(\s*)(mkdir\s+-p|rmdir|touch)(\s|$)/i,
     ],
     reason: "Safe command — read-only or low-risk filesystem operation",
   },
@@ -198,7 +206,8 @@ export function classifyCommand(
     .replace(/\$'([^']*)'/g, "$1")   // $'rm' -> rm (ANSI-C quoting)
     .replace(/'([^']*)'/g, "$1")    // r'm' -> rm (single-quote splitting)
     .replace(/"([^"]*)"/g, "$1")    // r"m" -> rm (double-quote splitting, non-empty)
-    .replace(/""/g, "");              // r""m -> rm (empty double-quote splitting)
+    .replace(/""/g, "")              // r""m -> rm (empty double-quote splitting)
+    .replace(/\\(.)/g, "$1")        // r\m -> rm (backslash-escaped chars)
 
   // Check for hard-blocked patterns first (against both raw and normalized)
   for (const blocked of DEFAULT_BLOCKED_PATTERNS) {

@@ -129,25 +129,24 @@ async function runSubagent(
   const args = [cliPath, "--json", "--single-turn", prompt];
 
   // Pass recursion depth to child so it can enforce the limit
-  const childEnv = { ...process.env };
-  childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
-
-  // Strip sensitive keys that the subagent doesn't need.
-  // IMPORTANT: LLM_API_KEY is KEPT because the subagent needs it to
-  // make LLM API calls — without it, every subagent gets 401 Unauthorized.
-  // The subagent runs the same Quiver codebase in an isolated scratchpad,
-  // so it has the same trust level as the parent for LLM access.
-  // Other keys (GitHub, AWS, etc.) are stripped because the subagent
-  // shouldn't be making external API calls beyond LLM inference.
-  const sensitiveKeys = [
-    "GITHUB_TOKEN",
-    "CONTEXT7_API_KEY",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
+  // Build a minimal env for the subagent — only what it needs to run the
+  // LLM and Quiver's own config. Do NOT spread process.env (which carries
+  // every secret the parent has). This mirrors the checker's minimal-env
+  // pattern (src/subagents/checker.ts:496-505).
+  const ALLOWED_ENV_KEYS = [
+    "PATH", "HOME", "USER", "LANG", "TERM", "TZ",
+    "LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL_NAME",
+    "VISION_MODEL_NAME", "VISION_MODEL_BASE_URL",
+    "QUIVER_PROJECT_NAME", "QUIVER_MAX_CONTEXT_TOKENS",
+    "QUIVER_SESSION_LOG", "QUIVER_SESSION_LOG_MAX_CHARS",
+    "QUIVER_AMBIENT", "QUIVER_OUTPUT_MODE",
+    "SUBAGENT_DEPTH",
   ];
-  for (const key of sensitiveKeys) {
-    delete childEnv[key];
+  const childEnv: Record<string, string | undefined> = {};
+  for (const key of ALLOWED_ENV_KEYS) {
+    if (process.env[key] !== undefined) childEnv[key] = process.env[key];
   }
+  childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
 
   // Build scratchpad for isolation (US-5.3)
   let scratchDir: string;

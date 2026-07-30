@@ -2485,6 +2485,24 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             // redaction unavailable — send as-is (fail-open, logged elsewhere)
           }
         }
+        // Security: apply secret redaction to ALL messages before the model
+        // call, regardless of route. Tool results (e.g. run_command output)
+        // may contain secrets (env dumps, config files) that must never reach
+        // a remote endpoint. This is the primary secret-exfiltration guard.
+        messagesToSend = messagesToSend.map((m: any) => {
+          if (typeof m.content === "string") {
+            return { ...m, content: redactSecrets(m.content) };
+          }
+          if (Array.isArray(m.content)) {
+            return {
+              ...m,
+              content: m.content.map((p: any) =>
+                p.type === "text" ? { ...p, text: redactSecrets(p.text) } : p
+              ),
+            };
+          }
+          return m;
+        });
         while (true) {
           try {
             for await (const ev of turnProvider!.streamChat(

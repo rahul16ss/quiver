@@ -28,7 +28,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   {
     type: "env_secret",
     pattern:
-      /^(LLM_API_KEY|PARALLEL_API_KEY|OLLAMA_API_KEY|GITHUB_TOKEN|CONTEXT7_API_KEY|API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY|ACCESS_KEY|SECRET_KEY)\s*=\s*.+$/gim,
+      /^([A-Z][A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY|ACCESS_KEY|SECRET_KEY|CONNECTION_STRING|CONN_STR|CREDENTIAL|PASSPHRASE))\s*=\s*.+$/gim,
   },
   {
     type: "bearer_token",
@@ -47,12 +47,28 @@ const SECRET_PATTERNS: SecretPattern[] = [
     pattern: /sk-[A-Za-z0-9]{20,}/gi,
   },
   {
+    type: "anthropic_key",
+    pattern: /sk-ant-[A-Za-z0-9_\-]{20,}/gi,
+  },
+  {
+    type: "stripe_key",
+    pattern: /(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,}/gi,
+  },
+  {
+    type: "slack_token",
+    pattern: /xox[bprsa]-[A-Za-z0-9\-]{10,}/gi,
+  },
+  {
     type: "ollama_key",
     pattern: /[a-f0-9]{32}\.[A-Za-z0-9_\-]+/gi,
   },
   {
     type: "parallel_key",
-    pattern: /[A-Za-z0-9]{8}-(?!([0-9a-f]{4}-){3}[0-9a-f]{12})[A-Za-z0-9_\-]{20,}/gi,
+    pattern: /[A-Za-z0-9]{8}-(?!([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})[A-Za-z0-9_\-]{24,}/gi,
+  },
+  {
+    type: "connection_string",
+    pattern: /[a-z][a-z0-9+]*:\/\/[^:\s]+:[^@\s]+@[^\s]+/gi,
   },
   {
     type: "aws_access_key",

@@ -417,8 +417,7 @@ export interface Config {
 
 export function redactSecret(value: string): string {
   if (!value) return "—";
-  if (value.length <= 8) return "✓";
-  return `✓ ${value.substring(0, 3)}…${value.substring(value.length - 3)}`;
+  return `✓ (set, ${value.length} chars)`;
 }
 
 export function isFirstRun(): boolean {

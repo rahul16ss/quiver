@@ -100,10 +100,23 @@ async function runBuilder(
   const cliPath = getCliPath();
   const tsxPath = getTsxPath();
   const args = [cliPath, "--json", "--single-turn", task];
-  const childEnv: Record<string, string | undefined> = { ...process.env, SUBAGENT_DEPTH: String(currentDepth + 1) };
-  for (const key of ["GITHUB_TOKEN", "CONTEXT7_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]) {
-    delete childEnv[key];
+  // Minimal env allowlist — GITHUB_TOKEN and sensitive secrets are explicitly stripped.
+  const ALLOWED_ENV_KEYS = [
+    "PATH", "HOME", "USER", "LANG", "TERM", "TZ",
+    "LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL_NAME",
+    "VISION_MODEL_NAME", "VISION_MODEL_BASE_URL",
+    "QUIVER_PROJECT_NAME", "QUIVER_MAX_CONTEXT_TOKENS",
+    "QUIVER_SESSION_LOG", "QUIVER_SESSION_LOG_MAX_CHARS",
+    "QUIVER_AMBIENT", "QUIVER_OUTPUT_MODE",
+    "SUBAGENT_DEPTH",
+  ];
+  const childEnv: Record<string, string | undefined> = {};
+  for (const key of ALLOWED_ENV_KEYS) {
+    if (process.env[key] !== undefined) childEnv[key] = process.env[key];
   }
+  const sensitiveKeysToStrip = ["GITHUB_TOKEN"];
+  sensitiveKeysToStrip.forEach((k) => delete childEnv[k]);
+  childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
 
   return new Promise((resolve) => {
     const child: ChildProcess = spawn(tsxPath, args, {

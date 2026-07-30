@@ -8,6 +8,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { config } from "../src/config.ts";
 import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
+import { redactSecrets } from "../src/security/secrets.ts";
 import { AuditChain } from "../src/audit_chain.ts";
 import * as crypto from "crypto";
 import {
@@ -500,7 +501,9 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
   });
 
   proc.stderr?.on("data", (data: Buffer) => {
-    mainWindow?.webContents.send("agent:stderr", data.toString());
+    // Redact secrets before forwarding to the renderer — stderr may contain
+    // HTTP error bodies, dotenv warnings, or stack traces with env values.
+    mainWindow?.webContents.send("agent:stderr", redactSecrets(data.toString()));
   });
 
   proc.on("exit", (code) => {
@@ -684,8 +687,9 @@ async function deleteMemoryFile(name: string): Promise<boolean> {
     const fs = await import("fs/promises");
     const memDir = getProjectMemoryDir(config.workspacePath || process.cwd());
     const filePath = path.join(memDir, name);
-    // Safety: only delete files within the memory directory
-    if (!filePath.startsWith(memDir)) return false;
+    // Path-policy guard (US-8.1): use the real path policy with realpath
+    // resolution + blocked-glob enforcement, not a hand-rolled startsWith.
+    resolveAndAssertPathAllowed(filePath, "delete", createDefaultPolicy(memDir));
     await fs.unlink(filePath);
     return true;
   } catch {
@@ -1258,9 +1262,13 @@ function registerIpcHandlers(): void {
   // written next to the deliverable. This is the review record that goes
   // with the memo.
   ipcMain.handle("review:markFinal", async (_evt, payload: any) => {
+    const guardErr = await validateDeliverablePath(payload?.filePath);
+    if (guardErr) return { logged: false, blocked: true, action: "blocked", error: guardErr };
     return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "marked_final", payload?.figureStatuses);
   });
   ipcMain.handle("review:override", async (_evt, payload: any) => {
+    const guardErr = await validateDeliverablePath(payload?.filePath);
+    if (guardErr) return { logged: false, blocked: true, action: "blocked", error: guardErr };
     return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "override", payload?.figureStatuses);
   });
 
@@ -1275,11 +1283,19 @@ function registerIpcHandlers(): void {
     const globalSkillsDir = path.join(app.getPath("home"), ".quiver", "skills");
     const skillDir = path.join(globalSkillsDir, skillName);
     const skillFile = path.join(skillDir, "SKILL.md");
+    // Path-policy guard: skillName comes from the renderer (untrusted).
+    // Without this, ../../.quiver/daemon.json could leak the daemon token.
+    try {
+      resolveAndAssertPathAllowed(skillFile, "read", createDefaultPolicy(globalSkillsDir));
+    } catch {
+      return null;
+    }
     try {
       return await fs.readFile(skillFile, "utf8");
     } catch {
       try {
         const standalone = path.resolve(globalSkillsDir, skillName);
+        resolveAndAssertPathAllowed(standalone, "read", createDefaultPolicy(globalSkillsDir));
         return await fs.readFile(standalone, "utf8");
       } catch {
         return null;

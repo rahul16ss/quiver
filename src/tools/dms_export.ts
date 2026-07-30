@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { Tool } from "../registry.js";
 import { getActiveDmsExporter, loadDmsConfig, listDmsExporters } from "../export/dms.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 export const tool: Tool = {
   name: "dms_export",
@@ -31,6 +32,14 @@ export const tool: Tool = {
     }
     // export
     if (!args.filePath) return "Error: filePath is required for export.";
+    // Security: enforce the path policy before reading the file for upload.
+    // Without this, the agent could exfiltrate arbitrary files (e.g.
+    // ~/.ssh/id_rsa, ~/.aws/credentials) to a configured DMS endpoint.
+    try {
+      assertToolPathAllowed(args.filePath, "read");
+    } catch (err: any) {
+      return `Error: path not allowed — ${err.message}`;
+    }
     const e = getActiveDmsExporter();
     if (!e) return "No active DMS adapter configured. Set .quiver/dms.json { active: \"sharepoint\" } and the adapter's env vars (see dms_export status).";
     const res = await e.export({
