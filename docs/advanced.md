@@ -74,12 +74,13 @@ boundary. **Ctrl+C** aborts the active generation (twice to exit).
 | GitHub | github |
 | Planning | todo_write, ask_question |
 | Prompt maintenance | prompt_update (user reviews every proposed change) |
-| Iteration | ralph_loop |
-| Agents | subagent |
+| Iteration | (ambient goal-loop — always-on, no tool call needed) |
+| Quality | bar_critic (benchmark bar-comparison, §10.1) |
+| Agents | subagent, gauntlet (parallel builder+critic fan-out, §10.2) |
 | Office | office_doc (via OfficeCLI) |
 | MCP | external tools via `.quiver/mcp.json` |
 
-`create_tool` (runtime tool synthesis), `github`, `subagent`, `ralph_loop`, and
+`create_tool` (runtime tool synthesis), `github`, `subagent`, and
 `prompt_update` are developer capabilities. They are subject to the same approval
 gates as everything else, but they are not part of the finance-workflow story and
 should not be promoted in client-facing material.

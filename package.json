@@ -9,6 +9,24 @@
   "bin": {
     "quiver": "./bin/quiver.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rahul16ss/quiver.git"
+  },
+  "homepage": "https://github.com/rahul16ss/quiver#readme",
+  "bugs": {
+    "url": "https://github.com/rahul16ss/quiver/issues"
+  },
+  "keywords": [
+    "ai-agent",
+    "finance",
+    "document-workflow",
+    "office",
+    "evidence",
+    "lineage",
+    "open-source",
+    "electron"
+  ],
   "scripts": {
     "start": "npx tsx src/cli.ts",
     "gui": "npx electron .",
@@ -20,7 +38,8 @@
     "dist": "electron-builder --mac --win --linux",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "update-formula": "node scripts/update_formula.js"
   },
   "build": {
     "appId": "com.quiver.app",
@@ -192,7 +211,6 @@
     "@types/node": "^20.11.0",
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3",
-    "jsdom": "^29.1.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

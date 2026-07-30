@@ -14,7 +14,7 @@ export interface OllamaIdentity {
   hasSignedIn: boolean;
   /** the public key fingerprint, if available */
   publicKeyFingerprint: string | null;
-  /** true if OLLAMA_API_KEY env var is set for programmatic access */
+  /** true if LLM_API_KEY env var is set for programmatic access */
   hasApiKey: boolean;
   /** ollama.com username if we can determine it (currently not exposed by API) */
   username: string | null;
@@ -79,7 +79,7 @@ function readPublicKeyFingerprint(ollamaDir: string): string | null {
  * 1. `ollama signin` — interactive browser-based OAuth that stores an
  *    Ed25519 keypair in ~/.ollama/. The local daemon then auto-authenticates
  *    requests to ollama.com (cloud models, web search, etc.)
- * 2. `OLLAMA_API_KEY` — a bearer token for direct programmatic API access
+ * 2. `LLM_API_KEY` — a bearer token for direct programmatic API access
  *    to ollama.com/api/*
  *
  * Quiver can use either or both. This function detects what's available.
@@ -96,7 +96,7 @@ export function detectOllamaIdentity(): OllamaIdentity {
     ? readPublicKeyFingerprint(ollamaDir)
     : null;
 
-  const hasApiKey = config.ollamaApiKey.length > 0;
+  const hasApiKey = config.llmApiKey.length > 0;
 
   return {
     hasBinary,

@@ -26,6 +26,7 @@ import {
   serializeCheckFilter,
 } from "./checker_filter.js";
 import { EvidenceTracker } from "../evidence/tracker.js";
+import { compare as compareBenchmark } from "../document/bar_critic.js";
 
 // ─── Evidence validation (US-17.13 / SPEC §9.3 / §16) ──────────────────
 // The checker must reject a document whose Evidence.json contains unsourced
@@ -599,6 +600,29 @@ export async function runChecker(
     }
   }
 
+  // ─── Benchmark bar-comparison (SPEC §10.1) ──────────────────────────
+  // Folded into the SAME verdict, not a second stage. When an office_doc
+  // write is checked AND a benchmark is configured in .quiver/benchmark/,
+  // the structural comparison runs (local officecli only — no network, so
+  // the sandbox stays sealed) and any gap pushes a "revise" exactly like a
+  // failed gate check. With no benchmark configured, compare() is a no-op.
+  let barGaps: string[] = [];
+  if (toolName === "office_doc" && toolArgs?.file) {
+    const docPath = String(toolArgs.file);
+    try {
+      const barResult = await compareBenchmark(docPath, workspaceRoot);
+      if (barResult.ran && !barResult.met) {
+        barGaps = barResult.gaps;
+        failedChecks.push(...barGaps);
+        failed += barGaps.length;
+        total += barGaps.length;
+      }
+    } catch {
+      // Bar-comparison tooling failure must never fail the deliverable —
+      // the maker-checker gates remain authoritative. Log and skip.
+    }
+  }
+
   let verdict: CheckerVerdict;
   if (ran && failed === 0 && total > 0) verdict = "approve";
   else if (ran && failed > 0) verdict = "revise";
@@ -614,7 +638,7 @@ export async function runChecker(
     failedChecks,
     evidence: total === 0
       ? `acceptance criteria: could not run tests (0/0) — fail-open to avoid deadlock${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}`
-      : `acceptance criteria: ${passed}/${total} met${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}; failed=${failedChecks.join(", ") || "none"}${evidenceProblems.length ? `; evidence problems: ${evidenceProblems.join("; ")}` : ""}`,
+      : `acceptance criteria: ${passed}/${total} met${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}; failed=${failedChecks.join(", ") || "none"}${evidenceProblems.length ? `; evidence problems: ${evidenceProblems.join("; ")}` : ""}${barGaps.length ? `; bar gaps: ${barGaps.join("; ")}` : ""}`,
     timestamp,
   };
 

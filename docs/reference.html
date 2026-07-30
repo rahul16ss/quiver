@@ -109,7 +109,7 @@
 
     <div class="card">
       <h3>Agent Orchestration</h3>
-      <p><code>subagent</code>, <code>ralph_loop</code>, <code>todo_write</code>, <code>ask_question</code></p>
+      <p><code>subagent</code>, <code>gauntlet</code>, <code>bar_critic</code>, <code>todo_write</code>, <code>ask_question</code></p>
     </div>
   </section>
 
@@ -176,12 +176,12 @@
 
     <div class="card">
       <h3>Environment Variables</h3>
-      <p>A single <code>OLLAMA_API_KEY</code> powers the LLM, Ollama, and vision adapters. <code>LLM_API_KEY</code>, <code>VISION_MODEL_API_KEY</code>, and <code>CONTEXT7_API_KEY</code> are retired.</p>
-      <p><code>OLLAMA_API_KEY</code> — API key (required; stored in keychain when available)</p>
-      <p><code>LLM_API_BASE_URL</code> — Model provider endpoint</p>
-      <p><code>LLM_MODEL_NAME</code> — Model name (source-controlled default; override only)</p>
-      <p><code>VISION_MODEL_NAME</code> — Vision model (source-controlled default; override only)</p>
-      <p><code>VISION_MODEL_BASE_URL</code> — Vision endpoint</p>
+      <p>A single <code>LLM_API_KEY</code> powers the LLM and vision adapters. <code>OLLAMA_API_KEY</code>, <code>VISION_MODEL_API_KEY</code>, and <code>CONTEXT7_API_KEY</code> are retired.</p>
+      <p><code>LLM_API_KEY</code> — API key (required; stored in keychain when available)</p>
+      <p><code>LLM_API_BASE_URL</code> — Model provider endpoint (no baked default; set to any OpenAI-compatible endpoint)</p>
+      <p><code>LLM_MODEL_NAME</code> — Model name (no baked default; set in .env)</p>
+      <p><code>VISION_MODEL_NAME</code> — Vision model (no baked default; leave empty to disable vision)</p>
+      <p><code>VISION_MODEL_BASE_URL</code> — Vision endpoint (no baked default)</p>
       <p><code>QUIVER_AUTONOMY</code> — Comma-separated autonomy grants (write_file, run_command, destructive, etc.) or a developer trust tier (see docs/advanced.md)</p>
       <p><code>QUIVER_MAX_CONTEXT_TOKENS</code> — Context window limit</p>
       <p><code>QUIVER_AUTONOMY=browser:visible</code> — Show the browser window (otherwise headless)</p>

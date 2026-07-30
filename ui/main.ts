@@ -58,7 +58,7 @@ interface QuiverConfig {
   workspacePath: string;
   provider: ProviderConfig;
   parallelApiKey: string;
-  ollamaApiKey: string;
+  llmApiKey: string;
   githubToken: string;
   /** Comma-separated autonomy grants (e.g. "write_file,run_command" or "yolo"). */
   autonomyGrants: string;
@@ -144,7 +144,7 @@ const DEFAULT_CONFIG: QuiverConfig = {
     apiKey: "",
   },
   parallelApiKey: "",
-  ollamaApiKey: "",
+  llmApiKey: "",
   githubToken: "",
   // Empty = conservative (ask for everything). "yolo" = bypass ALL gates.
   autonomyGrants: "",
@@ -244,7 +244,7 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
     const replacements: Record<string, string> = {
       LLM_API_BASE_URL: config.provider.baseUrl,
       LLM_MODEL_NAME: config.provider.modelName,
-      OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
+      LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
       GITHUB_TOKEN: config.githubToken,
       QUIVER_AUTONOMY: config.autonomyGrants || "",
@@ -419,7 +419,7 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     ...process.env,
     LLM_API_BASE_URL: config.provider.baseUrl,
     LLM_MODEL_NAME: config.provider.modelName,
-    OLLAMA_API_KEY: config.ollamaApiKey || config.provider.apiKey,
+    LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
     GITHUB_TOKEN: config.githubToken,
     QUIVER_AUTONOMY: config.autonomyGrants || "",
@@ -1319,6 +1319,25 @@ function registerIpcHandlers(): void {
       return null;
     }
     return result.filePaths[0];
+  });
+
+  // S12: Workflow rerun — Dana can re-run the flagship workflow from the GUI
+  // without the CLI. Runs the demo:ic-memo pipeline (deterministic, credential-
+  // free, network-free) and returns the output + check count.
+  ipcMain.handle("workflow:rerun", async () => {
+    const config = await loadConfig();
+    const workspaceDir = config.workspacePath || process.cwd();
+    try {
+      const { stdout, stderr } = await execAsync("npm run demo:ic-memo", {
+        cwd: workspaceDir,
+        timeout: 120000,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+      const checks = (stdout.match(/\[PASS\]/g) || []).length;
+      return { success: true, output: stdout || stderr, checks };
+    } catch (err: any) {
+      return { success: false, output: err.stdout || err.stderr || err.message, checks: 0 };
+    }
   });
 
   // ── Deliverable actions (Epic 2 §2.4) ──

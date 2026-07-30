@@ -69,7 +69,7 @@ console.log("fake model on :" + MODEL_PORT);
 const env = {
   ...process.env,
   LLM_API_BASE_URL: "http://127.0.0.1:" + MODEL_PORT + "/v1",
-  OLLAMA_API_KEY: "fake-key",
+  LLM_API_KEY: "fake-key",
   QUIVER_AMBIENT: "0",
   QUIVER_AUTONOMY: "",
   QUIVER_SESSION_LOG: "0",

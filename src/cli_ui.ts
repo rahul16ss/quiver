@@ -188,21 +188,6 @@ export function statusBlock(
   }
 }
 
-export function renderProgressBar(
-  current: number,
-  total: number,
-  label = "",
-  width = 24,
-): string {
-  if (total <= 0) return label;
-  const ratio = Math.min(1, Math.max(0, current / total));
-  const filled = Math.round(ratio * width);
-  const bar = "█".repeat(filled) + "░".repeat(width - filled);
-  const pct = Math.round(ratio * 100);
-  const suffix = label ? ` ${label}` : "";
-  return `[${bar}] ${pct}% (${current}/${total})${suffix}`;
-}
-
 /** Locale-stable integer formatter (en-US grouping) — single source of
  *  truth so token counts never render as locale-dependent "1,20,000". */
 export function formatNum(n: number): string {
@@ -271,7 +256,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
   // Normalize argv before dispatch so the parser supports two POSIX-isms the
   // raw loop below does not:
-  //  - `--flag=value` (e.g. `--model=glm-5.2:cloud`, `--single-turn="hi there"`)
+  //  - `--flag=value` (e.g. `--model=your-model-name`, `--single-turn="hi there"`)
   //    is split into `--flag` + `value` tokens so the value-flag branches below
   //    consume the value via `argv[i + 1]` exactly as they would for a space.
   //  - Combined boolean short flags (e.g. `-qc`) are split into `-q` `-c`.

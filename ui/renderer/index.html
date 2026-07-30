@@ -16,12 +16,18 @@
       <img src="assets/logo.png" alt="Quiver" class="brand-mark" />
       <span class="brand-name">Quiver</span>
     </div>
+    <div id="trustContextPill" class="trust-context-pill" title="Click to inspect or edit context & trust details">
+      <span class="pill-icon">🔒</span>
+      <span id="pillText" class="pill-text">Protected Sandbox · Ready</span>
+    </div>
     <div class="badges">
       <span id="modelBadge" class="badge" title="The AI model in use">—</span>
       <span id="trustBadge" class="badge muted" title="Approval level">Ask before acting</span>
       <span id="statusDot" class="status-dot idle" title="Agent status"></span>
     </div>
     <div class="topbar-actions">
+      <button id="toggleContextBtn" class="ghost-btn icon-text-btn" title="Toggle Context Drawer (⌘1)">Context ⌘1</button>
+      <button id="toggleActivityBtn" class="ghost-btn icon-text-btn" title="Toggle Activity Drawer (⌘2)">Activity ⌘2</button>
       <button id="sessionsBtn" class="ghost-btn" title="Past sessions">Sessions</button>
       <button id="settingsBtn" class="ghost-btn" title="Settings">Settings</button>
     </div>
@@ -101,11 +107,18 @@
           (Quiver will refuse to modify its own files either way.)</span>
         <button id="workspaceWarningDismiss" class="link-btn" title="Dismiss">Dismiss</button>
       </div>
+      <div id="ambientRibbon" class="ambient-ribbon" hidden>
+        <span class="ambient-pulse"></span>
+        <span id="ambientStatusText" class="ambient-status-text">Quiver is working…</span>
+      </div>
       <div id="chatArea" class="chat-area">
         <div id="emptyState" class="empty-state">
           <div class="empty-title">What should we work on?</div>
           <div class="empty-sub">Research a company, draft a brief, build a matrix — Quiver shows its work and verifies it.</div>
           <div id="suggestionChips" class="chips"></div>
+          <div class="empty-actions">
+            <button id="runWorkflowBtn" class="ghost-btn" title="Re-run the flagship IC memo workflow (deterministic, no network)">Run workflow demo</button>
+          </div>
         </div>
       </div>
 

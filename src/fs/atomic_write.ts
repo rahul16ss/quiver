@@ -95,7 +95,7 @@ function fsync(fd: number): void {
  */
 export async function atomicWrite(
   filePath: string,
-  content: string,
+  content: string | Buffer,
 ): Promise<string | null> {
   const resolvedPath = path.resolve(filePath);
   const dir = path.dirname(resolvedPath);
@@ -121,7 +121,7 @@ export async function atomicWrite(
   try {
     const fh = await fs.open(tempPath, "w", 0o644);
     try {
-      await fh.writeFile(content, "utf8");
+      await fh.writeFile(content);
       // Durability: fsync the temp file before rename (US-10.2).
       fsync(fh.fd);
     } finally {

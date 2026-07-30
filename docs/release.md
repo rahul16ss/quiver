@@ -5,7 +5,7 @@
 > **Honest status.** The Electron build is currently **unsigned** (the
 > update-manifest Ed25519 pubkey is a placeholder — see SPEC §19). Homebrew and
 > `npm install -g` are developer-convenience channels; the buyer path is a
-> signed installer or engagement-led install (SPEC §15). Do not ship a signed
+> signed installer or engagement-led install (SPEC §19). Do not ship a signed
 > release until the signing key is real.
 
 ### Homebrew (macOS) — developer convenience
@@ -14,7 +14,7 @@ brew tap rahul16ss/quiver
 brew install quiver
 ```
 
-Formula: `Formula/quiver.rb`
+Formula: `Formula/quiver.rb` — **automatically repinned on every release tag** by the `update-homebrew-formula` job in `.github/workflows/release.yml` (runs `scripts/update_formula.js` to update the url, sha256, and version, then commits and pushes). To update manually: `npm run update-formula [tag]`.
 
 ### npm (global install from a clone)
 ```bash

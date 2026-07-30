@@ -73,7 +73,7 @@ async function saveSettings() {
   const key = $("apiKey").value.trim();
   if (key && typeof api.settingsSetCredential === "function") {
     try {
-      await api.settingsSetCredential("OLLAMA_API_KEY", key);
+      await api.settingsSetCredential("LLM_API_KEY", key);
     } catch {
       /* keychain unavailable — config fallback below still carries the key */
     }
@@ -88,7 +88,7 @@ async function saveSettings() {
       modelName: $("modelName").value.trim(),
       baseUrl: $("baseUrl").value.trim(),
     },
-    ollamaApiKey: key,
+    llmApiKey: key,
     parallelApiKey: $("parallelApiKey").value.trim(),
     githubToken: $("githubToken").value.trim(),
     visionModelName: $("visionModelName").value.trim(),

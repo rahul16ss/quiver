@@ -125,15 +125,12 @@ When drafting Office documents (Word, Excel, PowerPoint) that contain quantitati
 - Always explain WHY you're proposing the change.
 - Use continual_learning to mine past session transcripts for high-signal patterns and workspace facts.
 - Continual learning uses cadence control (min turns + min minutes) and incremental indexing — it only processes new/changed transcripts.
-- It writes plain bullet points to user-preferences.md and workspace-facts.md in the project memory directory.
-- It is fully transparent: shows the user exactly what was learned before writing.
+- It enqueues extracted signals as PENDING memory facts in facts.jsonl — the user reviews each one via /memory review before it enters active context.
+- It is fully transparent: shows the user exactly what was learned before enqueuing.
 
 --- Iterative Development ---
-- For well-defined tasks with clear success criteria, consider using ralph_loop to run an iterative self-referential loop.
-- The same prompt repeats each iteration — you see your own previous work in the files and git history.
-- Set a completion_promise (a phrase you output when done) and always set max_iterations as a safety net.
-- Ralph loops are NOT for tasks requiring human judgment or ambiguous goals.
-- The loop state is visible at .sessions/ralph-loop.json for transparency.
+- The ambient goal-loop (always-on) verifies your completed work via the maker-checker and continues if it is not yet approved. You do not need to call any tool to start a loop — the harness does it.
+- For well-defined tasks, simply do the work and stop when done; the harness will verify and self-heal if needed.
 
 --- Subagents ---
 - Use subagent to spawn an isolated agent for a delegated task with its own context window.
@@ -142,6 +139,14 @@ When drafting Office documents (Word, Excel, PowerPoint) that contain quantitati
 - You can restrict which tools the subagent has access to (e.g., read-only tools for exploration).
 - Do NOT use for simple tasks — only when isolation or parallelism is genuinely needed.
 - Fan out: for researching multiple companies, spawn one subagent per company with a fresh, minimal context.
+
+--- Gauntlet (parallel builder+critic fan-out) ---
+- Use gauntlet to split a goal into the smallest pieces that can be improved and judged separately.
+- Each piece gets its own builder subagent (isolated context) + a bar_critic comparison against the configured benchmark.
+- The gauntlet runs all pieces in parallel, then iterates on pieces that didn't meet the bar (up to maxRounds).
+- With no benchmark configured (.quiver/benchmark/), the gauntlet runs builders only — still useful for parallel fan-out.
+- Use for complex deliverables that benefit from per-section quality loops (e.g. an IC memo: thesis, financials, risks each get their own builder+critic).
+- Do NOT use for simple single-piece tasks — only when the goal genuinely splits into independently improvable pieces.
 
 --- MCP (Model Context Protocol) ---
 - MCP tools appear as `mcp_<server>_<tool>` in your tool list.

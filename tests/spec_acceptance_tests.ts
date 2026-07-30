@@ -849,7 +849,7 @@ async function secretsStorageContract() {
       const cfg = srcText("src/config.ts");
       const violations: string[] = [];
       for (const key of [
-        "OLLAMA_API_KEY",
+        "LLM_API_KEY",
         "PARALLEL_API_KEY",
         "GITHUB_TOKEN",
       ]) {
@@ -865,7 +865,7 @@ async function secretsStorageContract() {
     () => {
       const def = getDefaultConfig();
       return (
-        def.model.api_key_ref === "OLLAMA_API_KEY" &&
+        def.model.api_key_ref === "LLM_API_KEY" &&
         !(def.model as any).api_key
       );
     },
@@ -1037,7 +1037,6 @@ async function onboardingContract() {
       const env: NodeJS.ProcessEnv = { ...process.env };
       // Force a genuine first-run state: no API key, no project override.
       delete env.LLM_API_KEY;
-      delete env.OLLAMA_API_KEY;
       delete env.QUIVER_CLOUD_SYNC_ENABLED;
       delete env.QUIVER_PROJECT_NAME;
       const tsx = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
@@ -1094,19 +1093,20 @@ async function onboardingContract() {
 
 async function configStartupUXContract() {
   // ── Approved user-facing env variable set (project-owner directive) ──
-  // Core (9): LLM_API_BASE_URL, LLM_MODEL_NAME, OLLAMA_API_KEY, VISION_MODEL_NAME,
+  // Core (9): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY, VISION_MODEL_NAME,
   //   VISION_MODEL_BASE_URL, QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS,
   //   QUIVER_SESSION_LOG, QUIVER_SESSION_LOG_MAX_CHARS.
   // Optional: PARALLEL_API_KEY, GITHUB_TOKEN (developers only).
-  // Retired from the user-facing surface: LLM_API_KEY, VISION_MODEL_API_KEY,
+  // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_API_KEY,
   //   CONTEXT7_API_KEY, BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by
-  //   QUIVER_AUTONOMY). The single API key is OLLAMA_API_KEY, which powers
-  //   the LLM, Ollama, and vision adapters.
+  //   QUIVER_AUTONOMY). The single API key is LLM_API_KEY, which powers
+  //   the LLM and vision adapters. No model name, base URL, or API key is
+  //   baked into src/config.ts — Quiver is provider-agnostic and env-driven.
   // Internal feature flags (e.g. QUIVER_CLOUD_SYNC_*) are out of scope here.
   const ALLOWED_ENV = new Set([
     "LLM_API_BASE_URL",
     "LLM_MODEL_NAME",
-    "OLLAMA_API_KEY",
+    "LLM_API_KEY",
     "VISION_MODEL_NAME",
     "VISION_MODEL_BASE_URL",
     "QUIVER_AUTONOMY",
@@ -1119,7 +1119,7 @@ async function configStartupUXContract() {
     "GITHUB_TOKEN",
   ]);
   const RETIRED_ENV = [
-    "LLM_API_KEY",
+    "OLLAMA_API_KEY",
     "VISION_MODEL_API_KEY",
     "CONTEXT7_API_KEY",
     "BROWSER_HEADLESS",
@@ -1129,44 +1129,57 @@ async function configStartupUXContract() {
   await check(
     "CONFIG-MODEL-DEFAULTS-IN-SOURCE",
     "US-1.3",
-    "model names must be source-controlled defaults baked into src/config.ts so the product runs without the user typing model-name strings; onboarding/init must never require the user to supply a model name",
+    "model name, base URL, and API key must NOT be baked into src/config.ts — Quiver is provider-agnostic and reads them entirely from .env / the OS keychain (LLM_MODEL_NAME, LLM_API_BASE_URL, LLM_API_KEY); onboarding/init must never require the user to supply a model name (only an API key)",
     () => {
       const cfg = codeOnly("src/config.ts");
+      // llmModelName must read from env with NO non-empty baked default.
       const llm =
-        /llmModelName\s*:\s*process\.env\.LLM_MODEL_NAME\s*\|\|\s*"([^"]+)"/.exec(
+        /llmModelName\s*:\s*process\.env\.LLM_MODEL_NAME\s*(?:\|\|\s*"([^"]*)")?/.exec(
           cfg,
         );
-      const llmOk = !!llm && llm[1].trim().length > 0;
+      const llmHasBakedDefault = !!llm && llm[1] && llm[1].trim().length > 0;
+      // llmBaseUrl must read from env with NO non-empty baked default.
+      const baseUrl =
+        /llmBaseUrl\s*:\s*process\.env\.LLM_API_BASE_URL\s*(?:\|\|\s*"([^"]*)")?/.exec(
+          cfg,
+        );
+      const baseUrlHasBakedDefault =
+        !!baseUrl && baseUrl[1] && baseUrl[1].trim().length > 0;
+      // visionModelName must read from env (empty fallback allowed — vision optional).
       const vision =
-        /visionModelName\s*:\s*process\.env\.VISION_MODEL_NAME\s*\|\|\s*"([^"]*)"/.exec(
+        /visionModelName\s*:\s*process\.env\.VISION_MODEL_NAME\s*(?:\|\|\s*"([^"]*)")?/.exec(
           cfg,
         );
-      const visionOk = !!vision && vision[1].trim().length > 0;
+      const visionReadsEnv = !!vision;
       const wizard =
         srcText("src/config.ts").match(
           /printFirstRunWizard[\s\S]*?\n\}\)/,
         )?.[0] || "";
       const asksModel = /model[_ ]?name/i.test(wizard);
-      if (!llmOk)
+      if (llmHasBakedDefault)
         throw new Error(
-          "llmModelName has no non-empty source default — product cannot run without the user supplying LLM_MODEL_NAME",
+          "llmModelName has a non-empty baked default — Quiver must be provider-agnostic and read the model name from LLM_MODEL_NAME",
         );
-      if (!visionOk)
+      if (baseUrlHasBakedDefault)
         throw new Error(
-          "visionModelName falls back to empty string — no source default, so the user must supply VISION_MODEL_NAME",
+          "llmBaseUrl has a non-empty baked default — Quiver must be provider-agnostic and read the base URL from LLM_API_BASE_URL",
+        );
+      if (!visionReadsEnv)
+        throw new Error(
+          "visionModelName does not read from VISION_MODEL_NAME env var",
         );
       if (asksModel)
         throw new Error(
-          "first-run wizard asks the user for a model name (model names must be source-controlled)",
+          "first-run wizard asks the user for a model name (model names come from .env, not from the user)",
         );
-      return llmOk && visionOk && !asksModel;
+      return !llmHasBakedDefault && !baseUrlHasBakedDefault && visionReadsEnv && !asksModel;
     },
   );
 
   await check(
     "CONFIG-ENV-ALLOWLIST",
     "US-1.3",
-    "the user-facing env surface (.env.example + the codebase) must be limited to the approved variable set — LLM_API_KEY, VISION_MODEL_API_KEY, CONTEXT7_API_KEY, BROWSER_HEADLESS, and REQUIRE_APPROVAL_FOR are retired and must not appear",
+    "the user-facing env surface (.env.example + the codebase) must be limited to the approved variable set — OLLAMA_API_KEY, VISION_MODEL_API_KEY, CONTEXT7_API_KEY, BROWSER_HEADLESS, and REQUIRE_APPROVAL_FOR are retired and must not appear",
     () => {
       // .env.example: every uncommented assignment must be an approved variable.
       const ex = srcText(".env.example");
@@ -1195,37 +1208,37 @@ async function configStartupUXContract() {
   await check(
     "CONFIG-SINGLE-API-KEY",
     "US-1.3",
-    "a single OLLAMA_API_KEY powers the LLM, Ollama, and vision adapters — no LLM_API_KEY or VISION_MODEL_API_KEY",
+    "a single LLM_API_KEY powers the LLM and vision adapters — no OLLAMA_API_KEY or VISION_MODEL_API_KEY",
     () => {
       const cfg = codeOnly("src/config.ts");
-      const hasLLMKey = /\bprocess\.env\.LLM_API_KEY\b/.test(cfg);
+      const hasOllamaKey = /\bprocess\.env\.OLLAMA_API_KEY\b/.test(cfg);
       const hasVisionKey = /\bprocess\.env\.VISION_MODEL_API_KEY\b/.test(cfg);
-      if (hasLLMKey)
+      if (hasOllamaKey)
         throw new Error(
-          "config.ts still reads LLM_API_KEY — the single key is OLLAMA_API_KEY; LLM_API_KEY must be removed",
+          "config.ts still reads OLLAMA_API_KEY — the single key is LLM_API_KEY; OLLAMA_API_KEY must be removed",
         );
       if (hasVisionKey)
         throw new Error(
-          "config.ts still reads VISION_MODEL_API_KEY — vision must reuse OLLAMA_API_KEY",
+          "config.ts still reads VISION_MODEL_API_KEY — vision must reuse LLM_API_KEY",
         );
-      // The single key OLLAMA_API_KEY must back the primary LLM key and the vision key.
+      // The single key LLM_API_KEY must back the primary LLM key and the vision key.
       const llm = /llmApiKey\s*:\s*process\.env\.[^\n]+/.exec(cfg)?.[0] || "";
       const vision =
         /visionModelApiKey\s*:\s*process\.env\.[^\n]+/.exec(cfg)?.[0] || "";
-      if (!/OLLAMA_API_KEY/.test(llm))
+      if (!/LLM_API_KEY/.test(llm))
         throw new Error(
-          "llmApiKey does not derive from OLLAMA_API_KEY — the single key must power the LLM",
+          "llmApiKey does not derive from LLM_API_KEY — the single key must power the LLM",
         );
-      if (!/OLLAMA_API_KEY/.test(vision))
+      if (!/LLM_API_KEY/.test(vision))
         throw new Error(
-          "visionModelApiKey does not derive from OLLAMA_API_KEY — vision must reuse the single key",
+          "visionModelApiKey does not derive from LLM_API_KEY — vision must reuse the single key",
         );
-      // The onboarding/init handshake must persist the entered key as OLLAMA_API_KEY, not LLM_API_KEY.
+      // The onboarding/init handshake must persist the entered key as LLM_API_KEY, not OLLAMA_API_KEY.
       const persists =
         codeOnly("src/config.ts") + "\n" + codeOnly("src/init.ts");
-      if (/LLM_API_KEY\s*=/.test(persists))
+      if (/OLLAMA_API_KEY\s*=/.test(persists))
         throw new Error(
-          "onboarding/init writes LLM_API_KEY= to .env — it must write OLLAMA_API_KEY= (the single key)",
+          "onboarding/init writes OLLAMA_API_KEY= to .env — it must write LLM_API_KEY= (the single key)",
         );
       return true;
     },
@@ -1923,7 +1936,7 @@ async function visionContract() {
   await check(
     "VISION-CONFIG-WIRED",
     "US-5.4",
-    "runtime config must populate vision model fields from env (VISION_MODEL_NAME / VISION_MODEL_BASE_URL) so the vision fallback can actually activate; the vision key is the single OLLAMA_API_KEY (see CONFIG-SINGLE-API-KEY)",
+    "runtime config must populate vision model fields from env (VISION_MODEL_NAME / VISION_MODEL_BASE_URL) so the vision fallback can actually activate; the vision key is the single LLM_API_KEY (see CONFIG-SINGLE-API-KEY)",
     () => {
       const c = srcText("src/config.ts");
       return /VISION_MODEL_NAME/.test(c) && /VISION_MODEL_BASE_URL/.test(c);
@@ -2192,7 +2205,7 @@ async function absorbedContract(tmpWs: string) {
     "US-9.3",
     "secrets must be detected and redacted before logging/transport",
     () => {
-      const t = "OLLAMA_API_KEY=sk-1234567890abcdefghijklmnopqrstu";
+      const t = "LLM_API_KEY=sk-1234567890abcdefghijklmnopqrstu";
       if (!hasSecrets(t)) return false;
       const r = redactSecrets(t);
       return !r.includes("sk-1234567890") && r.includes("[REDACTED");
@@ -2204,9 +2217,9 @@ async function absorbedContract(tmpWs: string) {
     "a warning must be raised before secrets are sent to a remote provider",
     () => {
       return (
-        warnIfRemote("OLLAMA_API_KEY=sk-test12345678901234567890", true) !==
+        warnIfRemote("LLM_API_KEY=sk-test12345678901234567890", true) !==
           null &&
-        warnIfRemote("OLLAMA_API_KEY=sk-test12345678901234567890", false) ===
+        warnIfRemote("LLM_API_KEY=sk-test12345678901234567890", false) ===
           null
       );
     },
@@ -2912,7 +2925,6 @@ async function missingSpecContract(tmpWs: string) {
       );
       tmpDirs.push(tmp);
       const env: NodeJS.ProcessEnv = { ...process.env };
-      delete env.OLLAMA_API_KEY;
       delete env.LLM_API_KEY;
       delete env.QUIVER_PROJECT_NAME;
       const tsx = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
@@ -2942,7 +2954,7 @@ async function missingSpecContract(tmpWs: string) {
           resolve(buf);
         });
       });
-      const blocked = /Welcome to Quiver|Enter your Ollama API key/i.test(out);
+      const blocked = /Welcome to Quiver|Enter your (?:Ollama|Quiver) API key/i.test(out);
       if (blocked)
         throw new Error(
           "quiver --list-sessions launched the interactive onboarding handshake in a non-TTY fresh project instead of completing the subcommand",
@@ -4309,7 +4321,7 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "GUI-ONBOARDING-BUSINESS-COPY",
     "US-17.7",
-    "GUI onboarding and settings pages must use business-user language (not developer jargon like 'LLM_API_KEY', 'harness', 'adapter')",
+    "GUI onboarding and settings pages must use business-user language (not developer jargon like 'OLLAMA_API_KEY', 'harness', 'adapter')",
     () => {
       const onb = srcText("ui/renderer/onboarding.html");
       const settings = srcText("ui/renderer/settings.html");
@@ -4323,12 +4335,12 @@ async function checkerAuditAddendumContract(tmpWs: string) {
           "GUI onboarding/settings does not use business-user language — US-17.7 requires plain language",
         );
       // Must NOT use developer jargon in user-facing labels
-      const devJargon = /llm_api_key|harness.*adapter|vision_model_api_key|context7/i.test(
+      const devJargon = /ollama_api_key|harness.*adapter|vision_model_api_key|context7/i.test(
         combined,
       );
       if (devJargon)
         throw new Error(
-          "GUI onboarding/settings still uses developer jargon (LLM_API_KEY/harness/adapter) — US-17.7 requires business-user language",
+          "GUI onboarding/settings still uses developer jargon (OLLAMA_API_KEY/harness/adapter) — US-17.7 requires business-user language",
         );
       return true;
     },
@@ -4426,7 +4438,7 @@ async function checkerAuditAddendumContract(tmpWs: string) {
           `hasSecrets detected a standard UUID as a secret — US-17.4 requires UUID false positive fix`,
         );
       // But an actual API key pattern SHOULD be detected
-      const apiKey = "OLLAMA_API_KEY=sk-1234567890abcdefghijklmnopqrstu";
+      const apiKey = "LLM_API_KEY=sk-1234567890abcdefghijklmnopqrstu";
       if (!hasSecrets(apiKey))
         throw new Error(
           "hasSecrets failed to detect an actual API key — the fix must not weaken real detection",
@@ -6808,6 +6820,168 @@ async function extendedCapabilitiesContract() {
     },
   );
 
+  // ─── US-10.1: Benchmark bar-critic (integrated acceptance criterion) ─
+
+  await check(
+    "BENCHMARK-CRITIC-MODULE",
+    "US-10.1",
+    "the benchmark bar-critic module must exist at src/document/bar_critic.ts with a compare() function that reads document structure via the local officecli (no network — sandbox-safe) and returns a structural comparison result",
+    () => {
+      try {
+        const src = readFileSync(
+          path.join(ROOT, "src/document/bar_critic.ts"),
+          "utf8",
+        );
+        return (
+          /export\s+async\s+function\s+compare\s*\(/.test(src) &&
+          /export\s+interface\s+BarComparisonResult/.test(src) &&
+          /officecli|runOfficeCli|findBinary\(\s*"officecli"\s*\)/.test(src) &&
+          /sectionCoverage|section-coverage/.test(src) &&
+          /wordCountRatio|word-ratio|wordCountRatioRange/.test(src) &&
+          /tableParity|table-parity/.test(src)
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "BENCHMARK-CRITIC-TOOL",
+    "US-10.1",
+    "an agent-facing bar_critic tool must exist at src/tools/bar_critic.ts so the agent can request a bar-comparison on demand (not only at the ambient completion gate)",
+    () => {
+      try {
+        const src = readFileSync(
+          path.join(ROOT, "src/tools/bar_critic.ts"),
+          "utf8",
+        );
+        return (
+          /name:\s*"bar_critic"/.test(src) &&
+          /export\s+const\s+tool/.test(src) &&
+          /compare.*status.*list/.test(src) &&
+          /bar_critic\.js|bar_critic\.ts/.test(src)
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "BENCHMARK-NO-OP-WITHOUT-BENCHMARK",
+    "US-10.1",
+    "compare() must return a clean no-op (ran: false, met: true) when no .quiver/benchmark/ is configured — default behaviour is unchanged and the maker-checker remains the sole verification primitive",
+    async () => {
+      const { compare } = await import("../src/document/bar_critic.js");
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-bar-noop-"));
+      tmpDirs.push(tmp);
+      const result = await compare("/tmp/nonexistent-draft.docx", tmp);
+      return result.ran === false && result.met === true && result.gaps.length === 0;
+    },
+  );
+
+  await check(
+    "BENCHMARK-FOLDED-INTO-CHECKER",
+    "US-10.1",
+    "the maker-checker must fold bar-comparison into the SAME verdict — not run it as a second stage. src/subagents/checker.ts must import compareBenchmark from bar_critic.ts and, when checking an office_doc write with a benchmark configured, add bar gaps to failedChecks/failed/total exactly like the evidence-validation block (one primitive, one verdict, one loop)",
+    () => {
+      const c = codeOnly("src/subagents/checker.ts");
+      return (
+        /compareBenchmark|compare\s+as\s+compareBenchmark/.test(c) &&
+        /bar_critic\.js/.test(c) &&
+        /barGaps/.test(c) &&
+        /BENCHMARK\/|barGaps\.push|barGaps\s*=/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "BENCHMARK-STRUCTURAL-NO-NETWORK",
+    "US-10.1",
+    "the bar-comparison must be structural (no network, no API key) so it runs inside the existing checker sandbox — src/document/bar_critic.ts must NOT call fetch(), http(s).request, or import any network module. The comparison uses only the local officecli binary.",
+    () => {
+      const c = srcText("src/document/bar_critic.ts");
+      // No fetch / http(s) / network module imports
+      const hasNetwork =
+        /\bfetch\s*\(/.test(c) ||
+        /\brequire\s*\(\s*["']https?/.test(c) ||
+        /import\s+.*from\s+["']https?/.test(c) ||
+        /import\s+.*(?:https?|net|http|axios|node-fetch)/.test(c);
+      return !hasNetwork;
+    },
+  );
+
+  await check(
+    "BENCHMARK-OPT-IN-VIA-DOT-QUIVER",
+    "US-10.1",
+    "the bar must be opt-in per engagement via .quiver/benchmark/bar.json — getBenchmarkDir() must return null when the directory or manifest is absent (default off), and the manifest must list benchmark file names",
+    () => {
+      const c = codeOnly("src/document/bar_critic.ts");
+      return (
+        /getBenchmarkDir/.test(c) &&
+        /\.quiver.*benchmark/.test(c) &&
+        /bar\.json/.test(c) &&
+        /benchmarks/.test(c)
+      );
+    },
+  );
+
+  // ─── US-10.2: Gauntlet — parallel builder+critic fan-out ─────────────
+
+  await check(
+    "GAUNTLET-TOOL-EXISTS",
+    "US-10.2",
+    "the gauntlet tool must exist at src/tools/gauntlet.ts with a fan_out action that spawns parallel builder subagents and runs bar_critic for each piece",
+    () => {
+      try {
+        const src = readFileSync(
+          path.join(ROOT, "src/tools/gauntlet.ts"),
+          "utf8",
+        );
+        return (
+          /name:\s*"gauntlet"/.test(src) &&
+          /export\s+const\s+tool/.test(src) &&
+          /fan_out/.test(src) &&
+          /bar_critic\.js|bar_critic\.ts/.test(src) &&
+          /compareBenchmark|compare\s+as\s+compareBenchmark/.test(src) &&
+          /Promise\.all/.test(src)
+        );
+      } catch {
+        return false;
+      }
+    },
+  );
+
+  await check(
+    "GAUNTLET-REUSES-SUBAGENT-INFRA",
+    "US-10.2",
+    "the gauntlet must reuse the existing subagent infrastructure (scratchpad isolation, recursion depth, env stripping) — NOT introduce a parallel spawn pipeline. src/tools/gauntlet.ts must build its own scratchpad (no real node_modules link) and strip sensitive env keys from the child.",
+    () => {
+      const c = codeOnly("src/tools/gauntlet.ts");
+      return (
+        /buildSubagentScratchpad|scratchDir/.test(c) &&
+        /SUBAGENT_DEPTH/.test(c) &&
+        /GITHUB_TOKEN/.test(c) &&
+        !/symlink[\s\S]{0,120}node_modules|node_modules[\s\S]{0,120}symlink/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "GAUNTLET-NO-BENCHMARK-NOOP",
+    "US-10.2",
+    "the gauntlet must run builders without the critic step when no benchmark is configured — a clean no-op for the bar, not a failure. The tool must check for .quiver/benchmark/ and skip bar_critic when absent.",
+    () => {
+      const c = codeOnly("src/tools/gauntlet.ts");
+      return (
+        /\.quiver.*benchmark/.test(c) &&
+        /benchmarkDir/.test(c) &&
+        /barMet\s*=\s*true/.test(c)
+      );
+    },
+  );
+
   // ─── PRODUCT-REQUIREMENT CHECKS (checker-owned audit 2026-07-17) ───
   // The checks below assert buyer-surface moments from docs/product/user-stories.md
   // and SPEC §16 (Definition of Done) that the prior vendor-authored suite never
@@ -7017,6 +7191,41 @@ async function extendedCapabilitiesContract() {
       const handlesRefusedEvent = /case\s+"sensitivity_refused"/.test(app);
       const doneHonorsRefused = /case\s+"done"[\s\S]{0,400}?refused/.test(app);
       return handlesRefusedEvent && doneHonorsRefused;
+    },
+  );
+
+  await check(
+    "GUI-QUEUED-TYPING-STEERING",
+    "S5",
+    "The desktop app must support queued-typing steering — the user can type while the agent is running, hit Enter, and the message is queued and sent (not dropped). SPEC Epic-2 §2.2 / user-stories S5: 'Remaining: queued-typing steering in the GUI.' The CLI has Esc-steering; the GUI must have parity.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      // The send handler must check agentRunning and queue rather than return
+      const hasQueue = /agentRunning[\s\S]{0,200}steer/i.test(app)
+        || /steer-queued/i.test(app)
+        || /queued.*steer/i.test(app);
+      // The IPC must support sending during a run (sendToAgent writes to stdin)
+      const preload = srcText("ui/preload.ts");
+      const hasSendIpc = /sendToAgent/.test(preload);
+      return hasQueue && hasSendIpc;
+    },
+  );
+
+  await check(
+    "GUI-WORKFLOW-RERUN",
+    "S12",
+    "The desktop app must have a 'run workflow again' affordance so Dana can re-run the flagship workflow from the GUI without the CLI. user-stories S12: '🟡 Partial: no GUI run this workflow again affordance.' SPEC §19 lists rerun as CLI-only.",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const html = srcText("ui/renderer/index.html");
+      const preload = srcText("ui/preload.ts");
+      const main = codeOnly("ui/main.ts");
+      // A rerun affordance in the UI + IPC + handler
+      const hasButton = /runWorkflow|rerun|run-workflow|workflow.*demo/i.test(html)
+        || /runWorkflow|rerun/i.test(app);
+      const hasIpc = /rerunWorkflow|workflow:rerun/i.test(preload);
+      const hasHandler = /workflow:rerun|demo:ic-memo|rerunWorkflow/i.test(main);
+      return hasButton && hasIpc && hasHandler;
     },
   );
 
@@ -7518,11 +7727,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "SELF-IMPROVEMENT-TOOLS-EXIST",
     "US-16.8",
-    "The 8 self-improvement/session-analytics tools must exist: prompt_update, ralph_loop, log_tokens, continual_learning, todo_write, ask_question, format_code, run_tests, glob",
+    "The 7 self-improvement/session-analytics tools must exist: prompt_update, log_tokens, continual_learning, todo_write, ask_question, format_code, run_tests, glob (ralph_loop was retired in favour of the ambient goal-loop, which is always-on and has real maker-checker verification)",
     () => {
       const files = [
         "src/tools/prompt_update.ts",
-        "src/tools/ralph_loop.ts",
         "src/tools/log_tokens.ts",
         "src/tools/continual_learning.ts",
         "src/tools/todo_write.ts",

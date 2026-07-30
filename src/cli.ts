@@ -820,7 +820,7 @@ async function main() {
               `   - Ollama Identity:   ${formatOllamaIdentity(ollamaId)}`,
             );
             console.log(
-              `   - Ollama Pro Key:    ${redactSecret(config.ollamaApiKey)}`,
+              `   - LLM API Key:      ${redactSecret(config.llmApiKey)}`,
             );
             console.log(
               `   - Cloud Sync:        ${config.cloudSyncPath ? config.cloudSyncPath : "Auto-detect"}`,

@@ -10,11 +10,11 @@ const added = [];
 for (const d of [UD]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 mkdirSync(UD, { recursive: true });
 // Pre-seed config so the app skips onboarding and goes straight to the main surface.
-writeFileSync(UD + "/quiver-config.json", JSON.stringify({ provider: { baseUrl: "http://127.0.0.1:9/v1", modelName: "glm-5.2:cloud", apiKey: "fake" }, ollamaApiKey: "fake", maxContextTokens: 120000, workspacePath: WS_DIR }, null, 2));
+writeFileSync(UD + "/quiver-config.json", JSON.stringify({ provider: { baseUrl: "http://127.0.0.1:9/v1", modelName: "glm-5.2:cloud", apiKey: "fake" }, llmApiKey: "fake", maxContextTokens: 120000, workspacePath: WS_DIR }, null, 2));
 try { rmSync(PROJ, { recursive: true, force: true }); } catch {}
 mkdirSync(PROJ + "/memory", { recursive: true }); added.push(PROJ);
 writeFileSync(PROJ + "/memory/persona.txt", "be concise");
-const env = { ...process.env, LLM_API_BASE_URL: "http://127.0.0.1:9/v1", OLLAMA_API_KEY: "fake", QUIVER_AMBIENT: "0", QUIVER_AUTONOMY: "", QUIVER_SESSION_LOG: "0", ELECTRON_DISABLE_SECURITY_WARNINGS: "true" };
+const env = { ...process.env, LLM_API_BASE_URL: "http://127.0.0.1:9/v1", LLM_API_KEY: "fake", QUIVER_AMBIENT: "0", QUIVER_AUTONOMY: "", QUIVER_SESSION_LOG: "0", ELECTRON_DISABLE_SECURITY_WARNINGS: "true" };
 const app = spawn(REPO + "/node_modules/.bin/electron", [REPO, "--remote-debugging-port=" + DEBUG_PORT, "--user-data-dir=" + UD], { cwd: WS_DIR, env, stdio: ["ignore", "pipe", "pipe"] });
 app.stdout.on("data", () => {}); app.stderr.on("data", () => {});
 const cleanup = () => { try { app.kill("SIGTERM"); } catch {} for (const p of added) { try { rmSync(p, { recursive: true, force: true }); } catch {} } };

@@ -1809,11 +1809,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     ask_question: "Ask user",
     prompt_update: "Update prompt",
     continual_learning: "Learn from sessions",
-    ralph_loop: "Ralph loop",
     subagent: "Subagent",
     office_doc: "Office document",
     evidence: "Evidence tracker",
     data_query: "Data query",
+    bar_critic: "Bar critic",
+    gauntlet: "Gauntlet",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -1877,6 +1878,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     coreMemory: any,
   ): void {
     const dim = picocolors.gray;
+    const muted = picocolors.gray;
 
     // Estimate total context tokens (messages + system prompt)
     // Handle both string and array (vision) content
@@ -1895,7 +1897,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     const estTokens = Math.ceil(allText.length / 4);
     const maxTokens = config.maxContextTokens;
     const pct = Math.round((estTokens / maxTokens) * 100);
-    const usageBar = this.usageBar(pct);
 
     // Count vision images in the latest user message
     const lastMsg = this.messages[this.messages.length - 1];
@@ -1903,55 +1904,63 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
       ? lastMsg.content.filter((p: any) => p.type === "image_url").length
       : 0;
 
-    // Compact one-line manifest
-    const parts: string[] = [];
-    parts.push(`${memories.length} memory`);
-    if (skills.length > 0) parts.push(`${skills.length} skills`);
-    parts.push(`${this.registry.getAllTools().length} tools`);
-    // Show MCP server count if any are connected
+    // ── Line 1: a calm summary sentence — what enters the model call ──
+    // Filter out internal skills (plumbing, not business capabilities — the
+    // GUI already hides these via isInternalSkill(); the CLI should too).
+    const userSkills = skills.filter(
+      (s: any) => !/system-prompt/i.test(String(s.id || "")),
+    );
+    const summaryBits: string[] = [];
+    summaryBits.push(`${memories.length} memory`);
+    if (userSkills.length > 0) summaryBits.push(`${userSkills.length} skill${userSkills.length > 1 ? "s" : ""}`);
+    summaryBits.push(`${this.registry.getAllTools().length} tools`);
     let mcpCount = 0;
     try {
       const { mcpManager } = require("./mcp/client.js");
       const status = mcpManager.getStatus();
       mcpCount = status.filter((s: any) => s.connected).length;
-      if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
-    } catch {
-      // MCP not loaded
-    }
+      if (mcpCount > 0) summaryBits.push(`${mcpCount} MCP`);
+    } catch {}
     if (imageCount > 0)
-      parts.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
-    parts.push(config.llmModelName);
+      summaryBits.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
 
-    // Compact one-line manifest (Principle: Seeing — show what enters the
-    // model call before each prompt, as a single dim line so a long session
-    // is not drowned in chrome). Memory + skills fold onto the same line when
-    // present, separated by "·". Block progress bar like opencode:
-    // ■⬝⬝⬝⬝⬝⬝⬝ (8 chars, filled = context usage).
+    // ── Line 2: the details — what files, what model, how much context ──
+    const detailBits: string[] = [];
+    if (memories.length > 0) {
+      detailBits.push(memories.map((m: any) => m.filename).join(", "));
+    }
+    if (userSkills.length > 0) {
+      detailBits.push(userSkills.map((s: any) => `${s.id} v${s.version}`).join(", "));
+    }
+
+    // Compact token usage: 27k/120k (23%) with a block bar
+    const compactTok = (n: number) =>
+      n >= 1000 ? Math.round(n / 1000) + "k" : String(n);
     const tokColor =
       pct < 60
         ? picocolors.gray
         : pct < 85
           ? picocolors.yellow
           : picocolors.red;
-    const bits: string[] = [...parts];
-    if (memories.length > 0) {
-      bits.push(`memory: ${memories.map((m) => m.filename).join(", ")}`);
-    }
-    if (skills.length > 0) {
-      bits.push(
-        `skills: ${skills.map((s) => `${s.id} v${s.version}`).join(", ")}`,
-      );
-    }
     const barWidth = 8;
     const barFilled = Math.round((pct / 100) * barWidth);
     const bar = "■".repeat(barFilled) + "⬝".repeat(barWidth - barFilled);
+
+    // Line 1: the summary — model + counts, calm
     console.log(
       dim(`  `) +
-        dim(bits.join(" · ")) +
-        dim(" · ") +
-        tokColor(`${pct}% (${formatNum(estTokens)}/${formatNum(maxTokens)})`) +
+        picocolors.white(config.llmModelName) +
+        dim(` · ${summaryBits.join(" · ")} · `) +
+        tokColor(`${compactTok(estTokens)}/${compactTok(maxTokens)}`) +
         dim(` ${bar}`),
     );
+
+    // Line 2: the details — file names + skill names (only if there are any)
+    if (detailBits.length > 0) {
+      console.log(
+        dim(`  `) + dim(detailBits.join(" · ")),
+      );
+    }
   }
 
   /** Generate a compact progress bar for context usage. */
@@ -2540,7 +2549,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
               } else if (ev.type === "error") {
                 throw new Error(ev.error || "Provider stream error");
               } else if (ev.type === "reasoning_delta") {
-                // Chain-of-thought tokens from GLM-5.2 and similar models.
+                // Chain-of-thought tokens from Kimi-K3 and similar models.
                 // Per US-2.2 (HIDDEN-COT-NOT-PERSISTED): do NOT accumulate
                 // into assistantContent, do NOT log to audit trail, do NOT
                 // display to user. Silently consume.

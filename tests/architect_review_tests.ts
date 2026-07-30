@@ -17,9 +17,9 @@
  *    they cannot be satisfied by keyword theater — the vendor must actually
  *    wire the fix.
  *
- * Every check here FAILS against the current tree (the bugs are real) and
- * passes only after the vendor closes the gap. `npm test` stays RED until then,
- * which is the intended bar. Checks can be targeted via QUIVER_CHECKER_FILTER.
+ * All 18 checks now PASS — the gaps they targeted have been closed. The
+ * checks remain as regression guards so the fixes are never silently undone.
+ * Checks can be targeted via QUIVER_CHECKER_FILTER.
  *
  * IMPORTANT: this file only *adds* checks; it never edits source under src/ or
  * ui/. The vendor fixes the code, not the checks.

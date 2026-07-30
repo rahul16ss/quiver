@@ -57,7 +57,7 @@ recorded.
   UX (S2 "Apple-grade") is still being polished.
 - Gap to Apple-grade: the rail reads like an inspector, not a sentence. The
   moment should be: one calm summary line ("Using your IC template, 2 memory
-  files, 28 tools · prompts go to ollama.com") that expands on demand into
+  files, 33 tools · prompts go to [your configured endpoint]") that expands on demand into
   items with exclude toggles. Priya scans it in 3 seconds; control is one
   click deep, not buried.
 
@@ -89,11 +89,12 @@ it produced so far, and whether it's stuck — the way I'd glance at a junior
 across the desk. When it verifies its own work I see that too ("Verifying…
 ✓ 5 checks passed" / "Found an issue — fixing…"), never a stack trace. And I
 can interrupt: my typed message is queued and injected, Stop halts cleanly.
-- 🟡 Partial: activity feed with timestamps (honest, log-like); Stop works;
+- ✅ Built: activity feed with timestamps (honest, log-like); Stop works;
   Esc-steering in the CLI path; a single current-status line above the feed
-  ("Reading RevenueBuild sheet…") is now wired to tool events; checker
-  verification surfaced in plain language. Remaining: queued-typing steering
-  in the GUI.
+  ("Reading RevenueBuild sheet…") is wired to tool events; checker
+  verification surfaced in plain language. Queued-typing steering shipped
+  in the GUI (type while running → message queued and sent to the agent's
+  InterventionController).
 
 **S6. "Closing my laptop costs nothing."**
 As Priya, I can close the window Monday evening and reopen Tuesday — the
@@ -162,9 +163,10 @@ As Dana, I open last quarter's session, point at the new model file, and run
 the same workflow; acceptance checks tell me it worked. If the model's
 structure changed, Quiver halts and tells me what moved — it never silently
 produces a wrong memo.
-- 🟡 Partial: workflow.yaml + acceptance checks + rerun exist for the
-  flagship example via CLI; no GUI "run this workflow again" affordance;
-  drift detection not built (spec §12.4, deliberately Phase 2).
+- ✅ Built: workflow.yaml + acceptance checks + rerun exist for the
+  flagship example. GUI "run this workflow again" affordance shipped (a
+  Run Workflow Demo button in the empty state + IPC handler). Drift
+  detection shipped in Phase C (`src/workflow/drift.ts` + `expected-structure.json`).
 
 **S13. "The firm owns it."**
 As Dana, the workflow definition, template config, runbook, and training
@@ -185,9 +187,11 @@ facts, the persona — lives in plain files I can open, edit, and delete; a
 praised memo can be promoted into an example the next memo learns from; and
 none of it is hostage to a vendor. When we improve the instructions, the next
 quarter's memo is visibly better: institutional knowledge compounds.
-- 🟡 Partial: plain-file memory + review queue + GUI editing built; versioned
-  persona/skills with diff/rollback and the episodic examples store are not
-  (spec §7). The *ownership* is real today; the *compounding* is partial.
+- ✅ Mostly built: plain-file memory + review queue + GUI editing built; versioned
+  memory with diff/rollback shipped (US-17.19, `src/memory/versioned.ts`); the
+  episodic examples store shipped in Phase C (`src/memory/examples_store.ts` +
+  `examples` tool). Continual learning now enqueues into the structured facts.jsonl
+  review pipeline. The *ownership* and *compounding* are both real today.
 - Acceptance moments: Dana opens memory as normal files; edits survive and
   visibly shape the next run; promoting an example is one action.
 

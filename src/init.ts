@@ -43,18 +43,18 @@ export async function runInitWizard(): Promise<void> {
   }
 
   const apiKey = await promptLine(
-    t.cyan("Enter your OLLAMA_API_KEY (press Enter to skip): "),
+    t.cyan("Enter your LLM_API_KEY (press Enter to skip): "),
   );
 
   if (apiKey) {
     let envContent = readFileSync(ENV_FILE, "utf8");
-    if (/^OLLAMA_API_KEY=.*$/m.test(envContent)) {
+    if (/^LLM_API_KEY=.*$/m.test(envContent)) {
       envContent = envContent.replace(
-        /^OLLAMA_API_KEY=.*$/m,
-        `OLLAMA_API_KEY=${apiKey}`,
+        /^LLM_API_KEY=.*$/m,
+        `LLM_API_KEY=${apiKey}`,
       );
     } else {
-      envContent += `\nOLLAMA_API_KEY=${apiKey}\n`;
+      envContent += `\nLLM_API_KEY=${apiKey}\n`;
     }
     writeFileSync(ENV_FILE, envContent, "utf8");
     try {
@@ -62,7 +62,7 @@ export async function runInitWizard(): Promise<void> {
     } catch {
       // Ignore
     }
-    statusLine("OK", "Saved OLLAMA_API_KEY to .env");
+    statusLine("OK", "Saved LLM_API_KEY to .env");
   } else {
     statusLine("INFO", "Skipped API key — edit .env manually when ready.");
   }
@@ -70,7 +70,7 @@ export async function runInitWizard(): Promise<void> {
   console.log("");
   statusLine("OK", "Setup complete. Run 'quiver' to start a session.");
   console.log(
-    t.gray("  To use Ollama cloud models & web search: run 'quiver signin'\n"),
+    t.gray("  Configure LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point Quiver at any OpenAI-compatible endpoint.\n"),
   );
   console.log(t.gray("  Docs: README.md\n"));
 }

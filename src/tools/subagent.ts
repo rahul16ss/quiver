@@ -133,7 +133,7 @@ async function runSubagent(
   childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
 
   // Strip sensitive keys that the subagent doesn't need.
-  // IMPORTANT: OLLAMA_API_KEY is KEPT because the subagent needs it to
+  // IMPORTANT: LLM_API_KEY is KEPT because the subagent needs it to
   // make LLM API calls — without it, every subagent gets 401 Unauthorized.
   // The subagent runs the same Quiver codebase in an isolated scratchpad,
   // so it has the same trust level as the parent for LLM access.

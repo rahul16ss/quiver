@@ -1,33 +1,36 @@
 import { promises as fs } from "fs";
-import * as fsSync from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
-import { getProjectSessionsDir, getProjectMemoryDir } from "../paths.js";
+import { getProjectSessionsDir } from "../paths.js";
+import {
+  createMemoryFact,
+  appendMemoryFact,
+  readAllMemoryFacts,
+  type MemoryType,
+} from "../memory/schema.js";
 
 /**
- * Continual Learning — automatically mines session transcripts for high-signal
- * patterns (repeated user corrections, durable workspace facts) and proposes
- * memory updates.
+ * Continual Learning — mines session transcripts for high-signal patterns
+ * (repeated user corrections, durable workspace facts) and enqueues them as
+ * PENDING MemoryFact records in the structured memory pipeline (facts.jsonl).
  *
- * Inspired by Cursor's continual-learning plugin, adapted for Quiver:
+ * This is the unified learning pipeline: extracted signals flow through the
+ * same review queue (accept/edit/reject/pin/expire) as every other memory
+ * fact, with full provenance, decay scoring, and citation tracking. Only
+ * reviewed (accepted) facts enter active prompt assembly.
  *
- * Key design principles:
- * 1. TRANSPARENCY: Shows the user exactly what was learned before writing
- * 2. CADENCE: Only triggers after N turns and M minutes (configurable)
- * 3. INCREMENTAL: Uses an index to only process new/changed session files
- * 4. HIGH-SIGNAL: Only extracts repeated patterns and durable facts
- * 5. BULLET-POINT FORMAT: Plain bullets, no metadata noise
- * 6. IN-PLACE UPDATES: Updates existing bullets rather than only appending
- * 7. SECTION CAP: Max 12 bullets per section to avoid bloat
- *
- * The tool writes to two memory files:
- * - user-preferences.md — personal preferences (user-scoped)
- * - workspace-facts.md — durable workspace facts (project-scoped)
+ * Design principles:
+ * 1. TRANSPARENCY: Shows the user exactly what was learned before enqueuing.
+ * 2. CADENCE: Only triggers after N turns and M minutes (configurable).
+ * 3. INCREMENTAL: Uses an index to only process new/changed session files.
+ * 4. UNIFIED: Enqueues MemoryFact records, not parallel Markdown files.
+ * 5. REVIEW-GATED: Nothing enters active context until the user accepts it.
  *
  * State files:
  * - .sessions/continual-learning-cadence.json — cadence state
  * - .sessions/continual-learning-index.json — incremental transcript index
+ * Memory facts: facts.jsonl (via schema.ts) — pending until reviewed.
  */
 
 interface CadenceState {
@@ -42,7 +45,6 @@ interface TranscriptIndex {
 
 const DEFAULT_MIN_TURNS = 10;
 const DEFAULT_MIN_MINUTES = 120;
-const MAX_BULLETS_PER_SECTION = 12;
 
 function getCadenceStatePath(): string {
   return path.join(getProjectSessionsDir(), "continual-learning-cadence.json");
@@ -50,14 +52,6 @@ function getCadenceStatePath(): string {
 
 function getIndexPath(): string {
   return path.join(getProjectSessionsDir(), "continual-learning-index.json");
-}
-
-function getUserPreferencesPath(): string {
-  return path.join(getProjectMemoryDir(), "user-preferences.md");
-}
-
-function getWorkspaceFactsPath(): string {
-  return path.join(getProjectMemoryDir(), "workspace-facts.md");
 }
 
 async function loadCadenceState(): Promise<CadenceState> {
@@ -147,28 +141,31 @@ async function findChangedTranscripts(
   return changed;
 }
 
+interface ExtractedSignal {
+  type: MemoryType;
+  content: string;
+  sourceSession: string;
+}
+
 /**
- * Extract high-signal patterns from session log events.
- * Looks for:
- * - User corrections (user follows up with a correction after an assistant response)
- * - Repeated preferences (same pattern across multiple sessions)
- * - Durable workspace facts (file paths, project structure, build commands)
+ * Extract high-signal patterns from session log events and map them to
+ * typed MemoryFact candidates. Each signal becomes a PENDING fact in
+ * facts.jsonl — the user reviews it via /memory review before it enters
+ * active context.
  */
-function extractPatternsFromEvents(events: any[]): {
-  userPreferences: string[];
-  workspaceFacts: string[];
-} {
-  const userPreferences: string[] = [];
-  const workspaceFacts: string[] = [];
+function extractPatternsFromEvents(
+  events: any[],
+  sessionFilename: string,
+): ExtractedSignal[] {
+  const signals: ExtractedSignal[] = [];
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
 
-    // Look for user inputs that contain corrections
     if (event.type === "user_input" && event.data?.content) {
       const content = String(event.data.content).toLowerCase();
 
-      // Detect correction patterns
+      // Detect correction patterns → user_preference
       if (
         content.includes("no, ") ||
         content.includes("don't ") ||
@@ -178,14 +175,17 @@ function extractPatternsFromEvents(events: any[]): {
         content.includes("always use ") ||
         content.includes("never use ")
       ) {
-        // Extract the preference (simplified — in production this would use the LLM)
         const text = String(event.data.content).trim();
         if (text.length > 10 && text.length < 200) {
-          userPreferences.push(text);
+          signals.push({
+            type: "user_preference",
+            content: text,
+            sourceSession: sessionFilename,
+          });
         }
       }
 
-      // Detect workspace fact patterns
+      // Detect workspace fact patterns → workspace_fact
       if (
         content.includes("the project uses ") ||
         content.includes("we use ") ||
@@ -194,89 +194,38 @@ function extractPatternsFromEvents(events: any[]): {
       ) {
         const text = String(event.data.content).trim();
         if (text.length > 10 && text.length < 200) {
-          workspaceFacts.push(text);
+          signals.push({
+            type: "workspace_fact",
+            content: text,
+            sourceSession: sessionFilename,
+          });
         }
       }
     }
 
-    // Look for tool results that reveal workspace structure
+    // Detect build/test commands in tool results → workspace_fact
     if (event.type === "tool_result" && event.data?.tool === "run_command") {
       const result = String(event.data?.result || "");
-      // Detect build/test commands in results
       if (result.includes("npm test") || result.includes("npx tsc")) {
-        workspaceFacts.push(
-          `Build/test command: ${result.split("\n")[0].substring(0, 100)}`,
-        );
+        signals.push({
+          type: "workspace_fact",
+          content: `Build/test command: ${result.split("\n")[0].substring(0, 100)}`,
+          sourceSession: sessionFilename,
+        });
       }
     }
   }
 
-  return { userPreferences, workspaceFacts };
-}
-
-/**
- * Read existing memory file and parse bullets.
- */
-async function readMemoryBullets(filePath: string): Promise<string[]> {
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    return content
-      .split("\n")
-      .filter((line) => line.startsWith("- "))
-      .map((line) => line.substring(2).trim());
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Merge new bullets with existing ones, deduplicating semantically similar items.
- * Keeps at most MAX_BULLETS_PER_SECTION bullets.
- */
-function mergeBullets(existing: string[], newOnes: string[]): string[] {
-  const merged = [...existing];
-
-  for (const newItem of newOnes) {
-    // Simple dedup: check if a similar bullet already exists
-    const similar = merged.some((existing) => {
-      // Check for substring match (simplified semantic dedup)
-      const shorter = existing.length < newItem.length ? existing : newItem;
-      const longer = existing.length < newItem.length ? newItem : existing;
-      return longer
-        .toLowerCase()
-        .includes(shorter.toLowerCase().substring(0, 30));
-    });
-
-    if (!similar) {
-      merged.push(newItem);
-    }
-  }
-
-  // Cap at MAX_BULLETS_PER_SECTION (keep the most recent)
-  return merged.slice(-MAX_BULLETS_PER_SECTION);
-}
-
-/**
- * Write memory file with bullet points.
- */
-async function writeMemoryFile(
-  filePath: string,
-  header: string,
-  bullets: string[],
-): Promise<void> {
-  const content = `# ${header}\n\n${bullets.map((b) => `- ${b}`).join("\n")}\n`;
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, content, "utf8");
+  return signals;
 }
 
 export const tool: Tool = {
   name: "continual_learning",
   description:
-    "Mines session transcripts for high-signal patterns (repeated user corrections, durable workspace facts) and proposes memory updates. " +
-    "Uses cadence control (min turns + min minutes since last run) to avoid noisy rewrites. " +
-    "Uses an incremental index to only process new/changed session files. " +
-    "Writes plain bullet points to user-preferences.md and workspace-facts.md in the project memory directory. " +
-    "TRANSPARENT: shows the user exactly what was learned before writing. " +
+    "Mines session transcripts for high-signal patterns (repeated user corrections, durable workspace facts) and enqueues them as PENDING memory facts in the structured memory pipeline (facts.jsonl). " +
+    "Extracted facts flow through the same review queue as every other memory fact — the user accepts, edits, or rejects each one via /memory review before it enters active context. " +
+    "Uses cadence control (min turns + min minutes since last run) and an incremental index. " +
+    "TRANSPARENT: shows exactly what was learned before enqueuing. " +
     "Use this when you want to learn from past sessions and keep memory up to date automatically.",
   parameters: z.object({
     action: z
@@ -325,6 +274,8 @@ export const tool: Tool = {
               ? Math.round((now - state.lastRunAtMs) / 60000)
               : -1;
           const turnsSinceLastRun = totalTurns - state.lastRunTurns;
+          const existingFacts = await readAllMemoryFacts();
+          const pendingFacts = existingFacts.filter((f) => !f.reviewed);
 
           return JSON.stringify(
             {
@@ -346,9 +297,10 @@ export const tool: Tool = {
                   .length,
               },
               totalTurns,
-              memoryFiles: {
-                userPreferences: getUserPreferencesPath(),
-                workspaceFacts: getWorkspaceFactsPath(),
+              memoryPipeline: {
+                totalFacts: existingFacts.length,
+                pendingReview: pendingFacts.length,
+                reviewed: existingFacts.length - pendingFacts.length,
               },
             },
             null,
@@ -390,11 +342,9 @@ export const tool: Tool = {
           const index = await loadIndex();
           const totalTurns = await countTotalTurns();
 
-          // Find changed transcripts
           const changedFiles = await findChangedTranscripts(index);
 
           if (changedFiles.length === 0) {
-            // Still update cadence state
             await saveCadenceState({
               version: 1,
               lastRunAtMs: Date.now(),
@@ -403,9 +353,8 @@ export const tool: Tool = {
             return "No new or changed session transcripts to process. Cadence state updated.";
           }
 
-          // Process each changed transcript
-          const allPreferences: string[] = [];
-          const allFacts: string[] = [];
+          // Process each changed transcript and collect extracted signals
+          const allSignals: ExtractedSignal[] = [];
           const sessionsDir = getProjectSessionsDir();
 
           for (const filename of changedFiles) {
@@ -416,12 +365,9 @@ export const tool: Tool = {
               );
               const events = JSON.parse(content);
               if (Array.isArray(events)) {
-                const { userPreferences, workspaceFacts } =
-                  extractPatternsFromEvents(events);
-                allPreferences.push(...userPreferences);
-                allFacts.push(...workspaceFacts);
+                const signals = extractPatternsFromEvents(events, filename);
+                allSignals.push(...signals);
               }
-              // Update index
               const stat = await fs.stat(path.join(sessionsDir, filename));
               index[filename] = { mtime: stat.mtimeMs, processed: true };
             } catch {
@@ -429,76 +375,29 @@ export const tool: Tool = {
             }
           }
 
-          // Read existing memory files
-          const existingPrefs = await readMemoryBullets(
-            getUserPreferencesPath(),
+          // Deduplicate against existing facts (avoid re-enqueuing the same
+          // signal from a reprocessed transcript). Match on content prefix.
+          const existingFacts = await readAllMemoryFacts();
+          const existingContents = new Set(
+            existingFacts.map((f) => f.content.substring(0, 60).toLowerCase()),
           );
-          const existingFacts = await readMemoryBullets(
-            getWorkspaceFactsPath(),
-          );
-
-          // Merge with dedup
-          const mergedPrefs = mergeBullets(existingPrefs, allPreferences);
-          const mergedFacts = mergeBullets(existingFacts, allFacts);
-
-          // Build transparency report
-          const newPrefs = mergedPrefs.filter(
-            (p) => !existingPrefs.includes(p),
-          );
-          const newFacts = mergedFacts.filter(
-            (f) => !existingFacts.includes(f),
+          const newSignals = allSignals.filter(
+            (s) =>
+              !existingContents.has(s.content.substring(0, 60).toLowerCase()),
           );
 
-          const report: string[] = [];
-          report.push("╔══ Continual Learning Report ════════════════════╗");
-          report.push(
-            `║  Processed ${changedFiles.length} new/changed transcript(s)`,
-          );
-          report.push(
-            `║  Extracted ${allPreferences.length} preference signals, ${allFacts.length} workspace fact signals`,
-          );
-          report.push(`║  New preferences: ${newPrefs.length}`);
-          report.push(`║  New workspace facts: ${newFacts.length}`);
-          report.push(
-            `║  Total preferences: ${mergedPrefs.length}/${MAX_BULLETS_PER_SECTION}`,
-          );
-          report.push(
-            `║  Total workspace facts: ${mergedFacts.length}/${MAX_BULLETS_PER_SECTION}`,
-          );
-
-          if (newPrefs.length > 0) {
-            report.push("║");
-            report.push("║  New user preferences learned:");
-            for (const p of newPrefs) {
-              report.push(`║  • ${p.substring(0, 80)}`);
-            }
-          }
-
-          if (newFacts.length > 0) {
-            report.push("║");
-            report.push("║  New workspace facts learned:");
-            for (const f of newFacts) {
-              report.push(`║  • ${f.substring(0, 80)}`);
-            }
-          }
-
-          report.push("╚════════════════════════════════════════════════╝");
-
-          // Write memory files
-          if (newPrefs.length > 0 || existingPrefs.length === 0) {
-            await writeMemoryFile(
-              getUserPreferencesPath(),
-              "Learned User Preferences",
-              mergedPrefs,
-            );
-          }
-
-          if (newFacts.length > 0 || existingFacts.length === 0) {
-            await writeMemoryFile(
-              getWorkspaceFactsPath(),
-              "Learned Workspace Facts",
-              mergedFacts,
-            );
+          // Enqueue each new signal as a PENDING MemoryFact
+          let enqueued = 0;
+          for (const signal of newSignals) {
+            const fact = createMemoryFact({
+              type: signal.type,
+              content: signal.content,
+              source_session: signal.sourceSession,
+              confidence: "low", // extracted signals start low-confidence; the user can pin to raise it
+              privacy: "project",
+            });
+            await appendMemoryFact(fact);
+            enqueued++;
           }
 
           // Save state
@@ -509,12 +408,39 @@ export const tool: Tool = {
           });
           await saveIndex(index);
 
-          const message =
-            newPrefs.length === 0 && newFacts.length === 0
-              ? "No high-signal memory updates. Cadence state updated."
-              : `Learned ${newPrefs.length} new preference(s) and ${newFacts.length} new workspace fact(s). Memory files updated.`;
+          // Build transparency report
+          const report: string[] = [];
+          report.push("╔══ Continual Learning Report ════════════════════╗");
+          report.push(
+            `║  Processed ${changedFiles.length} new/changed transcript(s)`,
+          );
+          report.push(
+            `║  Extracted ${allSignals.length} signal(s), ${newSignals.length} new (not already in facts.jsonl)`,
+          );
+          report.push(`║  Enqueued ${enqueued} pending fact(s) for review`);
+          report.push("║");
+          report.push("║  Pending facts are reviewed via /memory review.");
+          report.push("║  Nothing enters active context until you accept it.");
 
-          return `${report.join("\n")}\n\n${message}\n\nMemory files:\n  ${getUserPreferencesPath()}\n  ${getWorkspaceFactsPath()}`;
+          if (newSignals.length > 0) {
+            report.push("║");
+            report.push("║  New signals enqueued:");
+            for (const s of newSignals.slice(0, 12)) {
+              report.push(`║  • [${s.type}] ${s.content.substring(0, 70)}`);
+            }
+            if (newSignals.length > 12) {
+              report.push(`║  … and ${newSignals.length - 12} more`);
+            }
+          }
+
+          report.push("╚════════════════════════════════════════════════╝");
+
+          const message =
+            enqueued === 0
+              ? "No new signals — all extracted patterns were already in facts.jsonl. Cadence state updated."
+              : `Enqueued ${enqueued} pending fact(s) in facts.jsonl. Review them with /memory review.`;
+
+          return `${report.join("\n")}\n\n${message}`;
         }
 
         default:

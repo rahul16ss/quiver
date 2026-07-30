@@ -24,10 +24,11 @@ Hard rules:
    approval → deliverable card → session resume → settings) with screenshots
    you actually read. "Tests green" has shipped a broken GUI before.
 3. Public claims are governed by the capability truth table in the Conviction
-   Studio repo. Never claim: data stays local by default (default model
-   endpoint is Ollama cloud), redaction/sensitivity routing, live lineage
-   during drafting, ZDR, or "compliance-ready". Cell lineage is claimable only
-   for Excel-sourced figures in `examples/investment-committee-memo/`.
+   Studio repo. Never claim: data stays local by default (the model endpoint
+   is user-configured — a cloud endpoint is common), redaction/sensitivity
+   routing, live lineage during drafting, ZDR, or "compliance-ready". Cell
+   lineage is claimable only for Excel-sourced figures in
+   `examples/investment-committee-memo/`.
 4. Business surfaces say **Draft only / Draft and research / Assisted** —
    never "yolo" (internal alias only, see `docs/advanced.md`).
 5. Commits are signed `Co-Authored-By: Quiver <quiver@convictionstudio.com>`

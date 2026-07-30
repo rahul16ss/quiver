@@ -111,8 +111,8 @@ gratefully acknowledge their influences below.
 
 - **Influence:** Git-integrated task version control.
 - **Contribution:** Beads' approach of storing state lists in git-versioned
-  structures inspired Quiver's goal-seeking loop state layout
-  (`.sessions/ralph-loop.json`), keeping task histories inspectable plain files.
+  structures inspired Quiver's session-state file layout
+  (`.sessions/*.json`), keeping task histories inspectable plain files.
 - **Project:** [https://github.com/gastownhall/beads](https://github.com/gastownhall/beads)
 - **License:** MIT License
 

@@ -12,16 +12,16 @@ export const tool: Tool = {
       .enum(["ollama", "parallel"])
       .optional()
       .describe(
-        "Optional search provider override. Prioritizes Ollama Pro if not specified and OLLAMA_API_KEY is set.",
+        "Optional search provider override. Prioritizes Ollama Pro if not specified and LLM_API_KEY is set.",
       ),
   }),
   execute: async ({ query, provider }) => {
     const selectedProvider =
-      provider || (config.ollamaApiKey ? "ollama" : "parallel");
+      provider || (config.llmApiKey ? "ollama" : "parallel");
 
     if (selectedProvider === "ollama") {
-      if (!config.ollamaApiKey) {
-        return "Error: OLLAMA_API_KEY is not set in the configuration (.env). Please configure it to use Ollama web search.";
+      if (!config.llmApiKey) {
+        return "Error: LLM_API_KEY is not set in the configuration (.env). Please configure it to use Ollama web search.";
       }
 
       try {
@@ -29,7 +29,7 @@ export const tool: Tool = {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${config.ollamaApiKey}`,
+            Authorization: `Bearer ${config.llmApiKey}`,
           },
           body: JSON.stringify({
             query,

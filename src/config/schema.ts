@@ -61,10 +61,10 @@ export function getDefaultConfig(): ConfigSchema {
   return {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: {
-      provider: "ollama",
+      provider: "custom",
       model_name: config.llmModelName,
       base_url: config.llmBaseUrl,
-      api_key_ref: "OLLAMA_API_KEY",
+      api_key_ref: "LLM_API_KEY",
       max_context_tokens: config.maxContextTokens,
       max_output_tokens: 16384,
       temperature: 0.7,
@@ -73,7 +73,7 @@ export function getDefaultConfig(): ConfigSchema {
       enabled: false,
       model_name: config.visionModelName,
       base_url: config.visionModelBaseUrl,
-      api_key_ref: "OLLAMA_API_KEY",
+      api_key_ref: "LLM_API_KEY",
     },
     approvals: {
       require_approval_for: ["write_file", "replace_content", "run_command", "apply_patch", "create_tool"],
@@ -169,7 +169,7 @@ export function getSettingsSections(): { id: string; label: string; fields: Sett
       id: "model",
       label: "Model Provider",
       fields: [
-        { key: "provider", label: "Provider", type: "select", options: ["ollama", "openrouter", "openai", "custom"] },
+        { key: "provider", label: "Provider", type: "select", options: ["custom", "openrouter", "openai", "ollama"] },
         { key: "model_name", label: "Model Name", type: "text" },
         { key: "base_url", label: "Base URL", type: "text" },
         { key: "api_key_ref", label: "API Key", type: "secret" },

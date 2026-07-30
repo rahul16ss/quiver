@@ -36,6 +36,7 @@ import {
 import * as crypto from "crypto";
 import { getCredential, setCredential, isKeychainAvailable } from "./secrets/keychain.js";
 import { AuditChain } from "./logger.js";
+import { atomicWrite } from "./fs/atomic_write.js";
 
 const QUIVER_FOLDER = "Quiver";
 const NOTICE_FILE = path.join(os.homedir(), ".quiver_cloud_notice_shown");
@@ -473,20 +474,9 @@ export async function cleanupLeakedArtifacts(confirm: boolean): Promise<{
   return { removed, skipped };
 }
 
-/** Atomic write: temp file + fsync + rename (US-4.4). */
-async function atomicWriteFile(filePath: string, data: Buffer): Promise<void> {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  const tmp = filePath + ".tmp-" + crypto.randomBytes(4).toString("hex");
-  const fh = await fs.open(tmp, "w");
-  try {
-    await fh.writeFile(data);
-    await fh.datasync();
-  } finally {
-    await fh.close();
-  }
-  await fs.rename(tmp, filePath);
-}
+// Atomic write is now consolidated onto src/fs/atomic_write.ts (US-10.2).
+// The canonical atomicWrite handles both string and Buffer content with
+// fsync + parent-dir fsync + backup history.
 
 /**
  * Sync inspectable memory to the Quiver cloud data folder.
@@ -569,7 +559,7 @@ export async function syncToCloud(): Promise<{
           }
         }
         const cipher = await encryptBuffer(plain);
-        await atomicWriteFile(cloudPath, cipher);
+        await atomicWrite(cloudPath, cipher);
         result.uploaded.push(`${dir.prefix}/${fileName}`);
       } catch (err: any) {
         result.errors.push({ file: `${dir.prefix}/${fileName}`, error: err.message });

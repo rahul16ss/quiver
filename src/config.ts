@@ -290,7 +290,7 @@ export function needsApprovalFor(
     return !hasGrant("run_command");
   }
 
-  // Everything else (subagent, prompt_update, ralph_loop, continual_learning,
+  // Everything else (subagent, prompt_update, continual_learning,
   // office_doc, etc.) defaults to requiring approval unless YOLO.
   return true;
 }
@@ -298,9 +298,13 @@ export function needsApprovalFor(
 const _parsedAutonomy = parseAutonomy();
 
 export const config: Config = {
-  llmBaseUrl: process.env.LLM_API_BASE_URL || "https://ollama.com/v1",
-  llmModelName: process.env.LLM_MODEL_NAME || "glm-5.2:cloud",
-  llmApiKey: process.env.OLLAMA_API_KEY || "",
+  // Provider-agnostic, env-driven config (US-1.3 revision 2026-07-28):
+  // No model name, base URL, or API key is baked into the source. Quiver
+  // reads everything from .env / the OS keychain so it can target any
+  // OpenAI-compatible provider without code changes.
+  llmBaseUrl: process.env.LLM_API_BASE_URL || "",
+  llmModelName: process.env.LLM_MODEL_NAME || "",
+  llmApiKey: process.env.LLM_API_KEY || "",
   // Local model endpoint (US-17.17 / SPEC §4.3 high-sensitivity escape hatch).
   // When sensitivity routing classifies a turn as "high", the agent routes
   // the model call here instead of the cloud endpoint. Empty = not configured;
@@ -312,7 +316,6 @@ export const config: Config = {
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
   githubToken: process.env.GITHUB_TOKEN || "",
-  ollamaApiKey: process.env.OLLAMA_API_KEY || "",
   cloudSyncPath: process.env.QUIVER_CLOUD_SYNC_PATH || "",
   maxContextTokens: parseInt(
     process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
@@ -354,12 +357,11 @@ export const config: Config = {
     process.env.QUIVER_LOG_RETENTION_DAYS || "30",
     10,
   ),
-  visionModelName: process.env.VISION_MODEL_NAME || "gemma3:4b",
-  visionModelBaseUrl:
-    process.env.VISION_MODEL_BASE_URL || "http://localhost:11434/v1",
+  visionModelName: process.env.VISION_MODEL_NAME || "",
+  visionModelBaseUrl: process.env.VISION_MODEL_BASE_URL || "",
   // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
-  // OLLAMA_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
-  visionModelApiKey: process.env.OLLAMA_API_KEY || "",
+  // LLM_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
+  visionModelApiKey: process.env.LLM_API_KEY || "",
   // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
   // When enabled, the agent surfaces a pre-action summary and WAITS for the
   // user to approve / decline / exclude before the model call. Off by default
@@ -374,8 +376,9 @@ if (_envTier) applyTrustTier(_envTier);
 
 // Config shape is declared after the config object so the source-controlled
 // value assignments below are the first textual occurrence of each key —
-// the product bakes non-empty model-name defaults and reuses a single
-// LLM_API_KEY for the LLM, Ollama, and vision adapters (US-1.3).
+// the product is env-driven (US-1.3 revision 2026-07-28): no model name,
+// base URL, or API key is baked in; the single LLM_API_KEY powers the LLM
+// and vision adapters.
 export interface Config {
   llmBaseUrl: string;
   llmModelName: string;
@@ -387,7 +390,6 @@ export interface Config {
   browserHeadless: boolean;
   autonomyGrants: Set<AutonomyGrant>;
   githubToken: string;
-  ollamaApiKey: string;
   cloudSyncPath: string;
   maxContextTokens: number;
   outputMode: OutputMode;
@@ -438,8 +440,9 @@ export function isFirstRun(): boolean {
 /**
  * Conversational first-run onboarding handshake (US-1.1).
  * Greets the user and offers to capture their API key inline so they can move
- * forward immediately — never a static "run quiver init" dead-end. Model names
- * are source-controlled defaults, so onboarding never asks for a model name.
+ * forward immediately — never a static "run quiver init" dead-end. The model
+ * name and base URL come from .env (provider-agnostic, US-1.3 revision
+ * 2026-07-28), so onboarding never asks for a model name — only the API key.
  */
 export async function runOnboardingHandshake(): Promise<void> {
   const { askQuestion } = await import("./utils/prompt.js");
@@ -450,13 +453,18 @@ export async function runOnboardingHandshake(): Promise<void> {
   );
   console.log(
     picocolors.gray(
-      "  Quiver runs on Ollama and uses a single OLLAMA_API_KEY for the LLM, Ollama, and vision adapters.\n",
+      "  Quiver is provider-agnostic — set LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point at any OpenAI-compatible endpoint.\n",
+    ),
+  );
+  console.log(
+    picocolors.gray(
+      "  A single LLM_API_KEY powers the LLM and vision adapters.\n",
     ),
   );
 
   const key = await ask(
     picocolors.cyan(
-      "  Enter your Ollama API key (or press Enter to skip and configure .env later): ",
+      "  Enter your LLM API key (or press Enter to skip and configure .env later): ",
     ),
   );
   if (key) {
@@ -466,9 +474,8 @@ export async function runOnboardingHandshake(): Promise<void> {
       const { setCredential, isKeychainAvailable } =
         await import("./secrets/keychain.js");
       const keychainOk =
-        isKeychainAvailable() && (await setCredential("OLLAMA_API_KEY", key));
+        isKeychainAvailable() && (await setCredential("LLM_API_KEY", key));
       if (keychainOk) {
-        config.ollamaApiKey = key;
         config.llmApiKey = key;
         console.log(
           picocolors.green(
@@ -479,8 +486,7 @@ export async function runOnboardingHandshake(): Promise<void> {
         // Plaintext .env fallback — warn the user (US-1.3)
         const fs = await import("fs/promises");
         const envPath = path.resolve(".env");
-        await fs.writeFile(envPath, `OLLAMA_API_KEY=${key}\n`, { mode: 0o600 });
-        config.ollamaApiKey = key;
+        await fs.writeFile(envPath, `LLM_API_KEY=${key}\n`, { mode: 0o600 });
         config.llmApiKey = key;
         console.log(
           picocolors.yellow(
@@ -491,14 +497,14 @@ export async function runOnboardingHandshake(): Promise<void> {
     } catch {
       console.log(
         picocolors.yellow(
-          "\n    Could not save API key — add OLLAMA_API_KEY manually later.\n",
+          "\n    Could not save API key — add LLM_API_KEY manually later.\n",
         ),
       );
     }
   } else {
     console.log(
       picocolors.gray(
-        "\n  No problem — add OLLAMA_API_KEY to .env when ready, then run quiver again.\n",
+        "\n  No problem — add LLM_API_KEY to .env when ready, then run quiver again.\n",
       ),
     );
   }

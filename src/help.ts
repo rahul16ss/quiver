@@ -28,8 +28,8 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
   "GitHub": ["github"],
   "Planning": ["todo_write", "ask_question"],
   "Self-Improvement": ["prompt_update"],
-  "Iteration": ["ralph_loop"],
-  "Agents": ["subagent"],
+  "Quality": ["bar_critic"],
+  "Agents": ["subagent", "gauntlet"],
 };
 
 type ToolDisplay = { name: string; displayName: string; description: string };

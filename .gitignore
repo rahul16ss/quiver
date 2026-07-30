@@ -25,7 +25,7 @@ release/
 *.key
 *.p12
 *.pfx
-secrets/
+/secrets/
 .env.local
 
 # ─── Local runtime state (never commit user data) ─────────────────────
@@ -83,10 +83,8 @@ docs/security/
 docs/qa/
 tests/ACCEPTANCE_CONTRACT.md
 
-# ─── GitHub Actions (requires workflow scope on PAT) ───────────────────
-# Remove this line once your GitHub PAT has the 'workflow' scope added,
-# then: git add .github/ && git commit && git push
-.github/workflows/release.yml
+# ─── GitHub Actions ────────────────────────────────────────────────────
+# (was gitignored pending workflow scope on PAT — now tracked)
 
 # ─── Per-developer agent config (same class as .vscode/.idea/.cursor) ─
 .claude/

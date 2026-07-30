@@ -178,18 +178,5 @@ export class FileReadHistory {
 }
 
 // ─── Helper: Quick Hash ──────────────────────────────────────────────
-
-/**
- * Compute SHA-256 hash of a file's content.
- */
-export async function hashFile(filePath: string): Promise<string> {
-  const content = await fs.readFile(filePath);
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
-
-/**
- * Compute SHA-256 hash of a string.
- */
-export function hashString(content: string): string {
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
+// hashFile / hashString were removed — zero callers in the codebase.
+// If hashing is needed, use crypto.createHash("sha256") directly.

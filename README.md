@@ -107,12 +107,13 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 
 ## Data handling
 
-Be precise: by default the primary model is served from a cloud endpoint
-(`https://ollama.com/v1`), so prompt content — including file content the workflow
-reads — is sent to that provider. Memory, sessions, documents, and the audit log
-live in files on your machine. Local model endpoints are supported and can be
-configured where an engagement requires it. Web research tools call external
-services only when used. There is no telemetry.
+Be precise: the model endpoint is configured by the user via `LLM_API_BASE_URL`
+(no baked-in default). If set to a cloud provider, prompt content — including
+file content the workflow reads — is sent to that provider. Memory, sessions,
+documents, and the audit log live in files on your machine. Local model
+endpoints are supported and can be configured where an engagement requires it.
+Web research tools call external services only when used. There is no
+telemetry.
 
 **Data handling and model use are configured around the workflow's sensitivity.**
 Do not treat the defaults as a confidentiality guarantee.
@@ -158,9 +159,11 @@ quiver             # start a session
 ```
 
 Configuration is a small, fixed set of environment variables (see `.env.example`).
-`OLLAMA_API_KEY` powers the primary LLM and vision adapters; `PARALLEL_API_KEY`
-(optional) powers web research. API keys can be stored in the OS keychain. Model
-names are source-controlled in `src/config.ts`.
+`LLM_API_KEY` powers the primary LLM and vision adapters; `PARALLEL_API_KEY`
+(optional) powers web research. API keys can be stored in the OS keychain. Quiver
+is provider-agnostic — no model name, base URL, or API key is baked into the source;
+set `LLM_API_BASE_URL` and `LLM_MODEL_NAME` in `.env` to point at any
+OpenAI-compatible endpoint.
 
 ## Development
 
@@ -171,7 +174,7 @@ npm run demo:ic-memo # Flagship workflow + acceptance checks
 ```
 
 The acceptance contract (`tests/spec_acceptance_tests.ts`) is a single checker-owned
-file of 365 behavioral assertions. It verifies both spec compliance and that modules
+file of behavioral assertions (re-run `npm test` for the live count). It verifies both spec compliance and that modules
 are actually wired into the agent loop and tools — not just that the code exists.
 `npm test` is the only live verdict — re-run it before trusting any status text.
 See `tests/ACCEPTANCE_CONTRACT.md` and `docs/testing.md`.

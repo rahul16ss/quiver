@@ -66,7 +66,7 @@ const fail = (s) => { notes.push("✗ " + s); console.log("✗ " + s); };
 try {
   // Onboarding with the REAL key (password field — masked in screenshot)
   await wait("document.getElementById('onbKey') !== null", 25000);
-  await setVal("onbKey", process.env.OLLAMA_API_KEY || "");
+  await setVal("onbKey", process.env.LLM_API_KEY || "");
   await click("onbStartBtn");
   await wait("document.querySelectorAll('#ctxMemList .ctx-item').length > 0", 20000);
   await sleep(800); await shot("real_01_main");

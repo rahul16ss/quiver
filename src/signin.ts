@@ -22,8 +22,8 @@ export async function runSignin(): Promise<void> {
     dim("Your local Ollama daemon will auto-authenticate cloud requests.");
 
     if (!id.hasApiKey) {
-      warn("OLLAMA_API_KEY is not set in .env.");
-      dim("For direct API access (without local daemon), create a key at https://ollama.com/settings/keys then add it to .env as OLLAMA_API_KEY=...");
+      warn("LLM_API_KEY is not set in .env.");
+      dim("For direct API access (without local daemon), create a key at https://ollama.com/settings/keys then add it to .env as LLM_API_KEY=...");
     }
     return;
   }
@@ -31,7 +31,7 @@ export async function runSignin(): Promise<void> {
   if (!id.hasBinary) {
     warn("Ollama binary not found on this machine.");
     dim("Install Ollama first: https://ollama.com/download — then run: quiver signin");
-    dim("Alternatively, create an API key at https://ollama.com/settings/keys and add OLLAMA_API_KEY=your_key to .env");
+    dim("Alternatively, create an API key at https://ollama.com/settings/keys and add LLM_API_KEY=your_key to .env");
     return;
   }
 

@@ -170,6 +170,7 @@ const exposedApi = {
   // Workspace / Verification
   runTests: () => safeInvoke("workspace:runTests"),
   selectWorkspaceDir: () => safeInvoke("workspace:selectDir"),
+  rerunWorkflow: () => safeInvoke("workflow:rerun"),
 
   // Credentials (OS keychain — used by onboarding to store the API key securely)
   settingsSetCredential: (key: string, value: string) =>

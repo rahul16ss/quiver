@@ -60,7 +60,8 @@ export interface Tool {
 
 ### Agent Orchestration
 - `subagent` — Spawn isolated agent processes
-- `ralph_loop` — Iterative self-referential development loop (still available for explicit persistent goals; ambient goal-seeking is now the default harness behavior — see US-13.5)
+- `gauntlet` — Parallel builder+critic fan-out: split a goal into pieces, each gets its own builder subagent + bar_critic comparison against the benchmark (SPEC §10.2)
+- `bar_critic` — Structural bar-comparison of a draft against a benchmark deliverable in `.quiver/benchmark/`. Actions: `compare` (run comparison), `status` (check if benchmark configured), `list` (list benchmarks). Opt-in per engagement; no-op without a benchmark (SPEC §10.1)
 - `todo_write` — Manage task checklists
 - `ask_question` — Ask user clarifying questions
 

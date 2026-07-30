@@ -473,12 +473,13 @@ export async function processImageMarkers(
  * Only the most recent user message is checked — not historical messages.
  *
  * This is critical: if we checked ALL messages, then once a user ever sends
- * an image, ALL subsequent turns would be routed to the vision model (Gemma 4)
- * instead of the primary model (GLM-5.2). Gemma 4 has a smaller context window
- * and different capabilities, so routing everything to it causes:
- *   - Context overflow crashes (Gemma can't handle 50K token context)
+ * an image, ALL subsequent turns would be routed to the vision model
+ * instead of the primary model. If the vision model differs from
+ * the primary model, it may have a smaller context window and different
+ * capabilities, so routing everything to it causes:
+ *   - Context overflow crashes (vision model can't handle 50K token context)
  *   - Silent hangs (Ollama crashes processing oversized context)
- *   - Degraded responses (Gemma is a smaller model than GLM-5.2)
+ *   - Degraded responses (vision model may be smaller than the primary model)
  *
  * By checking only the latest user message, we ensure that:
  *   - Turns with images → routed to vision model

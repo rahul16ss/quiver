@@ -25,7 +25,7 @@
       <h2>Model Provider</h2>
       <p class="settings-help">The AI engine Quiver uses. Most people can leave this as is.</p>
       <label>Model <input id="modelName" class="field" placeholder="The model name" /></label>
-      <label>Provider address <input id="baseUrl" class="field" placeholder="https://ollama.com/v1" /></label>
+      <label>Provider address <input id="baseUrl" class="field" placeholder="https://your-provider.example/v1" /></label>
       <label>Workspace folder
         <span class="field-row">
           <input id="workspacePath" class="field" placeholder="Where Quiver does its work" />
@@ -42,7 +42,7 @@
     <section class="settings-section">
       <h2>API Credentials</h2>
       <p class="settings-help">Your keys are stored securely and never shared.</p>
-      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="The key from your Ollama account" /></label>
+      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your LLM API key" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
       <details class="settings-advanced">
         <summary>Advanced</summary>
@@ -55,7 +55,7 @@
       <h2>Vision Model</h2>
       <p class="settings-help">Used when you attach an image. Quiver reads images using the configured vision model.</p>
       <label>Vision model <input id="visionModelName" class="field" placeholder="The model that reads images" /></label>
-      <label>Vision model address <input id="visionModelBaseUrl" class="field" placeholder="http://localhost:11434/v1" /></label>
+      <label>Vision model address <input id="visionModelBaseUrl" class="field" placeholder="https://your-vision-provider.example/v1" /></label>
     </section>
 
     <!-- Approvals -->

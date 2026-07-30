@@ -38,23 +38,23 @@ export interface ModelInfo {
 
 ### OpenAICompatibleProvider
 Works with any OpenAI-compatible API endpoint:
-- Ollama cloud (`https://ollama.com/v1` — the source-controlled default endpoint)
-- Ollama (local)
+- Ollama (local or cloud)
 - OpenRouter (cloud)
 - OpenAI (cloud)
 - Any `/v1/chat/completions` compatible endpoint
 
-Configuration via `.env`:
-- `LLM_API_BASE_URL` — Provider endpoint (default: `https://ollama.com/v1`)
-- `LLM_MODEL_NAME` — Model name (source-controlled default `glm-5.2:cloud` in `src/config.ts`; override only)
-- `OLLAMA_API_KEY` — API key (optional for local; the single key for the LLM, Ollama, and vision adapters)
+Quiver is provider-agnostic — no model name, base URL, or API key is baked into
+the source. Configure via `.env`:
+- `LLM_API_BASE_URL` — Provider endpoint (no baked default; set to any OpenAI-compatible endpoint)
+- `LLM_MODEL_NAME` — Model name (no baked default; set in .env)
+- `LLM_API_KEY` — API key (the single key for the LLM and vision adapters; stored in keychain when available)
 
 ## Vision Provider
 
 Separate provider for multimodal/vision routing. It reuses the single
-`OLLAMA_API_KEY` (no separate vision key required):
-- `VISION_MODEL_NAME` — Vision model name (source-controlled default; override only)
-- `VISION_MODEL_BASE_URL` — Vision endpoint (default: `http://localhost:11434/v1`)
+`LLM_API_KEY` (no separate vision key required):
+- `VISION_MODEL_NAME` — Vision model name (no baked default; leave empty to disable vision)
+- `VISION_MODEL_BASE_URL` — Vision endpoint (no baked default)
 
 ## Streaming Events
 

@@ -15,14 +15,14 @@ $("onbStartBtn").addEventListener("click", async () => {
       let inKeychain = false;
       if (typeof api.settingsSetCredential === "function") {
         try {
-          inKeychain = await api.settingsSetCredential("OLLAMA_API_KEY", key);
+          inKeychain = await api.settingsSetCredential("LLM_API_KEY", key);
         } catch {
           inKeychain = false;
         }
       }
       // Also mirror into the config so the agent process picks it up this session.
       const config = await api.loadConfig();
-      config.ollamaApiKey = key;
+      config.llmApiKey = key;
       config.provider = config.provider || {};
       config.provider.apiKey = key;
       await api.saveConfig(config);

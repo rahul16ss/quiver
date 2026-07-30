@@ -1,0 +1,35 @@
+---
+name: Bug report
+about: Report a bug in Quiver
+title: "[BUG] "
+labels: bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Quiver version
+      description: Output of `quiver --version` or package.json version
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Console output, error messages (no secrets)
+    validations:
+      required: false
+---

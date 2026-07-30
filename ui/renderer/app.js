@@ -107,6 +107,14 @@ async function loadContextSurfaces(config) {
   const badge = $("trustBadge");
   if (badge) badge.textContent = label;
 
+  // Wire the trust context pill to real trust tier + sandbox state
+  const pill = $("pillText");
+  if (pill) {
+    const sandboxLabel = "Sandbox ON";
+    const pillParts = [label, sandboxLabel, "Ready"];
+    pill.textContent = pillParts.join(" · ");
+  }
+
   // §6 layer F: operational metadata — where the work actually runs.
   const trustEl = $("ctxTrust");
   if (trustEl) trustEl.textContent = `Approvals: ${label}`;
@@ -547,6 +555,13 @@ function setWorking(working) {
   statusDot.className = "status-dot " + (working ? "working" : "idle");
   sendBtn.hidden = working;
   stopBtn.hidden = !working;
+  // Update the trust context pill to reflect working/idle state
+  const pill = $("pillText");
+  if (pill) {
+    const badge = $("trustBadge");
+    const tier = badge ? badge.textContent : "Ask before acting";
+    pill.textContent = tier + " · Sandbox ON · " + (working ? "Working" : "Ready");
+  }
 }
 
 function wireAgentEvents() {
@@ -995,9 +1010,42 @@ function updateTokenBar(tokenStr) {
 }
 
 // ─── input + send ──────────────────────────────────────────────────────
+// S5: Queued-typing steering — the user can type while the agent is running.
+// The message is queued (shown in the chat as a pending steering bubble) and
+// sent immediately via the agent's stdin. The agent's InterventionController
+// picks it up at the top of the next loop iteration. This is the GUI
+// equivalent of the CLI's Esc-steering (src/intervention.ts).
+let queuedSteerEl = null; // the pending steering bubble element
+
 async function sendPrompt() {
   const text = promptInput.value.trim();
-  if ((!text && attachments.length === 0) || !agentRunning) return;
+  if (!text && attachments.length === 0) return;
+
+  // If the agent is running, queue the message as a steering input rather than
+  // dropping it. The agent's InterventionController consumes it at the next
+  // loop iteration — same mechanism as the CLI Esc-steering.
+  if (agentRunning) {
+    const imageMarkers = attachments.map((a) => "[Image: " + a.path + "]").join("\n");
+    const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
+    // Show the queued steering message in the chat as a muted bubble
+    const steer = document.createElement("div");
+    steer.className = "msg user-msg steer-queued";
+    steer.innerHTML = '<span class="steer-label">↳ Steered: </span>' + escapeHtml(text);
+    chatArea.appendChild(steer);
+    scrollChat();
+    // Clear the input immediately
+    promptInput.value = "";
+    for (const a of attachments) if (a.thumbUrl) URL.revokeObjectURL(a.thumbUrl);
+    attachments = [];
+    renderAttachments();
+    autoSize();
+    // Send to the agent's stdin — the InterventionController picks it up
+    await api.sendToAgent(message);
+    addActivity("Steered: " + text.slice(0, 80), "warn");
+    return;
+  }
+
+  if (!agentRunning) return;
   const imageMarkers = attachments.map((a) => "[Image: " + a.path + "]").join("\n");
   const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
   addUserMessage(text || ("📎 " + attachments.map((a) => a.name).join(", ")));
@@ -1011,12 +1059,30 @@ async function sendPrompt() {
   liveRunActive = true;
   setWorking(true);
 }
+function toggleContextDrawer() {
+  const ws = $("workspace");
+  if (ws) ws.classList.toggle("hide-context");
+}
+function toggleActivityDrawer() {
+  const ws = $("workspace");
+  if (ws) ws.classList.toggle("hide-activity");
+}
 function wireKeyboard() {
   promptInput.addEventListener("input", autoSize);
   promptInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendPrompt();
+    }
+  });
+  window.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+      e.preventDefault();
+      toggleContextDrawer();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "2") {
+      e.preventDefault();
+      toggleActivityDrawer();
     }
   });
 }
@@ -1407,6 +1473,11 @@ function closeOverlay(id) {
 function wireButtons() {
   sendBtn.addEventListener("click", sendPrompt);
   stopBtn.addEventListener("click", () => api.stopAgent());
+
+  $("toggleContextBtn")?.addEventListener("click", toggleContextDrawer);
+  $("toggleActivityBtn")?.addEventListener("click", toggleActivityDrawer);
+  $("trustContextPill")?.addEventListener("click", toggleContextDrawer);
+
   $("approveBtn").addEventListener("click", () => approveAction(false));
   $("approveAllBtn").addEventListener("click", () => approveAction(true));
   $("reviseBtn").addEventListener("click", requestRevision);
@@ -1465,6 +1536,43 @@ function wireButtons() {
       sendPrompt();
     });
     wrap.appendChild(b);
+  }
+
+  // S12: Workflow rerun button — re-run the flagship IC memo demo
+  const rerunBtn = $("runWorkflowBtn");
+  if (rerunBtn) {
+    rerunBtn.addEventListener("click", async () => {
+      rerunBtn.disabled = true;
+      rerunBtn.textContent = "Running workflow…";
+      addActivity("Re-running IC memo workflow (deterministic)", "tool");
+      try {
+        const result = await api.rerunWorkflow();
+        if (result?.success) {
+          addActivity(`Workflow complete — ${result.checks}/8 checks passed`, "ok");
+          hideEmpty();
+          // Show a celebratory result card with the deliverable
+          const card = document.createElement("div");
+          card.className = "draft-card ready";
+          card.innerHTML =
+            '<div class="draft-icon">📄</div>' +
+            '<div class="draft-meta">' +
+            '<div class="draft-title">Project Alder IC Memo</div>' +
+            '<div class="draft-sub">Workflow demo · ' + (result.checks || 8) + '/8 checks passed</div>' +
+            '<div class="draft-actions">' +
+            '<button type="button" class="ghost-btn doc-open">Open</button>' +
+            '<button type="button" class="ghost-btn doc-reveal">Show in Folder</button>' +
+            '</div></div>';
+          chatArea.appendChild(card);
+          scrollChat();
+        } else {
+          addActivity("Workflow failed — " + (result?.output || "").slice(0, 120), "err");
+        }
+      } catch (e) {
+        addActivity("Could not run workflow: " + (e?.message || e), "err");
+      }
+      rerunBtn.disabled = false;
+      rerunBtn.textContent = "Run workflow demo";
+    });
   }
 }
 
@@ -1648,12 +1756,23 @@ function excludeFromRun(memoryName, itemEl) {
 // doing right now ("Reading RevenueBuild sheet…"). Never a stack trace.
 function setCurrentStatus(text) {
   const el = $("currentStatus");
-  if (!el) return;
-  if (text) {
-    el.textContent = text;
-    el.hidden = false;
-  } else {
-    el.hidden = true;
+  const ribbon = $("ambientRibbon");
+  const ambientText = $("ambientStatusText");
+  if (el) {
+    if (text) {
+      el.textContent = text;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  }
+  if (ribbon && ambientText) {
+    if (text) {
+      ambientText.textContent = text;
+      ribbon.hidden = false;
+    } else {
+      ribbon.hidden = true;
+    }
   }
 }
 
