@@ -7794,14 +7794,14 @@ async function extendedCapabilitiesContract() {
   await check(
     "BUYER-SUMMARY-IN-README",
     "P0 / README",
-    "README.md must include What Quiver demonstrates technical summary list",
+    "README.md must include What Quiver is section detailing core principles",
     () => {
       const readme = srcText("README.md");
-      const hasHeader = /### What Quiver demonstrates/.test(readme);
-      const hasControlledInputs = /Controlled inputs/.test(readme);
-      const hasNativeDoc = /Native document generation/.test(readme);
+      const hasHeader = /## 1. What Quiver is/.test(readme);
+      const hasControlledInputs = /Controlled context & approved inputs/.test(readme);
+      const hasNativeDoc = /Native Office output/.test(readme);
       const hasEvidence = /Inspectable evidence/.test(readme);
-      const hasReview = /Human reviewer sign-off/.test(readme);
+      const hasReview = /Reviewer-in-the-loop sign-off/.test(readme);
       return hasHeader && hasControlledInputs && hasNativeDoc && hasEvidence && hasReview;
     },
   );

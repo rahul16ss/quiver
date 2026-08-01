@@ -13,7 +13,7 @@ For commercial engagements, custom workflow packs, and team training, see [Convi
 Quiver helps investment, advisory, and wealth management teams build inspection-ready deliverables in the Office formats they already use. Rather than relying on generic chat outputs, Quiver enforces:
 
 - **Controlled context & approved inputs**: Workflows operate within declared file and data boundaries.
-- **Inspectable evidence**: Important figures link directly to source cell coordinates or filing pages.
+- **Inspectable evidence**: Important figures can be connected to Excel cell coordinates, document pages, sections or URLs—or flagged for review.
 - **Native Office output**: Drafts land in Word (`.docx`), Excel (`.xlsx`), or PowerPoint (`.pptx`).
 - **Reviewer-in-the-loop sign-off**: Output remains a draft until a human reviewer approves or flags items.
 
@@ -30,15 +30,6 @@ Quiver includes executable reference workflow pipelines across three families:
 | **Portfolio review pack** | HTML portfolio pack plus review artifacts | `npm run demo:portfolio-review` |
 
 > **Note**: Project Alder (`demo:ic-memo`) is the most complete native-Office reference workflow. The Research and Wealth examples demonstrate the shared evidence, verification, and review pattern using synthetic fixtures.
-
-### What Quiver demonstrates
-
-- Controlled inputs and declared source boundaries
-- Native document generation matching house templates
-- Inspectable evidence trails connecting claims to source data
-- Explicit unresolved items and risk escalation checklist
-- Human reviewer sign-off and audit logging
-- Reproducible automated acceptance checks
 
 ---
 
@@ -75,7 +66,7 @@ npm run demo:portfolio-review
 
 ## 5. Data handling
 
-Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported and can be configured where an engagement requires zero remote transmission. Memory, sessions, documents, and the audit log live in files on your machine. There is no telemetry.
+Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no telemetry.
 
 ### Recommended finance-client deployment configuration
 
@@ -84,7 +75,7 @@ For institutional deployments, Quiver supports a hardened operational posture:
 - **Enabled**: Approved file access, Office document tools, evidence tracking, review gates, local audit logging.
 - **Disabled by default**: Arbitrary shell execution, unapproved tool servers, dynamic tool creation, automatic background cloud sync.
 
-See [profiles/finance-client/README.md](file:///Users/rahul/quiver/profiles/finance-client/README.md) for detailed configuration guidance.
+See [profiles/finance-client/README.md](profiles/finance-client/README.md) for detailed configuration guidance.
 
 ---
 
@@ -99,7 +90,7 @@ See [profiles/finance-client/README.md](file:///Users/rahul/quiver/profiles/fina
 | **Desktop App** | Electron GUI for chat, context inspection, and reviewer sign-off |
 | **Reference Workflows** | Executable demo pipelines for dealmaking, research, and wealth |
 
-For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](file:///Users/rahul/quiver/docs/capabilities.md).
+For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](docs/capabilities.md).
 
 ---
 
