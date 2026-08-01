@@ -7825,5 +7825,33 @@ async function extendedCapabilitiesContract() {
       return hasFamiliesHeader && hasResearch && hasDealmaking && hasWealth && comesBeforeFlagship;
     },
   );
+
+  await check(
+    "BUYER-SUMMARY-IN-README",
+    "P0 / README",
+    "README.md must include a 5-point buyer summary section for commercial evaluation",
+    () => {
+      const readme = srcText("README.md");
+      const hasHeader = /## For commercial buyers: 5-minute summary/.test(readme);
+      const hasSources = /Approved information sources/.test(readme);
+      const hasDeliverables = /Native Office deliverables/.test(readme);
+      const hasEvidence = /Inspectable figures & evidence/.test(readme);
+      const hasReview = /Human review & approval gate/.test(readme);
+      const hasHandover = /Team operation & handover/.test(readme);
+      return hasHeader && hasSources && hasDeliverables && hasEvidence && hasReview && hasHandover;
+    },
+  );
+
+  await check(
+    "FINANCE-CLIENT-PROFILE-DOCUMENTED",
+    "P0 / README",
+    "README.md must document the hardened finance-client deployment profile",
+    () => {
+      const readme = srcText("README.md");
+      const hasHeader = /finance-client/.test(readme);
+      const hasDisabled = /Disabled by default/.test(readme);
+      return hasHeader && hasDisabled;
+    },
+  );
 }
 

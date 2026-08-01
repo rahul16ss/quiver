@@ -76,6 +76,23 @@ same pattern is configured for real engagements.
 6. **Model independence** — Workflow context and process should not disappear when
    the model provider changes.
 
+## For commercial buyers: 5-minute summary
+
+If you are evaluating Quiver for an investment, advisory, or wealth team, here are the five core answers:
+
+1. **Approved information sources** — Works with internal files, licensed data exports, and public filings. Data boundaries and approved sources are agreed per workflow before drafting begins.
+2. **Native Office deliverables** — Drives Word (.docx), Excel (.xlsx), and PowerPoint (.pptx) natively matching your firm's templates and styling.
+3. **Inspectable figures & evidence** — Quantitative figures link directly to source cells in Excel or page excerpts in filings/transcripts for rapid verification.
+4. **Human review & approval gate** — All generated output remains a draft. Senior reviewers inspect flagged items, override interpretations, and sign off before final release.
+5. **Team operation & handover** — Handed over with operating runbooks, acceptance criteria, and user training so your analysts run and adapt the process autonomously.
+
+### Hardened deployment profile: `finance-client`
+
+For institutional clients requiring strict operational boundaries, Quiver supports a hardened `finance-client` deployment profile:
+- **Enabled**: Native Office document tools, evidence map tracking, approved retrieval connectors, and human review approval gates.
+- **Disabled by default**: Arbitrary shell execution, runtime tool creation, unapproved external tool servers, and background cloud sync.
+- **Deployment note**: Client teams do not need to install developer dependencies during discovery; deployment and environment setup are fully scoped as part of the sprint engagement.
+
 ## Current capability status
 
 Honest status as of this release. Do not infer more from the docs than this table states.
