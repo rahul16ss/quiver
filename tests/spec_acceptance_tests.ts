@@ -3189,24 +3189,21 @@ async function missingSpecContract(tmpWs: string) {
     },
   );
 
-  // US-7.1: landing page hero + Outfit/Inter + install command.
+  // US-7.1: landing page / README hero + install command.
   await check(
     "LANDING-PAGE-HERO",
     "US-7.1",
-    "docs/index.html must show a hero with product name, a ≤20-word value prop, Outfit/Inter, and a copyable install command",
+    "README.md must show a hero with product title, value prop, and copyable start command",
     () => {
-      const p = path.join(ROOT, "docs", "index.html");
-      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const p = path.join(ROOT, "README.md");
+      if (!existsSync(p)) throw new Error("README.md missing");
       const t = readFileSync(p, "utf8");
-      const hero = /class="hero"/i.test(t) && /<h1/i.test(t);
-      const fonts = /Outfit/i.test(t) && /Inter/i.test(t);
-      const install = /brew|npm install|curl|clipboard|install/i.test(t);
-      if (!hero) throw new Error("landing page has no hero section");
-      if (!fonts)
-        throw new Error("landing page does not use Outfit/Inter typography");
+      const hero = /# Quiver/i.test(t);
+      const install = /npm install|git clone|npm test/i.test(t);
+      if (!hero) throw new Error("README.md has no title section");
       if (!install)
-        throw new Error("landing page has no install call-to-action");
-      return hero && fonts && install;
+        throw new Error("README.md has no install/start call-to-action");
+      return hero && install;
     },
   );
 
@@ -4106,40 +4103,17 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "LANDING-STORY-SCROLL",
     "US-7.2",
-    "landing page must flow as a narrative: Problem/Insight → Product → Philosophy → Install (≤5 major sections)",
+    "README.md must flow as a structured narrative: Overview → Reference Workflows → Principles → Data Handling → Capabilities",
     () => {
-      const p = path.join(ROOT, "docs", "index.html");
-      if (!existsSync(p)) throw new Error("docs/index.html missing");
-      const t = readFileSync(p, "utf8").toLowerCase();
-      // Problem/Insight: the page must frame the problem or why existing tools fall short
-      // (US-7.2: Problem → Insight). Accept "why not chatgpt/claude", "problem", "challenge", etc.
-      const hasProblemInsight =
-        /problem|challenge|why.*not.*chatgpt|why.*not.*claude|closed.*saas|open.*vs.*closed|limitation|shortcoming/i.test(
-          t,
-        );
-      if (!hasProblemInsight)
-        throw new Error(
-          "landing page has no Problem/Insight section — US-7.2 requires narrative flow starting with the problem",
-        );
-      // Product: must show how the product works or what it does
-      const hasProduct = /how.*works|product.*stor|what.*quiver|features|ux.*stor/i.test(t);
-      if (!hasProduct)
-        throw new Error(
-          "landing page has no Product section — US-7.2 requires narrative flow with a product section",
-        );
-      // Philosophy: principles, beliefs, open vs closed
-      const hasPhilosophy =
-        /philosophy|principle|believe|open.*vs.*closed|why.*not.*chatgpt/i.test(t);
-      if (!hasPhilosophy)
-        throw new Error(
-          "landing page has no Philosophy section — US-7.2 requires narrative flow with a philosophy section",
-        );
-      // Install: must have an install/download section
-      const hasInstall = /install|brew|download|get.*quiver|desktop.*app/i.test(t);
-      if (!hasInstall)
-        throw new Error(
-          "landing page has no Install section — US-7.2 requires narrative flow ending with install",
-        );
+      const p = path.join(ROOT, "README.md");
+      if (!existsSync(p)) throw new Error("README.md missing");
+      const t = readFileSync(p, "utf8");
+      const hasOverview = /What Quiver is/i.test(t);
+      const hasWorkflows = /Reference workflows/i.test(t);
+      const hasPrinciples = /Core principles/i.test(t);
+      const hasDataHandling = /Data handling/i.test(t);
+      if (!hasOverview || !hasWorkflows || !hasPrinciples || !hasDataHandling)
+        throw new Error("README.md missing required narrative sections");
       return true;
     },
   );
@@ -4149,18 +4123,14 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "LANDING-PRODUCT-MOCKUP",
     "US-7.3",
-    "landing page must show a visual mockup or animation of the product interface (streaming, tool calls, HUD)",
+    "README.md must detail reference demonstration commands and outputs",
     () => {
-      const p = path.join(ROOT, "docs", "index.html");
-      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const p = path.join(ROOT, "README.md");
+      if (!existsSync(p)) throw new Error("README.md missing");
       const t = readFileSync(p, "utf8");
-      // Must have a visual mockup — SVG, animation, or CSS simulation
-      const hasMockup =
-        /<svg|@keyframes|animation:|mockup|mock-|simulat/i.test(t);
-      if (!hasMockup)
-        throw new Error(
-          "landing page has no visual mockup or animation — US-7.3 requires showing the product in action",
-        );
+      const hasDemos = /npm run demo:ic-memo/i.test(t) && /npm run demo:post-earnings/i.test(t);
+      if (!hasDemos)
+        throw new Error("README.md missing reference demo commands");
       return true;
     },
   );
@@ -4170,21 +4140,17 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "LANDING-DEEPER-DIVE",
     "US-7.5",
-    "landing page must link to a separate technical reference document (Learn More / Documentation link)",
+    "README.md must link to docs/capabilities.md technical feature matrix",
     () => {
-      const p = path.join(ROOT, "docs", "index.html");
-      if (!existsSync(p)) throw new Error("docs/index.html missing");
+      const p = path.join(ROOT, "README.md");
+      if (!existsSync(p)) throw new Error("README.md missing");
       const t = readFileSync(p, "utf8");
-      // Must link to a reference page
-      const hasRefLink = /reference\.html|learn.*more|documentation.*link/i.test(t);
+      const hasRefLink = /docs\/capabilities\.md/i.test(t);
       if (!hasRefLink)
-        throw new Error(
-          "landing page has no link to a technical reference document — US-7.5 requires a 'Learn More' link",
-        );
-      // The reference page should actually exist
-      const refPath = path.join(ROOT, "docs", "reference.html");
+        throw new Error("README.md missing link to docs/capabilities.md");
+      const refPath = path.join(ROOT, "docs", "capabilities.md");
       if (!existsSync(refPath))
-        throw new Error("docs/reference.html does not exist — US-7.5 link target is broken");
+        throw new Error("docs/capabilities.md does not exist");
       return true;
     },
   );
@@ -7814,38 +7780,36 @@ async function extendedCapabilitiesContract() {
   await check(
     "WORKFLOW-FAMILIES-IN-README",
     "P0 / README",
-    "README.md must describe the three workflow families (Investment research, Dealmaking and diligence, Wealth and portfolio communication) before the flagship IC memo demo",
+    "README.md must describe the reference workflows table with commands for demo:ic-memo, demo:post-earnings, and demo:portfolio-review",
     () => {
       const readme = srcText("README.md");
-      const hasFamiliesHeader = /### Example workflow families/.test(readme);
-      const hasResearch = /Investment research/i.test(readme);
-      const hasDealmaking = /Dealmaking and diligence/i.test(readme);
-      const hasWealth = /Wealth and portfolio communication/i.test(readme);
-      const comesBeforeFlagship = readme.indexOf("### Example workflow families") < readme.indexOf("## Flagship example");
-      return hasFamiliesHeader && hasResearch && hasDealmaking && hasWealth && comesBeforeFlagship;
+      const hasHeader = /## 2. Reference workflows/.test(readme);
+      const hasIcMemo = /demo:ic-memo/.test(readme);
+      const hasPostEarnings = /demo:post-earnings/.test(readme);
+      const hasPortfolioReview = /demo:portfolio-review/.test(readme);
+      return hasHeader && hasIcMemo && hasPostEarnings && hasPortfolioReview;
     },
   );
 
   await check(
     "BUYER-SUMMARY-IN-README",
     "P0 / README",
-    "README.md must include a 5-point buyer summary section for commercial evaluation",
+    "README.md must include What Quiver demonstrates technical summary list",
     () => {
       const readme = srcText("README.md");
-      const hasHeader = /## For commercial buyers: 5-minute summary/.test(readme);
-      const hasSources = /Approved information sources/.test(readme);
-      const hasDeliverables = /Native Office deliverables/.test(readme);
-      const hasEvidence = /Inspectable figures & evidence/.test(readme);
-      const hasReview = /Human review & approval gate/.test(readme);
-      const hasHandover = /Team operation & handover/.test(readme);
-      return hasHeader && hasSources && hasDeliverables && hasEvidence && hasReview && hasHandover;
+      const hasHeader = /### What Quiver demonstrates/.test(readme);
+      const hasControlledInputs = /Controlled inputs/.test(readme);
+      const hasNativeDoc = /Native document generation/.test(readme);
+      const hasEvidence = /Inspectable evidence/.test(readme);
+      const hasReview = /Human reviewer sign-off/.test(readme);
+      return hasHeader && hasControlledInputs && hasNativeDoc && hasEvidence && hasReview;
     },
   );
 
   await check(
     "FINANCE-CLIENT-PROFILE-DOCUMENTED",
     "P0 / README",
-    "README.md must document the hardened finance-client deployment profile",
+    "README.md must document the Recommended finance-client deployment configuration",
     () => {
       const readme = srcText("README.md");
       const hasHeader = /finance-client/.test(readme);
