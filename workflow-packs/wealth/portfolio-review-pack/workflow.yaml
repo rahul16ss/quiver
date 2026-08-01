@@ -1,0 +1,41 @@
+# Workflow definition for wealth portfolio review pack.
+name: portfolio-review-pack
+family: wealth
+version: 1.0.0
+maturity: discovery-stage
+status: illustrative
+
+business_purpose: >
+  Produce a client-ready quarterly portfolio review pack covering asset allocation,
+  performance attribution, risk exposures, manager updates, and rebalancing commentary.
+
+output_template: template/portfolio-review-template.xlsx
+
+allowed_inputs:
+  - sample-inputs/portfolio-holdings.csv
+  - sample-inputs/benchmark-returns.xlsx
+  - sample-inputs/risk-summary.json
+  - sample-inputs/manager-notes.md
+
+retrieval:
+  mode: static
+  network_access: optional
+
+data_sensitivity: client-confidential
+
+deliverable_sections:
+  - Executive portfolio summary
+  - Asset allocation & rebalancing targets
+  - Performance attribution by asset class
+  - Risk & drawdown exposure metrics
+  - Manager research notes & outlook
+
+review_role: >
+  Wealth Manager / Investment Advisor sign-off.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  review_xlsx: expected-output/Portfolio_Review_Pack.xlsx
+  run_record: expected-output/Run_Record.json

@@ -1,0 +1,41 @@
+# Workflow definition for investment research post-earnings evidence pack.
+name: post-earnings-evidence-pack
+family: research
+version: 1.0.0
+maturity: discovery-stage
+status: illustrative
+
+business_purpose: >
+  Produce a post-results evidence pack covering reported figures, KPI movements,
+  management commentary, consensus variances, thesis changes, and PM questions.
+
+output_template: template/earnings-pack-template.html
+
+allowed_inputs:
+  - sample-inputs/earnings-release.md
+  - sample-inputs/q-transcript.md
+  - sample-inputs/model-update.xlsx
+  - sample-inputs/consensus-export.csv
+
+retrieval:
+  mode: static
+  network_access: optional
+
+data_sensitivity: public
+
+deliverable_sections:
+  - Executive result summary
+  - Key financial metrics & consensus delta
+  - Management commentary analysis
+  - Thesis & estimate revisions
+  - PM & analyst review questions
+
+review_role: >
+  Research analyst / Portfolio manager review.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  evidence_html: expected-output/Post_Earnings_Evidence_Pack.html
+  run_record: expected-output/Run_Record.json

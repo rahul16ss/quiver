@@ -7768,4 +7768,62 @@ async function extendedCapabilitiesContract() {
       );
     },
   );
+
+  // ─── Three doors, one engine workflow pack & neutrality checks ──────
+
+  await check(
+    "WORKFLOW-PACKS-STRUCTURE-VALID",
+    "P0 / Workflow Packs",
+    "workflow-packs/ must exist and contain 3 top-level workflow families (research, dealmaking, wealth) adhering to the standard pack contract (workflow.yaml, acceptance-checklist.yaml, README.md)",
+    () => {
+      const researchPack = path.join(ROOT, "workflow-packs", "research", "post-earnings-evidence-pack");
+      const dealmakingPack = path.join(ROOT, "workflow-packs", "dealmaking", "investment-committee-memo");
+      const wealthPack = path.join(ROOT, "workflow-packs", "wealth", "portfolio-review-pack");
+
+      const packs = [researchPack, dealmakingPack, wealthPack];
+      return packs.every((p) => {
+        return (
+          existsSync(path.join(p, "workflow.yaml")) &&
+          existsSync(path.join(p, "acceptance-checklist.yaml")) &&
+          existsSync(path.join(p, "README.md"))
+        );
+      });
+    },
+  );
+
+  await check(
+    "ENGINE-VERTICAL-NEUTRALITY",
+    "P0 / Engine Neutrality",
+    "Core modules (agent.ts, context_manager.ts, evidence tracker/model) must remain vertical-neutral and not hardcode IC-memo specific paths or titles",
+    () => {
+      const agentSrc = codeOnly("src/agent.ts");
+      const contextSrc = codeOnly("src/context_manager.ts");
+      const trackerSrc = codeOnly("src/evidence/tracker.ts");
+      const modelSrc = codeOnly("src/evidence/model.ts");
+      
+      const hardcodedIc = /investment-committee-memo|Project Alder IC Memo/i;
+      return (
+        !hardcodedIc.test(agentSrc) &&
+        !hardcodedIc.test(contextSrc) &&
+        !hardcodedIc.test(trackerSrc) &&
+        !hardcodedIc.test(modelSrc)
+      );
+    },
+  );
+
+  await check(
+    "WORKFLOW-FAMILIES-IN-README",
+    "P0 / README",
+    "README.md must describe the three workflow families (Investment research, Dealmaking and diligence, Wealth and portfolio communication) before the flagship IC memo demo",
+    () => {
+      const readme = srcText("README.md");
+      const hasFamiliesHeader = /### Example workflow families/.test(readme);
+      const hasResearch = /Investment research/i.test(readme);
+      const hasDealmaking = /Dealmaking and diligence/i.test(readme);
+      const hasWealth = /Wealth and portfolio communication/i.test(readme);
+      const comesBeforeFlagship = readme.indexOf("### Example workflow families") < readme.indexOf("## Flagship example");
+      return hasFamiliesHeader && hasResearch && hasDealmaking && hasWealth && comesBeforeFlagship;
+    },
+  );
 }
+

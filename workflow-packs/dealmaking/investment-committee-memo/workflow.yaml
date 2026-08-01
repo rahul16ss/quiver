@@ -1,0 +1,48 @@
+# Workflow definition for the dealmaking investment-committee-memo pack.
+name: investment-committee-memo
+family: dealmaking
+version: 1.0.0
+maturity: demo-ready
+
+business_purpose: >
+  Produce a first-pass investment committee memorandum for a target company
+  ("Project Alder", synthetic) in which every figure is registered in a source
+  registry, carries an explicit relationship (sourced / derived / estimate /
+  unresolved), and is machine-checked before the draft reaches a human reviewer.
+
+output_template: template/ic-memo-template.docx
+
+allowed_inputs:
+  - sample-inputs/Model_v12.xlsx
+  - sample-inputs/10q-excerpt.md
+  - sample-inputs/earnings-call-q2-transcript.md
+  - sample-inputs/internal-model-note.md
+  - sample-inputs/comps.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: synthetic
+
+deliverable_sections:
+  - Executive summary
+  - Financial overview
+  - Key investment considerations
+  - Principal risks
+  - Open diligence items
+  - Review checklist reference
+
+review_role: >
+  Deal-team analyst. The pipeline emits a draft only ("draft_for_review");
+  reviewer_decision is null on every claim until a human reviewer signs off.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  memo_docx: expected-output/Project_Alder_IC_Memo.docx
+  evidence_json: expected-output/Project_Alder_Evidence.json
+  evidence_html: expected-output/Project_Alder_Evidence.html
+  review_checklist: expected-output/Project_Alder_Review_Checklist.md
+  run_record: expected-output/Project_Alder_Run_Record.json

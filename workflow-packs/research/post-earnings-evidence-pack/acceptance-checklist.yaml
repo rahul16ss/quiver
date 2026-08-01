@@ -1,0 +1,20 @@
+# Machine-readable acceptance checks for research post-earnings evidence pack (discovery-stage).
+pack_id: research/post-earnings-evidence-pack
+version: 1.0.0
+maturity: discovery-stage
+
+checks:
+  - id: CHK-RES-001
+    name: reported_figures_sourced
+    description: All reported EPS, revenue, and KPI figures cite earnings release or filing.
+    status: planned
+
+  - id: CHK-RES-002
+    name: consensus_delta_calculated
+    description: Variance between reported figures and consensus export is verified.
+    status: planned
+
+  - id: CHK-RES-003
+    name: transcript_quotes_verified
+    description: Management commentary excerpts match call transcript timestamps.
+    status: planned

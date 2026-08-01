@@ -23,6 +23,14 @@ the reviewer can inspect, or explicitly flagged for review.
 **Quiver is infrastructure, not investment advice and not a turnkey replacement for
 professional judgment.** Generated work remains a draft until a professional reviews it.
 
+### Example workflow families
+
+- **Investment research**
+- **Dealmaking and diligence**
+- **Wealth and portfolio communication**
+
+Project Alder is the first complete reference implementation. Additional workflow packs will be shaped through customer discovery rather than built speculatively.
+
 ## Flagship example
 
 The repository ships one end-to-end example: an **investment committee memo** for a

@@ -1,0 +1,24 @@
+# Machine-readable acceptance checks for the dealmaking investment-committee-memo pack.
+pack_id: dealmaking/investment-committee-memo
+version: 1.0.0
+
+checks:
+  - id: CHK-001
+    name: deliverable_exists
+    description: Verifies output .docx memo exists and is non-empty.
+    status: pass
+
+  - id: CHK-002
+    name: evidence_model_valid
+    description: Verifies Evidence.json contains valid source and claim records.
+    status: pass
+
+  - id: CHK-003
+    name: excel_lineage_verified
+    description: Re-reads Model_v12.xlsx cells and verifies matching values.
+    status: pass
+
+  - id: CHK-004
+    name: unresolved_items_surfaced
+    description: Verifies claims marked unresolved are listed in review checklist.
+    status: pass

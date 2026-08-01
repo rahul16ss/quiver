@@ -1,0 +1,20 @@
+# Machine-readable acceptance checks for wealth portfolio review pack (discovery-stage).
+pack_id: wealth/portfolio-review-pack
+version: 1.0.0
+maturity: discovery-stage
+
+checks:
+  - id: CHK-WTH-001
+    name: allocation_weights_sum_100
+    description: Verifies total portfolio asset allocation sums to exactly 100%.
+    status: planned
+
+  - id: CHK-WTH-002
+    name: attribution_reconciled
+    description: Verifies return attribution matches benchmark index feeds.
+    status: planned
+
+  - id: CHK-WTH-003
+    name: risk_limits_checked
+    description: Checks portfolio exposure against client IPS constraints.
+    status: planned
