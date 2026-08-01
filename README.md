@@ -109,7 +109,7 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 | Secrets in OS keychain, secret redaction in logs | Working |
 | Trust tiers and approval gates (per-project, persisted) | Working |
 | Model adapters (GLM, Claude) over an OpenAI-compatible interface | Working |
-| Local-only model execution | Configurable (local endpoints supported); **the default model endpoint is a cloud service** — see Data handling below |
+| Local-only model execution | Configurable (local endpoints supported; operator configures `LLM_API_BASE_URL`) — see Data handling below |
 | Data handling configuration | Framework shipped — model use and approved sources are configured around the workflow's sensitivity (per-engagement configuration) |
 | Evidence tracking (source registry, claim records, evidence report) | Working in the flagship example — sources, claims, and review status recorded in Evidence.json; lineage chips render in the desktop GUI and the verification rail shows the source (Excel cell, filing excerpt, or web page) |
 | Reviewer sign-off flow (verify / flag / needs-analyst) | Shipped in the desktop app — mark-final is blocked while a document has open flags; override is logged to a per-document tamper-evident audit chain + review record |
@@ -132,13 +132,7 @@ Honest status as of this release. Do not infer more from the docs than this tabl
 
 ## Data handling
 
-Be precise: the model endpoint is configured by the user via `LLM_API_BASE_URL`
-(no baked-in default). If set to a cloud provider, prompt content — including
-file content the workflow reads — is sent to that provider. Memory, sessions,
-documents, and the audit log live in files on your machine. Local model
-endpoints are supported and can be configured where an engagement requires it.
-Web research tools call external services only when used. There is no
-telemetry.
+Be precise: Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported and can be configured where an engagement requires it. Memory, sessions, documents, and the audit log live in files on your machine. Web research tools call external services only when used. There is no telemetry.
 
 **Data handling and model use are configured around the workflow's sensitivity.**
 Do not treat the defaults as a confidentiality guarantee.

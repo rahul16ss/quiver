@@ -3,6 +3,7 @@ name: investment-committee-memo
 family: dealmaking
 version: 1.0.0
 maturity: demo-ready
+canonical_implementation: examples/investment-committee-memo/workflow.yaml
 
 business_purpose: >
   Produce a first-pass investment committee memorandum for a target company

@@ -19,3 +19,5 @@ This workflow pack is designed for buy-side and sell-side research teams. It pro
 ## Status
 
 > **Discovery Stage**: This workflow pack defines the contract and deliverable specification. End-to-end execution will be built through paid customer discovery rather than speculatively.
+>
+> **Notice**: Contract sketch for customer discovery. No executable end-to-end implementation is claimed.

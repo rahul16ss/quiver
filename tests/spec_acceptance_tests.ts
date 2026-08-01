@@ -7853,5 +7853,29 @@ async function extendedCapabilitiesContract() {
       return hasHeader && hasDisabled;
     },
   );
+
+  await check(
+    "UNIFIED-MODEL-ENDPOINT-STATEMENT",
+    "P0 / README",
+    "README.md Data handling section must state clearly that Quiver does not bake in a model endpoint and LLM_API_BASE_URL is configured by the operator",
+    () => {
+      const readme = srcText("README.md");
+      const hasUnifiedStatement = /Quiver does not bake in a model endpoint/.test(readme);
+      const hasNoContradiction = !/the default model endpoint is a cloud service/.test(readme);
+      return hasUnifiedStatement && hasNoContradiction;
+    },
+  );
+
+  await check(
+    "FINANCE-CLIENT-PROFILE-DIR-EXISTS",
+    "P0 / Hardened Profile",
+    "profiles/finance-client/README.md must exist and document enabled vs disabled tool capabilities",
+    () => {
+      const profilePath = path.join(ROOT, "profiles", "finance-client", "README.md");
+      if (!existsSync(profilePath)) return false;
+      const text = srcText("profiles/finance-client/README.md");
+      return /Enabled Capabilities/.test(text) && /Disabled Capabilities/.test(text);
+    },
+  );
 }
 
