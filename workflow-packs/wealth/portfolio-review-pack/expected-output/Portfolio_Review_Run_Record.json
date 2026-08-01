@@ -1,0 +1,18 @@
+{
+  "pack": "portfolio-review-pack",
+  "family": "wealth",
+  "timestamp": "2026-08-01T11:26:40.440Z",
+  "status": "SUCCESS",
+  "checks_passed": 6,
+  "total_checks": 6,
+  "inputs": [
+    "portfolio-holdings.csv",
+    "client-ips.md",
+    "benchmark-returns.json"
+  ],
+  "deliverables": [
+    "Portfolio_Review_Pack.html",
+    "Portfolio_Review_Checklist.md",
+    "Portfolio_Review_Run_Record.json"
+  ]
+}

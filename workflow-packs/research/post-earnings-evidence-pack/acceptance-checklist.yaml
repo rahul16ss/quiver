@@ -1,20 +1,20 @@
-# Machine-readable acceptance checks for research post-earnings evidence pack (discovery-stage).
-pack_id: research/post-earnings-evidence-pack
-version: 1.0.0
-maturity: discovery-stage
-
+# Acceptance checklist for research post-earnings pack
 checks:
-  - id: CHK-RES-001
-    name: reported_figures_sourced
-    description: All reported EPS, revenue, and KPI figures cite earnings release or filing.
-    status: planned
-
-  - id: CHK-RES-002
-    name: consensus_delta_calculated
-    description: Variance between reported figures and consensus export is verified.
-    status: planned
-
-  - id: CHK-RES-003
-    name: transcript_quotes_verified
-    description: Management commentary excerpts match call transcript timestamps.
-    status: planned
+  - id: OUTPUT-FILES-EXIST
+    description: All required evidence, checklist, and run record files exist
+    severity: error
+  - id: REVENUE-FIGURE-MATCHES
+    description: Reported revenue ($124.5M) matches earnings release and consensus model
+    severity: error
+  - id: EPS-FIGURE-MATCHES
+    description: Reported EPS ($1.42) matches earnings release and transcript excerpt
+    severity: error
+  - id: MARGIN-PROGRESSION-VERIFIED
+    description: Gross margin (44.5%) connects directly to source data
+    severity: error
+  - id: GUIDANCE-RAISE-TRACKED
+    description: Full-year guidance raise ($495.0M-$505.0M) is recorded in evidence map
+    severity: error
+  - id: REVIEWER-ITEMS-SURFACED
+    description: Q3 margin fluctuation and supply chain risks appear in reviewer checklist
+    severity: error

@@ -1,0 +1,10 @@
+Ticker,Holding Name,Asset Class,Weight (%),YTD Return (%),ESG Rating,Yield (%)
+AAPL,Apple Inc.,Public Equity,6.5%,+14.2%,AA,0.6%
+MSFT,Microsoft Corp.,Public Equity,7.2%,+16.8%,AAA,0.7%
+NVDA,NVIDIA Corp.,Public Equity,4.8%,+32.5%,A,0.1%
+JNJ,Johnson & Johnson,Public Equity,3.5%,+4.1%,AA,3.1%
+JPM,JPMorgan Chase & Co.,Public Equity,4.2%,+11.5%,A,2.4%
+USAGG,US Aggregate Bond ETF,Fixed Income,28.0%,-1.2%,AAA,4.2%
+HYG,High Yield Corporate Bond ETF,Fixed Income,8.5%,+3.8%,BBB,6.1%
+SPG,Simon Property Group,REIT / Real Estate,4.5%,+6.4%,BBB,5.2%
+CASH,US Dollar Money Market,Cash & Equivalents,22.8%,+2.6%,N/A,5.1%

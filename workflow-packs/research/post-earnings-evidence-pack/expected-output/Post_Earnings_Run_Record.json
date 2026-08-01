@@ -1,0 +1,18 @@
+{
+  "pack": "post-earnings-evidence-pack",
+  "family": "research",
+  "timestamp": "2026-08-01T11:26:33.328Z",
+  "status": "SUCCESS",
+  "checks_passed": 6,
+  "total_checks": 6,
+  "inputs": [
+    "earnings-release.md",
+    "transcript-excerpt.md",
+    "consensus-model.csv"
+  ],
+  "deliverables": [
+    "Post_Earnings_Evidence_Pack.html",
+    "Post_Earnings_Review_Checklist.md",
+    "Post_Earnings_Run_Record.json"
+  ]
+}

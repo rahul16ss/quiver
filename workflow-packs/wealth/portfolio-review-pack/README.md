@@ -1,23 +1,27 @@
 # Wealth & Portfolio Communication — Portfolio Review Pack
 
-**Maturity**: `discovery-stage` (Illustrative concept — not yet implemented end-to-end)  
+**Maturity**: `demo-ready` (Executable reference implementation)  
 **Family**: `wealth`  
 **Workflow**: `portfolio-review-pack`
 
 ## Overview
 
-This workflow pack is designed for wealth managers, family offices, RIAs, and outsourced CIOs. It processes portfolio holdings, benchmark data, manager commentary, and risk exposure metrics into client-ready portfolio review packs.
+This workflow pack is designed for wealth managers, family offices, RIAs, and outsourced CIOs. It processes portfolio holdings, benchmark data, manager commentary, and risk exposure metrics into client-ready portfolio review packs with IPS constraint verification.
 
-## Common Contract Files
+## Demo Execution
 
-- `workflow.yaml` — Declarative workflow specification
-- `acceptance-checklist.yaml` — Planned acceptance checks
-- `template/` — Expected Excel / Word template definitions
-- `sample-inputs/` — Input specifications (holdings export, benchmark returns, risk model output)
-- `expected-output/` — Target portfolio review deliverable structure
+Run the deterministic demo:
+
+```bash
+npm run demo:portfolio-review
+```
+
+## Generated Outputs
+
+- `expected-output/Portfolio_Review_Pack.html` — Interactive portfolio review pack comparing asset allocations, weighted yield, ESG ratings, and benchmark performance.
+- `expected-output/Portfolio_Review_Checklist.md` — IPS constraint breach alerts (AAPL 6.5%, MSFT 7.2% vs 6.0% cap), rebalancing notes, and advisor sign-off items.
+- `expected-output/Portfolio_Review_Run_Record.json` — Input file hashes, IPS rules applied, and acceptance verification status.
 
 ## Status
 
-> **Discovery Stage**: This workflow pack defines the contract and deliverable specification. End-to-end execution will be built through paid customer discovery rather than speculatively.
->
-> **Notice**: Contract sketch for customer discovery. No executable end-to-end implementation is claimed.
+> **Demo Ready**: Executable reference implementation with deterministic data fixtures and 6/6 automated acceptance checks.

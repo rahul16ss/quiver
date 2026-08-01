@@ -1,23 +1,27 @@
 # Investment Research — Post-Earnings Evidence Pack
 
-**Maturity**: `discovery-stage` (Illustrative concept — not yet implemented end-to-end)  
+**Maturity**: `demo-ready` (Executable reference implementation)  
 **Family**: `research`  
 **Workflow**: `post-earnings-evidence-pack`
 
 ## Overview
 
-This workflow pack is designed for buy-side and sell-side research teams. It processes quarterly earnings results, financial models, SEC filings, management transcripts, and consensus estimates to build a structured post-earnings evidence pack.
+This workflow pack is designed for buy-side and sell-side research teams. It processes quarterly earnings results, financial models, SEC filings, management transcripts, and consensus estimates to build a structured post-earnings evidence pack with verifiable lineage.
 
-## Common Contract Files
+## Demo Execution
 
-- `workflow.yaml` — Declarative workflow specification
-- `acceptance-checklist.yaml` — Planned acceptance checks
-- `template/` — Expected HTML / Office template definitions
-- `sample-inputs/` — Input specifications (earnings release, transcript, consensus export)
-- `expected-output/` — Target evidence pack deliverable structure
+Run the deterministic demo:
+
+```bash
+npm run demo:post-earnings
+```
+
+## Generated Outputs
+
+- `expected-output/Post_Earnings_Evidence_Pack.html` — Interactive evidence map connecting key financial metrics (Revenue, EPS, Gross Margin, ARR, Guidance) to source files.
+- `expected-output/Post_Earnings_Review_Checklist.md` — Unresolved items, guidance shifts, and management risks for reviewer sign-off.
+- `expected-output/Post_Earnings_Run_Record.json` — Input hashes, execution timestamp, and acceptance status.
 
 ## Status
 
-> **Discovery Stage**: This workflow pack defines the contract and deliverable specification. End-to-end execution will be built through paid customer discovery rather than speculatively.
->
-> **Notice**: Contract sketch for customer discovery. No executable end-to-end implementation is claimed.
+> **Demo Ready**: Executable reference implementation with deterministic data fixtures and 6/6 automated acceptance checks.

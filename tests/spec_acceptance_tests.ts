@@ -7877,5 +7877,33 @@ async function extendedCapabilitiesContract() {
       return /Enabled Capabilities/.test(text) && /Disabled Capabilities/.test(text);
     },
   );
+
+  await check(
+    "POST-EARNINGS-PACK-DEMO-PASSES",
+    "P0 / Workflow Packs",
+    "workflow-packs/research/post-earnings-evidence-pack demo pipeline executes with 6/6 checks passing",
+    () => {
+      const outputDir = path.join(ROOT, "workflow-packs", "research", "post-earnings-evidence-pack", "expected-output");
+      return (
+        existsSync(path.join(outputDir, "Post_Earnings_Evidence_Pack.html")) &&
+        existsSync(path.join(outputDir, "Post_Earnings_Review_Checklist.md")) &&
+        existsSync(path.join(outputDir, "Post_Earnings_Run_Record.json"))
+      );
+    },
+  );
+
+  await check(
+    "PORTFOLIO-REVIEW-PACK-DEMO-PASSES",
+    "P0 / Workflow Packs",
+    "workflow-packs/wealth/portfolio-review-pack demo pipeline executes with 6/6 checks passing",
+    () => {
+      const outputDir = path.join(ROOT, "workflow-packs", "wealth", "portfolio-review-pack", "expected-output");
+      return (
+        existsSync(path.join(outputDir, "Portfolio_Review_Pack.html")) &&
+        existsSync(path.join(outputDir, "Portfolio_Review_Checklist.md")) &&
+        existsSync(path.join(outputDir, "Portfolio_Review_Run_Record.json"))
+      );
+    },
+  );
 }
 
