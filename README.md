@@ -57,7 +57,7 @@ npm run demo:portfolio-review
 ## 4. Core principles
 
 1. **Start with the deliverable**: Output lands natively in Word, Excel, or PowerPoint.
-2. **Sources you can inspect**: Quantitative claims link to cell coordinates or page numbers.
+2. **Sources you can inspect**: Important claims can be connected to cells, pages, sections or URLs—or explicitly flagged for review.
 3. **Reviewer-in-the-loop governance**: Drafts require human sign-off; overrides are recorded in a local audit chain.
 4. **Data handling configured per engagement**: Model endpoints and privacy boundaries are explicitly set by the operator.
 5. **Reproducible verification**: Workflow behavior is validated against explicit acceptance checks.
@@ -70,7 +70,7 @@ Quiver does not bake in a model endpoint. The operator configures an OpenAI-comp
 
 ### Recommended finance-client deployment configuration
 
-For institutional deployments, Quiver supports a hardened operational posture:
+The repository documents a recommended hardened deployment posture for institutional engagements:
 
 - **Enabled**: Approved file access, Office document tools, evidence tracking, review gates, local audit logging.
 - **Disabled by default**: Arbitrary shell execution, unapproved tool servers, dynamic tool creation, automatic background cloud sync.
