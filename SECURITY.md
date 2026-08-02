@@ -20,4 +20,4 @@ Key security properties:
 - **Audit chain**: all tool calls, approvals, and checker verdicts are appended to a tamper-evident hash-chained audit log.
 - **Sensitivity routing**: high-sensitivity input is routed to a local model endpoint or refused (never sent to a cloud provider). MNPI redaction is enforced at the model call for the mid tier.
 
-See `docs/security/threat-model.md` for the full threat model and `docs/security/soc2-mapping.md` for the SOC2 TSC mapping.
+See [docs/security/threat-model.md](docs/security/threat-model.md) for the full threat model and [docs/security/soc2-mapping.md](docs/security/soc2-mapping.md) for the SOC2 TSC mapping.
