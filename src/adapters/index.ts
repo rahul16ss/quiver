@@ -3,5 +3,4 @@
  */
 
 export * from "./types.js";
-export { getAdapter, getAdapterForModel, registerAdapter, listAdapters } from "./types.js";
-export { DefaultAdapter, GLMAdapter, ClaudeAdapter } from "./types.js";
+export { getAdapter, getAdapterForModel, registerAdapter, listAdapters, DefaultAdapter } from "./types.js";

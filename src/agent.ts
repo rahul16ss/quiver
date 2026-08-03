@@ -2508,13 +2508,13 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
           try {
             for await (const ev of turnProvider!.streamChat(
               {
-                // US-17.17: use the per-turn model (local model for high-tier,
-                // cloud model otherwise) — NOT config.llmModelName, which would
-                // ask the local endpoint for the cloud model name and fail.
                 model: turnModel,
                 messages: messagesToSend as any[],
                 tools,
-                temperature: 0.2,
+                temperature: config.temperature,
+                ...(config.topP !== undefined ? { topP: config.topP } : {}),
+                ...(config.topK !== undefined ? { topK: config.topK } : {}),
+                ...(config.reasoningEffort !== undefined ? { reasoningEffort: config.reasoningEffort } : {}),
                 maxTokens: adapterDefaults.maxOutputTokens,
                 stream: true,
               },

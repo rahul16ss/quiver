@@ -86,8 +86,6 @@ import {
   listAdapters,
   getAdapter,
   DefaultAdapter,
-  GLMAdapter,
-  ClaudeAdapter,
 } from "../src/adapters/types.js";
 import { assemblePrompt } from "../src/prompt/assembler.js";
 import {
@@ -1106,6 +1104,12 @@ async function configStartupUXContract() {
     "LLM_API_BASE_URL",
     "LLM_MODEL_NAME",
     "LLM_API_KEY",
+    "LLM_TEMPERATURE",
+    "LLM_TOP_P",
+    "LLM_TOP_K",
+    "LLM_REASONING_EFFORT",
+    "CHECKER_LLM_MODEL_NAME",
+    "CHECKER_LLM_API_BASE_URL",
     "QUIVER_AUTONOMY",
     "QUIVER_MAX_CONTEXT_TOKENS",
     "QUIVER_SESSION_LOG",
@@ -2529,9 +2533,9 @@ async function absorbedContract(tmpWs: string) {
   await check(
     "ADAPTER-CITATION-STYLE",
     "US-14.2",
-    "GLM adapter must enforce the XML memory citation tag",
+    "the generic adapter must enforce the XML memory citation tag",
     () => {
-      const g = new GLMAdapter();
+      const g = new DefaultAdapter();
       const c = g.formatMemoryCitation({
         file: "user-preferences.md",
         section: "coding",
@@ -6962,6 +6966,70 @@ async function extendedCapabilitiesContract() {
     },
   );
 
+  // ─── Generic adapter + configurable sampling + reasoning + checker model ─
+
+  await check(
+    "GENERIC-ADAPTER-NO-SPECIALIZATIONS",
+    "US-2.2",
+    "adapters/types.ts must export only the DefaultAdapter (generic OpenAI-compatible) — no GLMAdapter or ClaudeAdapter specializations. The adapter registry must have exactly one adapter ('default').",
+    () => {
+      const c = codeOnly("src/adapters/types.ts");
+      return (
+        !/class\s+GLMAdapter/.test(c) &&
+        !/class\s+ClaudeAdapter/.test(c) &&
+        /class\s+DefaultAdapter/.test(c) &&
+        /getAdapterForModel/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "SAMPLING-CONFIGURABLE",
+    "US-2.2",
+    "sampling parameters (temperature, top_p, top_k) must be configurable via .env (LLM_TEMPERATURE, LLM_TOP_P, LLM_TOP_K) and passed through to the provider's streamChat call — not hardcoded",
+    () => {
+      const cfg = codeOnly("src/config.ts");
+      const agent = codeOnly("src/agent.ts");
+      const provider = codeOnly("src/providers/types.ts");
+      return (
+        /temperature:\s*parseFloat\s*\(\s*process\.env\.LLM_TEMPERATURE/.test(cfg) &&
+        /config\.temperature/.test(agent) &&
+        /top_p/.test(provider) &&
+        /reasoning_effort/.test(provider)
+      );
+    },
+  );
+
+  await check(
+    "REASONING-EFFORT-EXPOSED",
+    "US-2.2",
+    "reasoning_effort must be exposed in ChatRequest and passed through to the provider's API call body — not silently dropped",
+    () => {
+      const types = codeOnly("src/providers/types.ts");
+      const cfg = codeOnly("src/config.ts");
+      return (
+        /reasoningEffort/.test(types) &&
+        /reasoning_effort/.test(types) &&
+        /reasoningEffort:\s*process\.env\.LLM_REASONING_EFFORT/.test(cfg)
+      );
+    },
+  );
+
+  await check(
+    "CHECKER-MODEL-CONFIGURABLE",
+    "US-2.2",
+    "the checker must support a different model than the maker via CHECKER_LLM_MODEL_NAME / CHECKER_LLM_API_BASE_URL env vars — falls back to the primary model if not set",
+    () => {
+      const cfg = codeOnly("src/config.ts");
+      const checker = codeOnly("src/subagents/checker.ts");
+      return (
+        /checkerModelName:\s*process\.env\.CHECKER_LLM_MODEL_NAME/.test(cfg) &&
+        /checkerBaseUrl:\s*process\.env\.CHECKER_LLM_API_BASE_URL/.test(cfg) &&
+        /CHECKER_LLM_MODEL_NAME/.test(checker)
+      );
+    },
+  );
+
   // ─── PRODUCT-REQUIREMENT CHECKS (checker-owned audit 2026-07-17) ───
   // The checks below assert buyer-surface moments from docs/product/user-stories.md
   // and SPEC §16 (Definition of Done) that the prior vendor-authored suite never
@@ -7148,7 +7216,7 @@ async function extendedCapabilitiesContract() {
       // THE CALL SITE: extract the turnProvider!.streamChat( request object and
       // assert its `model:` argument is `turnModel`, NOT config.llmModelName.
       // A presence-only check cannot catch the endpoint-swapped/model-forgot bug.
-      const callBlock = a.match(/turnProvider!\.streamChat\(\s*\{[\s\S]{0,400}?\}\s*,\s*this\.activeAbortController/);
+      const callBlock = a.match(/turnProvider!\.streamChat\(\s*\{[\s\S]{0,600}?\}\s*,\s*this\.activeAbortController/);
       if (!callBlock) return false;
       const modelArg = callBlock[0].match(/model:\s*([A-Za-z_.]+)/);
       if (!modelArg || modelArg[1] !== "turnModel") return false;

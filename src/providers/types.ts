@@ -26,6 +26,9 @@ export interface ChatRequest {
   messages: any[];
   tools?: any[];
   temperature?: number;
+  topP?: number;
+  topK?: number;
+  reasoningEffort?: string;
   maxTokens?: number;
   stream?: boolean;
   signal?: AbortSignal;
@@ -228,6 +231,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           messages: request.messages,
           tools: request.tools,
           temperature: request.temperature ?? 0.7,
+          ...(request.topP !== undefined ? { top_p: request.topP } : {}),
+          ...(request.topK !== undefined ? { top_k: request.topK } : {}),
+          ...(request.reasoningEffort !== undefined ? { reasoning_effort: request.reasoningEffort } : {}),
           max_tokens: request.maxTokens,
           stream: true,
         }),

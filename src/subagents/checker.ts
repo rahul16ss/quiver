@@ -27,6 +27,7 @@ import {
 } from "./checker_filter.js";
 import { EvidenceTracker } from "../evidence/tracker.js";
 import { compare as compareBenchmark } from "../document/bar_critic.js";
+import { config } from "../config.js";
 
 // ─── Evidence validation (US-17.13 / SPEC §9.3 / §16) ──────────────────
 // The checker must reject a document whose Evidence.json contains unsourced
@@ -500,9 +501,17 @@ export async function runChecker(
       LANG: process.env.LANG || "en_US.UTF-8",
       TERM: process.env.TERM || "dumb",
       QUIVER_NO_COLOR: "1",
-      // Explicitly do NOT pass OLLAMA_API_KEY, PARALLEL_API_KEY, GITHUB_TOKEN,
-      // or any other secret. The checker is read-only and must not see secrets.
     };
+    // If a checker model is configured (CHECKER_LLM_MODEL_NAME), pass it
+    // to the child so a future model-based checker subagent uses a
+    // different model than the maker. Today the checker runs npm test
+    // (no model call), but this wiring is ready for the model-based critic.
+    if (config.checkerModelName) {
+      childEnv["CHECKER_LLM_MODEL_NAME"] = config.checkerModelName;
+    }
+    if (config.checkerBaseUrl) {
+      childEnv["CHECKER_LLM_API_BASE_URL"] = config.checkerBaseUrl;
+    }
 
     // sandbox.noEnv → child receives only the minimal env above (not process.env)
     // sandbox.noNetwork → env has no proxy/API keys, so no outbound auth possible

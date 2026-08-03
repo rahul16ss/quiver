@@ -298,18 +298,21 @@ export function needsApprovalFor(
 const _parsedAutonomy = parseAutonomy();
 
 export const config: Config = {
-  // Provider-agnostic, env-driven config (US-1.3 revision 2026-07-28):
-  // No model name, base URL, or API key is baked into the source. Quiver
-  // reads everything from .env / the OS keychain so it can target any
-  // OpenAI-compatible provider without code changes.
   llmBaseUrl: process.env.LLM_API_BASE_URL || "",
   llmModelName: process.env.LLM_MODEL_NAME || "",
   llmApiKey: process.env.LLM_API_KEY || "",
+  // Sampling parameters (configurable per deployment via .env).
+  // These are passed to every model call; models that don't support a
+  // parameter silently ignore it (OpenAI-compatible behavior).
+  temperature: parseFloat(process.env.LLM_TEMPERATURE || "0.7"),
+  topP: process.env.LLM_TOP_P ? parseFloat(process.env.LLM_TOP_P) : undefined,
+  topK: process.env.LLM_TOP_K ? parseFloat(process.env.LLM_TOP_K) : undefined,
+  reasoningEffort: process.env.LLM_REASONING_EFFORT || undefined,
+  // Checker model (optional): when set, the checker subagent uses a
+  // different model than the maker. Falls back to the primary LLM model.
+  checkerModelName: process.env.CHECKER_LLM_MODEL_NAME || "",
+  checkerBaseUrl: process.env.CHECKER_LLM_API_BASE_URL || "",
   // Local model endpoint (US-17.17 / SPEC §4.3 high-sensitivity escape hatch).
-  // When sensitivity routing classifies a turn as "high", the agent routes
-  // the model call here instead of the cloud endpoint. Empty = not configured;
-  // a high-sensitivity turn with no local endpoint is REFUSED rather than
-  // sent to the cloud (SPEC §11.2: refuse to send configured MNPI remotely).
   localLlmBaseUrl: process.env.QUIVER_LOCAL_LLM_API_BASE_URL || "",
   localLlmModelName: process.env.QUIVER_LOCAL_LLM_MODEL_NAME || "",
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
@@ -378,6 +381,14 @@ export interface Config {
   llmBaseUrl: string;
   llmModelName: string;
   llmApiKey: string;
+  // Sampling parameters (configurable via .env).
+  temperature: number;
+  topP?: number;
+  topK?: number;
+  reasoningEffort?: string;
+  // Checker model (optional different model for the checker).
+  checkerModelName: string;
+  checkerBaseUrl: string;
   // Local model endpoint (US-17.17 high-sensitivity escape hatch).
   localLlmBaseUrl: string;
   localLlmModelName: string;
