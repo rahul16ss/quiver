@@ -332,71 +332,10 @@ async function downscaleImage(buf: Buffer, ext: string): Promise<Buffer> {
  * for transmission (US-5.4). Returns null if the file is not a valid
  * image or is too large.
  */
-/**
- * Encode any file as a base64 data URL for the multimodal model.
- * Images get EXIF stripping + downscaling; everything else (PDFs, etc.)
- * gets raw base64 encoding — the model handles it natively.
- */
-export async function encodeFileAsDataURL(
-  filePath: string,
-): Promise<string | null> {
-  try {
-    const resolved = path.resolve(filePath);
-    const stat = await fs.stat(resolved);
+// encodeFileAsDataURL removed — the OpenAI-compatible API only accepts
+// image_url for actual images. Non-image files (PDFs, Office docs) must
+// go through their respective tools (pdf_read, office_doc).
 
-    if (!stat.isFile()) return null;
-    if (stat.size > MAX_IMAGE_SIZE) {
-      console.error(
-        picocolors.yellow(
-          `     File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
-        ),
-      );
-      return null;
-    }
-
-    // If it's an image (by magic bytes), use the image pipeline (EXIF strip + downscale)
-    const imgExt = validateImageMagic(resolved);
-    if (imgExt) {
-      const raw = await fs.readFile(resolved);
-      let sanitized: Buffer;
-      if (imgExt === "jpg" || imgExt === "jpeg") sanitized = stripJpegMetadata(raw);
-      else if (imgExt === "png") sanitized = stripPngMetadata(raw);
-      else sanitized = raw;
-      const downscaled = await downscaleImage(sanitized, imgExt);
-      const base64 = downscaled.toString("base64");
-      const mime = imgExt === "jpg" ? "jpeg" : imgExt;
-      return `data:image/${mime};base64,${base64}`;
-    }
-
-    // Not an image — encode raw bytes. The model handles PDFs and other
-    // document formats natively (no rendering, no text extraction).
-    const raw = await fs.readFile(resolved);
-    const ext = path.extname(resolved).toLowerCase().replace(/^\./, "");
-
-    // Determine MIME type
-    const mimeTypes: Record<string, string> = {
-      pdf: "application/pdf",
-      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      csv: "text/csv",
-      json: "application/json",
-      txt: "text/plain",
-      md: "text/markdown",
-    };
-    const mime = mimeTypes[ext] || "application/octet-stream";
-    const base64 = raw.toString("base64");
-    return `data:${mime};base64,${base64}`;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Encode an image file as a base64 data URL (with EXIF stripping + downscaling).
- * Returns null for non-image files (magic-byte validation). This is the
- * image-specific encoder; use encodeFileAsDataURL for any file type.
- */
 export async function encodeImageAsDataURL(
   filePath: string,
 ): Promise<string | null> {
@@ -432,13 +371,19 @@ export type FileContent =
 
 /**
  * Detect [File: path] markers in user input/tool results and convert to
- * multimodal message parts. Any file type is supported — the model sees
- * the raw file as a base64 data URL:
- *   - Images → data:image/png;base64,... (with EXIF stripping + downscaling)
- *   - PDFs → data:application/pdf;base64,... (model reads the PDF natively)
- *   - Other files → data:application/octet-stream;base64,... (model handles it)
+ * multimodal message parts. Only image files (validated by magic bytes)
+ * are encoded as image_url content parts — the OpenAI-compatible API
+ * only accepts image_url for actual images (PNG, JPEG, GIF, WebP).
  *
- * No rendering, no text extraction, no splitting. The model gets the raw bytes.
+ * Non-image files (PDFs, Office docs, etc.) are NOT encoded here — the
+ * API doesn't accept them as image_url. The agent should use the right
+ * tool for those:
+ *   - PDFs → pdf_read (renders pages as images, which ARE image_url-compatible)
+ *   - Office docs → office_doc (officecli extracts text/structure)
+ *   - Text files → view_file (reads raw UTF-8, no marker needed)
+ *
+ * If a [File: path] marker points to a non-image file, it's replaced with
+ * a text instruction telling the agent what tool to use instead.
  */
 export async function processFileMarkers(
   input: string,
@@ -466,15 +411,24 @@ export async function processFileMarkers(
       if (textBefore) parts.push({ type: "text", text: textBefore });
     }
 
-    const dataUrl = await encodeFileAsDataURL(rawPath);
+    // Only encode actual images — the API rejects non-images as image_url
+    const dataUrl = await encodeImageAsDataURL(rawPath);
     if (dataUrl) {
       parts.push({ type: "image_url", image_url: { url: dataUrl } });
       filesEncoded++;
     } else {
-      parts.push({
-        type: "text",
-        text: `[File: ${rawPath} — could not load. The file may not exist or may be too large.]`,
-      });
+      // Not an image (or file not found). Don't try to encode it as a
+      // data URL — the API will reject it. Tell the agent what to do.
+      const ext = path.extname(rawPath).toLowerCase();
+      let hint = `[File: ${rawPath} — could not encode. `;
+      if (ext === ".pdf") {
+        hint += `Use the pdf_read tool to read this PDF.]`;
+      } else if ([".docx", ".xlsx", ".pptx"].includes(ext)) {
+        hint += `Use the office_doc tool with action "view" to read this Office document.]`;
+      } else {
+        hint += `The file may not exist, may not be a valid image, or may be too large.]`;
+      }
+      parts.push({ type: "text", text: hint });
     }
 
     lastIdx = matchEnd;
@@ -488,7 +442,7 @@ export async function processFileMarkers(
   if (filesEncoded > 0 && config.outputMode === "interactive") {
     console.log(
       picocolors.gray(
-        `   📎 ${filesEncoded} file${filesEncoded > 1 ? "s" : ""} encoded for the model`,
+        `   📎 ${filesEncoded} image${filesEncoded > 1 ? "s" : ""} encoded for the model`,
       ),
     );
   }
