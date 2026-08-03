@@ -14,7 +14,6 @@ async function loadSettings() {
   $("maxContextTokens").value = currentConfig.maxContextTokens || 120000;
   $("apiKey").value = currentConfig.provider?.apiKey || "";
   $("parallelApiKey").value = currentConfig.parallelApiKey || "";
-  $("githubToken").value = currentConfig.githubToken || "";
 
   const grants = currentConfig.autonomyGrants || "";
   $("autonomyMode").value = grants.includes("yolo")
@@ -24,8 +23,6 @@ async function loadSettings() {
       : grants;
   setToggle("browserVisible", grants.includes("browser:visible"));
   setToggle("consentGateEnabled", currentConfig.consentGateEnabled === true);
-  setToggle("syncEnabled", !!(currentConfig.cloudSyncPath && currentConfig.cloudSyncPath.length > 0));
-  $("syncPath").value = currentConfig.cloudSyncPath || "";
   setToggle("sessionLogEnabled", currentConfig.sessionLogEnabled !== false);
   $("sessionLogMaxChars").value = currentConfig.sessionLogMaxChars || 512;
 
@@ -54,19 +51,11 @@ async function browseWorkspace() {
   const selected = await api.selectWorkspaceDir();
   if (selected) $("workspacePath").value = selected;
 }
-async function browseSyncDir() {
-  const selected = await api.selectWorkspaceDir();
-  if (selected) $("syncPath").value = selected;
-}
-
 async function saveSettings() {
   let grants = $("autonomyMode").value;
   if (isToggleActive("browserVisible")) {
     grants = grants ? grants + ",browser:visible" : "browser:visible";
   }
-  const syncPath = $("syncPath").value.trim();
-  const syncOn = isToggleActive("syncEnabled");
-
   // Store the API key in the OS keychain when available, then mirror to config.
   const key = $("apiKey").value.trim();
   if (key && typeof api.settingsSetCredential === "function") {
@@ -88,11 +77,9 @@ async function saveSettings() {
     },
     llmApiKey: key,
     parallelApiKey: $("parallelApiKey").value.trim(),
-    githubToken: $("githubToken").value.trim(),
     maxContextTokens: parseInt($("maxContextTokens").value, 10) || 120000,
     autonomyGrants: grants,
     consentGateEnabled: isToggleActive("consentGateEnabled"),
-    cloudSyncPath: syncOn ? syncPath : "",
     sessionLogEnabled: isToggleActive("sessionLogEnabled"),
     sessionLogMaxChars: parseInt($("sessionLogMaxChars").value, 10) || 512,
   });
@@ -100,11 +87,10 @@ async function saveSettings() {
 }
 
 $("browseWorkspaceBtn").addEventListener("click", browseWorkspace);
-$("browseSyncBtn").addEventListener("click", browseSyncDir);
 $("saveBtn").addEventListener("click", saveSettings);
 $("cancelBtn").addEventListener("click", () => api.loadMain());
 
-["browserVisible", "syncEnabled", "sessionLogEnabled", "consentGateEnabled"].forEach((id) => {
+["browserVisible", "sessionLogEnabled", "consentGateEnabled"].forEach((id) => {
   const el = $(id);
   if (el) el.addEventListener("click", () => el.classList.toggle("active"));
 });

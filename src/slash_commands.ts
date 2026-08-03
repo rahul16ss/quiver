@@ -40,11 +40,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     desc: "Sign in via Ollama (cloud models, web search)",
   },
   {
-    name: "/cloud-sync",
-    aliases: ["/cs"],
-    desc: "Show cloud sync status & install links",
-  },
-  {
     name: "/logs",
     aliases: ["/log"],
     desc: "Manage session logs (list, purge, export)",

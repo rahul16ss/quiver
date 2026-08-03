@@ -36,7 +36,6 @@ function parseDryRun(): boolean {
 //   exfiltration      — piping data to remote endpoints
 //   browser          — browser control (headless)
 //   browser:visible  — browser control (visible window)
-//   create_tool      — dynamic tool creation
 //   yolo             — shorthand for ALL of the above
 //
 // Unset/empty = conservative default (ask for everything risky).
@@ -54,7 +53,6 @@ export type AutonomyGrant =
   | "exfiltration"
   | "browser"
   | "browser:visible"
-  | "create_tool"
   | "web"
   | "memory"
   | "todo"
@@ -104,7 +102,6 @@ export const ALL_GRANTS: AutonomyGrant[] = [
   "exfiltration",
   "browser",
   "browser:visible",
-  "create_tool",
   "web",
   "memory",
   "todo",
@@ -270,9 +267,6 @@ export function needsApprovalFor(
   )
     return false;
 
-  // ── Dynamic tool creation ──
-  if (toolName === "create_tool") return !hasGrant("create_tool");
-
   // ── Shell commands: risk-band gated (US-6.2) ──
   if (toolName === "run_command") {
     if (commandRisk === "safe" || commandRisk === "moderate")
@@ -290,8 +284,8 @@ export function needsApprovalFor(
     return !hasGrant("run_command");
   }
 
-  // Everything else (subagent, prompt_update, continual_learning,
-  // office_doc, etc.) defaults to requiring approval unless YOLO.
+  // Everything else (subagent, continual_learning, office_doc, etc.)
+  // defaults to requiring approval unless YOLO.
   return true;
 }
 
@@ -318,8 +312,6 @@ export const config: Config = {
   parallelApiKey: process.env.PARALLEL_API_KEY || "",
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
-  githubToken: process.env.GITHUB_TOKEN || "",
-  cloudSyncPath: process.env.QUIVER_CLOUD_SYNC_PATH || "",
   maxContextTokens: parseInt(
     process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
     10,
@@ -395,8 +387,6 @@ export interface Config {
   parallelApiKey: string;
   browserHeadless: boolean;
   autonomyGrants: Set<AutonomyGrant>;
-  githubToken: string;
-  cloudSyncPath: string;
   maxContextTokens: number;
   outputMode: OutputMode;
   sessionLogEnabled: boolean;
@@ -460,6 +450,11 @@ export async function runOnboardingHandshake(): Promise<void> {
   console.log(
     picocolors.gray(
       "  A single LLM_API_KEY powers the LLM and vision adapters.\n",
+    ),
+  );
+  console.log(
+    picocolors.yellow(
+      "  If your endpoint is remote, prompts and files you submit may leave this machine and be processed by that provider. Use a local endpoint or your firm's approved provider for sensitive work.\n",
     ),
   );
 
@@ -529,8 +524,6 @@ export function printConfig(): void {
       v(redactSecret(config.llmApiKey)) +
       c(" · ") +
       (config.parallelApiKey ? v("web ✓") : c("web —")) +
-      c(" · ") +
-      (config.githubToken ? v("github ✓") : c("github —")) +
       c(" · ") +
       v(config.maxContextTokens.toLocaleString("en-US")) +
       c(" ctx"),

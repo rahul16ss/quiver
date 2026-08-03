@@ -1,7 +1,7 @@
 name: market-map
 family: dealmaking
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Build a comprehensive industry landscape matrix mapping incumbents, growth-stage entrants, valuation multiples, unit economics, and strategic M&A acquirers.
 

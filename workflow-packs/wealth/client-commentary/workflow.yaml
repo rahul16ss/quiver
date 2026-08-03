@@ -1,7 +1,7 @@
 name: client-commentary
 family: wealth
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Produce customized quarterly macro and portfolio market updates tailored for client communications across private wealth segments.
 

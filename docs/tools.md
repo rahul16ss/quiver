@@ -30,7 +30,6 @@ export interface Tool {
 ### Execution
 - `run_command` — Execute shell commands with risk classification
 - `run_tests` — Run TypeScript compilation and unit tests
-- `create_tool` — Dynamically create and register new tools
 
 ### Research & Web
 - `web_search` — Search the web
@@ -42,14 +41,10 @@ export interface Tool {
 ### Browser
 - `browser_control` — Persistent browser session automation
 
-### GitHub
-- `github` — GitHub API operations (issues, PRs, files)
-
 ### Memory & Learning
 - `memory_append` — Append to persistent memory files (auto-creates version snapshot)
 - `memory_replace` — Rewrite persistent memory files (auto-creates version snapshot)
 - `continual_learning` — Mine session transcripts for patterns
-- `prompt_update` — Propose system prompt updates
 - `log_tokens` — Parse session logs for token statistics
 
 ### Evidence & Lineage
@@ -60,24 +55,13 @@ export interface Tool {
 
 ### Agent Orchestration
 - `subagent` — Spawn isolated agent processes
-- `gauntlet` — Parallel builder+critic fan-out: split a goal into pieces, each gets its own builder subagent + bar_critic comparison against the benchmark (SPEC §10.2)
 - `bar_critic` — Structural bar-comparison of a draft against a benchmark deliverable in `.quiver/benchmark/`. Actions: `compare` (run comparison), `status` (check if benchmark configured), `list` (list benchmarks). Opt-in per engagement; no-op without a benchmark (SPEC §10.1)
 - `todo_write` — Manage task checklists
 - `ask_question` — Ask user clarifying questions
 
-## Tool Sandbox
-
-Dynamically generated tools execute in isolated worker threads with:
-- Least-privilege filesystem access (glob patterns) — **enforced** via a permission-checking `fs` proxy inside the worker (US-6.4); the manifest globs are no longer advisory
-- Network access control
-- Shell access control
-- Environment variable filtering
-- Timeout limits
-- Output size limits
-
 ## Tool Registry
 
-The `ToolRegistry` class manages tool loading, hot-reloading, and OpenAI function-calling schema serialization. Tools are loaded from `src/tools/` at startup and can be dynamically created via `create_tool`.
+The `ToolRegistry` class manages tool loading, hot-reloading, and OpenAI function-calling schema serialization. Tools are loaded from `src/tools/` at startup.
 
 ## MCP (Model Context Protocol)
 
@@ -158,9 +142,6 @@ The file/shell tools enforce the security modules directly, not just the agent:
   `classifyCommand()` (risk band + approval flag) and refuses commands that
   target paths outside the workspace. The agent approval gate uses the same
   classifier so `rm -rf` prompts while `ls` runs free.
-- **Generated-tool destination** — `create_tool` writes to
-  `getProjectToolsDir()` (`~/.quiver/projects/{id}/tools/`), never to
-  `src/tools/`.
 
 ## Slash Commands
 

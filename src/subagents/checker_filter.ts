@@ -28,20 +28,6 @@ export interface TargetedChecks {
 // Each entry maps a source file (relative to project root) to the acceptance
 // check IDs that directly inspect or import that file.
 const FILE_TO_CHECKS: Record<string, string[]> = {
-  // Cloud sync
-  "src/cloud_sync.ts": [
-    "SYNC-DEFAULT-OFF",
-    "SYNC-DETECT-NOT-ACTIVE",
-    "SYNC-STATUS-NO-SIDE-EFFECTS",
-    "SYNC-NOOP-WHEN-DISABLED",
-    "SYNC-ISACTIVE-OPT-IN",
-    "SYNC-EXCLUDE-RAW-LOGS",
-    "SYNC-EXCLUDE-SCREENSHOTS",
-    "SYNC-EXCLUDE-TOOL-BINARIES",
-    "SYNC-EXCLUDE-SECRETS",
-    "SYNC-KEEP-MEMORY",
-    "SYNC-ENCRYPTED-AT-REST",
-  ],
   // Command policy
   "src/security/command_policy.ts": [
     "CMD-SECRET-RISK-APPROVAL",
@@ -382,21 +368,6 @@ export function resolveTargetedChecks(
     const patch: string = toolArgs?.patch || "";
     const m = patch.match(/^\+\+\+\s+b\/(.+)$/m);
     filePath = m ? m[1] : "";
-  } else if (toolName === "create_tool") {
-    // create_tool writes to ~/.quiver/projects/{id}/tools/ — check tool sandbox
-    const checks = [
-      ...new Set([
-        "TOOL-SANDBOX-MANIFEST",
-        "CREATE-TOOL-DISABLED-BY-DEFAULT",
-        "CREATE-TOOL-PROJECT-LOCAL",
-        ...ALWAYS_ON_CHECKS,
-      ]),
-    ];
-    return {
-      checkIds: checks,
-      full: false,
-      reason: `create_tool → tool sandbox checks + always-on gates (${checks.length} checks)`,
-    };
   }
 
   if (!filePath) {

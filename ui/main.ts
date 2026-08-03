@@ -60,13 +60,11 @@ interface QuiverConfig {
   provider: ProviderConfig;
   parallelApiKey: string;
   llmApiKey: string;
-  githubToken: string;
   /** Comma-separated autonomy grants (e.g. "write_file,run_command" or "yolo"). */
   autonomyGrants: string;
   maxContextTokens: number;
   memoryDir: string;
   skillsDir: string;
-  cloudSyncPath: string;
   sessionLogEnabled?: boolean;
   sessionLogMaxChars?: number;
   /** SPEC §6 consent gate — when true the agent blocks on pre-action approval. */
@@ -144,13 +142,11 @@ const DEFAULT_CONFIG: QuiverConfig = {
   },
   parallelApiKey: "",
   llmApiKey: "",
-  githubToken: "",
   // Empty = conservative (ask for everything). "yolo" = bypass ALL gates.
   autonomyGrants: "",
   maxContextTokens: config.maxContextTokens,
   memoryDir: "./memory",
   skillsDir: "./skills",
-  cloudSyncPath: "",
   consentGateEnabled: false,
 };
 
@@ -245,7 +241,6 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
       LLM_MODEL_NAME: config.provider.modelName,
       LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
       PARALLEL_API_KEY: config.parallelApiKey,
-      GITHUB_TOKEN: config.githubToken,
       QUIVER_AUTONOMY: config.autonomyGrants || "",
       QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     };
@@ -420,10 +415,8 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     LLM_MODEL_NAME: config.provider.modelName,
     LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
-    GITHUB_TOKEN: config.githubToken,
     QUIVER_AUTONOMY: config.autonomyGrants || "",
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
-    QUIVER_CLOUD_SYNC_PATH: config.cloudSyncPath || "",
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
     QUIVER_EXCLUDED_MEMORIES: [...excludedMemories].join(","),
     // Consent gate (SPEC §6): when enabled in settings, the agent blocks on a
@@ -1141,8 +1134,6 @@ function registerIpcHandlers(): void {
       config.provider = { ...config.provider, ...values };
     } else if (section === "autonomy") {
       config.autonomyGrants = values.grants || "";
-    } else if (section === "sync") {
-      config.cloudSyncPath = values.syncPath || "";
     } else if (section === "memory") {
       config.sessionLogEnabled = values.sessionLogEnabled !== false;
       config.sessionLogMaxChars = values.sessionLogMaxChars || 512;
@@ -1159,36 +1150,6 @@ function registerIpcHandlers(): void {
         return true;
       }
       return false;
-    } catch {
-      return false;
-    }
-  });
-
-  // US-4.4: Sync IPC handlers
-  ipcMain.handle("sync:status", async () => {
-    try {
-      const { getCloudSyncStatus } = await import("../src/cloud_sync.js");
-      return await getCloudSyncStatus();
-    } catch {
-      return { active: false, path: "" };
-    }
-  });
-  ipcMain.handle("sync:enable", async (_evt, payload: { path: string }) => {
-    try {
-      const config = await loadConfig();
-      config.cloudSyncPath = payload.path;
-      await saveConfig(config);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  ipcMain.handle("sync:disable", async () => {
-    try {
-      const config = await loadConfig();
-      config.cloudSyncPath = "";
-      await saveConfig(config);
-      return true;
     } catch {
       return false;
     }

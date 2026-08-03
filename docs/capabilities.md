@@ -1,6 +1,8 @@
 # Quiver Capabilities & Technical Feature Specification
 
-This document details the full technical capability matrix supported by the Quiver workflow engine.
+This document is the current technical capability matrix for the Quiver workflow engine.
+Statuses distinguish runnable foundations from capabilities that still require engagement
+configuration or additional hardening.
 
 ---
 
@@ -26,11 +28,11 @@ This document details the full technical capability matrix supported by the Quiv
 | **Daemon Autostart System Plist** | Shipped | SPEC §4.1 |
 | **Signed Desktop Update Infrastructure** | Shipped | Ed25519 signatures |
 | **Electron Desktop Application** | Working | `ui/` (unsigned build) |
-| **Ambient Workflow Orchestrator** | Shipped | `src/workflow/orchestrator.ts` |
-| **Cron Workflow Scheduler** | Shipped | `src/workflow/scheduler.ts` |
-| **File-Triggered Watcher System** | Shipped | `src/workflow/watcher.ts` |
-| **Multi-Role Review Chain** | Shipped | `src/workflow/review.ts` |
-| **Handover & Runbook Generator** | Shipped | `src/workflow/handover.ts` |
-| **Complete 12-Pack Sprint Library** | Shipped | `workflow-packs/` (Dealmaking, Research, Wealth) |
+| **Ambient Workflow Orchestrator** | Foundation | `src/workflow/orchestrator.ts`; agent callback and verification hardening pending |
+| **Cron Workflow Scheduler** | Foundation | `src/workflow/scheduler.ts`; daemon wiring is present, production hardening pending |
+| **File-Triggered Watcher System** | Foundation | `src/workflow/watcher.ts`; Windows watcher semantics are pending |
+| **Multi-Role Review Chain** | Foundation | `src/workflow/review.ts`; final deliverable gate hardening pending |
+| **Handover & Runbook Generator** | Foundation | `src/workflow/handover.ts` |
+| **Workflow Pack Library** | 3 runnable demos + 9 scaffolds | `workflow-packs/`; only the three demo packs are runnable today |
 | **Governed Plain-Text PKM System** | To be built in future | `docs/knowledge-and-storage.md`, `src/memory/` |
 | **Microsoft 365 Native Storage Engine** | To be built in future | `docs/knowledge-and-storage.md`, `src/export/dms.ts` |

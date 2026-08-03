@@ -46,7 +46,7 @@ Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
 4. TypeScript compilation check: `npx tsc --noEmit`
 5. Run the flagship demo: `npm run demo:ic-memo` (all acceptance checks must pass)
 6. Update `docs/` if architecture changed
-7. Build/package Electron app: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)
+7. Build/package Electron app: `npm run build` (or `dist:mac` / `dist:win`; Quiver targets macOS and Windows)
 8. Create GitHub release with tagged binary
 9. Update Homebrew formula (`Formula/quiver.rb`)
 10. Verify `quiver --version` works after install
@@ -70,4 +70,4 @@ The desktop app is built with Electron:
 - `ui/preload.js` — Preload script (context-isolated)
 - `ui/renderer/` — Renderer (sandboxed)
 
-Package: `npm run dist` (or `dist:mac` / `dist:win` / `dist:linux`)
+Package: `npm run build` (or `dist:mac` / `dist:win`)

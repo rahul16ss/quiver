@@ -1,7 +1,7 @@
 name: transcript-review
 family: research
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Analyze executive transcripts (earnings calls, broker conferences) to highlight guidance shifts, non-GAAP reconciliations, tone changes, and unfulfilled management promises.
 

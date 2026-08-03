@@ -49,7 +49,6 @@ import {
   detectOllamaIdentity,
   formatOllamaIdentity,
 } from "./ollama_identity.js";
-import { getCloudSyncStatus } from "./cloud_sync.js";
 import {
   SLASH_COMMANDS,
   resolveSlashCommand,
@@ -64,7 +63,6 @@ import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
 import { Tui } from "./tui.js";
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
-import { runCloudSync, runCleanupLeaks } from "./cloud_sync_ui.js";
 import {
   getProjectName,
   getProjectMemoryDir,
@@ -150,10 +148,6 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
-  if (cliOpts.cloudSync) {
-    await runCloudSync();
-    process.exit(EXIT.OK);
-  }
   if (cliOpts.daemon) {
     const sub = cliOpts.daemon;
     const repoRoot = path.resolve(".");
@@ -171,13 +165,6 @@ async function main() {
     }
   }
 
-  if (cliOpts.cleanupLeaks) {
-    // Pass undefined — runCleanupLeaks defaults to safe (no deletion)
-    // in non-interactive mode. Use --force flag in the future for CI.
-    await runCleanupLeaks(undefined);
-    process.exit(EXIT.OK);
-  }
-
   if (cliOpts.unknownFlags.length > 0) {
     printUnknownFlagHints(cliOpts.unknownFlags);
     process.exit(EXIT.USAGE);
@@ -187,7 +174,7 @@ async function main() {
   // A piped/CI run with no prompt and no scripted subcommand must never reach
   // the interactive REPL (which would block on stdin forever). Print help and
   // exit with a usage code instead of hanging. Subcommands that work headless
-  // (--single-turn, --list-sessions, init, signin, cloud-sync, cleanup-leaks)
+  // (--single-turn, --list-sessions, init, signin)
   // are excluded so scripted/CI usage is not blocked.
   const nonTtyStream = !process.stdin.isTTY || !process.stdout.isTTY;
   const headlessSubcommand =
@@ -195,9 +182,7 @@ async function main() {
     !!cliOpts.listSessions ||
     cliOpts.init ||
     cliOpts.signin ||
-    cliOpts.cloudSync ||
     !!cliOpts.daemon ||
-    cliOpts.cleanupLeaks ||
     cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
   if (
     nonTtyStream &&
@@ -823,13 +808,7 @@ async function main() {
               `   - LLM API Key:      ${redactSecret(config.llmApiKey)}`,
             );
             console.log(
-              `   - Cloud Sync:        ${config.cloudSyncPath ? config.cloudSyncPath : "Auto-detect"}`,
-            );
-            console.log(
               `   - Parallel APIs:     ${redactSecret(config.parallelApiKey)}${config.parallelApiKey ? " (search, extract, research, findall, entity)" : ""}`,
-            );
-            console.log(
-              `   - GitHub Token:      ${redactSecret(config.githubToken)}`,
             );
             console.log(`   - Skills Dir:        ${getSkillsDir()}`);
             console.log(`   - Memory Dir:        ${getProjectMemoryDir()}`);
@@ -1112,10 +1091,6 @@ async function main() {
             continue;
           }
 
-          case "/cloud-sync": {
-            await runCloudSync();
-            continue;
-          }
 
           // ── /logs subcommand handling (US-13.3) ──
           case "/logs": {

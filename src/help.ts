@@ -15,7 +15,7 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "format_code",
     "grep_search",
   ],
-  "System": ["run_command", "run_tests", "create_tool", "log_tokens"],
+  "System": ["run_command", "run_tests", "log_tokens"],
   "Web": [
     "web_search",
     "scrape_url",
@@ -25,11 +25,9 @@ const TOOL_CATEGORIES: Record<string, string[]> = {
     "entity_search",
   ],
   "Memory": ["memory_append", "memory_replace", "continual_learning"],
-  "GitHub": ["github"],
   "Planning": ["todo_write", "ask_question"],
-  "Self-Improvement": ["prompt_update"],
   "Quality": ["bar_critic"],
-  "Agents": ["subagent", "gauntlet"],
+  "Agents": ["subagent"],
 };
 
 type ToolDisplay = { name: string; displayName: string; description: string };
@@ -74,9 +72,6 @@ export function printHelp(): void {
   );
   console.log(
     `    quiver signin                   Sign in via Ollama (cloud models, web search)`,
-  );
-  console.log(
-    `    quiver cloud-sync               Show sync status & install links`,
   );
   console.log(
     `    quiver --single-turn "prompt"    Run a single prompt and exit`,
@@ -169,7 +164,6 @@ export function printInSessionHelp(): void {
         { name: "/dry-run", desc: "Toggle dry-run mode (preview actions without executing)", aliases: ["/dry"] },
         { name: "/editor", desc: "Open $EDITOR to compose a multi-line prompt", aliases: ["/ed"] },
         { name: "/signin", desc: "Sign in via Ollama (cloud models, web search)", aliases: ["/si"] },
-        { name: "/cloud-sync", desc: "Show cloud sync status & install links", aliases: ["/cs"] },
       ],
     },
   ];

@@ -1,7 +1,7 @@
 name: investment-proposal
 family: wealth
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Construct bespoke asset allocation proposals for high-net-worth clients based on IPS risk profiles, tax considerations, and target return hurdles.
 

@@ -141,11 +141,19 @@ export function loadWorkflow(workflowFile: string): WorkflowDefinition {
     parsed = parseSimpleYaml(raw);
   }
 
+  const maturity =
+    parsed.maturity === "production" ||
+    parsed.maturity === "beta" ||
+    parsed.maturity === "demo-ready" ||
+    parsed.maturity === "scaffold"
+      ? parsed.maturity
+      : "scaffold";
+
   const def: WorkflowDefinition = {
     name: parsed.name || path.basename(packRoot),
     family: (parsed.family || "dealmaking") as WorkflowFamily,
     version: parsed.version || "0.0.0",
-    maturity: parsed.maturity || "demo-ready",
+    maturity,
     business_purpose: parsed.business_purpose || "",
     output_template: parsed.output_template,
     allowed_inputs: Array.isArray(parsed.allowed_inputs) ? parsed.allowed_inputs : [],

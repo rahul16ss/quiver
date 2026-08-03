@@ -19,11 +19,11 @@ Quiver helps investment, advisory, and wealth management teams build inspection-
 
 ---
 
-## 2. Reference workflows & Ambient AI Engine
+## 2. Reference workflows & pack library
 
-Quiver features a full **Ambient Workflow Engine** (`quiver workflow`) supporting 12 sprint templates across 3 families:
+Quiver includes an **Ambient Workflow Engine** (`quiver workflow`) and 12 declared pack manifests across 3 families:
 
-| Family | Workflow Pack | Purpose & Deliverable |
+| Family | Workflow Pack | Intended purpose and deliverable |
 | :--- | :--- | :--- |
 | **Dealmaking** | `investment-committee-memo` | First-pass IC Memo (`.docx`) with registered cell lineage |
 | **Dealmaking** | `diligence-tracker` | VDR document tracking & red flag matrix (`.xlsx`) |
@@ -38,6 +38,12 @@ Quiver features a full **Ambient Workflow Engine** (`quiver workflow`) supportin
 | **Wealth** | `manager-research-note` | Fund manager due diligence & style drift audit (`.docx`) |
 | **Wealth** | `client-commentary` | Tailored quarterly client market update (`.docx`) |
 | **Wealth** | `risk-exposure-summary` | VaR, factor exposure & stress testing summary (`.pdf`) |
+
+Pack maturity is explicit. `investment-committee-memo`, `post-earnings-evidence-pack`,
+and `portfolio-review-pack` are the three credential-free, runnable reference demos.
+The other nine entries are `scaffold` packs: they provide a declared workflow,
+sample inputs, and acceptance intent, but are not marketed as production-ready
+document generators until they have their own runnable demo and acceptance gate.
 
 Run any workflow pack on demand:
 ```bash

@@ -26,7 +26,6 @@ const KNOWN_FLAGS = [
   "--single-turn",
   "init",
   "signin",
-  "cloud-sync",
   "--continue",
   "-c",
   "--resume",
@@ -47,8 +46,6 @@ export interface CliOptions {
   dryRun: boolean;
   init: boolean;
   signin: boolean;
-  cloudSync: boolean;
-  cleanupLeaks: boolean;
   daemon?: string; // 'install' | 'uninstall' | 'status'
   singleTurn?: string;
   continue?: boolean;
@@ -243,8 +240,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     dryRun: false,
     init: false,
     signin: false,
-    cloudSync: false,
-    cleanupLeaks: false,
     daemon: undefined,
     continue: false,
     resume: false,
@@ -304,14 +299,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg === "signin") {
       opts.signin = true;
-      continue;
-    }
-    if (arg === "cloud-sync") {
-      opts.cloudSync = true;
-      continue;
-    }
-    if (arg === "--cleanup-leaks") {
-      opts.cleanupLeaks = true;
       continue;
     }
     if (arg === "daemon" || arg === "--daemon") {

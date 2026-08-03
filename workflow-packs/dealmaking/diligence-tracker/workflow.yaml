@@ -1,7 +1,7 @@
 name: diligence-tracker
 family: dealmaking
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Consolidate virtual data room (VDR) documents, track open diligence questions, flag commercial/legal/financial red flags, and manage expert network interview notes.
 

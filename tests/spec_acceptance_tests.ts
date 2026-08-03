@@ -21,11 +21,6 @@ import { deflateSync } from "zlib";
 
 // Modules under contract
 import {
-  getCloudSyncStatus,
-  isCloudSyncActive,
-  syncToCloud,
-} from "../src/cloud_sync.js";
-import {
   classifyCommand,
   targetsOutsideWorkspace,
 } from "../src/security/command_policy.js";
@@ -326,327 +321,6 @@ function pngDimensions(buf: Buffer): { w: number; h: number } | null {
   return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
 }
 
-async function freshCloudDir(): Promise<string> {
-  const d = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-cloud-accept-"));
-  tmpDirs.push(d);
-  return d;
-}
-
-function withCloudEnv(dir: string): () => void {
-  const prev = process.env.QUIVER_CLOUD_SYNC_PATH;
-  process.env.QUIVER_CLOUD_SYNC_PATH = dir;
-  return () => {
-    if (prev === undefined) delete process.env.QUIVER_CLOUD_SYNC_PATH;
-    else process.env.QUIVER_CLOUD_SYNC_PATH = prev;
-  };
-}
-
-/**
- * Behavioral sync sandbox: a throwaway project + throwaway cloud dir so we
- * assert sync OUTCOMES (what actually reaches the cloud) without coupling to
- * any vendor-specific filter function name. The local source dirs are
- * ~/.quiver/projects/<tmp>/{memory,.sessions}; the cloud destination is a
- * temp dir selected via QUIVER_CLOUD_SYNC_PATH. Cleanup is via tmpDirs.
- */
-async function syncSandbox(): Promise<{
-  proj: string;
-  cloudDir: string;
-  sessionsDir: string;
-  memoryDir: string;
-  restore: () => void;
-}> {
-  const proj = `accept_sync_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const prevProj = process.env.QUIVER_PROJECT_NAME;
-  const prevPath = process.env.QUIVER_CLOUD_SYNC_PATH;
-  const prevEnabled = process.env.QUIVER_CLOUD_SYNC_ENABLED;
-  process.env.QUIVER_PROJECT_NAME = proj;
-  const cloudDir = await freshCloudDir();
-  process.env.QUIVER_CLOUD_SYNC_PATH = cloudDir;
-  // Opt sync IN so the EXCLUDE / KEEP / ENCRYPT checks exercise the *enabled*
-  // upload path. Without this, an opt-in gate makes sync a no-op and these
-  // checks would pass trivially against code that never actually syncs.
-  process.env.QUIVER_CLOUD_SYNC_ENABLED = "1";
-  const projRoot = path.join(os.homedir(), ".quiver", "projects", proj);
-  tmpDirs.push(projRoot);
-  const sessionsDir = path.join(projRoot, ".sessions");
-  const memoryDir = path.join(projRoot, "memory");
-  await fs.mkdir(sessionsDir, { recursive: true });
-  await fs.mkdir(memoryDir, { recursive: true });
-  const restore = () => {
-    if (prevProj === undefined) delete process.env.QUIVER_PROJECT_NAME;
-    else process.env.QUIVER_PROJECT_NAME = prevProj;
-    if (prevPath === undefined) delete process.env.QUIVER_CLOUD_SYNC_PATH;
-    else process.env.QUIVER_CLOUD_SYNC_PATH = prevPath;
-    if (prevEnabled === undefined) delete process.env.QUIVER_CLOUD_SYNC_ENABLED;
-    else process.env.QUIVER_CLOUD_SYNC_ENABLED = prevEnabled;
-  };
-  return { proj, cloudDir, sessionsDir, memoryDir, restore };
-}
-
-async function cloudFileList(cloudDir: string): Promise<string[]> {
-  const root = path.join(cloudDir, "Quiver");
-  const out: string[] = [];
-  if (!existsSync(root)) return out;
-  const walk = async (d: string) => {
-    for (const e of await fs.readdir(d, { withFileTypes: true })) {
-      const full = path.join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      else out.push(path.relative(root, full));
-    }
-  };
-  await walk(root);
-  return out;
-}
-
-// ─── EPIC 4 / US-4.4: Cloud Sync is opt-in, encrypted, side-effect free ──
-
-async function cloudSyncContract() {
-  await check(
-    "SYNC-DEFAULT-OFF",
-    "US-4.4",
-    "sync must be disabled by default in the versioned config schema",
-    () => {
-      return (
-        getDefaultConfig().sync.enabled === false &&
-        getDefaultConfig().sync.encryption_enabled === true
-      );
-    },
-  );
-
-  await check(
-    "SYNC-DETECT-NOT-ACTIVE",
-    "US-4.4",
-    "a detected cloud folder must not report active sync without explicit opt-in",
-    async () => {
-      const dir = await freshCloudDir();
-      const restore = withCloudEnv(dir);
-      try {
-        const s = getCloudSyncStatus();
-        // Detection is allowed; claiming "active" without consent is not.
-        return s.active === false;
-      } finally {
-        restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-STATUS-NO-SIDE-EFFECTS",
-    "US-4.4",
-    "getCloudSyncStatus must be side-effect-free (must not create any folder on disk)",
-    async () => {
-      const dir = await freshCloudDir();
-      const restore = withCloudEnv(dir);
-      try {
-        await getCloudSyncStatus();
-        return !existsSync(path.join(dir, "Quiver"));
-      } finally {
-        restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-NOOP-WHEN-DISABLED",
-    "US-4.4",
-    "by default (opt-in off) syncToCloud must not write anything to a cloud folder",
-    async () => {
-      const dir = await freshCloudDir();
-      const restore = withCloudEnv(dir);
-      try {
-        const r = await syncToCloud();
-        const created = existsSync(path.join(dir, "Quiver"));
-        return r.uploaded.length === 0 && r.downloaded.length === 0 && !created;
-      } finally {
-        restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-ISACTIVE-OPT-IN",
-    "US-4.4",
-    "isCloudSyncActive must be false until the user opts in (detection ≠ consent)",
-    async () => {
-      const dir = await freshCloudDir();
-      const restore = withCloudEnv(dir);
-      try {
-        return isCloudSyncActive() === false;
-      } finally {
-        restore();
-      }
-    },
-  );
-
-  // Behavioral exclusion checks: assert the OUTCOME (sensitive file types must
-  // not reach the cloud destination; memory files must remain eligible). These
-  // are implementation-agnostic — the vendor may exclude via a filter, scope
-  // list, or by never putting them in sync scope; the contract only cares that
-  // they do not appear in the destination after a sync.
-  await check(
-    "SYNC-EXCLUDE-RAW-LOGS",
-    "US-4.4",
-    "raw session logs (*.json, *.state.json) must not be copied to the sync destination",
-    async () => {
-      const s = await syncSandbox();
-      try {
-        await fs.writeFile(
-          path.join(s.sessionsDir, "session_accept.json"),
-          "{}",
-        );
-        await fs.writeFile(
-          path.join(s.sessionsDir, "session_accept.state.json"),
-          "{}",
-        );
-        await syncToCloud();
-        const files = await cloudFileList(s.cloudDir);
-        return !files.some(
-          (f) =>
-            f.endsWith("session_accept.json") ||
-            f.endsWith("session_accept.state.json"),
-        );
-      } finally {
-        s.restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-EXCLUDE-SCREENSHOTS",
-    "US-4.4",
-    "screenshots must not be copied to the sync destination",
-    async () => {
-      const s = await syncSandbox();
-      try {
-        await fs.writeFile(
-          path.join(s.sessionsDir, "browser_screenshot.png"),
-          "PNG_FAKE_BYTES",
-        );
-        await syncToCloud();
-        const files = await cloudFileList(s.cloudDir);
-        return !files.some((f) => f.endsWith("browser_screenshot.png"));
-      } finally {
-        s.restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-EXCLUDE-TOOL-BINARIES",
-    "US-4.4",
-    "generated tool binaries (*.js) must not be copied to the sync destination",
-    async () => {
-      const s = await syncSandbox();
-      try {
-        await fs.writeFile(
-          path.join(s.sessionsDir, "add_numbers.js"),
-          "module.exports = 1;",
-        );
-        await syncToCloud();
-        const files = await cloudFileList(s.cloudDir);
-        return !files.some((f) => f.endsWith("add_numbers.js"));
-      } finally {
-        s.restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-EXCLUDE-SECRETS",
-    "US-4.4",
-    "credential files (.env, keys, certs) must not be copied to the sync destination",
-    async () => {
-      const s = await syncSandbox();
-      try {
-        await fs.writeFile(path.join(s.memoryDir, ".env"), "API_KEY=secret");
-        await fs.writeFile(path.join(s.memoryDir, "id_rsa"), "PRIVATE KEY");
-        await fs.writeFile(path.join(s.memoryDir, "server.pem"), "CERTIFICATE");
-        await syncToCloud();
-        const files = await cloudFileList(s.cloudDir);
-        return !files.some(
-          (f) =>
-            f.endsWith(".env") ||
-            f.endsWith("id_rsa") ||
-            f.endsWith("server.pem"),
-        );
-      } finally {
-        s.restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-KEEP-MEMORY",
-    "US-4.4",
-    "inspectable memory files must remain eligible for sync (reach the destination, encrypted or otherwise)",
-    async () => {
-      const s = await syncSandbox();
-      try {
-        await fs.writeFile(path.join(s.memoryDir, "persona.txt"), "identity");
-        await fs.writeFile(
-          path.join(s.memoryDir, "workspace-facts.md"),
-          "facts",
-        );
-        await syncToCloud();
-        const files = await cloudFileList(s.cloudDir);
-        const stripEnc = (f: string) => f.replace(/\.enc$/, "");
-        return (
-          files.some((f) => stripEnc(f).endsWith("persona.txt")) &&
-          files.some((f) => stripEnc(f).endsWith("workspace-facts.md"))
-        );
-      } finally {
-        s.restore();
-      }
-    },
-  );
-
-  await check(
-    "SYNC-ENCRYPTED-AT-REST",
-    "US-4.4",
-    "synced files must be AES-256-GCM encrypted; plaintext must never reach the sync folder",
-    async () => {
-      const dir = await freshCloudDir();
-      const restore = withCloudEnv(dir);
-      const memDir = path.join(
-        os.homedir(),
-        ".quiver",
-        "projects",
-        path.basename(ROOT),
-        "memory",
-      );
-      await fs.mkdir(memDir, { recursive: true });
-      const memFile = path.join(memDir, "persona.txt");
-      const had = existsSync(memFile);
-      const prev = had ? await fs.readFile(memFile, "utf8") : "";
-      const marker = `persona_secret_marker_${Date.now()}`;
-      await fs.writeFile(memFile, marker, "utf8");
-      try {
-        await syncToCloud();
-        const cloudQuiver = path.join(dir, "Quiver");
-        let plaintextLeaked = false;
-        if (existsSync(cloudQuiver)) {
-          const walk = async (d: string) => {
-            for (const e of await fs.readdir(d, { withFileTypes: true })) {
-              const full = path.join(d, e.name);
-              if (e.isDirectory()) await walk(full);
-              else {
-                const txt = await fs.readFile(full, "utf8").catch(() => "");
-                if (txt.includes(marker)) plaintextLeaked = true;
-              }
-            }
-          };
-          await walk(cloudQuiver);
-        }
-        return !plaintextLeaked;
-      } finally {
-        if (had) await fs.writeFile(memFile, prev, "utf8");
-        else await fs.unlink(memFile).catch(() => {});
-        restore();
-      }
-    },
-  );
-}
-
 // ─── US-6.2: Shell command risk classification & approval binding ──────
 
 async function commandPolicyContract(tmpWs: string) {
@@ -846,7 +520,6 @@ async function secretsStorageContract() {
       for (const key of [
         "LLM_API_KEY",
         "PARALLEL_API_KEY",
-        "GITHUB_TOKEN",
       ]) {
         if (cfg.includes(`globalConfig.${key}`)) violations.push(key);
       }
@@ -1091,7 +764,7 @@ async function configStartupUXContract() {
   // Core (7): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY,
   //   QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS, QUIVER_SESSION_LOG,
   //   QUIVER_SESSION_LOG_MAX_CHARS.
-  // Optional: PARALLEL_API_KEY, GITHUB_TOKEN (developers only).
+  // Optional: PARALLEL_API_KEY.
   // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_NAME,
   //   VISION_MODEL_BASE_URL, VISION_MODEL_API_KEY, CONTEXT7_API_KEY,
   //   BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by QUIVER_AUTONOMY).
@@ -1117,7 +790,6 @@ async function configStartupUXContract() {
     "QUIVER_AMBIENT",
     "QUIVER_LOG_RETENTION_DAYS",
     "PARALLEL_API_KEY",
-    "GITHUB_TOKEN",
   ]);
   const RETIRED_ENV = [
     "OLLAMA_API_KEY",
@@ -1915,7 +1587,7 @@ async function retryPolicyContract() {
   await check(
     "RETRY-IDEMPOTENT-ONLY",
     "US-6.3",
-    "auto-retry must be gated to read-only/idempotent tools — destructive/shell tools (run_command, write_file, replace_content, apply_patch, create_tool) must NEVER auto-retry; read tools (view_file) must be eligible",
+    "auto-retry must be gated to read-only/idempotent tools — destructive/shell tools (run_command, write_file, replace_content, apply_patch) must NEVER auto-retry; read tools (view_file) must be eligible",
     () => {
       const agent = codeOnly("src/agent.ts");
       const setMatch = agent.match(
@@ -1931,7 +1603,6 @@ async function retryPolicyContract() {
         "write_file",
         "replace_content",
         "apply_patch",
-        "create_tool",
       ];
       const leaking = mustExclude.filter((t) =>
         new RegExp(`"${t}"`).test(body),
@@ -2567,7 +2238,6 @@ async function absorbedContract(tmpWs: string) {
       return (
         m.schema_version === CONFIG_SCHEMA_VERSION &&
         m.model.model_name === "test" &&
-        !!m.sync &&
         !!m.memory
       );
     },
@@ -2965,78 +2635,6 @@ async function missingSpecContract(tmpWs: string) {
     },
   );
 
-  // US-5.2: generated tools must be disabled-by-default pending approval + carry a manifest.
-  await check(
-    "CREATE-TOOL-DISABLED-BY-DEFAULT",
-    "US-5.2",
-    "create_tool must write a manifest (permissions/timeout/output limits) and must NOT leave the generated tool active/executable before user approval — it may load-to-validate then unregister, or never register, but the end state must be pending approval",
-    () => {
-      const ct = codeOnly("src/tools/create_tool.ts");
-      const writesManifest =
-        /manifest|\.manifest\.json|timeoutMs|outputSizeLimit|permissions\s*:/i.test(
-          ct,
-        );
-      const activates =
-        /globalRegistry\.loadToolFile\s*\(|globalRegistry\.register\s*\(|\.register\s*\(/.test(
-          ct,
-        );
-      const disablesAfter =
-        /unregisterTool|unregister\s*\(|\.delete\s*\(\s*name|pending approval|NOT active|approved\s*:\s*false/i.test(
-          ct,
-        );
-      const notLeftActive = !activates || disablesAfter;
-      const claimsActive =
-        /fully active|now active|available for you to execute|is now active/i.test(
-          ct,
-        );
-      const hasApprovalGate =
-        /approv|pending|approved\s*:\s*false|inspect/i.test(ct);
-      if (!writesManifest)
-        throw new Error(
-          "create_tool writes no tool manifest (permissions/timeout/output limits) — US-5.2",
-        );
-      if (!notLeftActive)
-        throw new Error(
-          "create_tool loads/registers the generated tool and never unregisters it — the tool is left active before approval (US-5.2)",
-        );
-      if (claimsActive)
-        throw new Error(
-          "create_tool claims the generated tool is active/executable — US-5.2 requires disabled-by-default",
-        );
-      if (!hasApprovalGate)
-        throw new Error(
-          "create_tool has no approval/inspection gate before activation — US-5.2",
-        );
-      return (
-        writesManifest && notLeftActive && !claimsActive && hasApprovalGate
-      );
-    },
-  );
-
-  // US-5.2: generated tools must land in the project-local data folder, never app source.
-  await check(
-    "CREATE-TOOL-PROJECT-LOCAL",
-    "US-5.2",
-    "generated tools must be written to ~/.quiver/projects/{id}/tools/, never to the application src/tools directory",
-    () => {
-      const ct = codeOnly("src/tools/create_tool.ts");
-      const usesProjectDir = /getProjectToolsDir|getProjectRoot|\.quiver/.test(
-        ct,
-      );
-      const writesAppSource =
-        /path\.join\(\s*currentDir|__dirname[^)]*tools|src\/tools/.test(ct);
-      if (!usesProjectDir)
-        throw new Error(
-          "create_tool does not write to the project-local tools dir",
-        );
-      if (writesAppSource)
-        throw new Error(
-          "create_tool writes generated tools into the application source directory — security violation (US-5.2)",
-        );
-      return usesProjectDir && !writesAppSource;
-    },
-  );
-
   // US-13.1: versioned session schema must persist the full required field set.
   await check(
     "SESSION-SCHEMA-FIELDS",
@@ -3107,9 +2705,7 @@ async function missingSpecContract(tmpWs: string) {
         { pattern: "symlink", label: "symlink escape" },
         { pattern: "secret", label: "secret exfiltration" },
         { pattern: "exfiltrat", label: "exfiltration" },
-        { pattern: "create_tool", label: "create_tool ACE" },
         { pattern: "electron", label: "Electron main process ACE" },
-        { pattern: "cloud sync", label: "cloud sync leakage" },
         { pattern: "memory", label: "memory poisoning" },
         { pattern: "session", label: "session log retention" },
         { pattern: "shell", label: "shell command injection" },
@@ -3297,14 +2893,13 @@ async function guiSettingsContract() {
   await check(
     "GUI-SETTINGS-SECTIONS",
     "US-8.4",
-    "settings page must display all 5 required sections: Model Provider, API Credentials, Approvals, Cloud Sync, Memory",
+    "settings page must display all 4 required sections: Model Provider, API Credentials, Approvals, Memory",
     () => {
       const settingsHtml = srcText("ui/renderer/settings.html");
       const required = [
         "Model Provider",
         "API Credentials",
         "Approvals",
-        "Cloud Sync",
         "Memory",
       ];
       const missing = required.filter(
@@ -3332,22 +2927,6 @@ async function guiSettingsContract() {
         throw new Error(
           "settings:set-credential IPC handler not wired in main.ts",
         );
-      return true;
-    },
-  );
-
-  await check(
-    "GUI-SETTINGS-SYNC-IPC",
-    "US-8.4",
-    "sync IPC handlers (sync:status, sync:enable, sync:disable) must be wired in main.ts",
-    () => {
-      const main = codeOnly("ui/main.ts");
-      if (!/sync:status/.test(main))
-        throw new Error("sync:status IPC handler not wired in main.ts");
-      if (!/sync:enable/.test(main))
-        throw new Error("sync:enable IPC handler not wired in main.ts");
-      if (!/sync:disable/.test(main))
-        throw new Error("sync:disable IPC handler not wired in main.ts");
       return true;
     },
   );
@@ -4510,7 +4089,6 @@ export async function runSpecAcceptanceTests(): Promise<number> {
   tmpDirs.push(tmpWs);
 
   try {
-    await cloudSyncContract();
     await commandPolicyContract(tmpWs);
     await fileAccessContract();
     await secretsStorageContract();
@@ -4729,8 +4307,7 @@ async function specGapCoverageContract() {
           needsApprovalFor("apply_patch") === true &&
           needsApprovalFor("run_command", "safe") === true &&
           needsApprovalFor("run_command", "destructive") === true &&
-          needsApprovalFor("web_search") === true &&
-          needsApprovalFor("create_tool") === true
+          needsApprovalFor("web_search") === true
         );
       } finally {
         applyTrustTier(null);
@@ -4749,8 +4326,7 @@ async function specGapCoverageContract() {
           needsApprovalFor("write_file") === false &&
           needsApprovalFor("run_command", "destructive") === false &&
           needsApprovalFor("run_command", "safe") === false &&
-          needsApprovalFor("web_search") === false &&
-          needsApprovalFor("create_tool") === false
+          needsApprovalFor("web_search") === false
         );
       } finally {
         applyTrustTier(null);
@@ -4825,7 +4401,7 @@ async function specGapCoverageContract() {
   await check(
     "AUTONOMY-NEEDS-APPROVAL-COVERS-ALL",
     "US-16.1",
-    "needsApprovalFor must cover web, memory, todo, browser, create_tool, and run_command (risk-band gated)",
+    "needsApprovalFor must cover web, memory, todo, browser, and run_command (risk-band gated)",
     () => {
       applyTrustTier("observe");
       try {
@@ -4837,7 +4413,6 @@ async function specGapCoverageContract() {
           needsApprovalFor("memory_append") === true &&
           needsApprovalFor("memory_replace") === true &&
           needsApprovalFor("browser_control") === true &&
-          needsApprovalFor("create_tool") === true &&
           needsApprovalFor("run_command", "safe") === true &&
           needsApprovalFor("run_command", "moderate") === true &&
           needsApprovalFor("run_command", "destructive") === true &&
@@ -5666,28 +5241,6 @@ async function extendedCapabilitiesContract() {
         const c = codeOnly(f);
         return /api\.parallel\.ai/.test(c) && /x-api-key/.test(c);
       });
-    },
-  );
-
-  // ─── US-16.4: GitHub integration tool ────────────────────────────────
-
-  await check(
-    "GITHUB-TOOL-SIX-ACTIONS",
-    "US-16.4",
-    "github tool must expose all 6 actions (get_contents, get_issue, create_issue, create_comment, create_pr, list_prs) and authenticate via GITHUB_TOKEN",
-    () => {
-      const c = codeOnly("src/tools/github.ts");
-      const actions = [
-        "get_contents",
-        "get_issue",
-        "create_issue",
-        "create_comment",
-        "create_pr",
-        "list_prs",
-      ];
-      return (
-        actions.every((a) => c.includes(a)) && /GITHUB_TOKEN/.test(c)
-      );
     },
   );
 
@@ -6911,61 +6464,6 @@ async function extendedCapabilitiesContract() {
     },
   );
 
-  // ─── US-10.2: Gauntlet — parallel builder+critic fan-out ─────────────
-
-  await check(
-    "GAUNTLET-TOOL-EXISTS",
-    "US-10.2",
-    "the gauntlet tool must exist at src/tools/gauntlet.ts with a fan_out action that spawns parallel builder subagents and runs bar_critic for each piece",
-    () => {
-      try {
-        const src = readFileSync(
-          path.join(ROOT, "src/tools/gauntlet.ts"),
-          "utf8",
-        );
-        return (
-          /name:\s*"gauntlet"/.test(src) &&
-          /export\s+const\s+tool/.test(src) &&
-          /fan_out/.test(src) &&
-          /bar_critic\.js|bar_critic\.ts/.test(src) &&
-          /compareBenchmark|compare\s+as\s+compareBenchmark/.test(src) &&
-          /Promise\.all/.test(src)
-        );
-      } catch {
-        return false;
-      }
-    },
-  );
-
-  await check(
-    "GAUNTLET-REUSES-SUBAGENT-INFRA",
-    "US-10.2",
-    "the gauntlet must reuse the existing subagent infrastructure (scratchpad isolation, recursion depth, env stripping) — NOT introduce a parallel spawn pipeline. src/tools/gauntlet.ts must build its own scratchpad (no real node_modules link) and strip sensitive env keys from the child.",
-    () => {
-      const c = codeOnly("src/tools/gauntlet.ts");
-      return (
-        /buildSubagentScratchpad|scratchDir/.test(c) &&
-        /SUBAGENT_DEPTH/.test(c) &&
-        /GITHUB_TOKEN/.test(c) &&
-        !/symlink[\s\S]{0,120}node_modules|node_modules[\s\S]{0,120}symlink/.test(c)
-      );
-    },
-  );
-
-  await check(
-    "GAUNTLET-NO-BENCHMARK-NOOP",
-    "US-10.2",
-    "the gauntlet must run builders without the critic step when no benchmark is configured — a clean no-op for the bar, not a failure. The tool must check for .quiver/benchmark/ and skip bar_critic when absent.",
-    () => {
-      const c = codeOnly("src/tools/gauntlet.ts");
-      return (
-        /\.quiver.*benchmark/.test(c) &&
-        /benchmarkDir/.test(c) &&
-        /barMet\s*=\s*true/.test(c)
-      );
-    },
-  );
-
   // ─── Generic adapter + configurable sampling + reasoning + checker model ─
 
   await check(
@@ -7775,10 +7273,9 @@ async function extendedCapabilitiesContract() {
   await check(
     "SELF-IMPROVEMENT-TOOLS-EXIST",
     "US-16.8",
-    "The 7 self-improvement/session-analytics tools must exist: prompt_update, log_tokens, continual_learning, todo_write, ask_question, format_code, run_tests, glob (ralph_loop was retired in favour of the ambient goal-loop, which is always-on and has real maker-checker verification)",
+    "The 7 self-improvement/session-analytics tools must exist: log_tokens, continual_learning, todo_write, ask_question, format_code, run_tests, glob (ralph_loop and prompt_update were retired in favour of the ambient goal-loop, which is always-on and has maker-checker verification)",
     () => {
       const files = [
-        "src/tools/prompt_update.ts",
         "src/tools/log_tokens.ts",
         "src/tools/continual_learning.ts",
         "src/tools/todo_write.ts",

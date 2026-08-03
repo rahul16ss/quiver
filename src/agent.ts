@@ -24,11 +24,6 @@ import {
   estimateConversationTokens,
 } from "./context_manager.js";
 import {
-  maybeShowCloudNotice,
-  ensureCloudDataDir,
-  autoSyncToCloud,
-} from "./cloud_sync.js";
-import {
   loadReviewedMemoryContext,
   assemblePrompt,
 } from "./prompt/assembler.js";
@@ -86,7 +81,6 @@ import {
   getProjectSessionsDir,
   getProjectName,
   getProjectId,
-  ensureDirectories,
 } from "./paths.js";
 
 // ─── Vision: Image encoding ───────────────────────────────────────────
@@ -872,8 +866,6 @@ export class Agent {
   private localProvider: import("./providers/index.js").ModelProvider | null = null;
   // US-13.2: checkpoint/crash-recovery manager for this session.
   private checkpointManager: CheckpointManager | null = null;
-  // Cloud sync: show notice once per session
-  private cloudSyncInitialized = false;
   private memoryDecayRun = false;
   private pendingRevisionNote: string | undefined = undefined;
   // US-2.3: Active stream abort controller — allows Ctrl+C / Stop to halt
@@ -1792,14 +1784,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     grep_search: "Search files",
     run_command: "Run command",
     run_tests: "Run tests",
-    create_tool: "Create tool",
     log_tokens: "Log stats",
     web_search: "Web search",
     scrape_url: "Read webpage",
     browser_control: "Browser",
     memory_append: "Save memory",
     memory_replace: "Update memory",
-    github: "GitHub",
     deep_research: "Deep research",
     find_all: "Find entities",
     entity_search: "Entity search",
@@ -1807,14 +1797,12 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     apply_patch: "Apply patch",
     todo_write: "Task list",
     ask_question: "Ask user",
-    prompt_update: "Update prompt",
     continual_learning: "Learn from sessions",
     subagent: "Subagent",
     office_doc: "Office document",
     evidence: "Evidence tracker",
     data_query: "Data query",
     bar_critic: "Bar critic",
-    gauntlet: "Gauntlet",
     pdf_read: "Read PDF",
   };
 
@@ -1983,15 +1971,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     onEvent?: (event: AgentEvent) => void,
   ): Promise<void> {
     this.currentOnEvent = onEvent ?? null;
-    // Cloud sync: show first-run notice + ensure folder exists (once per session)
-    if (!this.cloudSyncInitialized) {
-      this.cloudSyncInitialized = true;
-      await ensureDirectories();
-      if (config.outputMode === "interactive") {
-        await maybeShowCloudNotice();
-      }
-    }
-
     // US-4.3: run a best-effort memory decay pass once per session so stale,
     // never-cited facts surface as archival candidates (provenance + decay).
     if (!this.memoryDecayRun) {
@@ -3191,8 +3170,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
                     if (
                       toolName === "write_file" ||
                       toolName === "replace_content" ||
-                      toolName === "apply_patch" ||
-                      toolName === "create_tool"
+                      toolName === "apply_patch"
                     ) {
                       mutatedThisTurn = true;
                     }
@@ -3383,8 +3361,6 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     // Auto-save session state after each prompt completes (sync for reliability)
     this.saveSessionStateSync();
 
-    // Auto-sync to cloud folder (silent, fire-and-forget)
-    autoSyncToCloud();
     // US-4.2: background memory extraction -> pending review queue (fire-and-forget).
     this.maybeExtractMemory().catch(() => {});
 

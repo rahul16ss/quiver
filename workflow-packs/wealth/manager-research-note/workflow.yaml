@@ -1,7 +1,7 @@
 name: manager-research-note
 family: wealth
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Draft institutional due diligence notes on third-party fund managers, evaluating alpha persistence, style drift, fee structures, and team stability.
 

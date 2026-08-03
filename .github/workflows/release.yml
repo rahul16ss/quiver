@@ -16,6 +16,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run release gates
+        run: |
+          npm test
+          npx tsc --noEmit
+
+      - name: Build desktop packages
+        run: npm run build
+
       - name: Read version from package.json
         id: version
         run: |
@@ -43,6 +60,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Quiver ${{ github.ref_name }}
+          files: dist-electron/*
+          fail_on_unmatched_files: true
           body: |
             ## Quiver ${{ github.ref_name }}
 
@@ -63,8 +82,8 @@ jobs:
             ```
             git clone https://github.com/rahul16ss/quiver.git
             cd quiver
-            npm install
-            npm run build
+            npm ci
+            npm test
             ```
 
             **License:** Apache-2.0

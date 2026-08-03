@@ -15,7 +15,6 @@ export interface ConfigSchema {
   schema_version: number;
   model: ModelConfig;
   approvals: ApprovalsConfig;
-  sync: SyncConfig;
   memory: MemoryConfig;
 }
 
@@ -32,12 +31,6 @@ export interface ModelConfig {
 export interface ApprovalsConfig {
   require_approval_for: string[];
   auto_approve_safe: boolean;
-}
-
-export interface SyncConfig {
-  enabled: boolean;
-  path: string;
-  encryption_enabled: boolean;
 }
 
 export interface MemoryConfig {
@@ -62,13 +55,8 @@ export function getDefaultConfig(): ConfigSchema {
       temperature: 0.7,
     },
     approvals: {
-      require_approval_for: ["write_file", "replace_content", "run_command", "apply_patch", "create_tool"],
+      require_approval_for: ["write_file", "replace_content", "run_command", "apply_patch"],
       auto_approve_safe: true,
-    },
-    sync: {
-      enabled: false,
-      path: "",
-      encryption_enabled: true,
     },
     memory: {
       auto_extraction: true,
@@ -114,10 +102,6 @@ export function validateConfig(config: any): ValidationResult {
     errors.push("Missing approvals config section");
   }
 
-  if (!config.sync) {
-    errors.push("Missing sync config section");
-  }
-
   if (!config.memory) {
     errors.push("Missing memory config section");
   }
@@ -140,7 +124,6 @@ export function migrateConfig(config: any): ConfigSchema {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: { ...defaults.model, ...config.model },
     approvals: { ...defaults.approvals, ...config.approvals },
-    sync: { ...defaults.sync, ...config.sync },
     memory: { ...defaults.memory, ...config.memory },
   };
 }
@@ -169,15 +152,6 @@ export function getSettingsSections(): { id: string; label: string; fields: Sett
       fields: [
         { key: "require_approval_for", label: "Require Approval For", type: "list" },
         { key: "auto_approve_safe", label: "Auto-approve Safe Operations", type: "boolean" },
-      ],
-    },
-    {
-      id: "sync",
-      label: "Cloud Sync",
-      fields: [
-        { key: "enabled", label: "Sync Enabled", type: "boolean" },
-        { key: "path", label: "Sync Path", type: "text" },
-        { key: "encryption_enabled", label: "Encryption Enabled", type: "boolean" },
       ],
     },
     {

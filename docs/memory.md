@@ -110,7 +110,6 @@ editable · consented" requirement of SPEC §6.1 layer B for memory.
 Learning is **opt-in and user-gated**, not an automatic background hook:
 - The `continual_learning` tool mines past session transcripts for high-signal
   patterns (repeated corrections, durable workspace facts).
-- The `prompt_update` tool proposes system-prompt changes for your review.
 - Extracted facts enter the **pending review queue** — nothing becomes permanent
   context until you Accept, Edit, or Reject it.
 ## Wiring into the agent loop

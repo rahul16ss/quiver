@@ -37,7 +37,7 @@ export interface WorkflowDefinition {
   /** Semantic version */
   version: string;
   /** Maturity stage */
-  maturity: "demo-ready" | "beta" | "production";
+  maturity: "scaffold" | "demo-ready" | "beta" | "production";
   /** Purpose description */
   business_purpose: string;
   /** Path to the output template (relative to pack root) */

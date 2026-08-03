@@ -1,7 +1,7 @@
 name: pitchbook-materials
 family: dealmaking
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Generate institutional client pitch decks, transaction case studies, and credential summaries matching firm branding and design guidelines.
 

@@ -44,10 +44,6 @@
       <p class="settings-help">Your keys are stored securely and never shared.</p>
       <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your LLM API key" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
-      <details class="settings-advanced">
-        <summary>Advanced</summary>
-        <label>Developer integrations <input id="githubToken" class="field" type="password" placeholder="Only if your workflow needs GitHub" /></label>
-      </details>
     </section>
 
     <!-- Approvals -->
@@ -69,21 +65,6 @@
       <div class="toggle-row">
         <button id="consentGateEnabled" class="toggle">Consent gate — review what Quiver sees before each run</button>
       </div>
-    </section>
-
-    <!-- Cloud Sync -->
-    <section class="settings-section">
-      <h2>Cloud Sync</h2>
-      <p class="settings-help">Optional and off by default. Copies Quiver's memory to a folder you choose (e.g. Dropbox or iCloud). Check your firm's data policy before enabling.</p>
-      <div class="toggle-row">
-        <button id="syncEnabled" class="toggle">Turn on cloud sync</button>
-      </div>
-      <label>Sync folder
-        <span class="field-row">
-          <input id="syncPath" class="field" placeholder="A folder like Dropbox or iCloud" />
-          <button id="browseSyncBtn" class="ghost-btn">Choose…</button>
-        </span>
-      </label>
     </section>
 
     <!-- Memory -->

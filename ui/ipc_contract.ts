@@ -216,26 +216,6 @@ export const IPC_CHANNELS: IpcChannelDef[] = [
     description: "Store a credential in the OS keychain",
   },
 
-  // ── Sync ──
-  {
-    channel: "sync:status",
-    direction: "renderer-to-main",
-    payloadSchema: {},
-    description: "Report cloud-sync status",
-  },
-  {
-    channel: "sync:enable",
-    direction: "renderer-to-main",
-    payloadSchema: {},
-    description: "Enable cloud sync",
-  },
-  {
-    channel: "sync:disable",
-    direction: "renderer-to-main",
-    payloadSchema: {},
-    description: "Disable cloud sync",
-  },
-
   // ── Workspace ──
   {
     channel: "workspace:runTests",

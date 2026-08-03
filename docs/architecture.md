@@ -30,7 +30,6 @@ quiver/
 │   ├── intervention.ts       # Mid-run steering (Esc injects a user message)
 │   ├── ambient.ts            # Ambient self-heal + goal loop at task completion
 │   ├── diagnostics.ts        # Structured diagnostic blocks, failure tracking
-│   ├── cloud_sync.ts         # Opt-in cloud-folder sync (legacy/advanced; off by default)
 │   ├── updates.ts            # Update checks (Ed25519-signed manifests)
 │   ├── watchdog.ts           # Self-health queue (findings/summary/status)
 │   ├── init.ts               # Project init / onboarding
@@ -50,7 +49,7 @@ quiver/
 │   ├── fs/                   # Atomic writes with rollback
 │   ├── mcp/                  # MCP client + server config (.quiver/mcp.json)
 │   ├── subagents/            # Maker-checker (validates Evidence.json, rejects unsourced), targeted check filter, scratchpad helpers
-│   └── tools/                # Tool implementations incl. office_doc, evidence, data_query, github, web research, memory (versioned) + sandbox
+│   └── tools/                # Tool implementations incl. office_doc, evidence, data_query, web research, memory (versioned) + sandbox
 ├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
 ├── examples/                 # Flagship example: investment-committee-memo

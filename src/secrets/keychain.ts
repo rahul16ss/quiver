@@ -377,7 +377,6 @@ export async function migrateEnvToKeychain(envPath: string): Promise<{ migrated:
   const secretKeys = [
     "LLM_API_KEY",
     "PARALLEL_API_KEY",
-    "GITHUB_TOKEN",
   ];
 
   const newLines: string[] = [];

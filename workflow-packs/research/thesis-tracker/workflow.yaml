@@ -1,7 +1,7 @@
 name: thesis-tracker
 family: research
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Continuously track long/short investment thesis key points, verifying progress against monthly data points, KPI trajectories, and competitor movements.
 

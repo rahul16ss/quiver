@@ -1,7 +1,7 @@
 name: risk-exposure-summary
 family: wealth
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Generate detailed risk and factor exposure reports highlighting Value at Risk (VaR), stress test scenarios, concentration risks, and liquidity constraints.
 

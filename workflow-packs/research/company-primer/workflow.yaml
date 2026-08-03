@@ -1,7 +1,7 @@
 name: company-primer
 family: research
 version: 1.0.0
-maturity: production
+maturity: scaffold
 business_purpose: >
   Produce a comprehensive equity research initiation primer covering business model, industry dynamics, historical financial performance, competitive position, and valuation target.
 

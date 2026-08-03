@@ -84,7 +84,7 @@ It covers:
   hash + mtime compare-and-swap blocks stale/unread writes.
 - **Spec-gap checks** — the criteria the prior 89-check contract omitted
   (project.json schema, first-run core.json, subcommand bypass, crash prompts,
-  `/logs`, `/rollback`, create_tool disabled-by-default, session schema, docs,
+  `/logs`, `/rollback`, session schema, docs,
   landing page, moderate command band, blocked globs, CoW scratchpad, behavioral
   untrusted wrap).
 

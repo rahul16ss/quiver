@@ -37,10 +37,10 @@
     "demo:post-earnings": "npx tsx workflow-packs/research/post-earnings-evidence-pack/scripts/run-demo.ts",
     "demo:portfolio-review": "npx tsx workflow-packs/wealth/portfolio-review-pack/scripts/run-demo.ts",
     "export:website-demo": "npx tsx examples/investment-committee-memo/scripts/export-website-demo.ts",
-    "dist": "electron-builder --mac --win --linux",
+    "build": "electron-builder --mac --win",
+    "dist": "npm run build",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux",
     "update-formula": "node scripts/update_formula.js"
   },
   "build": {
@@ -188,13 +188,6 @@
       "target": [
         "nsis"
       ],
-      "icon": "ui/renderer/icon.png"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Development",
       "icon": "ui/renderer/icon.png"
     }
   },

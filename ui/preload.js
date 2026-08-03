@@ -42,10 +42,6 @@ const ALLOWED_CHANNELS = new Set([
   "settings:get",
   "settings:update",
   "settings:set-credential",
-  // Sync
-  "sync:status",
-  "sync:enable",
-  "sync:disable",
   // Workspace
   "workspace:runTests",
   "workspace:selectDir",

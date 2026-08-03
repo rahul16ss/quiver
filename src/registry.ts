@@ -32,10 +32,7 @@ export class ToolRegistry {
     return Array.from(this.tools.values());
   }
 
-  /**
-   * Unregister a tool by name (US-5.2). Used by create_tool to ensure a
-   * generated tool is NOT auto-activated before user approval.
-   */
+  /** Unregister a tool by name for lifecycle and test isolation. */
   public unregisterTool(name: string): boolean {
     return this.tools.delete(name);
   }

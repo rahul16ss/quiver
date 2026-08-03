@@ -68,22 +68,19 @@ boundary. **Ctrl+C** aborts the active generation (twice to exit).
 | Category | Tools |
 |----------|-------|
 | Local storage | view_file, write_file, replace_content, apply_patch, list_dir, glob, format_code, grep_search |
-| System | run_command, run_tests, create_tool, log_tokens |
+| System | run_command, run_tests, log_tokens |
 | Web | web_search, scrape_url, browser_control, deep_research, find_all, entity_search |
 | Memory | memory_append, memory_replace, continual_learning |
-| GitHub | github |
 | Planning | todo_write, ask_question |
-| Prompt maintenance | prompt_update (user reviews every proposed change) |
 | Iteration | (ambient goal-loop — always-on, no tool call needed) |
 | Quality | bar_critic (benchmark bar-comparison, §10.1) |
-| Agents | subagent, gauntlet (parallel builder+critic fan-out, §10.2) |
+| Agents | subagent |
 | Office | office_doc (via OfficeCLI) |
 | MCP | external tools via `.quiver/mcp.json` |
 
-`create_tool` (runtime tool synthesis), `github`, `subagent`, and
-`prompt_update` are developer capabilities. They are subject to the same approval
-gates as everything else, but they are not part of the finance-workflow story and
-should not be promoted in client-facing material.
+`subagent` is available for user workflows that benefit from isolated research
+or delegated analysis. It remains subject to the same approval and workspace
+controls as other tools.
 
 ## MCP support
 

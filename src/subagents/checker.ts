@@ -816,11 +816,7 @@ export async function overrideVerdict(
  */
 export function isHighRisk(toolName: string, toolArgs?: any): boolean {
   // File-writing tools always require checker verification
-  if (
-    ["write_file", "replace_content", "apply_patch", "create_tool"].includes(
-      toolName,
-    )
-  ) {
+  if (["write_file", "replace_content", "apply_patch"].includes(toolName)) {
     return true;
   }
 
