@@ -60,6 +60,11 @@ This is your primary use case. When producing research reports, investment brief
 - When unsure about element types or properties, use `action: "help"` to query the OfficeCLI schema.
 - The `skills/office-doc/SKILL.md` file has detailed usage patterns and common document templates.
 - **Default to .docx for reports and memos, .xlsx for data and financial models, .pptx for presentations.** Don't ask the user what format they want unless it's genuinely ambiguous.
+- **Word comments**: Add inline comments to paragraphs with `action: "add", parent: "/body/p[1]", type: "comment", props: {text: "...", author: "..."}`. Comments are the primary mechanism for inline evidence annotations — use them to mark figures with their source references. Query all comments with `action: "query", selector: "comment"`. Resolve a comment with `action: "set", path: "/comments/comment[1]", props: {done: "true"}`.
+- **PowerPoint comments**: Add to slides with `action: "add", parent: "/slide[1]", type: "comment", props: {text: "...", author: "...", x: "2cm", y: "2cm"}`.
+- **Excel range reading**: Read a range of cells with `action: "get", path: "/Sheet1/A1:D20"` — returns all cells with values, types, and formatting. For a compact text view, use `action: "view", mode: "text", props: {range: "Sheet1!A1:D20"}`.
+- **Excel formula reading**: Get a formula cell with `action: "get", path: "/Sheet1/B3", json: true` — returns `formula`, `cachedValue`, `computedValue`, and `evaluated` fields. Use these to verify formulas match their rendered values.
+- **Template merge**: Use `action: "merge"` to replace `{{key}}` placeholders in a template document with values from a JSON data file. Supports nested paths like `{{items[0].name}}` and `{{company.revenue}}`. Pass `props: {force: "true"}` to overwrite an existing output file.
 
 --- Scratch Area (Draft & Research Mode) ---
 When the trust tier is set to "Draft & research" (build tier), your file writes are automatically redirected to a scratch staging area (`.quiver/scratch/`). This means:
@@ -101,6 +106,15 @@ When drafting Office documents (Word, Excel, PowerPoint) that contain quantitati
 - **Low sensitivity** (generic research): sent to cloud as-is.
 - The audit chain records which route each call took and why.
 - Configuration is in `.quiver/sensitivity.json` (per-engagement).
+
+--- PDF Reading ---
+- Use `pdf_read` to read PDF files — SEC filings, earnings transcripts, research reports, presentations, CIMs, data room documents.
+- The tool renders PDF pages to images and sends them to the vision model, preserving tables, charts, layout, and visual context that text extraction destroys.
+- **Page ranges**: Use `pages: "1-5"` for the first 5 pages, `pages: "14"` for a specific page, `pages: "all"` for the entire document (capped at maxPages). Default is first 5 pages.
+- **DPI**: Default 150 is good for text. Use 200-300 for dense tables or small footnotes.
+- **Large filings**: 10-K filings are often 200+ pages. Read the table of contents first (pages 1-3), then jump to the section you need (e.g., `pages: "35-42"` for MD&A).
+- The tool returns `[Image: path]` markers — the harness automatically encodes these as vision content. You don't need to do anything special.
+- When extracting figures from a PDF (revenue, margin, growth rate), register them with the `evidence` tool using the page number as the source location.
 
 --- Web Research ---
 - Use `web_search` for quick lookups — company names, recent news, regulatory updates.

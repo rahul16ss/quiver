@@ -470,15 +470,3 @@ export function getLocalProvider(): ModelProvider | null {
     config.llmApiKey, // single API key (US-1.3); local Ollama ignores it
   );
 }
-
-/**
- * Get the vision model provider (for vision fallback routing).
- */
-export function getVisionProvider(): ModelProvider | null {
-  if (!config.visionModelName) return null;
-  return new OpenAICompatibleProvider(
-    "vision",
-    config.visionModelBaseUrl,
-    config.visionModelApiKey,
-  );
-}

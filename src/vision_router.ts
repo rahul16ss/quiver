@@ -1,15 +1,16 @@
 /**
- * Vision Router — image encoding, detection, and model routing.
+ * Image Router — image encoding, validation, and content transformation.
  *
- * Extracted from agent.ts for modularity and testability.
- *
- * Responsibilities:
- *   - Detect [Image: path] markers in user input
+ * With the single multimodal model architecture (SPEC §4.3 revision 2026-07-30),
+ * there is no separate vision model. This module handles image encoding:
+ *   - Detect [Image: path] markers in user input and tool results
  *   - Validate images by magic bytes (not extension)
  *   - Encode images as base64 data URLs
- *   - Detect video file extensions
- *   - Determine which model to use (primary vs vision fallback)
- *   - Check if the latest user message contains vision content
+ *   - Strip EXIF/metadata (US-5.4)
+ *   - Downscale oversized images (US-5.4)
+ *
+ * The encoded content parts go to the same model that handles text —
+ * one model, one endpoint, one API key.
  *
  * Security:
  *   - Only local files (no URLs)
@@ -42,25 +43,6 @@ export const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 // ─── Video Extensions ────────────────────────────────────────────────
 // Maximum image dimension (width or height) before downscale (US-5.4).
 export const MAX_IMAGE_DIMENSION = 1568;
-
-// ─── Remote Vision Consent (US-5.4) ──────────────────────────────────
-// Routing images to a remote vision provider requires explicit user consent.
-// Detection of a configured vision model is not consent.
-let visionRemoteConsent = false;
-
-/** Grant or revoke consent to route images to a remote vision provider. */
-export function setVisionRemoteConsent(consent: boolean): void {
-  visionRemoteConsent = consent;
-}
-
-/** Whether the user has consented to remote vision routing. */
-export function getVisionRemoteConsent(): boolean {
-  return visionRemoteConsent;
-}
-
-function isRemoteVisionUrl(url: string): boolean {
-  return !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(url || "");
-}
 
 export const VIDEO_EXTENSIONS = [
   "mp4",
@@ -464,73 +446,6 @@ export async function processImageMarkers(
   }
 
   return parts;
-}
-
-// ─── Vision Content Detection ────────────────────────────────────────
-
-/**
- * Check if the LATEST user message contains vision content (image_url parts).
- * Only the most recent user message is checked — not historical messages.
- *
- * This is critical: if we checked ALL messages, then once a user ever sends
- * an image, ALL subsequent turns would be routed to the vision model
- * instead of the primary model. If the vision model differs from
- * the primary model, it may have a smaller context window and different
- * capabilities, so routing everything to it causes:
- *   - Context overflow crashes (vision model can't handle 50K token context)
- *   - Silent hangs (Ollama crashes processing oversized context)
- *   - Degraded responses (vision model may be smaller than the primary model)
- *
- * By checking only the latest user message, we ensure that:
- *   - Turns with images → routed to vision model
- *   - Turns without images → routed to primary model (even if prior turns had images)
- */
-export function latestMessageHasVisionContent(messages: Message[]): boolean {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "user") {
-      const content = messages[i].content;
-      return (
-        Array.isArray(content) &&
-        content.some((part: any) => part.type === "image_url")
-      );
-    }
-  }
-  return false;
-}
-
-// ─── Model Routing ───────────────────────────────────────────────────
-
-export interface ActiveModelConfig {
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-  isVision: boolean;
-}
-
-/**
- * Determine which model, base URL, and API key to use for the current request.
- * If the latest user message contains image_url parts, route to the vision
- * fallback model. Otherwise, use the primary model.
- */
-export function getActiveModelConfig(messages: Message[]): ActiveModelConfig {
-  const hasVision = latestMessageHasVisionContent(messages);
-  // Remote vision routing requires explicit consent (US-5.4). A remote
-  // vision provider must never receive image data until the user opts in.
-  const remoteVision = isRemoteVisionUrl(config.visionModelBaseUrl);
-  if (hasVision && config.visionModelName && (!remoteVision || visionRemoteConsent)) {
-    return {
-      model: config.visionModelName,
-      baseUrl: config.visionModelBaseUrl,
-      apiKey: config.visionModelApiKey,
-      isVision: true,
-    };
-  }
-  return {
-    model: config.llmModelName,
-    baseUrl: config.llmBaseUrl,
-    apiKey: config.llmApiKey,
-    isVision: false,
-  };
 }
 
 // ─── Video Detection ─────────────────────────────────────────────────

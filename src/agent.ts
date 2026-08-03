@@ -1815,6 +1815,7 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     data_query: "Data query",
     bar_critic: "Bar critic",
     gauntlet: "Gauntlet",
+    pdf_read: "Read PDF",
   };
 
   /** Get human-friendly name for a tool, falling back to the raw ID. */
@@ -3254,16 +3255,33 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
 
         const resultStr =
           typeof result === "string" ? result : safeStringify(result);
+
+        // Process [Image: path] markers in tool results (e.g. from pdf_read).
+        // Converts image markers into vision content parts so the model can
+        // "see" rendered PDF pages, screenshots, etc. — same mechanism as
+        // user input image markers, but applied to tool output.
+        let toolContent: Message["content"] = resultStr;
+        if (typeof resultStr === "string" && resultStr.includes("[Image:")) {
+          try {
+            toolContent = await processImageMarkers(resultStr);
+          } catch {
+            // If image processing fails, fall back to plain text
+            toolContent = resultStr;
+          }
+        }
+
         const toolMsg: Message = {
           role: "tool",
-          content: resultStr,
+          content: toolContent,
           name: toolName,
           tool_call_id: call.id,
         };
 
         this.messages.push(toolMsg);
         this.tokenStats.inputTokens += this.estimateTokens(
-          (toolMsg.content as string) || "",
+          typeof toolMsg.content === "string"
+            ? toolMsg.content
+            : JSON.stringify(toolMsg.content || ""),
         );
         await this.logger.logEvent("tool_result", {
           tool: toolName,

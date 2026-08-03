@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import * as path from "path";
 import { z } from "zod";
-import { Tool } from "../registry.js"
+import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { findBinary } from "../utils/find_binary.js";
 
@@ -45,7 +45,6 @@ function runOfficeCli(
       return;
     }
 
-    
     const maxBuffer = 1024 * 1024 * 10; // 10MB
 
     execFile(
@@ -57,7 +56,11 @@ function runOfficeCli(
         timeout: timeoutMs || 30000,
       },
       (error, stdout, stderr) => {
-        const exitCode = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        const exitCode = error
+          ? typeof error.code === "number"
+            ? error.code
+            : 1
+          : 0;
         const result: OfficeCliResult = {
           success: exitCode === 0,
           stdout: stdout.trim(),
@@ -97,9 +100,20 @@ export const tool: Tool = {
   name: "office_doc",
   description:
     "Create, edit, view, and manage Office documents (.docx, .xlsx, .pptx) using the OfficeCLI engine. " +
-    "Supports creating blank documents, adding elements (paragraphs, tables, slides, cells, shapes), " +
+    "Supports creating blank documents, adding elements (paragraphs, tables, slides, cells, shapes, comments), " +
     "modifying properties, viewing content, batch operations, and template merging. " +
-    "No Microsoft Office installation required. Use this tool when the user needs Word, Excel, or PowerPoint documents.",
+    "No Microsoft Office installation required. Use this tool when the user needs Word, Excel, or PowerPoint documents.\n\n" +
+    "Key capabilities:\n" +
+    "- Word comments: add comments to paragraphs/runs with `action: 'add', parent: '/body/p[1]', type: 'comment', props: {text: '...', author: '...'}`. " +
+    "Query with `action: 'query', selector: 'comment'`. Get with `action: 'get', path: '/comments/comment[1]'`. " +
+    "Set resolved with `action: 'set', path: '/comments/comment[1]', props: {done: 'true'}}`. " +
+    "PowerPoint comments: `parent: '/slide[1]', type: 'comment'` with x/y coordinates.\n" +
+    "- Excel range reading: `action: 'get', path: '/Sheet1/A1:D20'` returns all cells in the range with values, types, and formatting. " +
+    "Use `action: 'view', mode: 'text'` with `props: {range: 'Sheet1!A1:D20'}` for a compact text view of a range.\n" +
+    "- Excel formula reading: `action: 'get', path: '/Sheet1/B3', json: true` returns formula, cachedValue, computedValue, and evaluated fields for formula cells.\n" +
+    "- Template merge: `action: 'merge', template: 'template.docx', file: 'output.docx', data: 'data.json'` replaces {{key}} placeholders. " +
+    "Supports nested paths like {{items[0].name}} and {{company.revenue}}. Use `props: {force: 'true'}` to overwrite existing output.\n" +
+    "- Use `action: 'help'` with `format: 'docx|xlsx|pptx'` and optional `element: 'comment|cell|range|paragraph'` to discover available properties.",
   parameters: z.object({
     action: z
       .enum([
@@ -201,13 +215,28 @@ export const tool: Tool = {
     // Path-policy guard (US-9.2): reject sensitive paths.
     // Use "write" for mutating actions, "read" for read-only actions.
     // "validate" and "close" are read-only — they don't modify the file.
-    const _writeActions = new Set(["create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import"]);
+    const _writeActions = new Set([
+      "create",
+      "add",
+      "set",
+      "remove",
+      "move",
+      "swap",
+      "batch",
+      "save",
+      "merge",
+      "import",
+    ]);
     const _operation = _writeActions.has(args.action) ? "write" : "read";
     let _resolvedFile: string | undefined;
     try {
-      const _checkPath = args.file || args.filePath || args.directory || args.path || "";
+      const _checkPath =
+        args.file || args.filePath || args.directory || args.path || "";
       if (_checkPath) {
-        const _resolved = assertToolPathAllowed(_checkPath, _operation as "read" | "write");
+        const _resolved = assertToolPathAllowed(
+          _checkPath,
+          _operation as "read" | "write",
+        );
         _resolvedFile = _resolved.absolutePath;
       }
       // Validate additional file paths (template, source) through the policy
@@ -291,10 +320,27 @@ export const tool: Tool = {
       case "get":
         cliArgs.push("get", file, elemPath || "/");
         if (json) cliArgs.push("--json");
+        // Allow deeper child traversal (default is 1)
+        if (props?.depth) cliArgs.push("--depth", String(props.depth));
         break;
 
       case "view":
         cliArgs.push("view", file, mode || "text");
+        // Excel range filter: pass --range for text mode on .xlsx files
+        // Allows reading a compact slice of a large sheet (e.g. Sheet1!A1:D20)
+        if (props?.range) cliArgs.push("--range", String(props.range));
+        // Column filter for Excel text view
+        if (props?.cols) cliArgs.push("--cols", String(props.cols));
+        // Line/row limits
+        if (props?.start) cliArgs.push("--start", String(props.start));
+        if (props?.end) cliArgs.push("--end", String(props.end));
+        if (props?.maxLines)
+          cliArgs.push("--max-lines", String(props.maxLines));
+        // Page filter for docx/pptx
+        if (props?.page) cliArgs.push("--page", String(props.page));
+        // Issue type filter for issues mode
+        if (props?.type) cliArgs.push("--type", String(props.type));
+        if (props?.limit) cliArgs.push("--limit", String(props.limit));
         break;
 
       case "query":
@@ -353,7 +399,11 @@ export const tool: Tool = {
           return "Error: 'data' (JSON data file path) is required for merge action.";
         // officecli merge <template> <output> --data <data.json>
         // Replaces {{key}} placeholders in the template with values from the JSON data file.
+        // Supports nested paths like {{items[0].name}} and {{company.revenue}}.
         cliArgs.push("merge", template, file, "--data", data);
+        // Allow overwriting existing output file
+        if (props?.force === "true" || props?.force === true)
+          cliArgs.push("--force");
         break;
 
       case "import":

@@ -67,8 +67,6 @@ interface QuiverConfig {
   memoryDir: string;
   skillsDir: string;
   cloudSyncPath: string;
-  visionModelName?: string;
-  visionModelBaseUrl?: string;
   sessionLogEnabled?: boolean;
   sessionLogMaxChars?: number;
   /** SPEC §6 consent gate — when true the agent blocks on pre-action approval. */
@@ -1141,9 +1139,6 @@ function registerIpcHandlers(): void {
     // Update the requested section
     if (section === "provider") {
       config.provider = { ...config.provider, ...values };
-    } else if (section === "vision") {
-      config.visionModelName = values.visionModelName || config.visionModelName;
-      config.visionModelBaseUrl = values.visionModelBaseUrl || config.visionModelBaseUrl;
     } else if (section === "autonomy") {
       config.autonomyGrants = values.grants || "";
     } else if (section === "sync") {
@@ -1397,6 +1392,49 @@ function registerIpcHandlers(): void {
     if (err) return { error: err };
     shell.showItemInFolder(path.resolve(filePath));
     return { ok: true };
+  });
+
+  // Load Evidence.json from disk for a given document file path.
+  // Looks for <basename>_Evidence.json in the same directory.
+  // Returns parsed evidence model (claims + sources) or null if not found.
+  ipcMain.handle("evidence:load", async (_evt, docFilePath: string) => {
+    try {
+      const guardErr = ipcPathGuard(docFilePath, "read");
+      if (guardErr) return { error: guardErr };
+      const fs = await import("fs/promises");
+      const baseName = path.basename(docFilePath).replace(/\.(docx|xlsx|pptx)$/, "");
+      const dir = path.dirname(docFilePath);
+      const evidencePath = path.join(dir, `${baseName}_Evidence.json`);
+      let model: any = null;
+      try {
+        const raw = await fs.readFile(evidencePath, "utf8");
+        model = JSON.parse(raw);
+      } catch {
+        return null; // No Evidence.json found
+      }
+      // Also try to load Run_Record.json
+      let runRecord: any = null;
+      try {
+        const runRecordPath = path.join(dir, `${baseName}_Run_Record.json`);
+        const runRaw = await fs.readFile(runRecordPath, "utf8");
+        runRecord = JSON.parse(runRaw);
+      } catch {
+        // No run record — that's fine
+      }
+      return {
+        docPath: docFilePath,
+        claims: model.claims || [],
+        sources: model.sources || [],
+        sourcesExcluded: model.sources_excluded || [],
+        reviewStatus: model.review_status || "draft_for_review",
+        title: model.title || "",
+        company: model.company || "",
+        asOf: model.as_of || "",
+        runRecord,
+      };
+    } catch {
+      return null;
+    }
   });
 
   // Preview — read a file and return its content + type for the preview panel

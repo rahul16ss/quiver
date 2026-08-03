@@ -115,18 +115,33 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "CONNECTOR-TOOL-DISPLAY-NAME",
   ],
   // Evidence model (live lineage)
-  "src/evidence/model.ts": [
-    "EVIDENCE-MODEL-EXISTS",
-    "EVIDENCE-MODEL-TYPES",
-  ],
+  "src/evidence/model.ts": ["EVIDENCE-MODEL-EXISTS", "EVIDENCE-MODEL-TYPES"],
   "src/evidence/tracker.ts": [
     "EVIDENCE-TRACKER-EXISTS",
     "EVIDENCE-TRACKER-VALIDATE",
     "EVIDENCE-TRACKER-FINALIZE",
   ],
-  "src/tools/evidence.ts": [
-    "EVIDENCE-TOOL-EXISTS",
-    "EVIDENCE-TOOL-ACTIONS",
+  "src/tools/evidence.ts": ["EVIDENCE-TOOL-EXISTS", "EVIDENCE-TOOL-ACTIONS"],
+  // PDF reader
+  "src/tools/pdf_read.ts": [
+    "PDF-READ-TOOL-EXISTS",
+    "PDF-READ-VISION-ROUTING",
+    "PDF-READ-SYSTEM-PROMPT",
+  ],
+  // Office document tool — extended capabilities (comments, ranges, formulas, merge)
+  "src/tools/office_doc.ts": [
+    "OFFICE-DOC-EXECFILE-NOT-EXEC",
+    "OFFICE-DOC-FORMATS",
+    "OFFICE-DOC-COMMENTS-DESC",
+    "OFFICE-DOC-COMMENTS-TYPE-SUPPORTED",
+    "OFFICE-DOC-EXCEL-RANGE-GET",
+    "OFFICE-DOC-EXCEL-RANGE-VIEW",
+    "OFFICE-DOC-EXCEL-FORMULA-DESC",
+    "OFFICE-DOC-VIEW-FILTERS",
+    "OFFICE-DOC-MERGE-FORCE",
+    "OFFICE-DOC-MERGE-NESTED-DESC",
+    "OFFICE-DOC-GET-DEPTH",
+    "OFFICE-DOC-SYSTEM-PROMPT-COMMENTS",
   ],
   // Config
   "src/config.ts": ["CONFIG-MODEL-DEFAULTS-IN-SOURCE", "CONFIG-SINGLE-API-KEY"],
@@ -150,9 +165,17 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "GUI-SETTINGS-SYNC-IPC",
     "GUI-SETTINGS-MEMORY-IPC",
     "SESSION-ARCHIVE-PERMANENT-FLAG",
+    "GUI-EVIDENCE-LOAD-IPC",
   ],
+  // GUI preload
+  "ui/preload.ts": ["GUI-EVIDENCE-LOAD-PRELOAD"],
   // GUI renderer
   "ui/renderer.ts": ["GUI-OUTFIT-TYPOGRAPHY", "GUI-DIFF-APPROVAL"],
+  // GUI renderer app.js
+  "ui/renderer/app.js": [
+    "GUI-EVIDENCE-LOAD-FROM-DISK",
+    "GUI-EVIDENCE-LOAD-CALLSITE",
+  ],
   // CLI
   "src/cli.ts": [
     "CRASH-NO-AUTO-DISCARD",

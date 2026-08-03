@@ -183,6 +183,9 @@ const exposedApi = {
   openFile: (filePath: string) => safeInvoke("file:open", filePath),
   showInFolder: (filePath: string) => safeInvoke("file:showInFolder", filePath),
 
+  // Evidence lineage: load Evidence.json from disk for a document
+  loadEvidence: (docFilePath: string) => safeInvoke("evidence:load", docFilePath),
+
   // Navigation
   loadMain: () => safeInvoke("nav:loadMain"),
   loadSettings: () => safeInvoke("nav:loadSettings"),

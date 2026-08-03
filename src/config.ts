@@ -357,11 +357,6 @@ export const config: Config = {
     process.env.QUIVER_LOG_RETENTION_DAYS || "30",
     10,
   ),
-  visionModelName: process.env.VISION_MODEL_NAME || "",
-  visionModelBaseUrl: process.env.VISION_MODEL_BASE_URL || "",
-  // VISION_MODEL_API_KEY is retired (US-1.3); vision reuses the single
-  // LLM_API_KEY below. VISION_MODEL_NAME/BASE_URL remain configurable.
-  visionModelApiKey: process.env.LLM_API_KEY || "",
   // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
   // When enabled, the agent surfaces a pre-action summary and WAITS for the
   // user to approve / decline / exclude before the model call. Off by default
@@ -406,10 +401,6 @@ export interface Config {
   ambientMaxHealRounds: number;
   // Ambient log retention (days; 0 = keep forever).
   logRetentionDays: number;
-  // Vision fallback (US-5.4) — populated from VISION_MODEL_NAME/BASE_URL/API_KEY
-  visionModelName: string;
-  visionModelBaseUrl: string;
-  visionModelApiKey: string;
   // Consent gate (SPEC §6). When true the agent blocks on a pre-action
   // approval before each model call.
   consentGateEnabled: boolean;

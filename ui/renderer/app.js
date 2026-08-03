@@ -527,11 +527,30 @@ function handleOfficeDocResult(args, ok) {
     if (actionsEl) actionsEl.hidden = false;
     card.classList.remove("canceled");
     card.classList.add("ready");
+    // Load evidence lineage from disk (Evidence.json alongside the document)
+    loadEvidenceFromDisk(filePath);
   } else if (!card.classList.contains("ready")) {
     if (titleEl) titleEl.textContent = "Creation canceled — " + name;
     card.classList.add("canceled");
   }
   scrollChat();
+}
+
+// Load Evidence.json from disk and render lineage chips for a document.
+// This complements the live evidence tool events — it picks up evidence
+// from prior sessions or when reopening a document.
+async function loadEvidenceFromDisk(filePath) {
+  try {
+    const result = await api.loadEvidence(filePath);
+    if (result && result.claims && result.claims.length > 0) {
+      renderLineageChipsForDocument(filePath, result.claims, result.sources);
+      if (result.runRecord) {
+        recordDeliverableContext(filePath, result);
+      }
+    }
+  } catch {
+    // No evidence file or error — silently skip
+  }
 }
 
 // ─── activity plane: what Quiver is doing ──────────────────────────────

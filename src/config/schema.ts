@@ -14,7 +14,6 @@ export const CONFIG_SCHEMA_VERSION = 1;
 export interface ConfigSchema {
   schema_version: number;
   model: ModelConfig;
-  vision: VisionConfig;
   approvals: ApprovalsConfig;
   sync: SyncConfig;
   memory: MemoryConfig;
@@ -28,13 +27,6 @@ export interface ModelConfig {
   max_context_tokens: number;
   max_output_tokens: number;
   temperature: number;
-}
-
-export interface VisionConfig {
-  enabled: boolean;
-  model_name: string;
-  base_url: string;
-  api_key_ref: string;
 }
 
 export interface ApprovalsConfig {
@@ -68,12 +60,6 @@ export function getDefaultConfig(): ConfigSchema {
       max_context_tokens: config.maxContextTokens,
       max_output_tokens: 16384,
       temperature: 0.7,
-    },
-    vision: {
-      enabled: false,
-      model_name: config.visionModelName,
-      base_url: config.visionModelBaseUrl,
-      api_key_ref: "LLM_API_KEY",
     },
     approvals: {
       require_approval_for: ["write_file", "replace_content", "run_command", "apply_patch", "create_tool"],
@@ -153,7 +139,6 @@ export function migrateConfig(config: any): ConfigSchema {
   return {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: { ...defaults.model, ...config.model },
-    vision: { ...defaults.vision, ...config.vision },
     approvals: { ...defaults.approvals, ...config.approvals },
     sync: { ...defaults.sync, ...config.sync },
     memory: { ...defaults.memory, ...config.memory },
@@ -176,16 +161,6 @@ export function getSettingsSections(): { id: string; label: string; fields: Sett
         { key: "max_context_tokens", label: "Max Context Tokens", type: "number" },
         { key: "max_output_tokens", label: "Max Output Tokens", type: "number" },
         { key: "temperature", label: "Temperature", type: "number" },
-      ],
-    },
-    {
-      id: "vision",
-      label: "Vision Model",
-      fields: [
-        { key: "enabled", label: "Enabled", type: "boolean" },
-        { key: "model_name", label: "Vision Model Name", type: "text" },
-        { key: "base_url", label: "Vision Base URL", type: "text" },
-        { key: "api_key_ref", label: "Vision API Key", type: "secret" },
       ],
     },
     {

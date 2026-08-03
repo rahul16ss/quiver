@@ -104,9 +104,6 @@ import {
 import { compactWithSummarization } from "../src/context_manager.js";
 import {
   encodeImageAsDataURL,
-  getActiveModelConfig,
-  setVisionRemoteConsent,
-  getVisionRemoteConsent,
   MAX_IMAGE_DIMENSION,
 } from "../src/vision_router.js";
 import { config } from "../src/config.js";
@@ -1093,22 +1090,22 @@ async function onboardingContract() {
 
 async function configStartupUXContract() {
   // ── Approved user-facing env variable set (project-owner directive) ──
-  // Core (9): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY, VISION_MODEL_NAME,
-  //   VISION_MODEL_BASE_URL, QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS,
-  //   QUIVER_SESSION_LOG, QUIVER_SESSION_LOG_MAX_CHARS.
+  // Core (7): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY,
+  //   QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS, QUIVER_SESSION_LOG,
+  //   QUIVER_SESSION_LOG_MAX_CHARS.
   // Optional: PARALLEL_API_KEY, GITHUB_TOKEN (developers only).
-  // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_API_KEY,
-  //   CONTEXT7_API_KEY, BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by
-  //   QUIVER_AUTONOMY). The single API key is LLM_API_KEY, which powers
-  //   the LLM and vision adapters. No model name, base URL, or API key is
-  //   baked into src/config.ts — Quiver is provider-agnostic and env-driven.
+  // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_NAME,
+  //   VISION_MODEL_BASE_URL, VISION_MODEL_API_KEY, CONTEXT7_API_KEY,
+  //   BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by QUIVER_AUTONOMY).
+  //   The single API key is LLM_API_KEY, which powers the single multimodal
+  //   model (text + images, no separate vision endpoint). No model name,
+  //   base URL, or API key is baked into src/config.ts — Quiver is
+  //   provider-agnostic and env-driven.
   // Internal feature flags (e.g. QUIVER_CLOUD_SYNC_*) are out of scope here.
   const ALLOWED_ENV = new Set([
     "LLM_API_BASE_URL",
     "LLM_MODEL_NAME",
     "LLM_API_KEY",
-    "VISION_MODEL_NAME",
-    "VISION_MODEL_BASE_URL",
     "QUIVER_AUTONOMY",
     "QUIVER_MAX_CONTEXT_TOKENS",
     "QUIVER_SESSION_LOG",
@@ -1120,6 +1117,8 @@ async function configStartupUXContract() {
   ]);
   const RETIRED_ENV = [
     "OLLAMA_API_KEY",
+    "VISION_MODEL_NAME",
+    "VISION_MODEL_BASE_URL",
     "VISION_MODEL_API_KEY",
     "CONTEXT7_API_KEY",
     "BROWSER_HEADLESS",
@@ -1145,12 +1144,8 @@ async function configStartupUXContract() {
         );
       const baseUrlHasBakedDefault =
         !!baseUrl && baseUrl[1] && baseUrl[1].trim().length > 0;
-      // visionModelName must read from env (empty fallback allowed — vision optional).
-      const vision =
-        /visionModelName\s*:\s*process\.env\.VISION_MODEL_NAME\s*(?:\|\|\s*"([^"]*)")?/.exec(
-          cfg,
-        );
-      const visionReadsEnv = !!vision;
+      // No vision-specific config should exist — single multimodal model.
+      const hasVisionConfig = /visionModelName\s*:/i.test(cfg);
       const wizard =
         srcText("src/config.ts").match(
           /printFirstRunWizard[\s\S]*?\n\}\)/,
@@ -1164,15 +1159,15 @@ async function configStartupUXContract() {
         throw new Error(
           "llmBaseUrl has a non-empty baked default — Quiver must be provider-agnostic and read the base URL from LLM_API_BASE_URL",
         );
-      if (!visionReadsEnv)
+      if (hasVisionConfig)
         throw new Error(
-          "visionModelName does not read from VISION_MODEL_NAME env var",
+          "config.ts still has visionModelName — the single multimodal model architecture removed separate vision config",
         );
       if (asksModel)
         throw new Error(
           "first-run wizard asks the user for a model name (model names come from .env, not from the user)",
         );
-      return !llmHasBakedDefault && !baseUrlHasBakedDefault && visionReadsEnv && !asksModel;
+      return !llmHasBakedDefault && !baseUrlHasBakedDefault && !hasVisionConfig && !asksModel;
     },
   );
 
@@ -1208,30 +1203,29 @@ async function configStartupUXContract() {
   await check(
     "CONFIG-SINGLE-API-KEY",
     "US-1.3",
-    "a single LLM_API_KEY powers the LLM and vision adapters — no OLLAMA_API_KEY or VISION_MODEL_API_KEY",
+    "a single LLM_API_KEY powers the single multimodal model — no OLLAMA_API_KEY, VISION_MODEL_NAME, or VISION_MODEL_API_KEY",
     () => {
       const cfg = codeOnly("src/config.ts");
       const hasOllamaKey = /\bprocess\.env\.OLLAMA_API_KEY\b/.test(cfg);
       const hasVisionKey = /\bprocess\.env\.VISION_MODEL_API_KEY\b/.test(cfg);
+      const hasVisionConfig = /\bvisionModelName\b/.test(cfg);
       if (hasOllamaKey)
         throw new Error(
           "config.ts still reads OLLAMA_API_KEY — the single key is LLM_API_KEY; OLLAMA_API_KEY must be removed",
         );
       if (hasVisionKey)
         throw new Error(
-          "config.ts still reads VISION_MODEL_API_KEY — vision must reuse LLM_API_KEY",
+          "config.ts still reads VISION_MODEL_API_KEY — removed with the single multimodal model",
         );
-      // The single key LLM_API_KEY must back the primary LLM key and the vision key.
+      if (hasVisionConfig)
+        throw new Error(
+          "config.ts still has visionModelName — the single multimodal model architecture removed separate vision config",
+        );
+      // The single key LLM_API_KEY must back the model.
       const llm = /llmApiKey\s*:\s*process\.env\.[^\n]+/.exec(cfg)?.[0] || "";
-      const vision =
-        /visionModelApiKey\s*:\s*process\.env\.[^\n]+/.exec(cfg)?.[0] || "";
       if (!/LLM_API_KEY/.test(llm))
         throw new Error(
-          "llmApiKey does not derive from LLM_API_KEY — the single key must power the LLM",
-        );
-      if (!/LLM_API_KEY/.test(vision))
-        throw new Error(
-          "visionModelApiKey does not derive from LLM_API_KEY — vision must reuse the single key",
+          "llmApiKey does not derive from LLM_API_KEY — the single key must power the model",
         );
       // The onboarding/init handshake must persist the entered key as LLM_API_KEY, not OLLAMA_API_KEY.
       const persists =
@@ -1888,58 +1882,6 @@ async function visionContract() {
       const dim = pngDimensions(decoded);
       if (!dim) return false;
       return dim.w <= MAX_IMAGE_DIMENSION && dim.h <= MAX_IMAGE_DIMENSION;
-    },
-  );
-
-  await check(
-    "VISION-REMOTE-CONSENT",
-    "US-5.4",
-    "remote vision routing must require explicit consent: no remote image is sent without opt-in, and opt-in enables it",
-    () => {
-      const saved = {
-        model: (config as any).visionModelName,
-        base: (config as any).visionModelBaseUrl,
-        key: (config as any).visionModelApiKey,
-      };
-      const savedConsent = getVisionRemoteConsent();
-      try {
-        (config as any).visionModelName = "remote-vision-model";
-        (config as any).visionModelBaseUrl =
-          "https://remote-vision.example.com/v1";
-        (config as any).visionModelApiKey = "k";
-        const msgs = [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: "data:image/png;base64,iVBORw0KGgo=" },
-              },
-            ],
-          },
-        ];
-        setVisionRemoteConsent(false);
-        const denied = getActiveModelConfig(msgs as any);
-        if (denied.isVision) return false; // image leaked to a remote provider without consent
-        setVisionRemoteConsent(true);
-        const allowed = getActiveModelConfig(msgs as any);
-        return allowed.isVision === true; // explicit consent enables remote vision routing
-      } finally {
-        (config as any).visionModelName = saved.model;
-        (config as any).visionModelBaseUrl = saved.base;
-        (config as any).visionModelApiKey = saved.key;
-        setVisionRemoteConsent(savedConsent);
-      }
-    },
-  );
-
-  await check(
-    "VISION-CONFIG-WIRED",
-    "US-5.4",
-    "runtime config must populate vision model fields from env (VISION_MODEL_NAME / VISION_MODEL_BASE_URL) so the vision fallback can actually activate; the vision key is the single LLM_API_KEY (see CONFIG-SINGLE-API-KEY)",
-    () => {
-      const c = srcText("src/config.ts");
-      return /VISION_MODEL_NAME/.test(c) && /VISION_MODEL_BASE_URL/.test(c);
     },
   );
 
@@ -3351,13 +3293,12 @@ async function guiSettingsContract() {
   await check(
     "GUI-SETTINGS-SECTIONS",
     "US-8.4",
-    "settings page must display all 6 required sections: Model Provider, API Credentials, Vision Model, Approvals, Cloud Sync, Memory",
+    "settings page must display all 5 required sections: Model Provider, API Credentials, Approvals, Cloud Sync, Memory",
     () => {
       const settingsHtml = srcText("ui/renderer/settings.html");
       const required = [
         "Model Provider",
         "API Credentials",
-        "Vision Model",
         "Approvals",
         "Cloud Sync",
         "Memory",
@@ -6013,6 +5954,79 @@ async function extendedCapabilitiesContract() {
     },
   );
 
+  // ─── US-17.21: Multimodal PDF reading ────────────────────────────────
+  // The pdf_read tool renders PDF pages to PNG images and returns [Image:]
+  // markers. The agent loop processes these markers into vision content so
+  // the model can "see" the page — preserving tables, charts, and layout.
+
+  await check(
+    "PDF-READ-TOOL-EXISTS",
+    "US-17.21",
+    "pdf_read tool must exist at src/tools/pdf_read.ts, export a tool object with name 'pdf_read', and accept file/pages/dpi/maxPages parameters",
+    () => {
+      const c = srcText("src/tools/pdf_read.ts");
+      return (
+        /export const tool/.test(c) &&
+        /name:\s*"pdf_read"/.test(c) &&
+        /file:\s*z[\s\S]*?\.string\(\)/.test(c) &&
+        /pages:\s*z[\s\S]*?\.string\(\)/.test(c) &&
+        /dpi:\s*z[\s\S]*?\.number\(\)/.test(c) &&
+        /maxPages:\s*z[\s\S]*?\.number\(\)/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "PDF-READ-VISION-ROUTING",
+    "US-17.21",
+    "Agent loop must process [Image: path] markers in tool results (not just user input) so the single multimodal model receives image content parts from tool output",
+    () => {
+      const agentCode = codeOnly("src/agent.ts");
+      const hasToolImageProcessing = agentCode.includes("[Image:") &&
+        agentCode.includes("processImageMarkers") &&
+        /toolContent/.test(agentCode);
+      // The single multimodal model receives image_url parts in tool results
+      const hasImageEncoding = codeOnly("src/vision_router.ts").includes("image_url");
+      return hasToolImageProcessing && hasImageEncoding;
+    },
+  );
+
+  await check(
+    "PDF-READ-SYSTEM-PROMPT",
+    "US-17.21",
+    "System prompt must document the pdf_read tool and instruct the agent to use it for PDF files (filings, transcripts, research reports)",
+    () => {
+      const c = srcText("skills/system-prompt/SKILL.md");
+      return (
+        /pdf_read/.test(c) &&
+        /PDF/i.test(c) &&
+        /filing|transcript|SEC/i.test(c) &&
+        /\[Image:/.test(c)
+      );
+    },
+  );
+
+  await check(
+    "PDF-READ-DISPLAY-NAME",
+    "US-17.21",
+    "Agent must have 'pdf_read' in TOOL_DISPLAY_NAMES for human-friendly CLI/GUI display",
+    () => {
+      const c = codeOnly("src/agent.ts");
+      return /pdf_read:\s*"/.test(c);
+    },
+  );
+
+  await check(
+    "PDF-READ-CHECKER-FILTER",
+    "US-17.21",
+    "Checker filter must map src/tools/pdf_read.ts to relevant acceptance check IDs",
+    () => {
+      const c = codeOnly("src/subagents/checker_filter.ts");
+      return /src\/tools\/pdf_read\.ts/.test(c) &&
+        /PDF-READ/.test(c);
+    },
+  );
+
   // ─── US-17.14: Scratch-area semantics for "Draft & research" tier ────
   // Build-order #4: when trust tier is "build" (buyer-facing: "Draft &
   // research"), writes redirect to .quiver/scratch/. The user reviews and
@@ -7867,6 +7881,185 @@ async function extendedCapabilitiesContract() {
         existsSync(path.join(outputDir, "Portfolio_Review_Checklist.md")) &&
         existsSync(path.join(outputDir, "Portfolio_Review_Run_Record.json"))
       );
+    },
+  );
+
+  // ─── US-17.22: Office document extended capabilities ──────────────────
+  // Gap #2: Word comments, Gap #3: Excel range reading, Gap #6: Complex
+  // template mapping. These capabilities extend office_doc to support
+  // inline evidence annotations, range reads, and richer template merges.
+
+  await check(
+    "OFFICE-DOC-COMMENTS-DESC",
+    "US-17.22",
+    "office_doc tool description must mention Word comments, PowerPoint comments, and how to add/query/set them",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /Word comments/i.test(c) &&
+        /type: 'comment'/i.test(c) &&
+        /PowerPoint comments/i.test(c) &&
+        /selector: 'comment'/i.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-COMMENTS-TYPE-SUPPORTED",
+    "US-17.22",
+    "office_doc tool must accept 'comment' as a valid type for add operations (pass-through to OfficeCLI)",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      // The tool passes type through to OfficeCLI without restriction —
+      // verify the add action passes the type parameter
+      return /cliArgs\.push\("add", file, parent, "--type", type\)/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-EXCEL-RANGE-GET",
+    "US-17.22",
+    "office_doc tool must support Excel range reading via get with range paths like /Sheet1/A1:D20",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      // The get action passes elemPath through to OfficeCLI which supports range paths
+      return /cliArgs\.push\("get", file, elemPath \|\| "\/"\)/.test(c) &&
+        /Excel range reading/i.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-EXCEL-RANGE-VIEW",
+    "US-17.22",
+    "office_doc view action must pass --range flag for Excel range text view",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /props\?\.range\)/.test(c) &&
+        /"--range"/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-EXCEL-FORMULA-DESC",
+    "US-17.22",
+    "office_doc tool description must mention Excel formula reading (formula, cachedValue, computedValue, evaluated)",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /Excel formula reading/i.test(c) &&
+        /cachedValue/i.test(c) &&
+        /computedValue/i.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-VIEW-FILTERS",
+    "US-17.22",
+    "office_doc view action must support --range, --cols, --start, --end, --max-lines, --page, --type, --limit filters",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /"--range"/.test(c) &&
+        /"--cols"/.test(c) &&
+        /"--start"/.test(c) &&
+        /"--end"/.test(c) &&
+        /"--max-lines"/.test(c) &&
+        /"--page"/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-MERGE-FORCE",
+    "US-17.22",
+    "office_doc merge action must support --force flag to overwrite existing output",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /"--force"/.test(c) &&
+        /props\?\.force/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-MERGE-NESTED-DESC",
+    "US-17.22",
+    "office_doc tool description must mention nested path support for template merge (items[0].name, company.revenue)",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /items\[0\]\.name/i.test(c) &&
+        /company\.revenue/i.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-GET-DEPTH",
+    "US-17.22",
+    "office_doc get action must support --depth flag for deeper child traversal",
+    () => {
+      const c = codeOnly("src/tools/office_doc.ts");
+      return /"--depth"/.test(c) &&
+        /props\?\.depth/.test(c);
+    },
+  );
+
+  await check(
+    "OFFICE-DOC-SYSTEM-PROMPT-COMMENTS",
+    "US-17.22",
+    "System prompt must document Word comments, Excel range reading, Excel formula reading, and template merge capabilities",
+    () => {
+      const p = srcText("skills/system-prompt/SKILL.md");
+      return /Word comments/i.test(p) &&
+        /Excel range reading/i.test(p) &&
+        /Excel formula reading/i.test(p) &&
+        /Template merge/i.test(p);
+    },
+  );
+
+  // ─── US-17.23: GUI lineage rendering from Evidence.json on disk ──────
+  // Gap #4: The GUI must load Evidence.json from disk when a document
+  // card becomes ready, not just from live evidence tool events. This
+  // ensures lineage chips appear for documents from prior sessions.
+
+  await check(
+    "GUI-EVIDENCE-LOAD-IPC",
+    "US-17.23",
+    "Main process must register an evidence:load IPC handler that reads Evidence.json from disk",
+    () => {
+      const c = codeOnly("ui/main.ts");
+      return /evidence:load/.test(c) &&
+        /_Evidence\.json/.test(c) &&
+        /_Run_Record\.json/.test(c);
+    },
+  );
+
+  await check(
+    "GUI-EVIDENCE-LOAD-PRELOAD",
+    "US-17.23",
+    "Preload bridge must expose loadEvidence function to the renderer",
+    () => {
+      const c = codeOnly("ui/preload.ts");
+      return /loadEvidence/.test(c) &&
+        /evidence:load/.test(c);
+    },
+  );
+
+  await check(
+    "GUI-EVIDENCE-LOAD-FROM-DISK",
+    "US-17.23",
+    "Renderer app.js must call loadEvidenceFromDisk when a document card becomes ready",
+    () => {
+      const c = srcText("ui/renderer/app.js");
+      return /loadEvidenceFromDisk/.test(c) &&
+        /api\.loadEvidence/.test(c);
+    },
+  );
+
+  await check(
+    "GUI-EVIDENCE-LOAD-CALLSITE",
+    "US-17.23",
+    "handleOfficeDocResult must call loadEvidenceFromDisk after marking card as ready",
+    () => {
+      const c = srcText("ui/renderer/app.js");
+      // Verify loadEvidenceFromDisk is called inside handleOfficeDocResult after card.classList.add("ready")
+      const idx = c.indexOf("card.classList.add(\"ready\")");
+      if (idx === -1) return false;
+      const after = c.substring(idx, idx + 200);
+      return /loadEvidenceFromDisk/.test(after);
     },
   );
 }

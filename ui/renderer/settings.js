@@ -15,8 +15,6 @@ async function loadSettings() {
   $("apiKey").value = currentConfig.provider?.apiKey || "";
   $("parallelApiKey").value = currentConfig.parallelApiKey || "";
   $("githubToken").value = currentConfig.githubToken || "";
-  $("visionModelName").value = currentConfig.visionModelName || "";
-  $("visionModelBaseUrl").value = currentConfig.visionModelBaseUrl || "";
 
   const grants = currentConfig.autonomyGrants || "";
   $("autonomyMode").value = grants.includes("yolo")
@@ -91,8 +89,6 @@ async function saveSettings() {
     llmApiKey: key,
     parallelApiKey: $("parallelApiKey").value.trim(),
     githubToken: $("githubToken").value.trim(),
-    visionModelName: $("visionModelName").value.trim(),
-    visionModelBaseUrl: $("visionModelBaseUrl").value.trim(),
     maxContextTokens: parseInt($("maxContextTokens").value, 10) || 120000,
     autonomyGrants: grants,
     consentGateEnabled: isToggleActive("consentGateEnabled"),
