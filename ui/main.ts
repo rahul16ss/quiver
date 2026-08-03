@@ -356,7 +356,7 @@ function forwardDaemonEntry(entry: AgentEventEntry): void {
       mainWindow?.webContents.send("agent:raw", entry.payload);
       break;
     case "stderr":
-      mainWindow?.webContents.send("agent:stderr", entry.payload);
+      mainWindow?.webContents.send("agent:stderr", redactSecrets(entry.payload));
       break;
     case "exit": {
       let code: number | null = null;

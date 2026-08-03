@@ -203,9 +203,13 @@ export const tool: Tool = {
     // "validate" and "close" are read-only — they don't modify the file.
     const _writeActions = new Set(["create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import"]);
     const _operation = _writeActions.has(args.action) ? "write" : "read";
+    let _resolvedFile: string | undefined;
     try {
       const _checkPath = args.file || args.filePath || args.directory || args.path || "";
-      if (_checkPath) assertToolPathAllowed(_checkPath, _operation as "read" | "write");
+      if (_checkPath) {
+        const _resolved = assertToolPathAllowed(_checkPath, _operation as "read" | "write");
+        _resolvedFile = _resolved.absolutePath;
+      }
       // Validate additional file paths (template, source) through the policy
       if (args.template) assertToolPathAllowed(args.template, "read");
       if (args.source) assertToolPathAllowed(args.source, "read");
@@ -215,7 +219,7 @@ export const tool: Tool = {
     }
     const {
       action,
-      file,
+      file: _rawFile,
       parent,
       path: elemPath,
       type,
@@ -231,6 +235,10 @@ export const tool: Tool = {
       json,
       cwd,
     } = args;
+
+    // Use the resolved path (honors scratch-area redirect) if available;
+    // otherwise fall back to the raw file argument.
+    const file = _resolvedFile ?? _rawFile;
 
     // ─── Help action (no file needed) ────────────────────────────────
     if (action === "help") {
