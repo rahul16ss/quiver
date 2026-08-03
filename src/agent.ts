@@ -2462,7 +2462,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         const maxRetries = 3;
         // US-2.3: Create an AbortController for this stream so Ctrl+C can
         // halt generation. Stored on the instance so abortActiveStream()
-        // can signal it from the SIGINT handler.
+        // can signal it from the SIGINT handler. Recreated on each retry
+        // because abort() nullifies it — a retry with a null controller
+        // crashes with "Cannot read properties of null (reading 'signal')".
         this.activeAbortController = new AbortController();
         // US-17.17 (mid-tier memory/context redaction): for a cloud-redacted
         // turn, send a REDACTED copy of the messages so loaded memory, core
@@ -2653,6 +2655,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
             }
             spinner.start();
             await new Promise((r) => setTimeout(r, delay));
+            // Recreate the AbortController for the retry — the previous one
+            // may have been aborted or nullified by abortActiveStream().
+            this.activeAbortController = new AbortController();
           }
         }
       };
