@@ -103,7 +103,7 @@ import { compactWithSummarization } from "../src/context_manager.js";
 import {
   encodeImageAsDataURL,
   MAX_IMAGE_DIMENSION,
-} from "../src/vision_router.js";
+} from "../src/file_encoder.js";
 import { config } from "../src/config.js";
 import type { MemoryFact } from "../src/memory/schema.js";
 import {
@@ -1833,7 +1833,7 @@ async function memoryGovernanceContract() {
 
 // ─── US-5.4: Vision routing — EXIF redaction, downscale, remote consent ──
 
-async function visionContract() {
+async function fileEncodingContract() {
   await check(
     "VISION-EXIF-REDACTED",
     "US-5.4",
@@ -1856,7 +1856,7 @@ async function visionContract() {
         Buffer.from([0xff, 0xd9]),
       ]);
       const tmp = await fs.mkdtemp(
-        path.join(os.tmpdir(), "quiver-vision-accept-"),
+        path.join(os.tmpdir(), "quiver-file-accept-"),
       );
       tmpDirs.push(tmp);
       const file = path.join(tmp, "shot.jpg");
@@ -1875,7 +1875,7 @@ async function visionContract() {
     `images must be downscaled so neither dimension exceeds MAX_IMAGE_DIMENSION (${MAX_IMAGE_DIMENSION}px) before upload`,
     async () => {
       const tmp = await fs.mkdtemp(
-        path.join(os.tmpdir(), "quiver-vision-dscale-"),
+        path.join(os.tmpdir(), "quiver-file-dscale-"),
       );
       tmpDirs.push(tmp);
       const file = path.join(tmp, "big.png");
@@ -1894,11 +1894,11 @@ async function visionContract() {
     "US-5.4",
     "oversized images must be rejected before upload",
     async () => {
-      const v = srcText("src/vision_router.ts");
+      const v = srcText("src/file_encoder.ts");
       if (!/MAX_IMAGE_SIZE/.test(v)) return false;
       // A non-image file must be rejected by magic-byte validation.
       const tmp = await fs.mkdtemp(
-        path.join(os.tmpdir(), "quiver-vision-size-"),
+        path.join(os.tmpdir(), "quiver-file-size-"),
       );
       tmpDirs.push(tmp);
       const file = path.join(tmp, "notimage.jpg");
@@ -4520,7 +4520,7 @@ export async function runSpecAcceptanceTests(): Promise<number> {
     await configStartupUXContract();
     await compactionContract();
     await memoryGovernanceContract();
-    await visionContract();
+    await fileEncodingContract();
     await retryPolicyContract();
     await injectionAndCotContract();
     await absorbedContract(tmpWs);
@@ -5441,8 +5441,8 @@ async function specGapCoverageContract() {
       const appjs = srcText("ui/renderer/app.js");
       const combined = html + "\n" + appjs;
       const hasDrop = /drop|dragover|ondrop|image.*drop|drop.*image/i.test(combined);
-      // EXIF redaction happens server-side in vision_router.ts (locally, not in cloud)
-      const vision = codeOnly("src/vision_router.ts");
+      // EXIF redaction happens server-side in file_encoder.ts (locally, not in cloud)
+      const vision = codeOnly("src/file_encoder.ts");
       const hasExif = /exif|EXIF|geolocation/i.test(vision);
       return hasDrop && hasExif;
     },
@@ -5990,7 +5990,7 @@ async function extendedCapabilitiesContract() {
         agentCode.includes("processFileMarkers") &&
         /toolContent/.test(agentCode);
       // The single multimodal model receives image_url parts in tool results
-      const hasImageEncoding = codeOnly("src/vision_router.ts").includes("image_url");
+      const hasImageEncoding = codeOnly("src/file_encoder.ts").includes("image_url");
       return hasToolImageProcessing && hasImageEncoding;
     },
   );
@@ -7748,9 +7748,9 @@ async function extendedCapabilitiesContract() {
   await check(
     "VISION-ROUTER-MARKER-AND-MAGIC",
     "US-16.7",
-    "vision_router must detect [File: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
+    "file_encoder must detect [File: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
     () => {
-      const c = codeOnly("src/vision_router.ts");
+      const c = codeOnly("src/file_encoder.ts");
       return (
         /\[File:/.test(c) &&
         /magic/i.test(c) &&
@@ -7763,9 +7763,9 @@ async function extendedCapabilitiesContract() {
   await check(
     "VISION-ROUTER-EXIF-REDACTION",
     "US-16.7",
-    "vision_router must redact EXIF/metadata before transmission (strip APPn/COM segments)",
+    "file_encoder must redact EXIF/metadata before transmission (strip APPn/COM segments)",
     () => {
-      const c = codeOnly("src/vision_router.ts");
+      const c = codeOnly("src/file_encoder.ts");
       return /EXIF|exif|APPn|0xFFE|metadata/i.test(c);
     },
   );

@@ -423,7 +423,7 @@ export async function encodeImageAsDataURL(
 
 // ─── File Marker Processing ───────────────────────────────────────────
 
-export type VisionContent =
+export type FileContent =
   | string
   | Array<
       | { type: "text"; text: string }
@@ -442,7 +442,7 @@ export type VisionContent =
  */
 export async function processFileMarkers(
   input: string,
-): Promise<VisionContent> {
+): Promise<FileContent> {
   const fileMarker = /\[File:\s*([^\]]+)\]/g;
   const matches = [...input.matchAll(fileMarker)];
 
@@ -501,7 +501,7 @@ export async function processFileMarkers(
 /**
  * Check if a file path has a video extension.
  * Used to detect video files in [File: path] markers — videos are treated
- * like images for routing purposes (vision model handles them).
+ * like images for routing purposes (multimodal model handles them).
  */
 export function isVideoFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase().replace(/^\./, "");

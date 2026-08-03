@@ -223,7 +223,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "MEMORY-REVIEW-WIRED",
   ],
   // Vision
-  "src/vision_router.ts": [
+  "src/file_encoder.ts": [
     "VISION-EXIF-REDACTED",
     "VISION-DOWNSCALE",
     "VISION-REMOTE-CONSENT",

@@ -5,7 +5,7 @@ import * as os from "os";
 import picocolors from "picocolors";
 import readline from "readline";
 import { config, needsApprovalFor } from "./config.js";
-import { processFileMarkers } from "./vision_router.js";
+import { processFileMarkers } from "./file_encoder.js";
 import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
 import { statusLine, theme, formatNum, renderInlineDiff } from "./cli_ui.js";
