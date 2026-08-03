@@ -1,20 +1,16 @@
 /**
- * Image Router — image encoding, validation, and content transformation.
+ * Image Router — raw file encoding for the single multimodal model.
  *
- * With the single multimodal model architecture (SPEC §4.3 revision 2026-07-30),
- * there is no separate vision model. This module handles image encoding:
- *   - Detect [Image: path] markers in user input and tool results
- *   - Validate images by magic bytes (not extension)
- *   - Encode images as base64 data URLs
- *   - Strip EXIF/metadata (US-5.4)
- *   - Downscale oversized images (US-5.4)
- *
- * The encoded content parts go to the same model that handles text —
- * one model, one endpoint, one API key.
+ * The model is multimodal and handles files natively — no rendering,
+ * no text extraction, no splitting. This module encodes files as base64
+ * data URLs so the model sees the raw content:
+ *   - Images → data:image/...;base64,...
+ *   - PDFs → data:application/pdf;base64,... (model reads natively)
+ *   - Other binary files → data:application/...;base64,...
  *
  * Security:
  *   - Only local files (no URLs)
- *   - Magic-byte validation (can't disguise scripts as images)
+ *   - Magic-byte validation for images (can't disguise scripts)
  *   - Size-limited (20MB max)
  *   - Path traversal blocked (path.resolve + stat)
  */
@@ -336,7 +332,12 @@ async function downscaleImage(buf: Buffer, ext: string): Promise<Buffer> {
  * for transmission (US-5.4). Returns null if the file is not a valid
  * image or is too large.
  */
-export async function encodeImageAsDataURL(
+/**
+ * Encode any file as a base64 data URL for the multimodal model.
+ * Images get EXIF stripping + downscaling; everything else (PDFs, etc.)
+ * gets raw base64 encoding — the model handles it natively.
+ */
+export async function encodeFileAsDataURL(
   filePath: string,
 ): Promise<string | null> {
   try {
@@ -347,30 +348,72 @@ export async function encodeImageAsDataURL(
     if (stat.size > MAX_IMAGE_SIZE) {
       console.error(
         picocolors.yellow(
-          `     Image too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
+          `     File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
         ),
       );
       return null;
     }
 
+    // If it's an image (by magic bytes), use the image pipeline (EXIF strip + downscale)
+    const imgExt = validateImageMagic(resolved);
+    if (imgExt) {
+      const raw = await fs.readFile(resolved);
+      let sanitized: Buffer;
+      if (imgExt === "jpg" || imgExt === "jpeg") sanitized = stripJpegMetadata(raw);
+      else if (imgExt === "png") sanitized = stripPngMetadata(raw);
+      else sanitized = raw;
+      const downscaled = await downscaleImage(sanitized, imgExt);
+      const base64 = downscaled.toString("base64");
+      const mime = imgExt === "jpg" ? "jpeg" : imgExt;
+      return `data:image/${mime};base64,${base64}`;
+    }
+
+    // Not an image — encode raw bytes. The model handles PDFs and other
+    // document formats natively (no rendering, no text extraction).
+    const raw = await fs.readFile(resolved);
+    const ext = path.extname(resolved).toLowerCase().replace(/^\./, "");
+
+    // Determine MIME type
+    const mimeTypes: Record<string, string> = {
+      pdf: "application/pdf",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      csv: "text/csv",
+      json: "application/json",
+      txt: "text/plain",
+      md: "text/markdown",
+    };
+    const mime = mimeTypes[ext] || "application/octet-stream";
+    const base64 = raw.toString("base64");
+    return `data:${mime};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Encode an image file as a base64 data URL (with EXIF stripping + downscaling).
+ * Returns null for non-image files (magic-byte validation). This is the
+ * image-specific encoder; use encodeFileAsDataURL for any file type.
+ */
+export async function encodeImageAsDataURL(
+  filePath: string,
+): Promise<string | null> {
+  try {
+    const resolved = path.resolve(filePath);
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) return null;
+    if (stat.size > MAX_IMAGE_SIZE) return null;
     const ext = validateImageMagic(resolved);
-    if (!ext) {
-      console.error(
-        picocolors.yellow(
-          `     Not a valid image file (magic bytes mismatch): ${resolved}`,
-        ),
-      );
-      return null;
-    }
-
+    if (!ext) return null; // not an image — reject
     const raw = await fs.readFile(resolved);
     let sanitized: Buffer;
     if (ext === "jpg" || ext === "jpeg") sanitized = stripJpegMetadata(raw);
     else if (ext === "png") sanitized = stripPngMetadata(raw);
     else sanitized = raw;
     const downscaled = await downscaleImage(sanitized, ext);
-   const base64 = downscaled.toString("base64");
-    // Normalize JPEG mime (`image/jpeg`) regardless of the jpg/jpeg magic key.
+    const base64 = downscaled.toString("base64");
     const mime = ext === "jpg" ? "jpeg" : ext;
     return `data:image/${mime};base64,${base64}`;
   } catch {
@@ -378,7 +421,7 @@ export async function encodeImageAsDataURL(
   }
 }
 
-// ─── Image Marker Processing ─────────────────────────────────────────
+// ─── File Marker Processing ───────────────────────────────────────────
 
 export type VisionContent =
   | string
@@ -388,9 +431,14 @@ export type VisionContent =
     >;
 
 /**
- * Detect [Image: path] markers in user input and convert to vision message parts.
- * Returns the message content as either a string (no images) or an array
- * of text and image_url parts (OpenAI vision format).
+ * Detect [Image: path] markers in user input/tool results and convert to
+ * multimodal message parts. Any file type is supported — the model sees
+ * the raw file as a base64 data URL:
+ *   - Images → data:image/png;base64,... (with EXIF stripping + downscaling)
+ *   - PDFs → data:application/pdf;base64,... (model reads the PDF natively)
+ *   - Other files → data:application/octet-stream;base64,... (model handles it)
+ *
+ * No rendering, no text extraction, no splitting. The model gets the raw bytes.
  */
 export async function processImageMarkers(
   input: string,
@@ -406,7 +454,7 @@ export async function processImageMarkers(
   > = [];
 
   let lastIdx = 0;
-  let imagesEncoded = 0;
+  let filesEncoded = 0;
 
   for (const match of matches) {
     const matchStart = match.index!;
@@ -418,14 +466,14 @@ export async function processImageMarkers(
       if (textBefore) parts.push({ type: "text", text: textBefore });
     }
 
-    const dataUrl = await encodeImageAsDataURL(rawPath);
+    const dataUrl = await encodeFileAsDataURL(rawPath);
     if (dataUrl) {
       parts.push({ type: "image_url", image_url: { url: dataUrl } });
-      imagesEncoded++;
+      filesEncoded++;
     } else {
       parts.push({
         type: "text",
-        text: `[Image: ${rawPath} — could not load. The file may not exist, may not be a valid image, or may be too large.]`,
+        text: `[File: ${rawPath} — could not load. The file may not exist or may be too large.]`,
       });
     }
 
@@ -437,10 +485,10 @@ export async function processImageMarkers(
     if (textAfter) parts.push({ type: "text", text: textAfter });
   }
 
-  if (imagesEncoded > 0 && config.outputMode === "interactive") {
+  if (filesEncoded > 0 && config.outputMode === "interactive") {
     console.log(
       picocolors.gray(
-        `   📎 ${imagesEncoded} image${imagesEncoded > 1 ? "s" : ""} encoded for vision`,
+        `   📎 ${filesEncoded} file${filesEncoded > 1 ? "s" : ""} encoded for the model`,
       ),
     );
   }
