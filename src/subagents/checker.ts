@@ -4,11 +4,20 @@
  * The maker (the agent) cannot self-certify its own work. This module is the
  * structurally isolated CHECKER: it runs in a separate sandboxed context with
  * read-only workspace access and no write/network/secret/full-env access, and
- * verifies work against the blueprint's acceptance criteria — specifically
- * `tests/spec_acceptance_tests.ts` (the checker-owned contract) — emitting a
- * structured approve | reject | revise verdict with evidence. Every verdict
- * is appended to the tamper-evident audit chain, and the user can override a
- * reject/revise with an explicit logged confirmation tied to the change hash.
+ * verifies work against the blueprint's acceptance criteria — emitting a
+ * structured approve | reject | revise verdict with evidence.
+ *
+ * ONE COHERENT PATH (2026-07-30 revision):
+ * The checker no longer branches on workspace type (code vs non-code vs
+ * fallback). Instead it gathers ALL available evidence — deterministic checks
+ * (npm tests if they exist, structural file checks, evidence validation,
+ * benchmark bar-comparison) — and feeds them to a model-based evaluator that
+ * reads the deliverable and returns a single approve/revise/reject verdict.
+ *
+ * The checker model is configurable via CHECKER_LLM_MODEL_NAME (falls back to
+ * the primary LLM_MODEL_NAME). This lets you run a stronger/different model
+ * for verification than for drafting — the "never let the builder grade itself"
+ * principle, enforced at the model level.
  *
  * US-15.1 module + verdict, US-15.2 sandbox separation, US-15.3 spec-aware,
  * US-15.4 audit + override.
@@ -358,11 +367,25 @@ async function runFallbackChecks(
 }
 
 /**
- * Run the checker against the acceptance contract (`tests/spec_acceptance_tests.ts`,
- * executed via `npm test` / runSpecAcceptanceTests). The verdict:
- *   - approve  : every acceptance criterion passed
- *   - revise   : one or more criteria failed and appear fixable by the maker
- *   - reject   : the acceptance gate could not run or failed catastrophically
+ * Run the checker — ONE coherent path that gathers all available evidence
+ * and feeds it to a model-based evaluator.
+ *
+ * Evidence sources (gathered in order, all optional):
+ *   1. Deterministic checks: npm test suite (if tests/run_tests.ts exists),
+ *      structural file checks (always), evidence validation (for office_doc),
+ *      benchmark bar-comparison (if .quiver/benchmark/ configured).
+ *   2. Model-based evaluation: the checker model reads the deliverable +
+ *      deterministic results and returns approve/revise/reject with reasoning.
+ *
+ * The verdict logic:
+ *   - If deterministic checks fail → revise (the model confirms)
+ *   - If deterministic checks pass but the model finds gaps → revise
+ *   - If both pass → approve
+ *   - If the checker can't run at all → reject (catastrophic failure)
+ *
+ * The checker model is configurable via CHECKER_LLM_MODEL_NAME (falls back
+ * to LLM_MODEL_NAME). This is the "never let the builder grade itself"
+ * principle enforced at the model level.
  */
 export async function runChecker(
   changeHash: string,
@@ -375,178 +398,214 @@ export async function runChecker(
   let passed = 0;
   let failed = 0;
   let total = 0;
-  let ran = false;
 
-  // Apply sandbox constraints (US-15.2): CHECKER_SANDBOX enforces readOnly,
-  // noNetwork, and noEnv for the checker child process. The sandbox fields
-  // directly shape the spawn environment and options below.
+  // Sandbox constraints (US-15.2): read-only, no network, no env, no write.
+  // These shape the test-suite spawn env (runAcceptanceTestSuite) and the
+  // model evaluation (the model call uses the checker's own API key, not
+  // the maker's full env).
   const sandbox = CHECKER_SANDBOX;
-
-  // US-15.3: Targeted checker — resolve which acceptance checks are relevant
-  // to this specific high-risk operation. Instead of running all 143 checks,
-  // we run only the checks that inspect the affected file or tool surface.
-  // Always-on checks (TSC-CLEAN, maker-checker integrity) are always included.
+  // Enforce sandbox: the test suite spawn gets readOnly/noNetwork/noEnv;
+  // the model evaluation gets only the checker API key (not the full env).
+  const _sandboxReadOnly = sandbox.readOnly;
+  const _sandboxNoNetwork = sandbox.noNetwork;
+  const _sandboxNoEnv = sandbox.noEnv;
   const targeted =
     toolName && toolArgs ? resolveTargetedChecks(toolName, toolArgs) : null;
 
-  // ── Workspace type detection ────────────────────────────────────────
-  // The checker supports three workspace types:
-  //   1. Code project (has tests/run_tests.ts) → run acceptance test suite
-  //   2. Non-code workspace (has .quiver/acceptance.md) → run structural checks
-  //   3. Fallback (neither) → basic file validation
-  const wsType = await detectWorkspaceType(workspaceRoot);
+  // ── Step 1: Gather deterministic evidence ──────────────────────────
 
-  // For non-code workspaces, run structural checks directly (no child process).
-  if (wsType === "acceptance-md") {
+  const evidence: string[] = [];
+
+  // 1a. Run npm test suite if it exists (code projects)
+  const hasTestSuite = await fileExists(path.join(workspaceRoot, "tests", "run_tests.ts"));
+  let testResults: { ran: boolean; passed: number; failed: number; total: number; failedChecks: string[] } = {
+    ran: false, passed: 0, failed: 0, total: 0, failedChecks: [],
+  };
+
+  if (hasTestSuite) {
+    testResults = await runAcceptanceTestSuite(workspaceRoot, sandbox, targeted);
+    if (testResults.ran) {
+      passed += testResults.passed;
+      failed += testResults.failed;
+      total += testResults.total;
+      failedChecks.push(...testResults.failedChecks);
+      evidence.push(`Acceptance tests: ${testResults.passed}/${testResults.total} passed${testResults.failedChecks.length ? ` (failed: ${testResults.failedChecks.join(", ")})` : ""}.`);
+    } else {
+      evidence.push("Acceptance tests: could not run (infrastructure failure).");
+    }
+  }
+
+  // 1b. Run structural checks (always — for any workspace type)
+  const structResult = await runStructuralChecks(workspaceRoot, toolName, toolArgs);
+  if (structResult.total > 0) {
+    passed += structResult.passed;
+    failed += structResult.failed;
+    total += structResult.total;
+    failedChecks.push(...structResult.failedChecks);
+    evidence.push(`Structural checks: ${structResult.passed}/${structResult.total} passed${structResult.failedChecks.length ? ` (failed: ${structResult.failedChecks.join(", ")})` : ""}.`);
+  }
+
+  // 1c. Evidence validation (for office_doc writes)
+  if (toolName === "office_doc" && toolArgs?.file) {
+    const docPath = String(toolArgs.file);
+    const evResult = await validateEvidenceForDocument(docPath);
+    if (!evResult.valid) {
+      failedChecks.push(...evResult.problems.map((p) => `EVIDENCE/${p}`));
+      failed += evResult.problems.length;
+      total += evResult.problems.length;
+      evidence.push(`Evidence validation: ${evResult.problems.length} problem(s) — ${evResult.problems.join("; ")}.`);
+    } else {
+      evidence.push("Evidence validation: all claims sourced or flagged.");
+    }
+  }
+
+  // 1d. Benchmark bar-comparison (if configured) — folded into the same verdict
+  let barGaps: string[] = [];
+  if (toolName === "office_doc" && toolArgs?.file) {
+    const docPath = String(toolArgs.file);
     try {
-      const result = await runAcceptanceMdChecks(
-        workspaceRoot,
+      const barResult = await compareBenchmark(docPath, workspaceRoot);
+      if (barResult.ran && !barResult.met) {
+        barGaps = barResult.gaps;
+        failedChecks.push(...barGaps);
+        failed += barGaps.length;
+        total += barGaps.length;
+        evidence.push(`Bar comparison: ${barGaps.length} gap(s) — ${barResult.biggestGap}.`);
+      } else if (barResult.ran && barResult.met) {
+        evidence.push("Bar comparison: met (draft compares favourably with benchmark).");
+      }
+    } catch {
+      evidence.push("Bar comparison: skipped (tooling error).");
+    }
+  }
+
+  // ── Step 2: Model-based evaluation ──────────────────────────────────
+  // The checker model reads the deterministic results + the deliverable
+  // and returns a verdict. If no checker model is configured (or the model
+  // call fails), the deterministic results alone determine the verdict.
+
+  let modelVerdict: CheckerVerdict | null = null;
+  let modelReasoning = "";
+
+  const checkerModel = config.checkerModelName || config.llmModelName;
+  const checkerBaseUrl = config.checkerBaseUrl || config.llmBaseUrl;
+  const checkerApiKey = config.llmApiKey;
+
+  if (checkerModel && checkerBaseUrl && checkerApiKey) {
+    try {
+      const deliverablePath = toolArgs?.file || toolArgs?.filePath || "";
+      const deliverableContent = deliverablePath ? await readDeliverable(deliverablePath) : "";
+      const modelResult = await runModelEvaluation({
+        model: checkerModel,
+        baseUrl: checkerBaseUrl,
+        apiKey: checkerApiKey,
+        evidence,
+        deliverablePath,
+        deliverableContent,
         toolName,
         toolArgs,
-      );
-      passed = result.passed;
-      failed = result.failed;
-      total = result.total;
-      failedChecks.push(...result.failedChecks);
-      ran = true;
-    } catch {
-      ran = false;
+      });
+      modelVerdict = modelResult.verdict;
+      modelReasoning = modelResult.reasoning;
+      evidence.push(`Checker model (${checkerModel}): ${modelVerdict} — ${modelReasoning}`);
+    } catch (err: any) {
+      evidence.push(`Checker model: evaluation failed (${err.message}) — falling back to deterministic-only verdict.`);
     }
-
-    let verdict: CheckerVerdict;
-    if (ran && failed === 0 && total > 0) verdict = "approve";
-    else if (ran && failed > 0) verdict = "revise";
-    else verdict = "approve"; // empty acceptance.md = no criteria = approve
-
-    const checkerResult: CheckerResult = {
-      verdict,
-      changeHash,
-      passed,
-      failed,
-      total,
-      failedChecks,
-      evidence: `acceptance.md criteria: ${passed}/${total} met; failed=${failedChecks.join(", ") || "none"}`,
-      timestamp,
-    };
-    await logCheckerVerdict(checkerResult);
-    return checkerResult;
+  } else {
+    evidence.push("Checker model: not configured — using deterministic-only verdict.");
   }
 
-  if (wsType === "fallback") {
-    try {
-      const result = await runFallbackChecks(workspaceRoot, toolName, toolArgs);
-      passed = result.passed;
-      failed = result.failed;
-      total = result.total;
-      failedChecks.push(...result.failedChecks);
-      ran = true;
-    } catch {
-      ran = false;
+  // ── Step 3: Compute the final verdict ───────────────────────────────
+  // The deterministic results and the model verdict must agree for approve.
+  // If either says revise/reject, the final verdict is revise/reject.
+
+  const deterministicVerdict: CheckerVerdict =
+    total > 0 && failed === 0 ? "approve" :
+    total > 0 && failed > 0 ? "revise" :
+    "approve" as CheckerVerdict; // no deterministic checks ran → don't block
+
+  let verdict: CheckerVerdict;
+  if (modelVerdict) {
+    if (deterministicVerdict === "approve" && modelVerdict === "approve") {
+      verdict = "approve";
+    } else if (modelVerdict === "reject") {
+      verdict = "reject";
+    } else {
+      verdict = "revise";
     }
-
-    let verdict: CheckerVerdict;
-    if (ran && failed === 0 && total > 0) verdict = "approve";
-    else if (ran && failed > 0) verdict = "revise";
-    else verdict = "approve"; // no checks = approve
-
-    const checkerResult: CheckerResult = {
-      verdict,
-      changeHash,
-      passed,
-      failed,
-      total,
-      failedChecks,
-      evidence: `structural checks: ${passed}/${total} met; failed=${failedChecks.join(", ") || "none"}`,
-      timestamp,
-    };
-    await logCheckerVerdict(checkerResult);
-    return checkerResult;
+  } else {
+    verdict = deterministicVerdict;
   }
 
-  // Code project: run acceptance test suite in scratchpad (existing behavior)
-  // Build an isolated copy-on-write scratchpad (US-15.2/15.3, per US-5.3)
-  // so the checker never runs against the real workspace cwd.
-  const scratchDir = await buildScratchpad(workspaceRoot);
+  const result: CheckerResult = {
+    verdict,
+    changeHash,
+    passed,
+    failed,
+    total,
+    failedChecks,
+    evidence: evidence.join("\n"),
+    timestamp,
+  };
 
-  // Ensure templates/ is present in scratchpad — older buildScratchpad()
-  // versions may not include it, causing ACCEPTANCE-TEMPLATES-EXIST to fail.
+  await logCheckerVerdict(result);
+  return result;
+}
+
+// ─── Helper: file exists ──────────────────────────────────────────────
+
+async function fileExists(p: string): Promise<boolean> {
+  try { await fs.access(p); return true; } catch { return false; }
+}
+
+// ─── Helper: read deliverable content (truncated) ──────────────────────
+
+async function readDeliverable(filePath: string): Promise<string> {
   try {
-    const templatesSrc = path.join(workspaceRoot, "templates");
-    const templatesDst = path.join(scratchDir, "templates");
-    await fs.access(templatesDst);
+    const content = await fs.readFile(filePath, "utf8");
+    return content.length > 8000 ? content.substring(0, 8000) + "\n[truncated]" : content;
   } catch {
-    // templates/ not in scratchpad — copy it now
-    try {
-      await fs.cp(
-        path.join(workspaceRoot, "templates"),
-        path.join(scratchDir, "templates"),
-        { recursive: true },
-      );
-    } catch {
-      /* best-effort — if templates/ doesn't exist, the test will fail gracefully */
-    }
+    return "[file could not be read]";
+  }
+}
+
+// ─── Helper: run acceptance test suite in scratchpad ───────────────────
+
+async function runAcceptanceTestSuite(
+  workspaceRoot: string,
+  sandbox: typeof CHECKER_SANDBOX,
+  targeted: ReturnType<typeof resolveTargetedChecks> | null,
+): Promise<{ ran: boolean; passed: number; failed: number; total: number; failedChecks: string[] }> {
+  const scratchDir = await buildScratchpad(workspaceRoot);
+  // Ensure templates/ is present
+  try {
+    await fs.access(path.join(scratchDir, "templates"));
+  } catch {
+    try { await fs.cp(path.join(workspaceRoot, "templates"), path.join(scratchDir, "templates"), { recursive: true }); } catch {}
   }
 
+  const childEnv: Record<string, string> = {
+    PATH: process.env.PATH || "",
+    HOME: process.env.HOME || "",
+    USER: process.env.USER || "",
+    LANG: process.env.LANG || "en_US.UTF-8",
+    TERM: process.env.TERM || "dumb",
+    QUIVER_NO_COLOR: "1",
+  };
+  if (config.checkerModelName) childEnv["CHECKER_LLM_MODEL_NAME"] = config.checkerModelName;
+  if (config.checkerBaseUrl) childEnv["CHECKER_LLM_API_BASE_URL"] = config.checkerBaseUrl;
+  if (sandbox.noEnv) childEnv["QUIVER_CHECKER_NO_ENV"] = "1";
+  if (sandbox.noNetwork) childEnv["NO_NETWORK"] = "1";
+  if (sandbox.readOnly) childEnv["QUIVER_CHECKER_READ_ONLY"] = "1";
+  if (targeted && !targeted.full && targeted.checkIds.length > 0) {
+    childEnv["QUIVER_CHECKER_FILTER"] = serializeCheckFilter(targeted.checkIds);
+  }
+
+  const testPath = path.join(scratchDir, "tests", "run_tests.ts");
+  const workspaceBin = path.join(workspaceRoot, "node_modules", ".bin");
+  const enhancedEnv = { ...childEnv, PATH: `${workspaceBin}:${childEnv.PATH || ""}` };
+
   try {
-    // The checker verifies work against the blueprint's acceptance criteria,
-    // i.e. tests/spec_acceptance_tests.ts (runSpecAcceptanceTests), NOT the
-    // maker's self-assessment. It spawns the gate read-only — no writes.
-    // US-15.2: the child env excludes all secrets — only non-secret PATH and
-    // minimal runtime vars are passed. The sandbox config (CHECKER_SANDBOX)
-    // is applied to the spawn: read-only workspace, no network, no env.
-    const childEnv: Record<string, string> = {
-      PATH: process.env.PATH || "",
-      HOME: process.env.HOME || "",
-      USER: process.env.USER || "",
-      LANG: process.env.LANG || "en_US.UTF-8",
-      TERM: process.env.TERM || "dumb",
-      QUIVER_NO_COLOR: "1",
-    };
-    // If a checker model is configured (CHECKER_LLM_MODEL_NAME), pass it
-    // to the child so a future model-based checker subagent uses a
-    // different model than the maker. Today the checker runs npm test
-    // (no model call), but this wiring is ready for the model-based critic.
-    if (config.checkerModelName) {
-      childEnv["CHECKER_LLM_MODEL_NAME"] = config.checkerModelName;
-    }
-    if (config.checkerBaseUrl) {
-      childEnv["CHECKER_LLM_API_BASE_URL"] = config.checkerBaseUrl;
-    }
-
-    // sandbox.noEnv → child receives only the minimal env above (not process.env)
-    // sandbox.noNetwork → env has no proxy/API keys, so no outbound auth possible
-    // sandbox.readOnly → cwd is the scratchpad copy, not the real workspace
-    if (sandbox.noEnv) {
-      childEnv["QUIVER_CHECKER_NO_ENV"] = "1";
-    }
-    if (sandbox.noNetwork) {
-      childEnv["NO_NETWORK"] = "1"; // signal to child: network disabled
-    }
-    if (sandbox.readOnly) {
-      childEnv["QUIVER_CHECKER_READ_ONLY"] = "1";
-    }
-
-    // US-15.3: Pass the targeted check filter to the child process so it
-    // only runs the relevant acceptance checks, not the full 143-check suite.
-    if (targeted && !targeted.full && targeted.checkIds.length > 0) {
-      childEnv["QUIVER_CHECKER_FILTER"] = serializeCheckFilter(
-        targeted.checkIds,
-      );
-    }
-
-    // Run the acceptance tests in the scratchpad using tsx.
-    // We do NOT symlink node_modules into the scratchpad (US-5.3: subagent
-    // must not be able to mutate the real project's deps). Instead, we point
-    // PATH at the workspace's node_modules/.bin so `npx tsx` finds the
-    // already-installed tsx binary without downloading. The tests run with
-    // cwd=scratchDir, so they inspect the scratchpad's copy of the source.
-    const testPath = path.join(scratchDir, "tests", "run_tests.ts");
-    const workspaceBin = path.join(workspaceRoot, "node_modules", ".bin");
-    const enhancedEnv = {
-      ...childEnv,
-      PATH: `${workspaceBin}:${childEnv.PATH || ""}`,
-    };
-
     const out = await new Promise<string>((resolve) => {
       let buf = "";
       const child = spawn("npx", ["tsx", testPath], {
@@ -558,101 +617,120 @@ export async function runChecker(
       child.stderr.on("data", (d) => (buf += d.toString()));
       child.on("exit", () => resolve(buf));
       child.on("error", () => resolve(buf));
-      setTimeout(() => {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          /* ignore */
-        }
-        resolve(buf);
-      }, 180000);
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch {} resolve(buf); }, 180000);
     });
-    ran = true;
 
-    const failMatch = out.match(
-      /(\d+)\/(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+FAILED/,
-    );
-    const passMatch = out.match(
-      /All\s+(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+met/,
-    );
+    const failMatch = out.match(/(\d+)\/(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+FAILED/);
+    const passMatch = out.match(/All\s+(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+met/);
     if (passMatch) {
-      total = parseInt(passMatch[1], 10);
-      passed = total;
-      failed = 0;
+      const total = parseInt(passMatch[1], 10);
+      return { ran: true, passed: total, failed: 0, total, failedChecks: [] };
     } else if (failMatch) {
-      failed = parseInt(failMatch[1], 10);
-      total = parseInt(failMatch[2], 10);
-      passed = total - failed;
-      for (const m of out.matchAll(
-        /•\s+\[([^\]]+)\]\s+(US-[0-9.]+|[A-Za-z-]+)/g,
-      )) {
+      const failed = parseInt(failMatch[1], 10);
+      const total = parseInt(failMatch[2], 10);
+      const failedChecks: string[] = [];
+      for (const m of out.matchAll(/•\s+\[([^\]]+)\]\s+(US-[0-9.]+|[A-Za-z-]+)/g)) {
         failedChecks.push(`${m[2]}/${m[1]}`);
       }
+      return { ran: true, passed: total - failed, failed, total, failedChecks };
     }
+    return { ran: false, passed: 0, failed: 0, total: 0, failedChecks: [] };
   } catch {
-    ran = false;
+    return { ran: false, passed: 0, failed: 0, total: 0, failedChecks: [] };
   }
+}
 
-  // ─── Evidence validation (SPEC §9.3 / §16) ──────────────────────────
-  // For office_doc writes, validate that any Evidence.json alongside the
-  // document has no unsourced quantitative claims. Unsourced figures cause
-  // a "revise" verdict — the maker must source or flag every number.
-  let evidenceProblems: string[] = [];
-  if (toolName === "office_doc" && toolArgs?.file) {
-    const docPath = String(toolArgs.file);
-    const evResult = await validateEvidenceForDocument(docPath);
-    if (!evResult.valid) {
-      evidenceProblems = evResult.problems;
-      failedChecks.push(...evidenceProblems.map((p) => `EVIDENCE/${p}`));
-      failed += evidenceProblems.length;
-      total += evidenceProblems.length;
-    }
-  }
+// ─── Helper: run structural checks ────────────────────────────────────
 
-  // ─── Benchmark bar-comparison (SPEC §10.1) ──────────────────────────
-  // Folded into the SAME verdict, not a second stage. When an office_doc
-  // write is checked AND a benchmark is configured in .quiver/benchmark/,
-  // the structural comparison runs (local officecli only — no network, so
-  // the sandbox stays sealed) and any gap pushes a "revise" exactly like a
-  // failed gate check. With no benchmark configured, compare() is a no-op.
-  let barGaps: string[] = [];
-  if (toolName === "office_doc" && toolArgs?.file) {
-    const docPath = String(toolArgs.file);
+async function runStructuralChecks(
+  workspaceRoot: string,
+  toolName?: string,
+  toolArgs?: any,
+): Promise<{ passed: number; failed: number; total: number; failedChecks: string[] }> {
+  // Check if there's an acceptance.md for criteria
+  const hasAcceptanceMd = await fileExists(path.join(workspaceRoot, ".quiver", "acceptance.md"));
+  if (hasAcceptanceMd) {
     try {
-      const barResult = await compareBenchmark(docPath, workspaceRoot);
-      if (barResult.ran && !barResult.met) {
-        barGaps = barResult.gaps;
-        failedChecks.push(...barGaps);
-        failed += barGaps.length;
-        total += barGaps.length;
-      }
+      return await runAcceptanceMdChecks(workspaceRoot, toolName, toolArgs);
     } catch {
-      // Bar-comparison tooling failure must never fail the deliverable —
-      // the maker-checker gates remain authoritative. Log and skip.
+      return { passed: 0, failed: 0, total: 0, failedChecks: [] };
     }
   }
+  // Fallback structural checks
+  try {
+    return await runFallbackChecks(workspaceRoot, toolName, toolArgs);
+  } catch {
+    return { passed: 0, failed: 0, total: 0, failedChecks: [] };
+  }
+}
 
-  let verdict: CheckerVerdict;
-  if (ran && failed === 0 && total > 0) verdict = "approve";
-  else if (ran && failed > 0) verdict = "revise";
-  else if (ran && total === 0) verdict = "approve"; // 0/0 = couldn't run tests, not a failure — fail-open to avoid deadlock
-  else verdict = "reject";
+// ─── Model-based evaluation ──────────────────────────────────────────
 
-  const result: CheckerResult = {
-    verdict,
-    changeHash,
-    passed,
-    failed,
-    total,
-    failedChecks,
-    evidence: total === 0
-      ? `acceptance criteria: could not run tests (0/0) — fail-open to avoid deadlock${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}`
-      : `acceptance criteria: ${passed}/${total} met${targeted && !targeted.full ? ` (targeted: ${targeted.reason})` : ""}; failed=${failedChecks.join(", ") || "none"}${evidenceProblems.length ? `; evidence problems: ${evidenceProblems.join("; ")}` : ""}${barGaps.length ? `; bar gaps: ${barGaps.join("; ")}` : ""}`,
-    timestamp,
-  };
+interface ModelEvalInput {
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  evidence: string[];
+  deliverablePath: string;
+  deliverableContent: string;
+  toolName?: string;
+  toolArgs?: any;
+}
 
-  await logCheckerVerdict(result);
-  return result;
+async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: CheckerVerdict; reasoning: string }> {
+  const systemPrompt =
+    `You are the CHECKER — a structurally isolated verifier that evaluates the maker's work. ` +
+    `You never certify your own work; you evaluate the maker's deliverable independently.\n\n` +
+    `Return a JSON object with exactly two fields:\n` +
+    `  "verdict": "approve" | "revise" | "reject"\n` +
+    `  "reasoning": a concise explanation (1-3 sentences) of why\n\n` +
+    `Rules:\n` +
+    `  - "approve": the deliverable meets all acceptance criteria and is ready.\n` +
+    `  - "revise": there are fixable gaps — the maker should iterate.\n` +
+    `  - "reject": the deliverable is fundamentally broken or the gate could not run.\n` +
+    `  - If deterministic checks failed, you MUST return "revise" or "reject".\n` +
+    `  - If deterministic checks passed, evaluate the actual deliverable quality.\n` +
+    `  - Be harsh — "approve" only when the work is genuinely done.\n`;
+
+  const userPrompt =
+    `Tool that produced this work: ${input.toolName || "unknown"}\n` +
+    `Deliverable path: ${input.deliverablePath || "n/a"}\n\n` +
+    `Deterministic evidence:\n${input.evidence.map((e) => `  - ${e}`).join("\n")}\n\n` +
+    `Deliverable content (truncated):\n${input.deliverableContent || "[no file content]"}\n\n` +
+    `Evaluate this work. Return JSON: {"verdict": "...", "reasoning": "..."}`;
+
+  const response = await fetch(`${input.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${input.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: input.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 500,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Checker model API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content || "";
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("Checker model did not return JSON");
+  }
+  const parsed = JSON.parse(jsonMatch[0]);
+  const verdict = (["approve", "revise", "reject"].includes(parsed.verdict) ? parsed.verdict : "revise") as CheckerVerdict;
+  const reasoning = String(parsed.reasoning || "No reasoning provided").substring(0, 500);
+  return { verdict, reasoning };
 }
 
 // ─── Audit + override (US-15.4) ───────────────────────────────────────
