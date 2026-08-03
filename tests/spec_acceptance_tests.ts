@@ -5959,7 +5959,7 @@ async function extendedCapabilitiesContract() {
   );
 
   // ─── US-17.21: Multimodal PDF reading ────────────────────────────────
-  // The pdf_read tool renders PDF pages to PNG images and returns [Image:]
+  // The pdf_read tool renders PDF pages to PNG images and returns [File:]
   // markers. The agent loop processes these markers into vision content so
   // the model can "see" the page — preserving tables, charts, and layout.
 
@@ -5983,11 +5983,11 @@ async function extendedCapabilitiesContract() {
   await check(
     "PDF-READ-VISION-ROUTING",
     "US-17.21",
-    "Agent loop must process [Image: path] markers in tool results (not just user input) so the single multimodal model receives image content parts from tool output",
+    "Agent loop must process [File: path] markers in tool results (not just user input) so the single multimodal model receives image content parts from tool output",
     () => {
       const agentCode = codeOnly("src/agent.ts");
-      const hasToolImageProcessing = agentCode.includes("[Image:") &&
-        agentCode.includes("processImageMarkers") &&
+      const hasToolImageProcessing = agentCode.includes("[File:") &&
+        agentCode.includes("processFileMarkers") &&
         /toolContent/.test(agentCode);
       // The single multimodal model receives image_url parts in tool results
       const hasImageEncoding = codeOnly("src/vision_router.ts").includes("image_url");
@@ -6005,7 +6005,7 @@ async function extendedCapabilitiesContract() {
         /pdf_read/.test(c) &&
         /PDF/i.test(c) &&
         /filing|transcript|SEC/i.test(c) &&
-        /\[Image:/.test(c)
+        /\[File:/.test(c)
       );
     },
   );
@@ -7748,11 +7748,11 @@ async function extendedCapabilitiesContract() {
   await check(
     "VISION-ROUTER-MARKER-AND-MAGIC",
     "US-16.7",
-    "vision_router must detect [Image: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
+    "vision_router must detect [File: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
     () => {
       const c = codeOnly("src/vision_router.ts");
       return (
-        /\[Image:/.test(c) &&
+        /\[File:/.test(c) &&
         /magic/i.test(c) &&
         /0x89|IMAGE_MAGIC|magicBytes/i.test(c) &&
         /data:image\/|base64/.test(c)

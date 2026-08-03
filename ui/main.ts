@@ -808,8 +808,8 @@ async function listSessions(): Promise<any[]> {
               .map((p: any) => (p?.type === "text" ? p.text || "" : ""))
               .join(" ");
           }
-          // Skip attachment markers so "[Image: /path]" doesn't become a title
-          text = text.replace(/\[Image:[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
+          // Skip attachment markers so "[File: /path]" doesn't become a title
+          text = text.replace(/\[File:[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
           if (text) {
             title = text.length > 60 ? text.slice(0, 57).trimEnd() + "…" : text;
             break;

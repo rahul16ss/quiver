@@ -4,10 +4,10 @@ import { existsSync } from "fs";
  * Detect image file paths in user input.
  * When you drag a file from Finder/Explorer into a terminal, it inserts
  * the file path as text. This function detects image file paths and
- * wraps them in [Image: path] markers so the agent knows to look at them.
+ * wraps them in [File: path] markers so the agent knows to look at them.
  *
  * Security: only includes paths where the file actually exists on disk.
- * The agent's processImageMarkers provides a second layer of defense
+ * The agent's processFileMarkers provides a second layer of defense
  * with magic-byte validation.
  */
 export function detectImagePaths(input: string): string {
@@ -33,7 +33,7 @@ export function detectImagePaths(input: string): string {
 
   if (paths.length === 0) return input;
 
-  const imageBlock = paths.map((p) => `[Image: ${p}]`).join("\n");
+  const imageBlock = paths.map((p) => `[File: ${p}]`).join("\n");
 
   let cleanedInput = input;
   for (const match of matches) {

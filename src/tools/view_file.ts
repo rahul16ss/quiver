@@ -21,7 +21,7 @@ export const tool: Tool = {
   description:
     "Reads a file and returns its contents. " +
     "Text files (.txt, .md, .csv, .json, source code, etc.) are returned as raw text. " +
-    "All other files (images, PDFs, Office documents, etc.) are returned as [Image: path] markers — " +
+    "All other files (images, PDFs, Office documents, etc.) are returned as [File: path] markers — " +
     "the harness encodes them as base64 and the model sees the raw file natively. " +
     "No text extraction, no rendering, no lossy parsing. " +
     "Supports optional line range selection for text files.",
@@ -71,9 +71,9 @@ export const tool: Tool = {
         return wrapUntrustedFile(resolvedPath, header + formatted);
       }
 
-      // Everything else (images, PDFs, Office docs, binaries): return [Image: path]
+      // Everything else (images, PDFs, Office docs, binaries): return [File: path]
       // The harness encodes the raw file as base64 and the model sees it natively.
-      return `[Image: ${resolvedPath}]`;
+      return `[File: ${resolvedPath}]`;
     } catch (error: any) {
       throw new Error(`Failed to read file at ${filePath}: ${error.message}`);
     }

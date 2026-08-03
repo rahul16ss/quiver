@@ -5,7 +5,7 @@ import * as os from "os";
 import picocolors from "picocolors";
 import readline from "readline";
 import { config, needsApprovalFor } from "./config.js";
-import { processImageMarkers } from "./vision_router.js";
+import { processFileMarkers } from "./vision_router.js";
 import { ToolRegistry } from "./registry.js";
 import { loadCoreMemory } from "./state.js";
 import { statusLine, theme, formatNum, renderInlineDiff } from "./cli_ui.js";
@@ -90,7 +90,7 @@ import {
 } from "./paths.js";
 
 // ─── Vision: Image encoding ───────────────────────────────────────────
-// Detects [Image: path] markers in user input, validates the file is a
+// Detects [File: path] markers in user input, validates the file is a
 // real image (by magic bytes, not just extension), reads it, and encodes
 // as base64 data URL for the OpenAI-compatible vision API.
 // Security: only local files, no path traversal, size-limited, magic-byte validated.
@@ -1579,7 +1579,7 @@ You are powered by model ${config.llmModelName} and have access to file operatio
 10. REVERSIBILITY AWARENESS: Distinguish between reversible and irreversible actions.
 
 --- Vision ---
-- When the user attaches images via [Image: path] markers, the image is encoded and sent to you as vision content.
+- When the user attaches images via [File: path] markers, the image is encoded and sent to you as vision content.
 - You can see and analyze the image directly — describe what you see, read text from screenshots, analyze diagrams.
 
 Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
@@ -2161,9 +2161,9 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
     }
 
     // Append the user message — the EFFECTIVE input (redacted for mid tier),
-    // with [Image: path] markers processed for vision. For high tier the raw
+    // with [File: path] markers processed for vision. For high tier the raw
     // text is used (it goes to the local endpoint, not the cloud).
-    const processedContent = await processImageMarkers(effectiveUserInput);
+    const processedContent = await processFileMarkers(effectiveUserInput);
     this.messages.push({ role: "user", content: processedContent });
     await this.logger.logEvent("user_input", {
       content: effectiveUserInput,
@@ -3256,14 +3256,14 @@ Be concise, clear, and direct. Use tools logically to solve the task at hand.`;
         const resultStr =
           typeof result === "string" ? result : safeStringify(result);
 
-        // Process [Image: path] markers in tool results (e.g. from pdf_read).
+        // Process [File: path] markers in tool results (e.g. from pdf_read).
         // Converts image markers into vision content parts so the model can
         // "see" rendered PDF pages, screenshots, etc. — same mechanism as
         // user input image markers, but applied to tool output.
         let toolContent: Message["content"] = resultStr;
-        if (typeof resultStr === "string" && resultStr.includes("[Image:")) {
+        if (typeof resultStr === "string" && resultStr.includes("[File:")) {
           try {
-            toolContent = await processImageMarkers(resultStr);
+            toolContent = await processFileMarkers(resultStr);
           } catch {
             // If image processing fails, fall back to plain text
             toolContent = resultStr;

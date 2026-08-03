@@ -431,7 +431,7 @@ export type VisionContent =
     >;
 
 /**
- * Detect [Image: path] markers in user input/tool results and convert to
+ * Detect [File: path] markers in user input/tool results and convert to
  * multimodal message parts. Any file type is supported — the model sees
  * the raw file as a base64 data URL:
  *   - Images → data:image/png;base64,... (with EXIF stripping + downscaling)
@@ -440,11 +440,11 @@ export type VisionContent =
  *
  * No rendering, no text extraction, no splitting. The model gets the raw bytes.
  */
-export async function processImageMarkers(
+export async function processFileMarkers(
   input: string,
 ): Promise<VisionContent> {
-  const imageMarker = /\[Image:\s*([^\]]+)\]/g;
-  const matches = [...input.matchAll(imageMarker)];
+  const fileMarker = /\[File:\s*([^\]]+)\]/g;
+  const matches = [...input.matchAll(fileMarker)];
 
   if (matches.length === 0) return input;
 
@@ -500,7 +500,7 @@ export async function processImageMarkers(
 
 /**
  * Check if a file path has a video extension.
- * Used to detect video files in [Image: path] markers — videos are treated
+ * Used to detect video files in [File: path] markers — videos are treated
  * like images for routing purposes (vision model handles them).
  */
 export function isVideoFile(filePath: string): boolean {
@@ -509,10 +509,10 @@ export function isVideoFile(filePath: string): boolean {
 }
 
 /**
- * Check if user input contains [Image: path] markers pointing to video files.
+ * Check if user input contains [File: path] markers pointing to video files.
  */
 export function inputHasVideoMarkers(input: string): boolean {
-  const imageMarker = /\[Image:\s*([^\]]+)\]/g;
-  const matches = [...input.matchAll(imageMarker)];
+  const fileMarker = /\[File:\s*([^\]]+)\]/g;
+  const matches = [...input.matchAll(fileMarker)];
   return matches.some((m) => isVideoFile(m[1].trim()));
 }

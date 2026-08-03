@@ -1,7 +1,7 @@
 /**
 * PDF Reader Tool — multimodal PDF page reading.
 *
-* Renders PDF pages to PNG images and returns [Image: path] markers
+* Renders PDF pages to PNG images and returns [File: path] markers
 * so the agent loop can encode them as vision content for the model.
 *
 * This is a multimodal approach: the model "sees" the page as an image,
@@ -225,7 +225,7 @@ export const tool: Tool = {
   description:
   "Read PDF files by rendering pages to images for multimodal vision. " +
   "The model sees the page as an image, preserving tables, charts, layout, and visual context. " +
-  "Returns [Image: path] markers for each rendered page — the agent loop encodes these as vision content. " +
+  "Returns [File: path] markers for each rendered page — the agent loop encodes these as vision content. " +
   "Use this to read SEC filings, transcripts, research reports, presentations, or any PDF document. " +
   "Supports page ranges (e.g., read pages 5-10 of a 200-page filing).",
 
@@ -364,7 +364,7 @@ export const tool: Tool = {
       return `Error: No pages were rendered. Check the PDF file and page range.`;
     }
 
-    // Build result text with [Image:] markers
+    // Build result text with [File:] markers
     const lines: string[] = [];
     lines.push(`PDF: ${path.basename(filePath)}`);
     lines.push(`Total pages: ${renderResult.totalPages}`);
@@ -373,7 +373,7 @@ export const tool: Tool = {
     lines.push("");
 
     for (const page of renderResult.pages) {
-      lines.push(`[Image: ${page.pngPath}]`);
+      lines.push(`[File: ${page.pngPath}]`);
       lines.push(`Page ${page.pageNumber} of ${renderResult.totalPages}`);
       if (page.width && page.height) {
         lines.push(`Dimensions: ${page.width}×${page.height}px`);

@@ -113,7 +113,7 @@ When drafting Office documents (Word, Excel, PowerPoint) that contain quantitati
 - **Page ranges**: Use `pages: "1-5"` for the first 5 pages, `pages: "14"` for a specific page, `pages: "all"` for the entire document (capped at maxPages). Default is first 5 pages.
 - **DPI**: Default 150 is good for text. Use 200-300 for dense tables or small footnotes.
 - **Large filings**: 10-K filings are often 200+ pages. Read the table of contents first (pages 1-3), then jump to the section you need (e.g., `pages: "35-42"` for MD&A).
-- The tool returns `[Image: path]` markers — the harness automatically encodes these as vision content. You don't need to do anything special.
+- The tool returns `[File: path]` markers — the harness automatically encodes these as vision content. You don't need to do anything special.
 - When extracting figures from a PDF (revenue, margin, growth rate), register them with the `evidence` tool using the page number as the source location.
 
 --- Web Research ---
@@ -188,11 +188,11 @@ When drafting Office documents (Word, Excel, PowerPoint) that contain quantitati
 - Keep functions focused and small. Single responsibility.
 
 --- Vision & Raw Documents ---
-- When the user attaches images via [Image: path] markers, the image is encoded and sent to you as vision content.
+- When the user attaches images via [File: path] markers, the image is encoded and sent to you as vision content.
 - You can see and analyze the image directly — describe what you see, read text from screenshots, analyze diagrams.
 - Use vision to understand UI screenshots, architecture diagrams, error messages, or any visual context the user provides.
 - **Raw document handling**: the model (you) is multimodal and sees raw content natively:
-  - Images (.png, .jpg, .gif, .webp, etc.) → returned as [Image: path] markers → you see the actual image
+  - Images (.png, .jpg, .gif, .webp, etc.) → returned as [File: path] markers → you see the actual image
   - PDFs → use `pdf_read` → renders pages as images → you see the actual page (tables, charts, footers, layout all preserved)
   - Office documents (.docx, .xlsx, .pptx) → use `office_doc` with action "view" → officecli extracts text/outline (the only lossy path, by design — Office formats are not directly readable)
   - Text files (.txt, .md, .csv, .json, source code) → returned as raw UTF-8 text

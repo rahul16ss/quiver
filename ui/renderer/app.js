@@ -1046,7 +1046,7 @@ async function sendPrompt() {
   // dropping it. The agent's InterventionController consumes it at the next
   // loop iteration — same mechanism as the CLI Esc-steering.
   if (agentRunning) {
-    const imageMarkers = attachments.map((a) => "[Image: " + a.path + "]").join("\n");
+    const imageMarkers = attachments.map((a) => "[File: " + a.path + "]").join("\n");
     const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
     // Show the queued steering message in the chat as a muted bubble
     const steer = document.createElement("div");
@@ -1067,7 +1067,7 @@ async function sendPrompt() {
   }
 
   if (!agentRunning) return;
-  const imageMarkers = attachments.map((a) => "[Image: " + a.path + "]").join("\n");
+  const imageMarkers = attachments.map((a) => "[File: " + a.path + "]").join("\n");
   const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
   addUserMessage(text || ("📎 " + attachments.map((a) => a.name).join(", ")));
   promptInput.value = "";
