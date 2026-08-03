@@ -1,0 +1,35 @@
+name: market-map
+family: dealmaking
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Build a comprehensive industry landscape matrix mapping incumbents, growth-stage entrants, valuation multiples, unit economics, and strategic M&A acquirers.
+
+output_template: template/market-map-template.pptx
+
+allowed_inputs:
+  - sample-inputs/industry-participants.csv
+  - sample-inputs/market-size-estimates.json
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: public
+
+deliverable_sections:
+  - Market Segmentation Architecture
+  - Competitive Quadrants & Market Share
+  - Comparative Unit Economics & Valuation Multiples
+  - Strategic M&A & Private Equity Activity
+
+review_role: >
+  Investment Banking Analyst / Private Equity Deal Lead.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  market_pptx: expected-output/Industry_Market_Map.pptx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

@@ -1663,6 +1663,27 @@ async function main() {
             continue;
           }
 
+          // ── /workflow: manage and execute workflow packs ──
+          case "/workflow": {
+            try {
+              const { tool: workflowTool } = await import("./tools/workflow_tool.js");
+              const parts = cleanInput.split(/\s+/);
+              const action = parts[1]?.toLowerCase() || "list";
+              const workflow = parts[2];
+              const res = await workflowTool.execute({
+                action,
+                workflow,
+                run_id: parts[2],
+              });
+              console.log("\n" + JSON.stringify(res, null, 2) + "\n");
+            } catch (err: any) {
+              console.log(
+                picocolors.yellow(`\n  Workflow command failed: ${err.message}\n`),
+              );
+            }
+            continue;
+          }
+
           // ── /autonomy subcommand handling ──
           case "/autonomy":
           case "/yolo": {

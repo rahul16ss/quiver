@@ -1,0 +1,7 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required output files and Evidence.json exist
+    severity: error
+  - id: PERFORMANCE-ATTRIBUTION-LINKED
+    description: Manager 3yr/5yr annualized returns trace to historical returns export
+    severity: error

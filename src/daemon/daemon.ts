@@ -255,6 +255,18 @@ export async function startDaemon(): Promise<DaemonInfo> {
   fs.mkdirSync(quiverDir(), { recursive: true });
   fs.writeFileSync(daemonInfoPath(), JSON.stringify(info, null, 2), { mode: 0o600 });
 
+  // Initialize and start background workflow services
+  try {
+    const { WorkflowScheduler } = await import("../workflow/scheduler.js");
+    const { WorkflowWatcher } = await import("../workflow/watcher.js");
+    const scheduler = new WorkflowScheduler();
+    const watcher = new WorkflowWatcher();
+    scheduler.start();
+    watcher.start();
+  } catch (e) {
+    // Non-fatal if workflow components fail to launch background tasks
+  }
+
   const cleanup = () => {
     try {
       const current = JSON.parse(fs.readFileSync(daemonInfoPath(), "utf8"));

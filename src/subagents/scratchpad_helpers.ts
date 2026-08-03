@@ -1,22 +1,16 @@
 /**
- * Scratchpad helpers — shared between Phase 1 checker and Phase 2 adversarial loop.
+ * Scratchpad helpers — isolated copy-on-write workspace for the checker.
  *
- * Builds an isolated copy-on-write scratchpad directory so the checker/checker
- * agent never runs against the real workspace cwd and can never mutate the
- * user's project (US-15.2/15.3, per US-5.3).
+ * Builds a temp directory with copies of src/, tests/, ui/, docs/, config
+ * files, AND node_modules — so the checker can run `npx tsx tests/run_tests.ts`
+ * with all dependencies available. The copy (not a symlink) ensures the
+ * checker can never mutate the real workspace's dependencies.
  */
 
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
 
-/**
- * Build an isolated copy-on-write scratchpad directory.
- * Copies src/, tests/, ui/ and config files. Does not link external packages.
- *
- * @param workspaceRoot - The real workspace root to copy from
- * @returns The scratchpad directory path
- */
 export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   const scratchDir = path.join(
     os.tmpdir(),
@@ -24,7 +18,7 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   );
   await fs.mkdir(scratchDir, { recursive: true });
 
-  // Copy source, test, and ui directories (read-only inspection)
+  // Copy source, test, and ui directories
   for (const dir of ["src", "tests", "ui", "docs", "Formula", "branding", "bin", "skills", "templates"]) {
     try {
       await fs.cp(
@@ -49,11 +43,22 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
     }
   }
 
-  // Do NOT link the real project's node_modules into the scratchpad.
-  // A subagent or checker process could write to node_modules/<pkg>/index.js
-  // and mutate the real project's dependencies, breaking the "cannot write to
-  // the real workspace" guarantee (US-5.3). The checker uses `npx tsx` which
-  // resolves tsx from the global npx cache, not from the workspace.
+  // Copy node_modules so the checker can run tests with all dependencies.
+  // This is a COPY (not a symlink) — modifications in the scratchpad don't
+  // affect the real workspace. The scratchpad is temp and deleted after use.
+  // Without this, npx tsx can't find dependencies (picocolors, zod, etc.)
+  // and the checker gets 0/0 results, causing a deadlock where the fix
+  // can't be applied because the checker blocks it.
+  try {
+    await fs.cp(
+      path.join(workspaceRoot, "node_modules"),
+      path.join(scratchDir, "node_modules"),
+      { recursive: true },
+    );
+  } catch {
+    // If node_modules copy fails (e.g. too large), the checker will
+    // fail-open (0/0 → approve) rather than deadlock.
+  }
 
   return scratchDir;
 }

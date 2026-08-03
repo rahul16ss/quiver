@@ -1,0 +1,12 @@
+{
+  "client_name": "Family Office Alpha",
+  "risk_profile": "Growth",
+  "target_return": "7.5%",
+  "max_drawdown_limit": "-15%",
+  "current_allocation": {
+    "us_equities": "50%",
+    "intl_equities": "15%",
+    "fixed_income": "25%",
+    "cash": "10%"
+  }
+}

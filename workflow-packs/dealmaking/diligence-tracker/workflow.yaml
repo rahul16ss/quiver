@@ -1,0 +1,35 @@
+name: diligence-tracker
+family: dealmaking
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Consolidate virtual data room (VDR) documents, track open diligence questions, flag commercial/legal/financial red flags, and manage expert network interview notes.
+
+output_template: template/diligence-tracker-template.xlsx
+
+allowed_inputs:
+  - sample-inputs/vdr-index.csv
+  - sample-inputs/diligence-questions-log.xlsx
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: confidential
+
+deliverable_sections:
+  - Workstream Status & Red Flag Summary
+  - VDR Document Coverage Matrix
+  - High-Priority Open Diligence Items
+  - Management & Expert Call Findings
+
+review_role: >
+  Private Equity Associate / VP.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  diligence_xlsx: expected-output/Comprehensive_Diligence_Tracker.xlsx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

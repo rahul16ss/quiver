@@ -19,17 +19,35 @@ Quiver helps investment, advisory, and wealth management teams build inspection-
 
 ---
 
-## 2. Reference workflows
+## 2. Reference workflows & Ambient AI Engine
 
-Quiver includes executable reference workflow pipelines across three families:
+Quiver features a full **Ambient Workflow Engine** (`quiver workflow`) supporting 12 sprint templates across 3 families:
 
-| Reference workflow | Output | Command |
+| Family | Workflow Pack | Purpose & Deliverable |
 | :--- | :--- | :--- |
-| **Investment committee memo** | Native Word memo plus evidence and review artifacts | `npm run demo:ic-memo` |
-| **Post-earnings evidence pack** | HTML evidence pack plus review artifacts | `npm run demo:post-earnings` |
-| **Portfolio review pack** | HTML portfolio pack plus review artifacts | `npm run demo:portfolio-review` |
+| **Dealmaking** | `investment-committee-memo` | First-pass IC Memo (`.docx`) with registered cell lineage |
+| **Dealmaking** | `diligence-tracker` | VDR document tracking & red flag matrix (`.xlsx`) |
+| **Dealmaking** | `market-map` | Industry landscape, unit economics & multiples (`.pptx`) |
+| **Dealmaking** | `pitchbook-materials` | Institutional pitch deck & credentials (`.pptx`) |
+| **Research** | `post-earnings-evidence-pack` | Reported metrics, consensus deltas & transcript analysis (`.html`) |
+| **Research** | `transcript-review` | Guidance shifts, tone analysis & non-GAAP checks (`.docx`) |
+| **Research** | `thesis-tracker` | Long/short thesis tracking & KPI catalyst scoring (`.xlsx`) |
+| **Research** | `company-primer` | Comprehensive equity research initiation primer (`.docx`) |
+| **Wealth** | `portfolio-review-pack` | Asset allocation, performance & risk review (`.xlsx`) |
+| **Wealth** | `investment-proposal` | HNW client portfolio proposal & tax profile (`.docx`) |
+| **Wealth** | `manager-research-note` | Fund manager due diligence & style drift audit (`.docx`) |
+| **Wealth** | `client-commentary` | Tailored quarterly client market update (`.docx`) |
+| **Wealth** | `risk-exposure-summary` | VaR, factor exposure & stress testing summary (`.pdf`) |
 
-> **Note**: Project Alder (`demo:ic-memo`) is the most complete native-Office reference workflow. The Research and Wealth examples demonstrate the shared evidence, verification, and review pattern using synthetic fixtures.
+Run any workflow pack on demand:
+```bash
+quiver workflow run investment-committee-memo
+```
+Or set up background schedules / file watchers:
+```bash
+quiver workflow schedule investment-committee-memo --cron "0 8 * * 1"
+quiver workflow watch post-earnings-evidence-pack --dir ./inbox --pattern "*.pdf"
+```
 
 ---
 

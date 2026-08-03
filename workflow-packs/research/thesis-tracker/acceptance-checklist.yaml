@@ -1,0 +1,10 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required output files and Evidence.json exist
+    severity: error
+  - id: PILLAR-SCORECARD-COMPLETE
+    description: All long/short thesis pillars have an assigned status and evidence link
+    severity: error
+  - id: CATALYST-DATES-VALIDATED
+    description: Upcoming catalyst dates match internal research schedule
+    severity: error

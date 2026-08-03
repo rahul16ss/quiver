@@ -1,0 +1,5 @@
+Doc_ID,Folder,File_Name,Status,Sensitivity
+1.1,Financials,Audited_Financials_FY25.pdf,Reviewed,Confidential
+1.2,Financials,Q2_Quality_of_Earnings.pdf,Reviewed,Confidential
+2.1,Legal,Customer_Contracts_Top10.pdf,In Review,MNPI
+3.1,Tax,Tax_Return_2025.pdf,Reviewed,Confidential

@@ -1,0 +1,38 @@
+name: company-primer
+family: research
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Produce a comprehensive equity research initiation primer covering business model, industry dynamics, historical financial performance, competitive position, and valuation target.
+
+output_template: template/company-primer-template.docx
+
+allowed_inputs:
+  - sample-inputs/10k-filing-excerpt.md
+  - sample-inputs/financial-model.xlsx
+  - sample-inputs/industry-report.md
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: public
+
+deliverable_sections:
+  - Executive Summary & Investment Thesis
+  - Company Overview & Segment Analysis
+  - Industry Structure & Competitive Dynamics
+  - Financial Analysis & Earnings Quality
+  - Valuation & Sensitivity Analysis
+  - Risk Factors & Downside Protection
+
+review_role: >
+  Head of Research / Lead Analyst.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  primer_docx: expected-output/Equity_Research_Primer.docx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

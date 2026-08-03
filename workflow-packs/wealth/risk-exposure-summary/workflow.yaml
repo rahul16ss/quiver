@@ -1,0 +1,35 @@
+name: risk-exposure-summary
+family: wealth
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Generate detailed risk and factor exposure reports highlighting Value at Risk (VaR), stress test scenarios, concentration risks, and liquidity constraints.
+
+output_template: template/risk-exposure-template.pdf
+
+allowed_inputs:
+  - sample-inputs/portfolio-risk-matrix.json
+  - sample-inputs/stress-test-results.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: client-confidential
+
+deliverable_sections:
+  - Portfolio Factor Exposure Matrix
+  - Value-at-Risk (VaR) & Expected Shortfall
+  - Historical & Hypothetical Stress Test Scenarios
+  - Liquidity & Concentration Risk Limits
+
+review_role: >
+  Chief Risk Officer / Portfolio Manager.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  risk_pdf: expected-output/Risk_Exposure_Summary.pdf
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

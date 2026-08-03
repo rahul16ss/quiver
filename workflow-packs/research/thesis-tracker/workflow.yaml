@@ -1,0 +1,35 @@
+name: thesis-tracker
+family: research
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Continuously track long/short investment thesis key points, verifying progress against monthly data points, KPI trajectories, and competitor movements.
+
+output_template: template/thesis-tracker-template.xlsx
+
+allowed_inputs:
+  - sample-inputs/thesis-matrix.xlsx
+  - sample-inputs/monthly-kpi-updates.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: internal
+
+deliverable_sections:
+  - Thesis Pillar Status & Scorecard
+  - Bull / Bear Case Probability Shifts
+  - Catalyst Calendar & Upcoming Milestones
+  - Re-underwriting Recommendation
+
+review_role: >
+  Portfolio Manager / Lead Analyst.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  tracker_xlsx: expected-output/Investment_Thesis_Tracker.xlsx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

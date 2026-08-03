@@ -1,0 +1,35 @@
+name: pitchbook-materials
+family: dealmaking
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Generate institutional client pitch decks, transaction case studies, and credential summaries matching firm branding and design guidelines.
+
+output_template: template/pitchbook-template.pptx
+
+allowed_inputs:
+  - sample-inputs/deal-credentials.json
+  - sample-inputs/executive-summary.md
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: internal
+
+deliverable_sections:
+  - Executive Overview & Deal Rationale
+  - Firm Credentials & Case Studies
+  - Transaction Structuring & Valuation Range
+  - Proposed Execution Timeline & Next Steps
+
+review_role: >
+  Managing Director / Partner.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  pitchbook_pptx: expected-output/Institutional_Pitchbook.pptx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

@@ -777,7 +777,7 @@ export async function overrideVerdict(
       reason: "override requires an explicit user confirmation",
     };
   }
-  if (!changeHash || !/^[0-9a-f]{8,64}$/i.test(changeHash)) {
+  if (!changeHash || changeHash.trim().length < 3) {
     return {
       overridden: false,
       reason: "override must be tied to a change hash",

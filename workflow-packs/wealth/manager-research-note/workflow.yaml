@@ -1,0 +1,35 @@
+name: manager-research-note
+family: wealth
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Draft institutional due diligence notes on third-party fund managers, evaluating alpha persistence, style drift, fee structures, and team stability.
+
+output_template: template/manager-research-template.docx
+
+allowed_inputs:
+  - sample-inputs/manager-factsheet.pdf
+  - sample-inputs/historical-returns.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: internal
+
+deliverable_sections:
+  - Manager Overview & Strategy Classification
+  - Investment Process & Team Assessment
+  - Historical Performance & Style Drift Analysis
+  - Operational Due Diligence & Rating
+
+review_role: >
+  Head of Manager Research / CIO.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  note_docx: expected-output/Manager_Research_Note.docx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

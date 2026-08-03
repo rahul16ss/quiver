@@ -8130,5 +8130,83 @@ async function extendedCapabilitiesContract() {
       return /loadEvidenceFromDisk/.test(after);
     },
   );
-}
 
+  // ─── US-18.1: Ambient Workflow Engine Acceptance Checks ──────────────
+
+  await check(
+    "WORKFLOW-ENGINE-ORCHESTRATOR",
+    "US-18.1",
+    "Workflow Orchestrator must support 6-phase state machine with drift check integration",
+    () => {
+      const c = codeOnly("src/workflow/orchestrator.ts");
+      return /executeWorkflow/.test(c) &&
+        /checkDrift/.test(c) &&
+        /PHASE_ORDER/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-SCHEDULER",
+    "US-18.1",
+    "Workflow Scheduler must support cron expressions and background ticks",
+    () => {
+      const c = codeOnly("src/workflow/scheduler.ts");
+      return /WorkflowScheduler/.test(c) &&
+        /cronMatchesDate/.test(c) &&
+        /isValidCron/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-WATCHER",
+    "US-18.1",
+    "Workflow Watcher must monitor directories and trigger workflows on matching file events",
+    () => {
+      const c = codeOnly("src/workflow/watcher.ts");
+      return /WorkflowWatcher/.test(c) &&
+        /fs\.watch/.test(c) &&
+        /globMatch/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-REVIEW",
+    "US-18.1",
+    "Multi-role Review Manager must track approval chains and decisions per document",
+    () => {
+      const c = codeOnly("src/workflow/review.ts");
+      return /ReviewManager/.test(c) &&
+        /DEFAULT_REVIEW_CHAINS/.test(c) &&
+        /submitDecision/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-HANDOVER",
+    "US-18.1",
+    "Workflow Handover module must generate operating runbooks and handover packages",
+    () => {
+      const c = codeOnly("src/workflow/handover.ts");
+      return /generateHandover/.test(c) && /writeHandover/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-PACKS-COUNT",
+    "US-18.1",
+    "Workflow packs directory must contain all 12 sprint templates",
+    () => {
+      const packsDir = path.join(process.cwd(), "workflow-packs");
+      if (!existsSync(packsDir)) return false;
+      const families = readdirSync(packsDir);
+      let count = 0;
+      for (const fam of families) {
+        const famPath = path.join(packsDir, fam);
+        if (existsSync(famPath)) {
+          count += readdirSync(famPath).length;
+        }
+      }
+      return count >= 12;
+    },
+  );
+}

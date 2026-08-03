@@ -1,0 +1,35 @@
+name: client-commentary
+family: wealth
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Produce customized quarterly macro and portfolio market updates tailored for client communications across private wealth segments.
+
+output_template: template/client-commentary-template.docx
+
+allowed_inputs:
+  - sample-inputs/macro-summary.md
+  - sample-inputs/quarterly-returns.json
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: public
+
+deliverable_sections:
+  - Quarterly Macroeconomic Overview
+  - Major Asset Class Drivers
+  - Portfolio Positioning Rationale
+  - Forward-Looking Outlook & Positioning
+
+review_role: >
+  Wealth Management Communications Lead / Advisory Partner.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  commentary_docx: expected-output/Quarterly_Client_Commentary.docx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

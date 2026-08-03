@@ -1,0 +1,10 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required output files and Evidence.json exist
+    severity: error
+  - id: HISTORICAL-FINANCIALS-VERIFIED
+    description: Revenue, Gross Profit, and EBITDA numbers match filing excerpt
+    severity: error
+  - id: VALUATION-MULTIPLE-LINKED
+    description: Target EV/EBITDA multiple traces to comps model source
+    severity: error

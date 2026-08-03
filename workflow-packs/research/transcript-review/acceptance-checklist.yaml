@@ -1,0 +1,13 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required evidence, checklist, and output files exist
+    severity: error
+  - id: GUIDANCE-REVISION-TRACKED
+    description: Management revenue guidance changes are registered in evidence model
+    severity: error
+  - id: NON-GAAP-RECONCILED
+    description: Non-GAAP adjusted EBITDA reconciliation matches transcript figures
+    severity: error
+  - id: TONE-SHIFT-HIGHLIGHTED
+    description: Qualitative tone shifts in Q&A are cited with transcript timestamps
+    severity: error

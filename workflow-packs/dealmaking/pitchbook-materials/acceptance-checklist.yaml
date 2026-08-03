@@ -1,0 +1,7 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required output files and Evidence.json exist
+    severity: error
+  - id: CREDENTIALS-VERIFIED
+    description: Transaction credentials and historical EV metrics match deal log
+    severity: error

@@ -1,0 +1,35 @@
+name: transcript-review
+family: research
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Analyze executive transcripts (earnings calls, broker conferences) to highlight guidance shifts, non-GAAP reconciliations, tone changes, and unfulfilled management promises.
+
+output_template: template/transcript-review-template.docx
+
+allowed_inputs:
+  - sample-inputs/earnings-transcript.md
+  - sample-inputs/prior-guidance-summary.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: public
+
+deliverable_sections:
+  - Executive Guidance & Metric Revisions
+  - Management Sentiment & Tone Analysis
+  - Q&A Cross-Examination & Analyst Pushback
+  - Flagged Inconsistencies vs Prior Quarters
+
+review_role: >
+  Senior Equity Research Analyst / Sector Lead.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  review_docx: expected-output/Transcript_Review_Memo.docx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

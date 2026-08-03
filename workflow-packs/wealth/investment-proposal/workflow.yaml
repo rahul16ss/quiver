@@ -1,0 +1,35 @@
+name: investment-proposal
+family: wealth
+version: 1.0.0
+maturity: production
+business_purpose: >
+  Construct bespoke asset allocation proposals for high-net-worth clients based on IPS risk profiles, tax considerations, and target return hurdles.
+
+output_template: template/investment-proposal-template.docx
+
+allowed_inputs:
+  - sample-inputs/client-ips.json
+  - sample-inputs/asset-class-expectations.csv
+
+retrieval:
+  mode: static
+  network_access: none
+
+data_sensitivity: client-confidential
+
+deliverable_sections:
+  - Client Objectives & IPS Constraints
+  - Recommended Asset Allocation vs Current
+  - Expected Risk/Return Profile & Drawdown Analysis
+  - Implementation Schedule & Tax Considerations
+
+review_role: >
+  Senior Wealth Advisor / Private Wealth Management Lead.
+
+acceptance_checks: acceptance-checklist.yaml
+
+outputs:
+  directory: expected-output/
+  proposal_docx: expected-output/Client_Investment_Proposal.docx
+  evidence_json: expected-output/Evidence.json
+  run_record: expected-output/Run_Record.json

@@ -114,6 +114,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ["/md"],
     desc: "Compare two versions of a memory file (/memory-diff <filename> <v1> <v2>)",
   },
+  {
+    name: "/workflow",
+    aliases: ["/wf"],
+    desc: "Workflow engine (list, run <name>, status <id>, schedule, watch, review, handover)",
+  },
 ];
 
 export function resolveSlashCommand(input: string): string | null {

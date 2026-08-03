@@ -1,0 +1,10 @@
+checks:
+  - id: OUTPUT-FILES-EXIST
+    description: All required output files and Evidence.json exist
+    severity: error
+  - id: RED-FLAGS-CATEGORIZED
+    description: All identified diligence red flags are categorized by severity
+    severity: error
+  - id: VDR-INDEX-COVERAGE
+    description: 100% of high-level VDR folders are audited in coverage matrix
+    severity: error
