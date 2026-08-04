@@ -1,5 +1,5 @@
-// Onboarding — zero-config first run. Stores the single API key in the OS
-// keychain (preferred) with a saveConfig fallback. Plain business language.
+// Onboarding — zero-config first run. Stores the API key in the OS credential
+// store and refuses to persist it in the JSON config if that store is unavailable.
 
 const api = window.quiver;
 const $ = (id) => document.getElementById(id);
@@ -20,15 +20,19 @@ $("onbStartBtn").addEventListener("click", async () => {
           inKeychain = false;
         }
       }
-      // Also mirror into the config so the agent process picks it up this session.
-      const config = await api.loadConfig();
-      config.llmApiKey = key;
-      config.provider = config.provider || {};
-      config.provider.apiKey = key;
-      await api.saveConfig(config);
       if (!inKeychain) {
-        // Non-blocking: the key was saved to config (.env via sync), not the keychain.
+        throw new Error("The system credential store is unavailable.");
       }
+      // The main process hydrates the key from the credential store when the
+      // agent starts; no secret is sent back into the renderer config.
+      const config = await api.loadConfig();
+      const saved = await api.saveConfig({
+        ...config,
+        provider: { ...(config.provider || {}), apiKey: "" },
+        llmApiKey: "",
+        parallelApiKey: "",
+      });
+      if (!saved) throw new Error("Could not save the workspace settings securely.");
     }
     await api.loadMain();
   } catch (e) {

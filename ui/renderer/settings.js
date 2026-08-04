@@ -12,8 +12,14 @@ async function loadSettings() {
   $("modelName").value = currentConfig.provider?.modelName || "";
   $("baseUrl").value = currentConfig.provider?.baseUrl || "";
   $("maxContextTokens").value = currentConfig.maxContextTokens || 120000;
-  $("apiKey").value = currentConfig.provider?.apiKey || "";
-  $("parallelApiKey").value = currentConfig.parallelApiKey || "";
+  $("apiKey").value = "";
+  $("parallelApiKey").value = "";
+  $("apiKey").placeholder = currentConfig.credentials?.llmApiKeyStored
+    ? "Stored in your system credential store"
+    : "Enter provider key";
+  $("parallelApiKey").placeholder = currentConfig.credentials?.parallelApiKeyStored
+    ? "Stored in your system credential store"
+    : "Optional provider key";
 
   const grants = currentConfig.autonomyGrants || "";
   $("autonomyMode").value = grants.includes("yolo")
@@ -56,33 +62,56 @@ async function saveSettings() {
   if (isToggleActive("browserVisible")) {
     grants = grants ? grants + ",browser:visible" : "browser:visible";
   }
-  // Store the API key in the OS keychain when available, then mirror to config.
+  // Store credentials in the OS credential store. Never mirror them into the
+  // JSON config or a workspace .env file.
   const key = $("apiKey").value.trim();
   if (key && typeof api.settingsSetCredential === "function") {
     try {
-      await api.settingsSetCredential("LLM_API_KEY", key);
+      const stored = await api.settingsSetCredential("LLM_API_KEY", key);
+      if (!stored) {
+        alert("Quiver could not access the system credential store. The key was not saved.");
+        return;
+      }
     } catch {
-      /* keychain unavailable — config fallback below still carries the key */
+      alert("Quiver could not access the system credential store. The key was not saved.");
+      return;
+    }
+  }
+  const parallelKey = $("parallelApiKey").value.trim();
+  if (parallelKey && typeof api.settingsSetCredential === "function") {
+    try {
+      const stored = await api.settingsSetCredential("PARALLEL_API_KEY", parallelKey);
+      if (!stored) {
+        alert("Quiver could not store the second provider key securely. It was not saved.");
+        return;
+      }
+    } catch {
+      alert("Quiver could not store the second provider key securely. It was not saved.");
+      return;
     }
   }
 
-  await api.saveConfig({
+  const saved = await api.saveConfig({
     ...currentConfig,
     workspacePath: $("workspacePath").value.trim(),
     provider: {
       ...currentConfig?.provider,
-      apiKey: key,
+      apiKey: "",
       modelName: $("modelName").value.trim(),
       baseUrl: $("baseUrl").value.trim(),
     },
-    llmApiKey: key,
-    parallelApiKey: $("parallelApiKey").value.trim(),
+    llmApiKey: "",
+    parallelApiKey: "",
     maxContextTokens: parseInt($("maxContextTokens").value, 10) || 120000,
     autonomyGrants: grants,
     consentGateEnabled: isToggleActive("consentGateEnabled"),
     sessionLogEnabled: isToggleActive("sessionLogEnabled"),
     sessionLogMaxChars: parseInt($("sessionLogMaxChars").value, 10) || 512,
   });
+  if (!saved) {
+    alert("Quiver could not save these settings securely.");
+    return;
+  }
   await api.loadMain();
 }
 

@@ -45,12 +45,14 @@ const ALLOWED_CHANNELS = new Set([
   // Workspace
   "workspace:runTests",
   "workspace:selectDir",
+  "workflow:rerun",
   // Navigation
   "nav:loadMain",
   "nav:loadSettings",
   "nav:loadOnboarding",
   // Preview
   "preview:file",
+  "evidence:load",
   // Deliverables (document card)
   "file:open",
   "file:showInFolder",
@@ -164,6 +166,7 @@ contextBridge.exposeInMainWorld("quiver", {
   // Workspace / Verification
   runTests: () => safeInvoke("workspace:runTests"),
   selectWorkspaceDir: () => safeInvoke("workspace:selectDir"),
+  rerunWorkflow: () => safeInvoke("workflow:rerun"),
 
   // Credentials (OS keychain — used by onboarding to store the API key securely)
   settingsSetCredential: (key, value) =>
@@ -171,6 +174,7 @@ contextBridge.exposeInMainWorld("quiver", {
 
   // Preview
   previewFile: (filePath) => safeInvoke("preview:file", filePath),
+  loadEvidence: (docFilePath) => safeInvoke("evidence:load", docFilePath),
 
   // Deliverables (document card: open in native app / reveal in folder)
   openFile: (filePath) => safeInvoke("file:open", filePath),

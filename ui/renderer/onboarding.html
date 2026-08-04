@@ -17,11 +17,31 @@
       as files on your computer; the model endpoint is configurable.
     </p>
 
+    <div class="onb-principles">
+      <div class="onb-principle">
+        <span class="onb-principle-mark">01</span>
+        <span><strong>Your memory</strong><small>Human-readable and reviewable</small></span>
+      </div>
+      <div class="onb-principle">
+        <span class="onb-principle-mark">02</span>
+        <span><strong>Your context</strong><small>Visible before Quiver runs</small></span>
+      </div>
+      <div class="onb-principle">
+        <span class="onb-principle-mark">03</span>
+        <span><strong>Your sign-off</strong><small>Drafts stay reviewable</small></span>
+      </div>
+    </div>
+
     <div class="onb-step">
       <label for="onbKey" class="onb-label">Your Quiver key</label>
       <input id="onbKey" class="field" type="password" placeholder="Paste your LLM API key" autocomplete="off" />
-      <p class="onb-hint">Stored securely in your computer's keychain — never written where others can read it.</p>
+      <p class="onb-hint">Stored in your computer's keychain or credential manager when available. Quiver uses a local fallback only when that store cannot be reached.</p>
       <p class="onb-hint">Set LLM_API_BASE_URL and LLM_MODEL_NAME in Settings (or .env) to point Quiver at any OpenAI-compatible endpoint.</p>
+    </div>
+
+    <div class="onb-disclosure">
+      <span class="onb-disclosure-mark">i</span>
+      <span>The harness runs on this computer. If your provider is remote, approved prompts and tool results may leave the machine; Quiver will block calls that violate the engagement's sensitivity rules.</span>
     </div>
 
     <div class="onb-actions">

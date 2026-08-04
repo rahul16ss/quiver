@@ -229,6 +229,12 @@ export const IPC_CHANNELS: IpcChannelDef[] = [
     payloadSchema: {},
     description: "Open a directory picker and switch the active workspace",
   },
+  {
+    channel: "workflow:rerun",
+    direction: "renderer-to-main",
+    payloadSchema: {},
+    description: "Re-run the deterministic flagship workflow demo",
+  },
 
   // ── Navigation ──
   {
@@ -256,6 +262,12 @@ export const IPC_CHANNELS: IpcChannelDef[] = [
     direction: "renderer-to-main",
     payloadSchema: { filePath: "string" },
     description: "Open a file in the preview panel",
+  },
+  {
+    channel: "evidence:load",
+    direction: "renderer-to-main",
+    payloadSchema: { docFilePath: "string" },
+    description: "Load the evidence records associated with a document",
   },
 
   // ── Deliverables (Epic 2 §2.4 — the document card) ──

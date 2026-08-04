@@ -20,7 +20,8 @@ const nowTime = () =>
 
 // ─── state ────────────────────────────────────────────────────────────
 let configured = false;
-let agentRunning = false;
+let agentAvailable = false;
+let turnRunning = false;
 let assistantBubble = null;       // current streaming assistant message element
 let pendingApproval = null;       // the approval event awaiting a decision
 let pendingApprovalAll = false;
@@ -59,15 +60,17 @@ async function init() {
   setWorking(false);
   try {
     await api.startAgent(config, false);
-    agentRunning = true;
+    agentAvailable = true;
   } catch (e) {
-    agentRunning = false;
+    agentAvailable = false;
+    turnRunning = false;
     addActivity("Could not start the agent: " + (e?.message || e), "err");
   }
   // A failed/errored startup must never leave the working state stuck.
   setWorking(false);
   maybeShowWorkspaceWarning(config);
   loadContextSurfaces(config);
+  syncDrawerControls();
 }
 
 // One-time, non-blocking banner when the configured workspace is Quiver's own
@@ -522,13 +525,19 @@ function handleOfficeDocResult(args, ok) {
   const actionsEl = card.querySelector(".draft-actions");
   if (ok) {
     if (titleEl) titleEl.textContent = name;
-    card.querySelector(".draft-sub").textContent = kind.label + " · ready";
+    card.querySelector(".draft-sub").textContent = kind.label + " · checking evidence…";
     card.querySelector(".draft-sub").title = filePath;
-    if (actionsEl) actionsEl.hidden = false;
+    if (actionsEl) actionsEl.hidden = true;
     card.classList.remove("canceled");
+    card.classList.remove("ready", "evidence-invalid");
+    // Mark the file operation complete before the asynchronous evidence
+    // check, then immediately downgrade it to a pending review state. The
+    // card is never presented as final until loadEvidenceFromDisk validates
+    // the companion.
     card.classList.add("ready");
-    // Load evidence lineage from disk (Evidence.json alongside the document)
     loadEvidenceFromDisk(filePath);
+    card.classList.remove("ready");
+    card.classList.add("evidence-pending");
   } else if (!card.classList.contains("ready")) {
     if (titleEl) titleEl.textContent = "Creation canceled — " + name;
     card.classList.add("canceled");
@@ -540,16 +549,44 @@ function handleOfficeDocResult(args, ok) {
 // This complements the live evidence tool events — it picks up evidence
 // from prior sessions or when reopening a document.
 async function loadEvidenceFromDisk(filePath) {
+  const card = documentCards.get(filePath);
+  const sub = card?.querySelector(".draft-sub");
+  const actions = card?.querySelector(".draft-actions");
+  const kind = docKindFor(filePath);
   try {
     const result = await api.loadEvidence(filePath);
-    if (result && result.claims && result.claims.length > 0) {
-      renderLineageChipsForDocument(filePath, result.claims, result.sources);
-      if (result.runRecord) {
-        recordDeliverableContext(filePath, result);
+    if (!result || result.error || result.valid === false) {
+      card?.classList.remove("ready", "evidence-pending");
+      card?.classList.add("evidence-invalid");
+      if (actions) actions.hidden = true;
+      if (sub) {
+        sub.textContent = `${kind.label} · not reviewable — evidence ${result?.missing ? "missing" : "invalid"}`;
       }
+      addActivity(
+        `${filePath.split("/").pop()}: evidence is ${result?.missing ? "missing" : "invalid"}; document remains a draft.`,
+        "err",
+      );
+      return;
     }
+    if (result.claims && result.claims.length > 0) {
+      renderLineageChipsForDocument(filePath, result.claims, result.sources);
+    }
+    if (result.runRecord) {
+      recordDeliverableContext(filePath, result);
+    }
+    card?.classList.remove("evidence-pending", "evidence-invalid");
+    card?.classList.add("ready");
+    if (actions) actions.hidden = false;
+    if (sub) sub.textContent = `${kind.label} · draft · evidence validated`;
   } catch {
-    // No evidence file or error — silently skip
+    card?.classList.remove("ready", "evidence-pending");
+    card?.classList.add("evidence-invalid");
+    if (actions) actions.hidden = true;
+    if (sub) sub.textContent = `${kind.label} · not reviewable — evidence unavailable`;
+    addActivity(
+      `${filePath.split("/").pop()}: evidence could not be validated; document remains a draft.`,
+      "err",
+    );
   }
 }
 
@@ -588,12 +625,15 @@ function setWorking(working) {
 function wireAgentEvents() {
   api.onAgentEvent((ev) => handleAgentEvent(ev));
   api.onAgentExit((d) => {
-    agentRunning = false;
+    agentAvailable = false;
+    turnRunning = false;
     setWorking(false);
     statusDot.className = "status-dot idle";
     addActivity("Agent stopped" + (d?.code ? ` (exit ${d.code})` : ""), "");
   });
   api.onAgentError((e) => {
+    turnRunning = false;
+    liveRunActive = false;
     setWorking(false);
     statusDot.className = "status-dot error";
     addActivity("Agent error: " + (e?.error || e), "err");
@@ -640,12 +680,14 @@ function handleAgentEvent(ev) {
     }
     case "consent_declined": {
       liveRunActive = false;
+      turnRunning = false;
       setWorking(false);
       addActivity("Consent declined — turn aborted", "warn");
       break;
     }
     case "consent_exclude": {
       liveRunActive = false;
+      turnRunning = false;
       setWorking(false);
       addActivity("Routed back to the context rail — exclude items, then re-run", "warn");
       focusContextRail();
@@ -656,6 +698,7 @@ function handleAgentEvent(ev) {
       // local model endpoint is configured. Surface the reason — never a blank
       // "Done" (empty states are product; silent failure is the anti-pattern).
       liveRunActive = false;
+      turnRunning = false;
       setWorking(false);
       setCurrentStatus("");
       statusDot.className = "status-dot error";
@@ -711,7 +754,7 @@ function handleAgentEvent(ev) {
       break;
     }
     case "approval": {
-      showApproval(ev.data);
+      if (liveRunActive) showApproval(ev.data);
       break;
     }
     case "intervention": {
@@ -720,6 +763,7 @@ function handleAgentEvent(ev) {
     }
     case "done": {
       liveRunActive = false;
+      turnRunning = false;
       setWorking(false);
       setCurrentStatus("");
       // If the turn was refused (e.g. high-sensitivity with no local endpoint),
@@ -739,6 +783,7 @@ function handleAgentEvent(ev) {
     }
     case "error": {
       liveRunActive = false;
+      turnRunning = false;
       setWorking(false);
       statusDot.className = "status-dot error";
       addActivity("Error: " + (ev.data?.error || ""), "err");
@@ -978,14 +1023,14 @@ function renderPatchPreview(patch) {
 function approveAction(all = false) {
   if (!pendingApproval) return;
   api.approveToolCall(true, all ? "all" : undefined);
-  closeOverlay("approvalOverlay");
+  closeOverlay("approvalOverlay", true);
   pendingApproval = null;
   setWorking(true);
 }
 function rejectAction() {
   if (!pendingApproval) return;
   api.approveToolCall(false);
-  closeOverlay("approvalOverlay");
+  closeOverlay("approvalOverlay", true);
   pendingApproval = null;
   setWorking(true);
 }
@@ -994,7 +1039,7 @@ function requestRevision() {
     // second click: send the revision note as a rejection with guidance
     const note = $("revisionNote").value.trim();
     if (pendingApproval) api.approveToolCall(false, note || undefined);
-    closeOverlay("approvalOverlay");
+    closeOverlay("approvalOverlay", true);
     pendingApproval = null;
     setWorking(true);
   } else {
@@ -1042,10 +1087,10 @@ async function sendPrompt() {
   const text = promptInput.value.trim();
   if (!text && attachments.length === 0) return;
 
-  // If the agent is running, queue the message as a steering input rather than
+  // If a turn is running, queue the message as a steering input rather than
   // dropping it. The agent's InterventionController consumes it at the next
   // loop iteration — same mechanism as the CLI Esc-steering.
-  if (agentRunning) {
+  if (turnRunning) {
     const imageMarkers = attachments.map((a) => "[File: " + a.path + "]").join("\n");
     const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
     // Show the queued steering message in the chat as a muted bubble
@@ -1066,7 +1111,10 @@ async function sendPrompt() {
     return;
   }
 
-  if (!agentRunning) return;
+  if (!agentAvailable) {
+    addActivity("Quiver is not ready — the agent is unavailable.", "err");
+    return;
+  }
   const imageMarkers = attachments.map((a) => "[File: " + a.path + "]").join("\n");
   const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
   addUserMessage(text || ("📎 " + attachments.map((a) => a.name).join(", ")));
@@ -1076,17 +1124,79 @@ async function sendPrompt() {
   attachments = [];
   renderAttachments();
   autoSize();
-  await api.sendToAgent(message);
   liveRunActive = true;
+  turnRunning = true;
   setWorking(true);
+  try {
+    await api.sendToAgent(message);
+  } catch (error) {
+    liveRunActive = false;
+    turnRunning = false;
+    setWorking(false);
+    addActivity("Could not send the request: " + (error?.message || error), "err");
+  }
 }
 function toggleContextDrawer() {
   const ws = $("workspace");
-  if (ws) ws.classList.toggle("hide-context");
+  if (!ws) return;
+  const compact = window.matchMedia?.("(max-width: 840px)")?.matches;
+  if (compact) {
+    ws.classList.remove("hide-context");
+    ws.classList.toggle("drawer-context-open");
+    $("toggleContextBtn")?.setAttribute(
+      "aria-pressed",
+      String(ws.classList.contains("drawer-context-open")),
+    );
+    return;
+  }
+  ws.classList.remove("drawer-context-open");
+  ws.classList.toggle("hide-context");
+  $("toggleContextBtn")?.setAttribute(
+    "aria-pressed",
+    String(!ws.classList.contains("hide-context")),
+  );
 }
 function toggleActivityDrawer() {
   const ws = $("workspace");
-  if (ws) ws.classList.toggle("hide-activity");
+  if (!ws) return;
+  const compact = window.matchMedia?.("(max-width: 1180px)")?.matches;
+  if (compact) {
+    ws.classList.remove("hide-activity");
+    ws.classList.toggle("drawer-activity-open");
+    $("toggleActivityBtn")?.setAttribute(
+      "aria-pressed",
+      String(ws.classList.contains("drawer-activity-open")),
+    );
+    return;
+  }
+  ws.classList.remove("drawer-activity-open");
+  ws.classList.toggle("hide-activity");
+  $("toggleActivityBtn")?.setAttribute(
+    "aria-pressed",
+    String(!ws.classList.contains("hide-activity")),
+  );
+}
+function syncDrawerControls() {
+  const ws = $("workspace");
+  if (!ws) return;
+  const compactContext = window.matchMedia?.("(max-width: 840px)")?.matches;
+  const compactActivity = window.matchMedia?.("(max-width: 1180px)")?.matches;
+  $("toggleContextBtn")?.setAttribute(
+    "aria-pressed",
+    String(
+      compactContext
+        ? ws.classList.contains("drawer-context-open")
+        : !ws.classList.contains("hide-context"),
+    ),
+  );
+  $("toggleActivityBtn")?.setAttribute(
+    "aria-pressed",
+    String(
+      compactActivity
+        ? ws.classList.contains("drawer-activity-open")
+        : !ws.classList.contains("hide-activity"),
+    ),
+  );
 }
 function wireKeyboard() {
   promptInput.addEventListener("input", autoSize);
@@ -1416,6 +1526,7 @@ function renderSessionsList(sessions, filterText) {
     item.querySelector(".si-main").addEventListener("click", async () => {
       await api.touchSession(s.path);
       closeOverlay("sessionsOverlay");
+      $("conversationTitle").textContent = sessionTitleFor(s);
       addActivity("Resuming session…", "tool");
       try {
         await loadSessionStateIntoUi(s.path);
@@ -1426,7 +1537,8 @@ function renderSessionsList(sessions, filterText) {
       // "working" — the app stays idle until a prompt is sent (P0-1).
       const config = await api.loadConfig();
       await api.startAgent(config, true);
-      agentRunning = true;
+      agentAvailable = true;
+      turnRunning = false;
       setWorking(false);
     });
     item.querySelector(".si-delete").addEventListener("click", async (e) => {
@@ -1486,14 +1598,28 @@ async function openPreview(filePath, title) {
 function showOverlay(id) {
   $(id).hidden = false;
 }
-function closeOverlay(id) {
+function closeOverlay(id, force = false) {
+  // Decision overlays are modal gates, not dismissible notifications. A
+  // backdrop click, Escape, or a generic close button must not leave the
+  // agent waiting while the UI suggests that the decision was skipped.
+  if (
+    !force &&
+    ((id === "approvalOverlay" && pendingApproval) ||
+      (id === "consentGateOverlay" && consentGateActive))
+  ) {
+    return;
+  }
   $(id).hidden = true;
 }
 
 // ─── buttons ────────────────────────────────────────────────────────────
 function wireButtons() {
   sendBtn.addEventListener("click", sendPrompt);
-  stopBtn.addEventListener("click", () => api.stopAgent());
+  stopBtn.addEventListener("click", async () => {
+    turnRunning = false;
+    liveRunActive = false;
+    await api.stopAgent();
+  });
 
   $("toggleContextBtn")?.addEventListener("click", toggleContextDrawer);
   $("toggleActivityBtn")?.addEventListener("click", toggleActivityDrawer);
@@ -1511,6 +1637,21 @@ function wireButtons() {
   $("sessionsBtn").addEventListener("click", openSessions);
   $("newSessionBtn").addEventListener("click", async () => {
     closeOverlay("sessionsOverlay");
+    clearChat();
+    showEmpty();
+    $("conversationTitle").textContent = "New work";
+    $("ctxTurns").textContent = "New session";
+    $("ctxTokensSection").hidden = true;
+    $("activityStream").innerHTML =
+      '<div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>';
+    $("activityClearBtn").hidden = true;
+    lastContextEntryText = null;
+    try {
+      await api.sendToAgent("/reset");
+      addActivity("Started a new draft session.", "ok");
+    } catch (error) {
+      addActivity("Could not reset the session: " + (error?.message || error), "err");
+    }
     promptInput.focus();
   });
   $("settingsBtn").addEventListener("click", () => api.loadSettings());
@@ -1542,21 +1683,29 @@ function wireButtons() {
 
   // suggestion chips
   const chips = [
-    "Draft an IC memo from my files",
-    "Research a company and write a 2-page brief",
-    "Build a competitive matrix from public sources",
+    "Prepare an investment committee memo from my files",
+    "Review a company's latest earnings and draft the evidence pack",
+    "Build a portfolio review from the approved workspace sources",
   ];
   const wrap = $("suggestionChips");
-  for (const c of chips) {
-    const b = document.createElement("button");
-    b.className = "chip";
-    b.textContent = c;
+  const existingChips = [...(wrap?.querySelectorAll(".chip") || [])];
+  const chipButtons = existingChips.length
+    ? existingChips
+    : chips.map((c) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.textContent = c;
+        wrap.appendChild(b);
+        return b;
+      });
+  for (const b of chipButtons) {
+    const c = b.dataset.suggestion || b.textContent || "";
     b.addEventListener("click", () => {
       promptInput.value = c;
       autoSize();
       sendPrompt();
     });
-    wrap.appendChild(b);
   }
 
   // S12: Workflow rerun button — re-run the flagship IC memo demo
@@ -2020,6 +2169,10 @@ function markFinalForCurrentDocument() {
     return false;
   }
   api.reviewMarkFinal(doc, openFlags, figureStatusesFor(doc)).then((res) => {
+    if (!res || res.blocked || res.logged === false) {
+      addActivity(`Cannot mark final — ${res?.error || "evidence or review validation failed."}`, "err");
+      return;
+    }
     documentMarkedFinal.set(doc, true);
     addActivity(overridden ? "Document marked final with override — open flags explicitly overridden (logged)" : "Document marked final — all figures verified (logged)", overridden ? "warn" : "ok");
     markCardFinal(doc);
@@ -2032,6 +2185,10 @@ function overrideFinalForCurrentDocument() {
   if (!doc) return;
   const openFlags = openFlagsFor(doc);
   api.reviewOverride(doc, openFlags, figureStatusesFor(doc)).then((res) => {
+    if (!res || res.blocked || res.logged === false) {
+      addActivity(`Could not log the override — ${res?.error || "evidence or review validation failed."}`, "err");
+      return;
+    }
     documentOverrideLogged.set(doc, true);
     addActivity("Override logged — open flags explicitly overridden by reviewer (audit chain).", "warn");
     refreshFinalRow();
@@ -2155,22 +2312,22 @@ function showConsentGate(manifestData) {
 // Send the consent decision to the agent so it can unblock (approve) or
 // abort the turn (decline/exclude). The agent logs it to the audit chain.
 function consentApprove() {
-  closeOverlay("consentGateOverlay");
   consentGateActive = false;
+  closeOverlay("consentGateOverlay", true);
   addActivity("Consent gate approved — Quiver is running", "ok");
   api.consentRespond("approve");
 }
 
 function consentDecline() {
-  closeOverlay("consentGateOverlay");
   consentGateActive = false;
+  closeOverlay("consentGateOverlay", true);
   addActivity("Consent declined — turn aborted (nothing entered the model)", "warn");
   api.consentRespond("decline");
 }
 
 function consentExclude() {
-  closeOverlay("consentGateOverlay");
   consentGateActive = false;
+  closeOverlay("consentGateOverlay", true);
   addActivity("Routed back to the context rail — exclude items, then re-run", "warn");
   api.consentRespond("exclude");
   focusContextRail();

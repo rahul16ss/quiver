@@ -14,10 +14,13 @@
   <header id="topbar">
     <div class="brand">
       <img src="assets/logo.png" alt="Quiver" class="brand-mark" />
-      <span class="brand-name">Quiver</span>
+      <div class="brand-copy">
+        <span class="brand-name">Quiver</span>
+        <span class="brand-subtitle">Associate workspace</span>
+      </div>
     </div>
     <div id="trustContextPill" class="trust-context-pill" title="Click to inspect or edit context & trust details">
-      <span class="pill-icon">🔒</span>
+      <span class="pill-icon" aria-hidden="true">●</span>
       <span id="pillText" class="pill-text">Protected Sandbox · Ready</span>
     </div>
     <div class="badges">
@@ -26,8 +29,8 @@
       <span id="statusDot" class="status-dot idle" title="Agent status"></span>
     </div>
     <div class="topbar-actions">
-      <button id="toggleContextBtn" class="ghost-btn icon-text-btn" title="Toggle Context Drawer (⌘1)">Context ⌘1</button>
-      <button id="toggleActivityBtn" class="ghost-btn icon-text-btn" title="Toggle Activity Drawer (⌘2)">Activity ⌘2</button>
+      <button id="toggleContextBtn" class="ghost-btn icon-text-btn" aria-pressed="true" title="Toggle Context Drawer (⌘1)">Context <span class="shortcut">⌘1</span></button>
+      <button id="toggleActivityBtn" class="ghost-btn icon-text-btn" aria-pressed="true" title="Toggle Activity Drawer (⌘2)">Activity <span class="shortcut">⌘2</span></button>
       <button id="sessionsBtn" class="ghost-btn" title="Past sessions">Sessions</button>
       <button id="settingsBtn" class="ghost-btn" title="Settings">Settings</button>
     </div>
@@ -38,7 +41,10 @@
     <!-- A. Context — what Quiver sees -->
     <aside id="context-plane" aria-label="What Quiver sees">
       <div class="plane-head">
-        <h2>What Quiver sees</h2>
+        <div>
+          <span class="plane-kicker">CONTEXT</span>
+          <h2>What Quiver sees</h2>
+        </div>
         <button id="ctxEditBtn" class="link-btn" title="Edit what the AI remembers">Edit</button>
       </div>
 
@@ -99,6 +105,17 @@
 
     <!-- B. Conversation — what you and Quiver are making -->
     <main id="conversation-plane" aria-label="Conversation">
+      <div class="conversation-header">
+        <div class="conversation-title-group">
+          <span class="conversation-kicker">CAPITAL MARKETS WORKSPACE</span>
+          <h1 id="conversationTitle">New work</h1>
+          <p>Build a source-backed draft, then review it before it counts.</p>
+        </div>
+        <div class="conversation-header-status">
+          <span class="status-mark" aria-hidden="true">✓</span>
+          <span>Draft until reviewed</span>
+        </div>
+      </div>
       <!-- One-time, non-blocking warning when the configured workspace is the
            app's own source tree (Epic 2 §2.5). The hard block applies anyway. -->
       <div id="workspaceWarning" class="workspace-warning" hidden>
@@ -113,9 +130,15 @@
       </div>
       <div id="chatArea" class="chat-area">
         <div id="emptyState" class="empty-state">
-          <div class="empty-title">What should we work on?</div>
-          <div class="empty-sub">Research a company, draft a brief, build a matrix — Quiver shows its work and verifies it.</div>
-          <div id="suggestionChips" class="chips"></div>
+          <div class="empty-mark" aria-hidden="true">↗</div>
+          <div class="empty-kicker">START WITH THE DECISION</div>
+          <div class="empty-title">What should we prepare?</div>
+          <div class="empty-sub">Bring a company, deal, earnings event, or portfolio question. Quiver keeps the sources visible and the final judgment with you.</div>
+          <div id="suggestionChips" class="chips">
+            <button type="button" class="chip" data-suggestion="Prepare an investment committee memo from my files">Prepare an investment committee memo from my files</button>
+            <button type="button" class="chip" data-suggestion="Review a company's latest earnings and draft the evidence pack">Review a company's latest earnings and draft the evidence pack</button>
+            <button type="button" class="chip" data-suggestion="Build a portfolio review from the approved workspace sources">Build a portfolio review from the approved workspace sources</button>
+          </div>
           <div class="empty-actions">
             <button id="runWorkflowBtn" class="ghost-btn" title="Re-run the flagship IC memo workflow (deterministic, no network)">Run workflow demo</button>
           </div>
@@ -127,10 +150,14 @@
         <div class="input-row">
           <textarea id="promptInput" placeholder="Ask Quiver to research, analyze, or draft something…" rows="1"></textarea>
           <div class="input-actions">
-            <button id="attachBtn" class="icon-btn" title="Attach an image or document">＋</button>
+            <button id="attachBtn" class="ghost-btn attach-btn" title="Attach an image or document"><span aria-hidden="true">＋</span><span>Attach</span></button>
             <button id="sendBtn" class="primary-btn" title="Send">Send</button>
             <button id="stopBtn" class="danger-btn" title="Stop" hidden>Stop</button>
           </div>
+        </div>
+        <div class="input-meta">
+          <span>Sources stay in your workspace unless an approved route says otherwise.</span>
+          <span class="input-shortcut">Enter to send&nbsp; · &nbsp;Shift + Enter for a new line</span>
         </div>
         <input id="fileInput" type="file" accept="image/*,.docx,.xlsx,.pptx,.pdf,.txt,.md,.csv" hidden />
       </div>
@@ -143,8 +170,11 @@
     <!-- C. Activity — what Quiver is doing -->
     <aside id="activity-plane" aria-label="What Quiver is doing">
       <div class="plane-head">
+        <div>
+          <span class="plane-kicker">AUDIT TRAIL</span>
+          <h2>What Quiver is doing</h2>
+        </div>
         <div id="currentStatus" class="current-status-line" hidden></div>
-        <h2>What Quiver is doing</h2>
         <button id="activityClearBtn" class="link-btn" title="Clear the activity stream" hidden>Clear</button>
       </div>
       <div id="activityStream" class="activity-stream">

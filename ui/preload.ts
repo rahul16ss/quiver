@@ -49,12 +49,14 @@ const ALLOWED_CHANNELS = new Set<string>([
   // Workspace
   "workspace:runTests",
   "workspace:selectDir",
+  "workflow:rerun",
   // Navigation
   "nav:loadMain",
   "nav:loadSettings",
   "nav:loadOnboarding",
   // Preview
   "preview:file",
+  "evidence:load",
   "file:open",
   "file:showInFolder",
   // Agent events (main → renderer only)

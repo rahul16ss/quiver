@@ -9,6 +9,7 @@ import { promisify } from "util";
 import { config } from "../src/config.ts";
 import { resolveAndAssertPathAllowed, createDefaultPolicy } from "../src/security/path_policy.ts";
 import { redactSecrets } from "../src/security/secrets.ts";
+import { validateEvidenceFile } from "../src/evidence/tracker.ts";
 import { AuditChain } from "../src/audit_chain.ts";
 import * as crypto from "crypto";
 import {
@@ -67,6 +68,8 @@ interface QuiverConfig {
   skillsDir: string;
   sessionLogEnabled?: boolean;
   sessionLogMaxChars?: number;
+  /** Deployment profile, e.g. finance-client. */
+  profile?: string;
   /** SPEC §6 consent gate — when true the agent blocks on pre-action approval. */
   consentGateEnabled?: boolean;
 }
@@ -147,7 +150,11 @@ const DEFAULT_CONFIG: QuiverConfig = {
   maxContextTokens: config.maxContextTokens,
   memoryDir: "./memory",
   skillsDir: "./skills",
-  consentGateEnabled: false,
+  profile: process.env.QUIVER_PROFILE || "",
+  consentGateEnabled:
+    process.env.QUIVER_CONSENT_GATE === "1" ||
+    (process.env.QUIVER_PROFILE === "finance-client" &&
+      process.env.QUIVER_CONSENT_GATE !== "0"),
 };
 
 async function loadConfig(): Promise<QuiverConfig> {
@@ -160,21 +167,96 @@ async function loadConfig(): Promise<QuiverConfig> {
   }
 }
 
-async function saveConfig(config: QuiverConfig): Promise<void> {
+function withoutSecrets(config: QuiverConfig): QuiverConfig {
+  const { workspaceIsAppSource: _workspaceIsAppSource, credentials: _credentials, ...persisted } =
+    config as QuiverConfig & { workspaceIsAppSource?: boolean; credentials?: unknown };
+  return {
+    ...persisted,
+    provider: {
+      ...(config.provider || DEFAULT_CONFIG.provider),
+      apiKey: "",
+    },
+    llmApiKey: "",
+    parallelApiKey: "",
+  };
+}
+
+async function storedCredential(key: string): Promise<string> {
+  try {
+    const { getCredential } = await import("../src/secrets/keychain.js");
+    return (await getCredential(key)) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function hydrateRuntimeConfig(input: QuiverConfig): Promise<QuiverConfig> {
+  const llmKey =
+    (await storedCredential("LLM_API_KEY")) ||
+    process.env.LLM_API_KEY ||
+    input.provider?.apiKey ||
+    input.llmApiKey ||
+    "";
+  const parallelKey =
+    (await storedCredential("PARALLEL_API_KEY")) ||
+    process.env.PARALLEL_API_KEY ||
+    input.parallelApiKey ||
+    "";
+  return {
+    ...input,
+    provider: { ...input.provider, apiKey: llmKey },
+    llmApiKey: llmKey,
+    parallelApiKey: parallelKey,
+  };
+}
+
+async function saveConfig(config: QuiverConfig): Promise<boolean> {
   try {
     // Strip computed, non-persistent fields (added by the config:load handler)
     // so they never end up in quiver-config.json.
     delete (config as any).workspaceIsAppSource;
+    // Secrets are accepted here only to migrate/store them in the OS
+    // credential store. They are never written to quiver-config.json.
+    const secrets = [
+      ["LLM_API_KEY", config.llmApiKey || config.provider?.apiKey || ""],
+      ["PARALLEL_API_KEY", config.parallelApiKey || ""],
+    ] as const;
+    if (secrets.some(([, value]) => value)) {
+      const { isKeychainAvailable, setCredential } = await import(
+        "../src/secrets/keychain.js"
+      );
+      if (!isKeychainAvailable()) {
+        console.error("Refusing to persist credentials without an OS credential store.");
+        return false;
+      }
+      for (const [key, value] of secrets) {
+        if (value && !(await setCredential(key, value))) {
+          console.error(`Could not store ${key} in the OS credential store.`);
+          return false;
+        }
+      }
+    }
     const fs = await import("fs/promises");
-    await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf8");
+    await fs.mkdir(path.dirname(CONFIG_FILE), { recursive: true });
+    await fs.writeFile(
+      CONFIG_FILE,
+      JSON.stringify(withoutSecrets(config), null, 2),
+      "utf8",
+    );
+    return true;
   } catch (err) {
     console.error("Failed to save config:", err);
+    return false;
   }
 }
 
 async function isConfigured(): Promise<boolean> {
   const config = await loadConfig();
-  return !!config.provider.apiKey;
+  return Boolean(
+    config.provider.apiKey ||
+      (await storedCredential("LLM_API_KEY")) ||
+      process.env.LLM_API_KEY,
+  );
 }
 
 // ─── Working Directory ────────────────────────────────────────────────
@@ -239,8 +321,10 @@ async function syncToEnv(config: QuiverConfig): Promise<void> {
     const replacements: Record<string, string> = {
       LLM_API_BASE_URL: config.provider.baseUrl,
       LLM_MODEL_NAME: config.provider.modelName,
-      LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
-      PARALLEL_API_KEY: config.parallelApiKey,
+      // GUI credentials live in the OS store. Keep any .env mirror blank so
+      // saving settings cannot recreate a plaintext secret on disk.
+      LLM_API_KEY: "",
+      PARALLEL_API_KEY: "",
       QUIVER_AUTONOMY: config.autonomyGrants || "",
       QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     };
@@ -327,7 +411,8 @@ function configLabel(env: Record<string, string | undefined>, cwd: string, args:
       LLM_MODEL_NAME: env.LLM_MODEL_NAME,
       QUIVER_AUTONOMY: env.QUIVER_AUTONOMY,
       QUIVER_MAX_CONTEXT_TOKENS: env.QUIVER_MAX_CONTEXT_TOKENS,
-      QUIVER_CLOUD_SYNC_PATH: env.QUIVER_CLOUD_SYNC_PATH,
+      QUIVER_PROFILE: env.QUIVER_PROFILE,
+      QUIVER_CONSENT_GATE: env.QUIVER_CONSENT_GATE,
       QUIVER_PROTECTED_DIR: env.QUIVER_PROTECTED_DIR,
     },
   });
@@ -418,10 +503,16 @@ async function startAgent(config: QuiverConfig, resumeLatest: boolean = false): 
     QUIVER_AUTONOMY: config.autonomyGrants || "",
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     QUIVER_OUTPUT_MODE: "json", // GUI uses JSON mode for structured IPC
+    QUIVER_PROFILE: config.profile || "",
     QUIVER_EXCLUDED_MEMORIES: [...excludedMemories].join(","),
     // Consent gate (SPEC §6): when enabled in settings, the agent blocks on a
     // pre-action approval before each model call.
-    QUIVER_CONSENT_GATE: config.consentGateEnabled ? "1" : "0",
+    QUIVER_CONSENT_GATE:
+      config.consentGateEnabled ||
+      (config.profile === "finance-client" &&
+        process.env.QUIVER_CONSENT_GATE !== "0")
+        ? "1"
+        : "0",
     // Self-modification guard (Epic 2 §2.5): the agent's path policy refuses
     // any write into Quiver's own installation/source tree when this is set.
     QUIVER_PROTECTED_DIR: getQuiverInstallDir(),
@@ -816,8 +907,16 @@ async function listSessions(): Promise<any[]> {
           messageCount: state.messages?.length || 0,
           model: state.model || DEFAULT_CONFIG.provider.modelName,
         });
-      } catch {
-        // Skip corrupt files
+      } catch (error: any) {
+        results.push({
+          sessionId: f.replace(".state.json", ""),
+          title: "Corrupt session state",
+          path: path.join(sessionsDir, f),
+          savedAt: "CORRUPT",
+          messageCount: 0,
+          model: "CORRUPT",
+          error: error?.message || "Session state could not be parsed.",
+        });
       }
     }
     // Sort by savedAt descending (newest first)
@@ -963,20 +1062,45 @@ function registerIpcHandlers(): void {
     // show a one-time warning banner when the configured workspace IS the
     // app source tree (Epic 2 §2.5). The hard block applies regardless.
     return {
-      ...config,
+      ...withoutSecrets(config),
+      credentials: {
+        llmApiKeyStored: Boolean(
+          (await storedCredential("LLM_API_KEY")) || process.env.LLM_API_KEY,
+        ),
+        parallelApiKeyStored: Boolean(
+          (await storedCredential("PARALLEL_API_KEY")) || process.env.PARALLEL_API_KEY,
+        ),
+      },
       workspaceIsAppSource: isWorkspaceAppSource(config.workspacePath || ""),
     };
   });
   ipcMain.handle("config:save", async (_evt, config: QuiverConfig) => {
-    await saveConfig(config);
-    await syncToEnv(config);
+    const saved = await saveConfig(config);
+    if (!saved) return false;
+    await syncToEnv(withoutSecrets(config));
     return true;
   });
   ipcMain.handle("config:isConfigured", async () => isConfigured());
 
   // Agent
   ipcMain.handle("agent:start", async (_evt, config: QuiverConfig, resumeLatest: boolean = false) => {
-    await startAgent(config, resumeLatest);
+    // Re-read persisted settings in the main process so legacy plaintext
+    // configs can be migrated/hydrated without ever returning the secret to
+    // the renderer.
+    const persisted = await loadConfig();
+    const merged = {
+      ...persisted,
+      ...config,
+      provider: {
+        ...(persisted.provider || DEFAULT_CONFIG.provider),
+        ...(config.provider || {}),
+        apiKey:
+          persisted.provider?.apiKey ||
+          config.provider?.apiKey ||
+          "",
+      },
+    };
+    await startAgent(await hydrateRuntimeConfig(merged), resumeLatest);
     return true;
   });
   ipcMain.handle("agent:send", async (_evt, text: string) => {
@@ -1220,11 +1344,37 @@ function registerIpcHandlers(): void {
   ipcMain.handle("review:markFinal", async (_evt, payload: any) => {
     const guardErr = await validateDeliverablePath(payload?.filePath);
     if (guardErr) return { logged: false, blocked: true, action: "blocked", error: guardErr };
+    if (config.evidenceRequired) {
+      const evidence = await validateEvidenceFile(payload.filePath);
+      if (!evidence.valid) {
+        return {
+          logged: false,
+          blocked: true,
+          action: "blocked",
+          error: "A valid evidence package is required before marking this deliverable final.",
+          evidencePath: evidence.evidencePath,
+          evidenceProblems: evidence.problems,
+        };
+      }
+    }
     return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "marked_final", payload?.figureStatuses);
   });
   ipcMain.handle("review:override", async (_evt, payload: any) => {
     const guardErr = await validateDeliverablePath(payload?.filePath);
     if (guardErr) return { logged: false, blocked: true, action: "blocked", error: guardErr };
+    if (config.evidenceRequired) {
+      const evidence = await validateEvidenceFile(payload.filePath);
+      if (!evidence.valid) {
+        return {
+          logged: false,
+          blocked: true,
+          action: "blocked",
+          error: "A valid evidence package is required before recording a final override.",
+          evidencePath: evidence.evidencePath,
+          evidenceProblems: evidence.problems,
+        };
+      }
+    }
     return logReviewDecision(payload?.filePath, payload?.openFlags || 0, "override", payload?.figureStatuses);
   });
 
@@ -1297,11 +1447,16 @@ function registerIpcHandlers(): void {
   // without the CLI. Runs the demo:ic-memo pipeline (deterministic, credential-
   // free, network-free) and returns the output + check count.
   ipcMain.handle("workflow:rerun", async () => {
-    const config = await loadConfig();
-    const workspaceDir = config.workspacePath || process.cwd();
+    // The deterministic demo belongs to the Quiver installation, not the
+    // user's selected workspace. In a packaged app the demo fixtures are
+    // copied to resources so the child process never needs to chdir into an
+    // asar archive.
+    const demoRoot = app.isPackaged
+      ? path.join(process.resourcesPath, "quiver-demo")
+      : path.resolve(__dirname, "..");
     try {
       const { stdout, stderr } = await execAsync("npm run demo:ic-memo", {
-        cwd: workspaceDir,
+        cwd: demoRoot,
         timeout: 120000,
         maxBuffer: 5 * 1024 * 1024,
       });
@@ -1357,7 +1512,8 @@ function registerIpcHandlers(): void {
 
   // Load Evidence.json from disk for a given document file path.
   // Looks for <basename>_Evidence.json in the same directory.
-  // Returns parsed evidence model (claims + sources) or null if not found.
+  // Returns an explicit validation result. Missing or invalid evidence is a
+  // review state, never an empty success response.
   ipcMain.handle("evidence:load", async (_evt, docFilePath: string) => {
     try {
       const guardErr = ipcPathGuard(docFilePath, "read");
@@ -1366,13 +1522,36 @@ function registerIpcHandlers(): void {
       const baseName = path.basename(docFilePath).replace(/\.(docx|xlsx|pptx)$/, "");
       const dir = path.dirname(docFilePath);
       const evidencePath = path.join(dir, `${baseName}_Evidence.json`);
-      let model: any = null;
       try {
-        const raw = await fs.readFile(evidencePath, "utf8");
-        model = JSON.parse(raw);
+        await fs.readFile(evidencePath, "utf8");
       } catch {
-        return null; // No Evidence.json found
+        return {
+          docPath: docFilePath,
+          valid: false,
+          missing: true,
+          evidencePath,
+          problems: [`Evidence file is missing: ${evidencePath}`],
+          claims: [],
+          sources: [],
+          sourcesExcluded: [],
+          runRecord: null,
+        };
       }
+      const validation = await validateEvidenceFile(docFilePath);
+      if (!validation.valid || !validation.model) {
+        return {
+          docPath: docFilePath,
+          valid: false,
+          missing: validation.missing,
+          evidencePath: validation.evidencePath,
+          problems: validation.problems,
+          claims: [],
+          sources: [],
+          sourcesExcluded: [],
+          runRecord: null,
+        };
+      }
+      const model = validation.model;
       // Also try to load Run_Record.json
       let runRecord: any = null;
       try {
@@ -1384,6 +1563,9 @@ function registerIpcHandlers(): void {
       }
       return {
         docPath: docFilePath,
+        valid: true,
+        missing: false,
+        evidencePath: validation.evidencePath,
         claims: model.claims || [],
         sources: model.sources || [],
         sourcesExcluded: model.sources_excluded || [],
