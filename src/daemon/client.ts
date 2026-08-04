@@ -189,10 +189,9 @@ export function subscribe(
   return () => req.destroy();
 }
 
-// ─── LaunchAgent autostart (SPEC §4.1 / Epic 1) ──────────────────────────
-// Install/uninstall the daemon as a macOS LaunchAgent so it starts at login
-// and stays alive (KeepAlive). On other platforms these are no-ops (a Windows
-// service / Linux systemd unit would be the equivalent — future work).
+// ─── Login autostart (SPEC §4.1 / Epic 1) ────────────────────────────────
+// macOS uses a LaunchAgent; Windows uses Task Scheduler. Linux is deliberately
+// out of scope for the customer path.
 
 import * as fsSync from "fs";
 import * as path from "path";
@@ -200,18 +199,64 @@ import * as os from "os";
 import { execFileSync } from "child_process";
 
 const LAUNCH_AGENT_LABEL = "com.quiver.daemon";
+const WINDOWS_TASK_NAME = "QuiverDaemon";
 
 export function daemonPlistPath(): string {
   return path.join(os.homedir(), "Library", "LaunchAgents", `${LAUNCH_AGENT_LABEL}.plist`);
 }
 
 export function isDaemonAutostartInstalled(): boolean {
+  if (process.platform === "win32") {
+    try {
+      execFileSync("schtasks.exe", ["/Query", "/TN", WINDOWS_TASK_NAME], {
+        stdio: "ignore",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
   return fsSync.existsSync(daemonPlistPath());
 }
 
 export function installDaemonAutostart(repoRoot: string): { installed: boolean; detail: string } {
+  if (process.platform === "win32") {
+    const daemonScript = path.join(repoRoot, "src", "daemon", "daemon.ts");
+    const taskCommand =
+      process.env.QUIVER_DAEMON_AUTOSTART_COMMAND ||
+      `"${process.execPath}" --import tsx "${daemonScript}"`;
+    try {
+      execFileSync(
+        "schtasks.exe",
+        [
+          "/Create",
+          "/SC",
+          "ONLOGON",
+          "/TN",
+          WINDOWS_TASK_NAME,
+          "/TR",
+          taskCommand,
+          "/F",
+        ],
+        { stdio: "pipe" },
+      );
+      return {
+        installed: true,
+        detail:
+          `Windows Task Scheduler task '${WINDOWS_TASK_NAME}' installed. ` +
+          "It starts the local daemon at user logon.",
+      };
+    } catch (e: any) {
+      return {
+        installed: false,
+        detail:
+          `Task Scheduler installation failed: ${e?.message || e}. ` +
+          "Set QUIVER_DAEMON_AUTOSTART_COMMAND to the packaged daemon command and retry.",
+      };
+    }
+  }
   if (process.platform !== "darwin") {
-    return { installed: false, detail: `launchd autostart is macOS-only (platform: ${process.platform}); on other platforms use the OS service manager` };
+    return { installed: false, detail: `login autostart is unsupported on ${process.platform}; Linux is out of scope` };
   }
   const template = path.join(repoRoot, "scripts", "com.quiver.daemon.plist");
   if (!fsSync.existsSync(template)) {
@@ -233,8 +278,23 @@ export function installDaemonAutostart(repoRoot: string): { installed: boolean; 
 }
 
 export function uninstallDaemonAutostart(): { removed: boolean; detail: string } {
+  if (process.platform === "win32") {
+    try {
+      execFileSync(
+        "schtasks.exe",
+        ["/Delete", "/TN", WINDOWS_TASK_NAME, "/F"],
+        { stdio: "pipe" },
+      );
+      return {
+        removed: true,
+        detail: `removed Windows Task Scheduler task '${WINDOWS_TASK_NAME}'`,
+      };
+    } catch {
+      return { removed: true, detail: "no Windows Task Scheduler task installed" };
+    }
+  }
   if (process.platform !== "darwin") {
-    return { removed: false, detail: `launchd autostart is macOS-only (platform: ${process.platform})` };
+    return { removed: false, detail: `login autostart is unsupported on ${process.platform}` };
   }
   const dest = daemonPlistPath();
   if (!fsSync.existsSync(dest)) return { removed: true, detail: "no LaunchAgent installed" };

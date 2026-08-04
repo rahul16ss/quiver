@@ -255,18 +255,9 @@ export async function startDaemon(): Promise<DaemonInfo> {
   fs.mkdirSync(quiverDir(), { recursive: true });
   fs.writeFileSync(daemonInfoPath(), JSON.stringify(info, null, 2), { mode: 0o600 });
 
-  // Initialize and start background workflow services
-  try {
-    const { WorkflowScheduler } = await import("../workflow/scheduler.js");
-    const { WorkflowWatcher } = await import("../workflow/watcher.js");
-    const scheduler = new WorkflowScheduler();
-    const watcher = new WorkflowWatcher();
-    scheduler.start();
-    watcher.start();
-  } catch (e) {
-    // Non-fatal if workflow components fail to launch background tasks
-  }
-
+  // Workflow scheduler/watcher services are started by the CLI child that owns
+  // the Agent callback. The daemon must not create callback-less services that
+  // can report a workflow as completed without maker output.
   const cleanup = () => {
     try {
       const current = JSON.parse(fs.readFileSync(daemonInfoPath(), "utf8"));
