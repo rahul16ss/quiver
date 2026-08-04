@@ -1,10 +1,9 @@
 # Quiver — User Stories & Storyboard
 
-**Status: DRAFT for owner review. No GUI development proceeds until these
-stories are edited and approved by the owner.** This document owns the
-"Solution + User stories" stage of the cycle (Problem+ICP → Solution+Stories →
-Product+Marketing → Sales+CS). The technical spec (`SPEC.md`, private on the owner's machine)
-owns architecture and status; this document owns *what it must feel like*.
+**Status: Living design source (updated 2026-08-04).** This document owns
+"what it must feel like." The technical spec (`SPEC.md`, private on the owner's
+machine) owns architecture and status. `CONTRIBUTING.md` and the acceptance
+contract assert against the moments below — keep them honest.
 
 The quality bar, stated once: every story's acceptance criteria are
 **observable moments** — things a named person sees, clicks, or feels on a
@@ -50,16 +49,15 @@ firm's template, prior memos, my files, and where my prompts go (cloud/local),
 before I share anything sensitive. And it's a control, not a display: I can
 exclude a file or memory from this run in one click, and the exclusion is
 recorded.
-- ✅ Built: six-layer context rail with honest endpoint line; the consent gate
-  surfaces before a run and blocks until approved/declined/excluded when enabled;
-  exclude-before-run reaches the agent (context-rail veto → `memory:exclude` →
-  `QUIVER_EXCLUDED_MEMORIES` → agent skips the file). The one-calm-summary-line
-  UX (S2 "Apple-grade") is still being polished.
-- Gap to Apple-grade: the rail reads like an inspector, not a sentence. The
-  moment should be: one calm summary line ("Using your IC template, 2 memory
-  files, 33 tools · prompts go to [your configured endpoint]") that expands on demand into
-  items with exclude toggles. Priya scans it in 3 seconds; control is one
-  click deep, not buried.
+- ✅ Built: six-layer context rail with honest locality line; consent gate is
+  **default-on and fail-closed** in the finance-client profile — it surfaces
+  before a run and blocks until approved/declined/excluded; exclude-before-run
+  reaches the agent (context-rail veto → `memory:exclude` →
+  `QUIVER_EXCLUDED_MEMORIES` → agent skips the file).
+- Gap to Apple-grade: the rail still reads like an inspector more than a
+  sentence. Prefer one calm summary line ("Using your IC template, 2 memory
+  files, 33 tools · prompts stay on this machine / go to your configured
+  model") that expands on demand into items with exclude toggles.
 
 ## Moment 2 — Giving it the deal (Priya, Monday 8:05am)
 
@@ -94,7 +92,8 @@ can interrupt: my typed message is queued and injected, Stop halts cleanly.
   ("Reading RevenueBuild sheet…") is wired to tool events; checker
   verification surfaced in plain language. Queued-typing steering shipped
   in the GUI (type while running → message queued and sent to the agent's
-  InterventionController).
+  InterventionController). The activity pane captions the trail as
+  tamper-evident (hash-chained).
 
 **S6. "Closing my laptop costs nothing."**
 As Priya, I can close the window Monday evening and reopen Tuesday — the
@@ -109,7 +108,9 @@ As Priya, the output is a .docx in the firm's template that I open in Word —
 not a chat blob. The handoff moment is unmistakable: a document card with the
 file name, and one click to open or reveal it.
 - ✅ Built: deliverable card (Open / Show in Folder / Preview); native docx
-  via officecli, template-driven (proven in the flagship example).
+  via officecli, template-driven (proven in the flagship example). Cards stay
+  in evidence-pending until the evidence hard gate clears — no ready flash;
+  workflow-demo cards use the same lifecycle as agent-produced documents.
 - Gap to Apple-grade: the card is functional, not celebratory. This is the
   product's money shot — it should feel like receiving work, not a download
   notification (document thumbnail/first-page preview, section count, and
@@ -119,12 +120,11 @@ file name, and one click to open or reveal it.
 As Priya, every number in the draft is sourced or visibly flagged — the memo
 tells me what it does NOT know (unresolved items) instead of papering over it.
 - ✅ Built: fully real in the flagship example (evidence model + 8 checks,
-  Excel cells verified by read-back) AND now generated live during drafting —
+  Excel cells verified by read-back) AND generated live during drafting —
   the `evidence` tool emits structured Evidence.json from a real agent run,
-  the checker rejects unsourced quantitative figures, and `npm run
-  demo:ic-memo:live` proves the trust story renders from live output (8/8).
-- Acceptance moments: draft arrives with N sourced figures, M flagged; the
-  checker literally refuses to call unsourced numbers done.
+  the checker rejects unsourced quantitative figures (evidence hard gate),
+  and `npm run demo:ic-memo:live` proves the trust story renders from live
+  output (8/8).
 
 ## Moment 5 — Verifying before signing (Marcus, Wednesday 9:40pm — the 90 seconds)
 
@@ -133,10 +133,9 @@ As Marcus, I click $48.2m and see the source in place: Model_v12.xlsx,
 RevenueBuild, the cell, its value — without opening Excel. I click the
 concentration claim and see the transcript excerpt. Two clicks, ten seconds.
 - ✅ Built: lineage chips render in the desktop GUI from live agent output;
-  clicking a chip opens the §8.3 verification rail showing the source in place
+  clicking a chip opens the verification rail showing the source in place
   (Excel cell with sheet/cell/value, filing excerpt, or web URL). This is the
-  moment the entire trust story exists for — the demo climax. (Unsigned build;
-  UX polish continues.)
+  moment the entire trust story exists for — the demo climax.
 
 **S10. "My review is the record."**
 As Marcus, I mark each key figure verified / flagged / needs-analyst; the memo
@@ -145,7 +144,7 @@ logged). My checks become the review record that goes with the memo.
 - ✅ Built: per-document review flow in the desktop GUI — mark each figure
   verified / flagged / needs-analyst; mark-final is blocked while open flags
   exist; override is logged to a per-document tamper-evident audit chain and a
-  review record is written next to the deliverable. (Unsigned build.)
+  review record is written next to the deliverable.
 
 **S11. "What was it fed?"**
 As Marcus, in one click I see what informed this draft — files, sources,
@@ -154,7 +153,7 @@ without a meeting.
 - ✅ Built: context rail + run record artifact exist, and a per-deliverable
   "context used for this document" view opens from the deliverable card
   (inputs, sources, excluded sources, run record) populated from the evidence
-  tool's structured output. (Unsigned build.)
+  tool's structured output.
 
 ## Moment 6 — Running it again (Dana, next quarter)
 
@@ -166,7 +165,7 @@ produces a wrong memo.
 - ✅ Built: workflow.yaml + acceptance checks + rerun exist for the
   flagship example. GUI "run this workflow again" affordance shipped (a
   Run Workflow Demo button in the empty state + IPC handler). Drift
-  detection shipped in Phase C (`src/workflow/drift.ts` + `expected-structure.json`).
+  detection shipped (`src/workflow/drift.ts` + `expected-structure.json`).
 
 **S13. "The firm owns it."**
 As Dana, the workflow definition, template config, runbook, and training
@@ -189,8 +188,8 @@ none of it is hostage to a vendor. When we improve the instructions, the next
 quarter's memo is visibly better: institutional knowledge compounds.
 - ✅ Mostly built: plain-file memory + review queue + GUI editing built; versioned
   memory with diff/rollback shipped (US-17.19, `src/memory/versioned.ts`); the
-  episodic examples store shipped in Phase C (`src/memory/examples_store.ts` +
-  `examples` tool). Continual learning now enqueues into the structured facts.jsonl
+  episodic examples store shipped (`src/memory/examples_store.ts` +
+  `examples` tool). Continual learning enqueues into the structured facts.jsonl
   review pipeline. The *ownership* and *compounding* are both real today.
 - Acceptance moments: Dana opens memory as normal files; edits survive and
   visibly shape the next run; promoting an example is one action.
@@ -199,14 +198,15 @@ quarter's memo is visibly better: institutional knowledge compounds.
 As Priya on a live deal, I mark the data room material sensitive; Quiver
 shows me — before running — what would leave the machine and what stays
 local, strips the names it was told to strip (and shows me the receipt), and
-refuses to send configured MNPI to any remote endpoint. When compliance asks,
+refuses to send configured MNPI to any remote model. When compliance asks,
 the run record answers.
-- 🟡 Partial: honest endpoint disclosure and the run-record exist; redaction
-  (`redactMnpi`), sensitivity routing (classify/route, wired into the agent
-  loop), and the redaction receipt now exist as a framework. Per-engagement
-  pattern/tier config (`.quiver/sensitivity.json`) is engagement work, so the
-  engagement-level answer is still contractual/data-boundary docs until
-  configured; no marketing may imply otherwise.
+- ✅ Built (framework + fail-closed default): honest locality disclosure and
+  the run-record exist; redaction (`redactMnpi`), sensitivity routing
+  (classify/route, wired into the agent loop), and the redaction receipt
+  exist. Engagement config lives at `.quiver/sensitivity.json` — without a
+  valid config the agent refuses rather than guessing. Per-engagement
+  patterns and tiers remain engagement work; no marketing may imply a
+  turnkey compliance product.
 - Acceptance moments: mark-as-sensitive is one action; the pre-run summary
   says "3 client names redacted, model note stays local"; an attempted
   remote send of MNPI is refused and logged.
@@ -231,26 +231,26 @@ Five screens, each owned by a moment:
    received-files confirmation.
 2. **Run view** (S4, S5) — current-status line + approval overlays + activity
    detail on demand.
-3. **Deliverable view** (S7, S8, S9, S10) — document card/preview with the
-   evidence rail: figures list → source panels → verify/flag controls. *Does
-   not fully exist yet; this is the next GUI cycle.*
+3. **Deliverable view** (S7, S8, S9, S10) — document card with Open / Show /
+   Preview, lineage chips, verification rail, mark-final / override. Built;
+   polish continues (thumbnail, celebratory ready state after evidence clears).
 4. **Sessions** (S6, S12) — resume and rerun.
-5. **Settings** (S2, S13) — model/endpoint/workspace/tiers in buyer language.
+5. **Settings** (S2, S13) — model / locality / workspace / tiers in buyer
+   language (in-app sheet; onboarding remains a first-run window).
 
 Explicitly cut from buyer surfaces: token internals beyond the memory bar,
 tool chips as a default-open list, raw session IDs, developer tiers, GitHub/
 MCP anything, "skills" as jargon (call them "workflow instructions" when they
-surface at all).
+surface at all). The words *terminal*, *.env*, *endpoint*, *API* never appear
+on buyer surfaces.
 
 ## How this maps to build order
 
-Spec §19 build order, restated through stories: #3 live lineage = S8+S9,
-#4 scratch-area tier = S4 depth, #5 consent-gate v1 = S2 (exclude-before-run)
-+ S11, #6 connectors = S3 breadth, #7 redaction/routing = S15. Versioned
-memory / examples store (spec §7) = S14 and queues behind first-engagement
-evidence. S16 needs no new architecture — one provider-swap runbook page and
-a demo beat. The next GUI cycle = Screen 3 (Deliverable view) designed from
-S7–S10 *before* code.
+Remaining polish (not architecture): calm context summary line (S2),
+celebratory deliverable card (S7), provider-swap runbook beat (S16), and
+broader file-drop confirmation (S3). Evidence hard gate, fail-closed
+sensitivity, consent default-on, keychain-only credentials, and the three
+family demos are shipped.
 
 ## How screens get designed from this (what this document is NOT)
 
@@ -260,7 +260,7 @@ subsection here (one page: purpose in one sentence, layout sketch, every
 state — empty/loading/error/success, exact copy, and which stories'
 acceptance moments it must satisfy), get it approved, then build. One
 document, growing per cycle — no separate design docs. The retired
-`docs/desktop-design.md` contract is absorbed here.
+`docs/desktop-design.md` stub was deleted; this file is the single authority.
 
 ## Definition of "Apple-grade" for this product (so we stop hand-waving)
 
@@ -280,3 +280,5 @@ document, growing per cycle — no separate design docs. The retired
    words, no jargon a partner wouldn't say aloud.
 5. Verified visually, every release, against this document — not against a
    defect list.
+6. **Light theme only** until a complete dark theme ships for every surface —
+   a half-themed dark mode is worse than none.

@@ -24,7 +24,7 @@
       <span id="pillText" class="pill-text">Protected Sandbox · Ready</span>
     </div>
     <div class="badges">
-      <span id="modelBadge" class="badge" title="The AI model in use">—</span>
+      <span id="modelBadge" class="badge" title="The model Quiver is using">—</span>
       <span id="trustBadge" class="badge muted" title="Approval level">Ask before acting</span>
       <span id="statusDot" class="status-dot idle" title="Agent status"></span>
     </div>
@@ -177,6 +177,7 @@
         <div id="currentStatus" class="current-status-line" hidden></div>
         <button id="activityClearBtn" class="link-btn" title="Clear the activity stream" hidden>Clear</button>
       </div>
+      <p class="audit-caption">Tamper-evident — every decision is hash-chained on this machine.</p>
       <div id="activityStream" class="activity-stream" aria-live="polite" aria-relevant="additions">
         <div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>
       </div>
@@ -341,6 +342,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

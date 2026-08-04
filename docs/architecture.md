@@ -2,13 +2,14 @@
 
 ## Overview
 
-Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; product principles and boundaries are kept in [principles.md](principles.md). The engine is built around five primary architectural systems:
+Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; product principles and boundaries are kept in [principles.md](principles.md). The engine is built around four primary architectural systems:
 
 1. **Filesystem Context Manager** (`src/context_manager.ts`, `src/paths.ts`)
-2. **Harness-Adapter & Provider Split Engine** (`src/adapters/`, `src/providers/`)
+2. **Model Adapter & Provider Layer** (`src/adapters/`, `src/providers/`) — per-model prompting, tool-format mapping, and transport
 3. **Lifecycle Hooks Interception Engine** (`src/lifecycle.ts`)
 4. **Active Timeouts & Guardrails** (`src/agent.ts`)
-5. **Dynamic Tool Sandbox Registry** (`src/registry.ts`, `src/tools/sandbox.ts`)
+
+Dynamic tool creation (`create_tool`) was removed. The tool registry loads static, shipped tools from `src/tools/` at startup only.
 
 ## Directory Structure
 
@@ -21,7 +22,7 @@ quiver/
 │   ├── context_manager.ts    # LLM summarization, context offloading, compaction
 │   ├── lifecycle.ts          # Lifecycle hooks (beforeAgent, beforeModel, etc.)
 │   ├── paths.ts              # Filesystem path resolution (~/.quiver/projects/)
-│   ├── registry.ts           # Tool registry, dynamic loading
+│   ├── registry.ts           # Static tool registry (loads src/tools/ at startup)
 │   ├── state.ts              # Core memory load/save, agent file export
 │   ├── logger.ts             # Re-exports AuditChain; session + provenance logging
 │   ├── audit_chain.ts        # Tamper-evident AuditChain (provenance fields covered by the hash)
@@ -34,7 +35,7 @@ quiver/
 │   ├── watchdog.ts           # Self-health queue (findings/summary/status)
 │   ├── init.ts               # Project init / onboarding
 │   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
-│   ├── adapters/             # Harness adapter contract (Model-Harness-Fit)
+│   ├── adapters/             # Model adapter layer (prompting, tool formats, parsing)
 │   ├── providers/            # Model provider abstraction (transport layer)
 │   ├── security/             # Path policy, command classification, secrets, seatbelt, scratch-area, sensitivity, consent gate
 │   ├── secrets/              # OS keychain integration + .env fallback
@@ -49,11 +50,12 @@ quiver/
 │   ├── fs/                   # Atomic writes with rollback
 │   ├── mcp/                  # MCP client + server config (.quiver/mcp.json)
 │   ├── subagents/            # Maker-checker (validates Evidence.json, rejects unsourced), targeted check filter, scratchpad helpers
-│   └── tools/                # Tool implementations incl. office_doc, evidence, data_query, web research, memory (versioned) + sandbox
+│   └── tools/                # Static tool implementations incl. office_doc, evidence, data_query, web research, memory (versioned) + sandbox helpers
 ├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
 ├── examples/                 # Flagship example: investment-committee-memo
 ├── skills/                   # Skill files (investment-brief, due-diligence, …)
+├── workflow-packs/           # Executable workflow packs (dealmaking, research, wealth)
 ├── tests/                    # Checker-owned acceptance contract (spec_acceptance_tests.ts)
 └── Formula/                  # Homebrew formula
 ```
@@ -110,7 +112,7 @@ User Input
 3. **Secret Redaction** — Secrets detected and redacted before logging/transmission
 4. **Read-Before-Write** — SHA-256 hash verification prevents stale overwrites
 5. **Prompt Injection Defense** — Untrusted content wrapped in XML boundaries
-6. **Tool Sandbox** — Dynamic tools execute in isolated worker threads; the manifest's `fs` read/write globs are enforced via a permission-checking proxy (US-6.4)
+6. **Tool Sandbox** — Shipped tools may execute in isolated worker threads with least-privilege constraints
 7. **Atomic Writes** — Temp-write-then-rename with backup and rollback
 8. **Trust Tiers** — Cumulative `observe`→`propose`→`build`→`operate`→top-tier permission ladder (developer-only; see `docs/advanced.md`) with tier-driven read scope, enforced allow-globs, and per-project persistence (US-6.4). Business surfaces name the tiers **Draft only / Draft and research / Assisted**.
 9. **Ambient Verification** — Self-heal + goal-loop driven by the single maker-checker primitive (US-13.5)
@@ -124,7 +126,7 @@ the safety primitives (subagent pool, JIT sandbox, path sandbox, audit chain,
 diff approval) into one automatic verification discipline.
 
 - **Maker** — the primary agent loop (or a maker subagent) produces the proposed
-  change: file edits, shell commands, tool calls, or generated tools.
+  change: file edits, shell commands, or tool calls.
 - **Checker** — `src/subagents/checker.ts` is a structurally isolated second
   instance that verifies the maker's output *before* it is applied. It runs in
   its own sandboxed context with **read-only** workspace access and **no**
@@ -143,7 +145,7 @@ diff approval) into one automatic verification discipline.
   greppable and reviewable.
 - **Configuration** — maker-checker is **always on and unconditional** for
   high-risk operations (filesystem mutations, destructive/privileged/network/
-  exfiltration shell bands, generated-tool activation). Per the acceptance
+  exfiltration shell bands). Per the acceptance
   contract (US-15.1) it is *not* gated behind an env flag — the maker cannot
   self-certify, so there is no opt-out. It degrades gracefully: if the checker
   cannot run, the change falls back to the existing user-approval gate and is

@@ -55,6 +55,21 @@ function codeOnly(rel: string): string {
   return t;
 }
 
+function guiMainProcessFiles(): string[] {
+  const files = ["ui/main.ts"];
+  const mainDir = path.join(ROOT, "ui", "main");
+  if (existsSync(mainDir)) {
+    for (const f of readdirSync(mainDir).filter((n) => n.endsWith(".ts")).sort()) {
+      files.push(path.join("ui", "main", f));
+    }
+  }
+  return files;
+}
+
+function guiMainProcessCode(): string {
+  return guiMainProcessFiles().map(codeOnly).join("\n");
+}
+
 // Minimal `check` mirror — appends to the SAME results array the main runner
 // tallies. (Wired via architectReviewContract returning these results, which
 // the main file splices into its own `results`.)
@@ -271,7 +286,7 @@ export async function architectReviewContract(
     "US-8.1",
     "Each renderer-path IPC handler (preview:file, skills:save, memory:save, sessions:load) must call a path-policy guard WITHIN its own handler body — a single guard in one handler does not protect the others (the 'control present but not on the live path' defect). The renderer is driven by untrusted model output, so any unguarded handler can read ~/.ssh/id_rsa or write /etc/cron.d via traversal.",
     () => {
-      const c = codeOnly("ui/main.ts");
+      const c = guiMainProcessCode();
       const guardRe =
         /\b(?:sanitizePath|assertToolPathAllowed|resolveAndAssertPathAllowed|checkPathAllowed|ipcPathGuard)\s*\(/;
       // memory:save delegates to saveMemoryFile(); a guard there counts only
@@ -311,7 +326,7 @@ export async function architectReviewContract(
     "US-8.1",
     "If the renderer CSP omits 'unsafe-inline', the HTML must not use inline onclick handlers — today CSP is script-src 'self' (no 'unsafe-inline') while index.html is wired entirely with inline onclick= attributes, so either every button is dead or CSP isn't actually enforced",
     () => {
-      const mainCsp = codeOnly("ui/main.ts");
+      const mainCsp = guiMainProcessCode();
       // script-src directive specifically (style-src 'unsafe-inline' is
       // irrelevant — inline event handlers are governed by script-src).
       const scriptSrcMain = mainCsp.match(/script-src[^;"'\]]*?["';,\]]/i);

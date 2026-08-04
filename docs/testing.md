@@ -42,8 +42,8 @@ The contract spans the full blueprint: first-run onboarding, config/secret
 hygiene (single-key model, keychain, env allowlist), lifecycle hooks, context
 compaction, memory extraction/review/privacy, vision routing, retry policy,
 untrusted-content wrapping, path sandboxing, secret redaction, audit chain,
-diff/atomic-write safety, prompt assembly, token budgeting, tool sandbox
-manifest, subagent recursion limits, diagnostics, Electron GUI hardening
+diff/atomic-write safety, prompt assembly, token budgeting, tool sandbox,
+subagent recursion limits, diagnostics, Electron GUI hardening
 (sandbox/CSP/window-state/IPC), adapter conformance, config schema
 validation/migration, Homebrew formula, and the maker-checker verification discipline.
 
@@ -91,3 +91,19 @@ It covers:
 > only live verdict — re-run it for the current status. Defense-in-depth: the
 > checker's `noNetwork`/`readOnly` are env signals + scratchpad cwd, not OS-level
 > socket blocking — see `tests/ACCEPTANCE_CONTRACT.md`.
+
+## E2E tiers
+
+Behavioral end-to-end tests live in `tests/e2e/` and complement the acceptance
+contract. They are tiered by environment requirements:
+
+| Command | Tiers | What it runs |
+|---------|-------|--------------|
+| `npm run test:e2e` | A + B | Default offline behavioral e2e (mock LLM) plus OfficeCLI action matrix |
+| `npm run test:e2e:a` | A only | Offline behavioral e2e against a mock model server |
+| `npm run test:e2e:all` | A + B + C + D | Full e2e stack including live model/network spot checks |
+| `npm run test:e2e:live` | C + D | Live model + network spot checks (requires configured credentials) |
+
+- **Tier A** — offline behavioral e2e (mock model server; no network).
+- **Tier B** — OfficeCLI action matrix and IC memo acceptance (requires `officecli` on PATH).
+- **Tier C/D** — live model and network spot checks; skipped cleanly when keys or endpoints are absent.

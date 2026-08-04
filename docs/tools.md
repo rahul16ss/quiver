@@ -67,7 +67,10 @@ export interface Tool {
 
 ## Tool Registry
 
-The `ToolRegistry` class manages tool loading, hot-reloading, and OpenAI function-calling schema serialization. Tools are loaded from `src/tools/` at startup.
+The `ToolRegistry` class manages static tool loading and OpenAI function-calling
+schema serialization. At startup it scans `src/tools/` and registers each shipped
+tool module. There is no runtime tool synthesis — the agent cannot create new tools
+at run time. MCP servers may add external tools via `.quiver/mcp.json`.
 
 ## MCP (Model Context Protocol)
 

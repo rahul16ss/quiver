@@ -21,9 +21,9 @@ following projects.
   process, preload IPC bridge, sandbox/CSP hardening patterns). The current
   Quiver desktop renderer is original, from-scratch work: a transparency-first
   three-plane surface (Context | Conversation | Activity) written in vanilla
-  JavaScript with no UI framework, rebuilt against `docs/desktop-design.md`.
-  It is not derived from AionUi's renderer, does not use React, and shares no
-  AionUi renderer code.
+  JavaScript with no UI framework, rebuilt against
+  `docs/product/user-stories.md` (the design source). It is not derived from
+  AionUi's renderer, does not use React, and shares no AionUi renderer code.
 
 ### OfficeCLI
 

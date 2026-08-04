@@ -71,11 +71,14 @@ boundary. **Ctrl+C** aborts the active generation (twice to exit).
 | System | run_command, run_tests, log_tokens |
 | Web | web_search, scrape_url, browser_control, deep_research, find_all, entity_search |
 | Memory | memory_append, memory_replace, continual_learning |
+| Evidence | evidence (source/claim lineage, Evidence.json) |
+| Data | data_query (registered data-vendor connectors) |
 | Planning | todo_write, ask_question |
 | Iteration | (ambient goal-loop — always-on, no tool call needed) |
 | Quality | bar_critic (benchmark bar-comparison, §10.1) |
 | Agents | subagent |
 | Office | office_doc (via OfficeCLI) |
+| Workflows | workflow (discover, run, inspect workflow packs) |
 | MCP | external tools via `.quiver/mcp.json` |
 
 `subagent` is available for user workflows that benefit from isolated research

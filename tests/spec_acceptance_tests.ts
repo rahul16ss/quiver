@@ -260,6 +260,46 @@ function codeOnly(rel: string): string {
   return t;
 }
 
+/** Concatenate ui/main.ts and ui/main/*.ts for GUI main-process grep checks. */
+function guiMainProcessFiles(): string[] {
+  const files = ["ui/main.ts"];
+  const mainDir = path.join(ROOT, "ui", "main");
+  if (existsSync(mainDir)) {
+    for (const f of readdirSync(mainDir).filter((n) => n.endsWith(".ts")).sort()) {
+      files.push(path.join("ui", "main", f));
+    }
+  }
+  return files;
+}
+
+function guiMainProcessCode(): string {
+  return guiMainProcessFiles().map(codeOnly).join("\n");
+}
+
+function guiMainProcessSrcText(): string {
+  return guiMainProcessFiles().map(srcText).join("\n");
+}
+
+/** All renderer JS modules (entry + js/*.js) for grep checks after ES-module split. */
+function rendererJsFiles(): string[] {
+  const files = ["ui/renderer/app.js"];
+  const jsDir = path.join(ROOT, "ui", "renderer", "js");
+  if (existsSync(jsDir)) {
+    for (const f of readdirSync(jsDir).filter((n) => n.endsWith(".js")).sort()) {
+      files.push(path.join("ui", "renderer", "js", f));
+    }
+  }
+  return files;
+}
+
+function rendererCode(): string {
+  return rendererJsFiles().map(codeOnly).join("\n");
+}
+
+function rendererSrcText(): string {
+  return rendererJsFiles().map(srcText).join("\n");
+}
+
 // Recursively scan src/ and ui/ source (comments stripped) for a pattern, so a
 // check can assert a property holds across the whole codebase, not one file.
 function grepCodeTree(pattern: RegExp): string[] {
@@ -601,7 +641,7 @@ async function guiWiringContract() {
     "US-8.1",
     "BrowserWindow webPreferences must set sandbox: true (wired in code, not a comment)",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       return (
         /webPreferences\s*:[\s\S]*?sandbox:\s*true/s.test(main) ||
         /ELECTRON_HARDENING_RULES\.sandbox/.test(main)
@@ -613,7 +653,7 @@ async function guiWiringContract() {
     "US-8.1",
     "a strict CSP must be enforced on the renderer; script-src must be 'self' with no unsafe-eval/unsafe-inline (external scripts blocked)",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       const html = srcText("ui/renderer/index.html");
       const enforced =
         /onHeadersReceived|Content-Security-Policy/.test(main) ||
@@ -654,7 +694,7 @@ async function guiWiringContract() {
     "US-8.1",
     "window size/position must be both persisted and restored across launches (wired in code)",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       const persists =
         /getBounds|getNormalSize|setBounds|setSize|storeBounds|window-state|windowState/i.test(
           main,
@@ -671,7 +711,7 @@ async function guiWiringContract() {
     "US-2.4",
     "GUI file-mutation approvals must render a diff and offer approve/reject/revise (wired in renderer code)",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       return (
         /previewDiff|diff:preview|renderDiff|side-by-side|sideBySide/i.test(
           app,
@@ -687,18 +727,26 @@ async function guiWiringContract() {
     "US-8.1",
     "GUI main-process must actually launch: every relative import in ui/main.ts (and the preload ref) must resolve to a file that exists, so `npm run gui` does not crash with ERR_MODULE_NOT_FOUND",
     () => {
-      const main = srcText("ui/main.ts");
-      const uiDir = path.join(ROOT, "ui");
-      const specs = [...main.matchAll(/from\s+["'](\.\.?\/[^"']+)["']/g)].map(
-        (m) => m[1],
+      const missing: string[] = [];
+      for (const rel of guiMainProcessFiles()) {
+        const content = srcText(rel);
+        const fileDir = path.dirname(path.join(ROOT, rel));
+        for (const m of content.matchAll(/from\s+["'](\.\.?\/[^"']+)["']/g)) {
+          const spec = m[1];
+          const resolved = path.resolve(fileDir, spec);
+          if (!existsSync(resolved) && !existsSync(resolved + ".ts")) {
+            missing.push(`${rel}: ${spec}`);
+          }
+        }
+      }
+      const windowsSrc = srcText("ui/main/windows.ts");
+      const preloadRef = windowsSrc.match(
+        /path\.join\([^,]+,\s*["']([^"']*preload\.js)["']\)/,
       );
-      const preloadRef = main.match(
-        /path\.join\(__dirname,\s*["']([^"']+\.js)["']\)/,
-      );
-      if (preloadRef) specs.push(preloadRef[1]);
-      const missing = specs.filter(
-        (sp) => !existsSync(path.resolve(uiDir, sp)),
-      );
+      if (preloadRef) {
+        const preloadPath = path.resolve(path.join(ROOT, "ui"), preloadRef[1]);
+        if (!existsSync(preloadPath)) missing.push(`preload: ${preloadRef[1]}`);
+      }
       if (missing.length > 0)
         throw new Error(`unresolved GUI imports: ${missing.join(", ")}`);
       return missing.length === 0;
@@ -3030,12 +3078,12 @@ async function guiSettingsContract() {
   await check(
     "GUI-SETTINGS-SECTIONS",
     "US-8.4",
-    "settings page must display all 4 required sections: Model Provider, API Credentials, Approvals, Memory",
+    "settings page must display all 4 required sections: Model Provider, Model credentials, Approvals, Memory (buyer language — no 'API' on surfaces per user-stories banned-words)",
     () => {
       const settingsHtml = srcText("ui/renderer/settings.html");
       const required = [
         "Model Provider",
-        "API Credentials",
+        "Model credentials",
         "Approvals",
         "Memory",
       ];
@@ -3055,7 +3103,7 @@ async function guiSettingsContract() {
     "US-8.4",
     "settings IPC handlers (settings:get, settings:update, settings:set-credential) must be wired in main.ts",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       if (!/settings:get/.test(main))
         throw new Error("settings:get IPC handler not wired in main.ts");
       if (!/settings:update/.test(main))
@@ -3073,7 +3121,7 @@ async function guiSettingsContract() {
     "US-8.4/US-12.2",
     "memory review IPC handlers (memory:review:list, memory:review:action) must be wired in main.ts",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       if (!/memory:review:list/.test(main))
         throw new Error("memory:review:list IPC handler not wired in main.ts");
       if (!/memory:review:action/.test(main))
@@ -3093,7 +3141,7 @@ async function sessionArchiveContract() {
     "US-8.2",
     "session deletion must move files to archive/trash folder, not hard-delete by default",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       // Must have an archive directory concept
       if (!/archive/i.test(main))
         throw new Error(
@@ -3118,7 +3166,7 @@ async function sessionArchiveContract() {
     "US-8.2",
     "sessions:delete IPC handler must accept a permanent flag",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       if (!/sessions:delete.*permanent/.test(main))
         throw new Error(
           "sessions:delete IPC handler does not pass a permanent flag",
@@ -4000,7 +4048,7 @@ async function checkerAuditAddendumContract(tmpWs: string) {
     "US-17.8",
     "preview:file IPC handler must be wired in main.ts to read files and return content with type detection",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       if (!/preview:file|preview-file|previewFile/i.test(main))
         throw new Error(
           "preview:file IPC handler not wired in main.ts — US-17.8 requires a file preview handler",
@@ -5301,7 +5349,7 @@ async function specGapCoverageContract() {
     "GUI must support image drag-and-drop onto the input bar with EXIF redaction",
     () => {
       const html = srcText("ui/renderer/index.html");
-      const appjs = srcText("ui/renderer/app.js");
+      const appjs = rendererSrcText();
       const combined = html + "\n" + appjs;
       const hasDrop = /drop|dragover|ondrop|image.*drop|drop.*image/i.test(combined);
       // EXIF redaction happens server-side in file_encoder.ts (locally, not in cloud)
@@ -7167,7 +7215,7 @@ async function extendedCapabilitiesContract() {
     "S7 / Epic-2 §2.4",
     "The deliverable moment must surface a document card with Open, Show in Folder, and Preview actions — the demo climax (SPEC Epic-2 §2.4 / user-stories S7)",
     () => {
-      const app = srcText("ui/renderer/app.js");
+      const app = rendererSrcText();
       return (
         /showInFolder|show-in-folder|revealInFolder/i.test(app) &&
         /preview|Preview/.test(app) &&
@@ -7179,9 +7227,9 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-EXCLUDE-BEFORE-RUN",
     "S2 / SPEC §6",
-    "The context rail must be a CONTROL, not a display: the user can exclude a memory file or source from the next run in one click, and the exclusion is recorded. SPEC §6: 'Nothing enters the AI that the user cannot see, edit, approve' — user-stories S2 marks this as a real gap (the rail is read-only today).",
+    "The context rail must be a CONTROL, not a display: the user can exclude a memory file or source from the next run in one click, and the exclusion is recorded. SPEC §6: 'Nothing enters the AI that the user cannot see, edit, approve' — user-stories S2 (built: rail veto + consent gate default-on).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       // An exclude/veto affordance on a context-rail item, plus an IPC to record it.
       return (
@@ -7195,10 +7243,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-CURRENT-STATUS-LINE",
     "S5 / SPEC Epic-2 §2.2",
-    "Above the activity feed there must be a single current-status line a preparer can glance at ('Reading RevenueBuild sheet…') — never a stack trace, with checker verification surfaced in plain language. user-stories S5 marks this as a real gap.",
+    "Above the activity feed there must be a single current-status line a preparer can glance at ('Reading RevenueBuild sheet…') — never a stack trace, with checker verification surfaced in plain language. user-stories S5 (built).",
     () => {
       const html = srcText("ui/renderer/index.html");
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       return (
         /(currentStatus|current-status|statusLine|status-line|currentTask)/i.test(html) ||
         /(currentStatus|current-status|statusLine|status-line|currentTask)/i.test(app)
@@ -7209,9 +7257,9 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-LINEAGE-CHIPS",
     "S8 / S9 / SPEC §8.1",
-    "Drafted figures must render as lineage chips in the GUI (clickable, showing source/confidence). SPEC §8.1: 'Rendered as a clickable chip in the GUI preview.' user-stories S9: this is the moment the entire trust story exists for — currently a 🔴 gap.",
+    "Drafted figures must render as lineage chips in the GUI (clickable, showing source/confidence). SPEC §8.1: 'Rendered as a clickable chip in the GUI preview.' user-stories S9 (built: demo climax).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       return (
         /(lineage|lineageChip|lineage-chip|claimChip|renderClaim|sourceChip)/i.test(app) ||
@@ -7225,7 +7273,7 @@ async function extendedCapabilitiesContract() {
     "S9 / SPEC §8.3",
     "Clicking a figure must open its source in a right-hand verification panel (Excel cell with formula, filing excerpt, or web page). SPEC §8.3: 'The reviewer's verification view.' Currently a 🔴 gap and the demo climax for a buyer.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       return (
         /(verificationRail|verification-rail|sourcePanel|source-panel|openSource|verifyClaim|figureSource)/i.test(app) ||
@@ -7239,7 +7287,7 @@ async function extendedCapabilitiesContract() {
     "S10 / SPEC §8.3",
     "Marcus must be able to mark each figure verified / flagged / needs-analyst, and the memo cannot be marked final while flags are open (an override is logged). SPEC §8.3: 'A flagged figure blocks the document from being marked final until resolved or explicitly overridden (override is logged).' Currently a 🔴 gap.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       return (
         /(needs_analyst|markVerified|markFlagged|markNeedsAnalyst|reviewStatus|verifyFigure)/i.test(app) &&
         /(blockFinal|markFinal|finalDisabled|cannotFinal|openFlags|overrideLogged)/i.test(app)
@@ -7252,7 +7300,7 @@ async function extendedCapabilitiesContract() {
     "S11 / SPEC §6",
     "For each deliverable, a reviewer can see in one click what informed THIS document — files, sources, excluded material, where prompts went. SPEC §6 / user-stories S11: a per-deliverable 'context used for THIS document' view (currently a 🟡 gap).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       return (
         /(contextUsed|context-used|deliverableContext|contextForDocument|runRecord|run_record)/i.test(app) ||
@@ -7266,7 +7314,7 @@ async function extendedCapabilitiesContract() {
     "S2 / S4 / SPEC §6",
     "The consent gate must surface in the desktop app (the one buyer surface), not only as CLI text. SPEC §6 / Epic-2 §2.3: 'No blind approvals, ever' applies to the GUI. The CLI-only consent gate does not meet the product requirement for a buyer.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       return (
         /(consentGate|consent-gate|ConsentGate|consentSummary)/i.test(app) ||
@@ -7345,7 +7393,7 @@ async function extendedCapabilitiesContract() {
     "S15 / SPEC §11.2 / Epic-2 §2.6",
     "When a high-sensitivity turn is refused (no local model endpoint), the desktop app must surface the reason — not render a blank turn ending in a green 'Done'. The GUI must handle the sensitivity_refused event and/or honor done{refused:true}. Empty states are product; silent failure is the anti-pattern (PROJECTS.md §9).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const handlesRefusedEvent = /case\s+"sensitivity_refused"/.test(app);
       const doneHonorsRefused = /case\s+"done"[\s\S]{0,400}?refused/.test(app);
       return handlesRefusedEvent && doneHonorsRefused;
@@ -7357,7 +7405,7 @@ async function extendedCapabilitiesContract() {
     "S5",
     "The desktop app must support queued-typing steering — the user can type while the agent is running, hit Enter, and the message is queued and sent (not dropped). SPEC Epic-2 §2.2 / user-stories S5: 'Remaining: queued-typing steering in the GUI.' The CLI has Esc-steering; the GUI must have parity.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       // The send handler must check agentRunning and queue rather than return
       const hasQueue = /agentRunning[\s\S]{0,200}steer/i.test(app)
         || /steer-queued/i.test(app)
@@ -7372,12 +7420,12 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-WORKFLOW-RERUN",
     "S12",
-    "The desktop app must have a 'run workflow again' affordance so Dana can re-run the flagship workflow from the GUI without the CLI. user-stories S12: '🟡 Partial: no GUI run this workflow again affordance.' SPEC §19 lists rerun as CLI-only.",
+    "The desktop app must have a 'run workflow again' affordance so Dana can re-run the flagship workflow from the GUI without the CLI. user-stories S12 (built: empty-state Run Workflow Demo + IPC).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const html = srcText("ui/renderer/index.html");
       const preload = srcText("ui/preload.ts");
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       // A rerun affordance in the UI + IPC + handler
       const hasButton = /runWorkflow|rerun|run-workflow|workflow.*demo/i.test(html)
         || /runWorkflow|rerun/i.test(app);
@@ -7629,10 +7677,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-APP-JS-PARSES",
     "Epic-2 / SPEC §16",
-    "The desktop app is the ONE buyer surface. ui/renderer/app.js must be syntactically valid JavaScript that node can parse — a green gate over an app.js that throws a SyntaxError at load ships a blank window. Regression guard.",
+    "The desktop app is the ONE buyer surface. ui/renderer/app.js and ui/renderer/js/*.js must be syntactically valid JavaScript that node can parse — a green gate over renderer code that throws a SyntaxError at load ships a blank window. Regression guard.",
     () => {
       try {
-        for (const f of ["ui/renderer/app.js", "ui/renderer/onboarding.js", "ui/renderer/settings.js"]) {
+        for (const f of rendererJsFiles().concat(["ui/renderer/onboarding.js", "ui/renderer/settings.js"])) {
           execSync(`node --check ${path.join(ROOT, f)}`, { stdio: "pipe" });
         }
         return true;
@@ -7647,7 +7695,7 @@ async function extendedCapabilitiesContract() {
     "S2 / S4 / SPEC §6",
     "The consent gate must actually be SHOWN before a run, not merely defined. showConsentGate must be called from a run-start path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const calls = (app.match(/\bshowConsentGate\s*\(/g) || []).length;
       return calls >= 2; // one definition + at least one invocation
     },
@@ -7658,7 +7706,7 @@ async function extendedCapabilitiesContract() {
     "S2 / SPEC §6",
     "The exclude-before-run control must reach the agent: ui/main.ts must register a memory:exclude IPC handler, and the agent loop must consume the exclusion list so the excluded memory does NOT enter the model call. A renderer-only Set that never reaches the agent is theater.",
     () => {
-      const main = codeOnly("ui/main.ts");
+      const main = guiMainProcessCode();
       const agent = codeOnly("src/agent.ts");
       const handlerOk = /ipcMain\.handle\(\s*["']memory:exclude["']/.test(main);
       // The agent (or a context-loading module it calls) must honor an exclusion set.
@@ -7759,8 +7807,8 @@ async function extendedCapabilitiesContract() {
     "S2 / S4 / SPEC §6",
     "The GUI's Approve/Decline/Exclude buttons must route the decision to the blocked agent's stdin, and ui/main.ts must forward consent:respond to the agent process (daemon sendLine or agentProcess.stdin.write). Otherwise the agent blocks forever.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
-      const main = codeOnly("ui/main.ts");
+      const app = rendererCode();
+      const main = guiMainProcessCode();
       const guiWired = /consentRespond\s*\(/.test(app) && /consentApproveBtn|consentRejectBtn/.test(app);
       const mainForwards = /ipcMain\.handle\(\s*["']consent:respond["']/.test(main) && /sendLine\(|agentProcess\.stdin\.write/.test(main);
       return guiWired && mainForwards;
@@ -7772,7 +7820,7 @@ async function extendedCapabilitiesContract() {
     "S9 / SPEC §8.3",
     "The §8.3 verification rail must render the ACTUAL source in place — an Excel cell (sheet/cell/value), a filing excerpt, or a web URL — pulled from the evidence sources the agent emits, not a 'Source details not available' placeholder. This is the demo climax.",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
+      const app = rendererCode();
       const rendersExcel = /loc\.sheet|loc\.cell/.test(app) && /extracted_value/.test(app);
       const rendersExcerpt = /source\.excerpt|\.excerpt/.test(app);
       const rendersWeb = /loc\.url/.test(app);
@@ -7786,8 +7834,8 @@ async function extendedCapabilitiesContract() {
     "S10 / SPEC §8.3",
     "The review flow must be enforced on a REAL deliverable: mark-final is blocked while a document has open flags (flagged/needs-analyst) and the reviewer has not overridden; the override + final decision + per-figure statuses are sent via IPC and appended to a tamper-evident AuditChain on disk (the review record that goes with the memo).",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
-      const main = codeOnly("ui/main.ts");
+      const app = rendererCode();
+      const main = guiMainProcessCode();
       const blocks = /openFlags[\s\S]{0,200}overridden|openFlags > 0 && !overridden/.test(app);
       const appIpc = /reviewMarkFinal|reviewOverride/.test(app) && /api\.reviewMarkFinal|api\.reviewOverride/.test(app);
       const mainHandles = /ipcMain\.handle\(\s*["']review:markFinal["']/.test(main) && /ipcMain\.handle\(\s*["']review:override["']/.test(main);
@@ -7801,8 +7849,8 @@ async function extendedCapabilitiesContract() {
     "S10 / Phase 2",
     "GUI mark-final and override must block missing or invalid evidence and surface the IPC error instead of marking the card final optimistically",
     () => {
-      const app = codeOnly("ui/renderer/app.js");
-      const main = codeOnly("ui/main.ts");
+      const app = rendererCode();
+      const main = guiMainProcessCode();
       return (
         /validateEvidenceFile/.test(main) &&
         /evidenceRequired/.test(main) &&
@@ -8221,7 +8269,7 @@ async function extendedCapabilitiesContract() {
     "US-17.23",
     "Main process must register an evidence:load IPC handler that reads Evidence.json from disk",
     () => {
-      const c = codeOnly("ui/main.ts");
+      const c = guiMainProcessCode();
       return /evidence:load/.test(c) &&
         /_Evidence\.json/.test(c) &&
         /_Run_Record\.json/.test(c);
@@ -8244,7 +8292,7 @@ async function extendedCapabilitiesContract() {
     "US-17.23",
     "Renderer app.js must call loadEvidenceFromDisk when a document card becomes ready",
     () => {
-      const c = srcText("ui/renderer/app.js");
+      const c = rendererSrcText();
       return /loadEvidenceFromDisk/.test(c) &&
         /api\.loadEvidence/.test(c);
     },
@@ -8253,14 +8301,14 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-EVIDENCE-LOAD-CALLSITE",
     "US-17.23",
-    "handleOfficeDocResult must call loadEvidenceFromDisk after marking card as ready",
+    "handleOfficeDocResult must enter evidence-pending then call loadEvidenceFromDisk (no ready flash before validation — north-star honesty)",
     () => {
-      const c = srcText("ui/renderer/app.js");
-      // Verify loadEvidenceFromDisk is called inside handleOfficeDocResult after card.classList.add("ready")
-      const idx = c.indexOf("card.classList.add(\"ready\")");
-      if (idx === -1) return false;
-      const after = c.substring(idx, idx + 200);
-      return /loadEvidenceFromDisk/.test(after);
+      const c = rendererSrcText();
+      // Honest lifecycle: pending first, loadEvidenceFromDisk, ready only after validation.
+      const pendingIdx = c.indexOf('classList.add("evidence-pending")');
+      if (pendingIdx === -1) return false;
+      const window = c.substring(Math.max(0, pendingIdx - 120), pendingIdx + 200);
+      return /handleOfficeDocResult/.test(c) && /loadEvidenceFromDisk/.test(window);
     },
   );
 

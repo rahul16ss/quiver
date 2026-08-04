@@ -77,7 +77,7 @@
     <ul>
       <li><code>npm run demo:ic-memo</code> — Dealmaking &amp; Diligence: native Word IC memo (Project Alder) with cell-verified evidence map &amp; review checklist.</li>
       <li><code>npm run demo:post-earnings</code> — Investment Research: post-earnings evidence pack with transcript &amp; model verification.</li>
-      <li><code>npm run demo:portfolio-review</code> — Wealth &amp; Portfolio: portfolio review pack with IPS policy &amp; benchmark alignment checks.</li>
+      <li><code>npm run demo:portfolio-review</code> — Wealth &amp; Portfolio: native Excel (.xlsx) portfolio review pack with IPS policy &amp; benchmark alignment checks.</li>
     </ul>
 
     <h2>Principles</h2>
@@ -90,13 +90,13 @@
     </ul>
 
     <h2>Data handling</h2>
-    <p>Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via <code>LLM_API_BASE_URL</code>. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no telemetry.</p>
+    <p>Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via <code>LLM_API_BASE_URL</code>. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. Quiver does not ship product analytics; optional update checks may contact GitHub for release info.</p>
 
     <h2>Install</h2>
     <pre><code>git clone https://github.com/rahul16ss/quiver.git &amp;&amp; cd quiver
 npm install
 npm run demo:ic-memo   # flagship workflow + acceptance checks
-npm test               # run 387 spec acceptance checks
+npm test               # full acceptance suite
 npm run gui            # desktop app</code></pre>
 
     <h2>Learn more</h2>
