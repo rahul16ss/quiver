@@ -88,7 +88,7 @@ export class WorkflowWatcher {
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private running = false;
   private agent?: AgentCallback;
-  /** Files currently being processed — prevents re-triggering */
+  /** Workflow/input identities currently being processed — prevents duplicates */
   private processing: Set<string> = new Set();
 
   constructor(agent?: AgentCallback) {
@@ -213,8 +213,9 @@ export class WorkflowWatcher {
 
           const fullPath = path.join(dir, filename);
 
-          // Skip if already processing
-          if (this.processing.has(fullPath)) return;
+          // Skip if this workflow/input identity is already processing.
+          const processingKey = `${rule.workflow}:${fullPath}`;
+          if (this.processing.has(processingKey)) return;
 
           // Debounce
           const timerKey = `${rule.id}:${fullPath}`;
@@ -263,7 +264,9 @@ export class WorkflowWatcher {
     // Verify the file actually exists (it may have been a transient event)
     if (!fs.existsSync(filePath)) return;
 
-    this.processing.add(filePath);
+    const processingKey = `${rule.workflow}:${filePath}`;
+    if (this.processing.has(processingKey)) return;
+    this.processing.add(processingKey);
 
     try {
       const def = discoverWorkflows(rule.packsDir).find((w) => w.name === rule.workflow);
@@ -280,6 +283,7 @@ export class WorkflowWatcher {
       await executeWorkflow(def, {
         agent: this.agent,
         trigger: "watch",
+        triggerInput: filePath,
       });
     } catch (err: any) {
       console.error(
@@ -287,7 +291,7 @@ export class WorkflowWatcher {
         err?.message || err,
       );
     } finally {
-      this.processing.delete(filePath);
+      this.processing.delete(processingKey);
     }
   }
 

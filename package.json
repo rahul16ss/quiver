@@ -5,7 +5,7 @@
   "author": "rahul16ss",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "ui/main.ts",
+  "main": "ui/main-loader.ts",
   "bin": {
     "quiver": "./bin/quiver.js"
   },
@@ -55,8 +55,6 @@
       "bin/**/*",
       "node_modules/tsx/**/*",
       "node_modules/esbuild/**/*",
-      "node_modules/get-tsconfig/**/*",
-      "node_modules/resolve-pkg-maps/**/*",
       "package.json",
       "package-lock.json",
       "tsconfig.json",
@@ -80,14 +78,6 @@
         "to": "node_modules/esbuild"
       },
       {
-        "from": "node_modules/get-tsconfig",
-        "to": "node_modules/get-tsconfig"
-      },
-      {
-        "from": "node_modules/resolve-pkg-maps",
-        "to": "node_modules/resolve-pkg-maps"
-      },
-      {
         "from": "node_modules/picocolors",
         "to": "node_modules/picocolors"
       },
@@ -102,14 +92,6 @@
       {
         "from": "node_modules/fastest-levenshtein",
         "to": "node_modules/fastest-levenshtein"
-      },
-      {
-        "from": "node_modules/html-to-text",
-        "to": "node_modules/html-to-text"
-      },
-      {
-        "from": "node_modules/cheerio",
-        "to": "node_modules/cheerio"
       },
       {
         "from": "node_modules/puppeteer",
@@ -144,6 +126,22 @@
         "to": "node_modules/ws"
       },
       {
+        "from": "examples",
+        "to": "quiver-demo/examples"
+      },
+      {
+        "from": "workflow-packs",
+        "to": "quiver-demo/workflow-packs"
+      },
+      {
+        "from": "src",
+        "to": "quiver-demo/src"
+      },
+      {
+        "from": "demo-package.json",
+        "to": "quiver-demo/package.json"
+      },
+      {
         "from": "tsconfig.json",
         "to": "tsconfig.json"
       },
@@ -154,26 +152,6 @@
       {
         "from": "node_modules/sharp",
         "to": "node_modules/sharp"
-      },
-      {
-        "from": "node_modules/@img/sharp-darwin-x64",
-        "to": "node_modules/@img/sharp-darwin-x64"
-      },
-      {
-        "from": "node_modules/@img/sharp-darwin-arm64",
-        "to": "node_modules/@img/sharp-darwin-arm64"
-      },
-      {
-        "from": "node_modules/@img/sharp-libvips-linux-x64",
-        "to": "node_modules/@img/sharp-libvips-linux-x64"
-      },
-      {
-        "from": "node_modules/@img/sharp-linux-x64",
-        "to": "node_modules/@img/sharp-linux-x64"
-      },
-      {
-        "from": "node_modules/@img/sharp-wasm32",
-        "to": "node_modules/@img/sharp-wasm32"
       }
     ],
     "mac": {

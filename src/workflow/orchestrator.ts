@@ -29,6 +29,10 @@ import type {
 } from "./types.js";
 import { PHASE_ORDER } from "./types.js";
 import { loadExpectedStructure, checkDrift, type DriftResult } from "./drift.js";
+import { atomicWriteSync, CorruptStateError } from "../fs/atomic_write.js";
+import { validateEvidenceFile } from "../evidence/tracker.js";
+import { readEvidenceFile } from "../evidence/validator.js";
+import { harvestWorkflowCompletion } from "../memory/episodic_harvester.js";
 
 // ─── Run ID generation ─────────────────────────────────────────────────
 
@@ -55,13 +59,20 @@ function ensureRunsDir(): void {
 
 function saveRun(run: WorkflowRun): void {
   ensureRunsDir();
-  fs.writeFileSync(runFilePath(run.run_id), JSON.stringify(run, null, 2));
+  atomicWriteSync(runFilePath(run.run_id), JSON.stringify(run, null, 2));
 }
 
 function loadRun(runId: string): WorkflowRun | null {
   const p = runFilePath(runId);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8")) as WorkflowRun;
+  } catch (error: any) {
+    throw new CorruptStateError(
+      p,
+      `JSON parse failed: ${error?.message || String(error)}`,
+    );
+  }
 }
 
 // ─── Event system ──────────────────────────────────────────────────────
@@ -143,11 +154,13 @@ async function executeDiscover(
 
   if (agent) {
     const agentOutput = await agent(
-      `You are in the DISCOVER phase of the "${def.name}" workflow.\n` +
+      `You are the Associate in the DISCOVER phase of the "${def.name}" workflow.\n` +
         `Business purpose: ${def.business_purpose}\n` +
         `Available inputs: ${existingInputs.join(", ")}\n` +
         `Missing inputs: ${missingInputs.join(", ") || "none"}\n` +
-        `Identify any additional context needed and confirm readiness to proceed.`,
+      `Identify the decision context, additional inputs needed, sensitivity concerns, ` +
+      `and any data gaps. Confirm readiness only when the supplied evidence is sufficient; ` +
+      `do not invent missing facts or imply that a deliverable is verified.`,
       { phase: "discover", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -176,10 +189,11 @@ async function executeMap(
   if (agent) {
     const sections = def.deliverable_sections.join("\n  - ");
     const agentOutput = await agent(
-      `You are in the MAP phase of the "${def.name}" workflow.\n` +
+      `You are the Associate in the MAP phase of the "${def.name}" workflow.\n` +
         `Map these deliverable sections to the available input sources:\n  - ${sections}\n` +
         `Inputs: ${run.inputs.map((i) => path.basename(i)).join(", ")}\n` +
-        `For each section, identify which input files provide the required data.`,
+      `For each section, identify the source file and location that provides the ` +
+      `required data, flag unsupported sections, and distinguish facts from analysis.`,
       { phase: "map", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -229,17 +243,22 @@ async function executeBuild(
       : "No template specified — generate from scratch.";
 
     const agentOutput = await agent(
-      `You are in the BUILD phase of the "${def.name}" workflow.\n` +
+      `You are the Associate in the BUILD phase of the "${def.name}" workflow.\n` +
         `${templateInfo}\n` +
         `Deliverable sections: ${def.deliverable_sections.join(", ")}\n` +
         `Inputs available: ${run.inputs.map((i) => path.basename(i)).join(", ")}\n` +
-        `Build the deliverable document. Use the evidence tool to register every source ` +
-        `and record every quantitative claim. Use OfficeCLI to produce the output files.`,
+      `Build a reviewable draft. Use the evidence tool to register every source, ` +
+      `record every material quantitative claim, label estimates and unresolved ` +
+      `items, and use OfficeCLI to produce the output files. Do not call the ` +
+      `document final until validation and the independent checker pass.`,
       { phase: "build", workflow: def, run },
     );
     output += agentOutput;
   } else {
-    output += "No agent callback — build phase requires agent to produce deliverables.";
+    const message =
+      "No agent callback — build phase cannot produce a verified deliverable.";
+    output += message;
+    errors.push(message);
   }
 
   // Check for output files
@@ -250,6 +269,10 @@ async function executeBuild(
       artifacts.push(...files.map((f) => path.join(outDir, f)));
       output += ` Generated ${files.length} output file(s).`;
     }
+  }
+
+  if (artifacts.length === 0) {
+    errors.push("Build phase produced no output artifacts.");
   }
 
   return {
@@ -263,6 +286,121 @@ async function executeBuild(
   };
 }
 
+interface AcceptanceCheck {
+  id: string;
+  name: string;
+  description: string;
+}
+
+function readAcceptanceChecks(checklistPath: string): AcceptanceCheck[] {
+  const raw = fs.readFileSync(checklistPath, "utf8");
+  return raw
+    .split(/\n(?=\s*-\s*id:)/)
+    .map((block) => {
+      const id = block.match(/^\s*-\s*id:\s*(.+)$/m)?.[1]?.trim();
+      const name = block.match(/^\s*name:\s*(.+)$/m)?.[1]?.trim() || "";
+      const description =
+        block.match(/^\s*description:\s*(.+)$/m)?.[1]?.trim() || "";
+      return id ? { id, name, description } : null;
+    })
+    .filter((check): check is AcceptanceCheck => !!check);
+}
+
+function outputFilesForRun(
+  def: WorkflowDefinition,
+  run: WorkflowRun,
+): string[] {
+  const outputDir = def.outputs?.directory
+    ? path.join(def.packRoot, def.outputs.directory)
+    : def.packRoot;
+  const files = fs.existsSync(outputDir)
+    ? fs
+        .readdirSync(outputDir)
+        .map((file) => path.join(outputDir, file))
+        .filter((file) => fs.statSync(file).isFile())
+    : [];
+  return [
+    ...new Set(
+      [...run.deliverables, ...files].filter(
+        (file) => fs.existsSync(file) && fs.statSync(file).isFile(),
+      ),
+    ),
+  ];
+}
+
+async function evaluateAcceptanceCheck(
+  check: AcceptanceCheck,
+  run: WorkflowRun,
+  outputFiles: string[],
+): Promise<{ pass: boolean; detail: string }> {
+  const officeFiles = outputFiles.filter((file) =>
+    /\.(docx|xlsx|pptx)$/i.test(file),
+  );
+  const evidence = await Promise.all(
+    officeFiles.map(async (file) => ({
+      validation: await validateEvidenceFile(file),
+      loaded: await readEvidenceFile(file),
+    })),
+  );
+  const validEvidence = evidence.filter(
+    (result) => result.validation.valid && result.loaded.model,
+  );
+  const models = validEvidence
+    .map((result) => result.loaded.model)
+    .filter((model): model is NonNullable<typeof model> => !!model);
+  const name = `${check.id} ${check.name} ${check.description}`.toLowerCase();
+
+  if (
+    check.id === "OUTPUT-FILES-EXIST" ||
+    name.includes("deliverable_exists") ||
+    name.includes("output")
+  ) {
+    return outputFiles.length > 0
+      ? { pass: true, detail: `${outputFiles.length} output file(s) exist.` }
+      : { pass: false, detail: "No non-empty output files were found." };
+  }
+  if (name.includes("evidence") || name.includes("lineage")) {
+    return validEvidence.length === officeFiles.length && officeFiles.length > 0
+      ? { pass: true, detail: "Every Office output has valid companion evidence." }
+      : {
+          pass: false,
+          detail: `${validEvidence.length}/${officeFiles.length} Office outputs have valid companion evidence.`,
+        };
+  }
+  if (name.includes("excel") || name.includes("cell")) {
+    const verified = models.some((model) =>
+      model.claims.some(
+        (claim) =>
+          claim.verification?.type === "excel_cell" ||
+          claim.verification?.type === "excel_derived",
+      ),
+    );
+    return verified
+      ? { pass: true, detail: "Evidence contains an Excel cell or derived verification." }
+      : { pass: false, detail: "No Excel verification record was found in evidence." };
+  }
+  if (name.includes("unresolved")) {
+    const unresolved = models.flatMap((model) =>
+      model.claims.filter(
+        (claim) =>
+          claim.relationship === "unresolved" ||
+          claim.review_status === "unresolved",
+      ),
+    );
+    const surfaced = unresolved.every(
+      (claim) => typeof claim.review_note === "string" && claim.review_note.trim(),
+    );
+    return surfaced
+      ? { pass: true, detail: `${unresolved.length} unresolved item(s) are surfaced for review.` }
+      : { pass: false, detail: "Unresolved claims lack a review note." };
+  }
+
+  return {
+    pass: false,
+    detail: `Unsupported acceptance check "${check.id}" was not evaluated.`,
+  };
+}
+
 async function executeVerify(
   def: WorkflowDefinition,
   run: WorkflowRun,
@@ -271,38 +409,29 @@ async function executeVerify(
   const started_at = new Date().toISOString();
   const errors: string[] = [];
 
-  // Load acceptance checklist if present
-  let checkResults: Array<{ id: string; pass: boolean; detail: string }> = [];
-  if (def.acceptance_checks) {
+  const checkResults: Array<{ id: string; pass: boolean; detail: string }> = [];
+  if (!def.acceptance_checks) {
+    errors.push("Verify phase requires an acceptance checklist.");
+  } else {
     const checklistPath = path.join(def.packRoot, def.acceptance_checks);
-    if (fs.existsSync(checklistPath)) {
-      const raw = fs.readFileSync(checklistPath, "utf8");
-      const checkIds = raw.match(/- id: (.+)/g)?.map((m) => m.replace("- id: ", "")) || [];
-
-      // Determine output directory
-      const outDir = def.outputs?.directory
-        ? path.join(def.packRoot, def.outputs.directory)
-        : def.packRoot;
-
-      for (const id of checkIds) {
-        if (id === "OUTPUT-FILES-EXIST") {
-          const filesExist = fs.existsSync(outDir) && fs.readdirSync(outDir).length > 0;
-          checkResults.push({
-            id,
-            pass: filesExist,
-            detail: filesExist
-              ? `Outputs verified in ${path.basename(outDir)}/`
-              : `Output directory ${path.basename(outDir)}/ missing or empty`,
-          });
-          if (!filesExist) errors.push(`Check ${id} failed: outputs missing`);
-        } else {
-          // Default structural check evaluation
-          const pass = run.deliverables.length > 0 || fs.existsSync(outDir);
-          checkResults.push({
-            id,
-            pass,
-            detail: pass ? "Verified against evidence map" : "Pending deliverable build",
-          });
+    if (!fs.existsSync(checklistPath)) {
+      errors.push(`Acceptance checklist is missing: ${checklistPath}`);
+    } else {
+      const checks = readAcceptanceChecks(checklistPath);
+      if (checks.length === 0) {
+        errors.push("Acceptance checklist contains no evaluable checks.");
+      } else {
+        const outputFiles = outputFilesForRun(def, run);
+        for (const check of checks) {
+          const result = await evaluateAcceptanceCheck(
+            check,
+            run,
+            outputFiles,
+          );
+          checkResults.push({ id: check.id, ...result });
+          if (!result.pass) {
+            errors.push(`Check ${check.id} failed: ${result.detail}`);
+          }
         }
       }
     }
@@ -312,11 +441,13 @@ async function executeVerify(
 
   if (agent) {
     const agentOutput = await agent(
-      `You are in the VERIFY phase of the "${def.name}" workflow.\n` +
-        `Run the acceptance checklist against the generated deliverables.\n` +
+      `You are reporting the VP check for the "${def.name}" workflow.\n` +
+        `Use the actual acceptance results below; do not override a failed or ` +
+        `unsupported check with an opinion.\n` +
         `Checks to verify:\n` +
         checkResults.map((c) => `  - ${c.id}: ${c.pass ? "PASS" : "FAIL"} (${c.detail})`).join("\n") +
-        `\nFor each check, confirm pass/fail with evidence.`,
+        `\nFor each check, explain the supplied evidence or the missing evidence. ` +
+        `A zero-check or infrastructure failure is not approval.`,
       { phase: "verify", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -329,6 +460,7 @@ async function executeVerify(
     completed_at: new Date().toISOString(),
     output,
     errors: errors.length > 0 ? errors : undefined,
+    checks: checkResults,
   };
 }
 
@@ -343,9 +475,11 @@ async function executeTrain(
 
   if (agent) {
     const agentOutput = await agent(
-      `You are in the TRAIN phase of the "${def.name}" workflow.\n` +
+      `You are the Associate in the TRAIN phase of the "${def.name}" workflow.\n` +
         `Document the key decisions, data interpretations, and manual steps ` +
-        `performed during this workflow run so a new analyst can replicate the process.`,
+      `performed during this workflow run so a new analyst can replicate the process. ` +
+      `Separate reusable process lessons from engagement-specific facts; candidate ` +
+      `lessons remain pending review.`,
       { phase: "train", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -390,9 +524,10 @@ async function executeHandover(
 
   if (agent) {
     const agentOutput = await agent(
-      `You are in the HANDOVER phase of the "${def.name}" workflow.\n` +
+      `You are the Associate in the HANDOVER phase of the "${def.name}" workflow.\n` +
         `Review the generated runbook and add any firm-specific maintenance notes ` +
-        `or recurring schedule recommendations.`,
+      `or recurring schedule recommendations. Keep authentication, sensitivity, ` +
+      `and reviewer ownership explicit; do not imply that a template is production-ready.`,
       { phase: "handover", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -505,6 +640,8 @@ export interface OrchestratorOptions {
   skipPhases?: WorkflowPhase[];
   /** Resume from a specific run ID */
   resumeRunId?: string;
+  /** Actual file that triggered a watched run, when applicable */
+  triggerInput?: string;
 }
 
 /**
@@ -517,7 +654,13 @@ export async function executeWorkflow(
   def: WorkflowDefinition,
   options: OrchestratorOptions = {},
 ): Promise<WorkflowRun> {
-  const { agent, trigger = "manual", skipPhases = [], resumeRunId } = options;
+  const {
+    agent,
+    trigger = "manual",
+    skipPhases = [],
+    resumeRunId,
+    triggerInput,
+  } = options;
 
   // Create or resume a run
   let run: WorkflowRun;
@@ -542,6 +685,13 @@ export async function executeWorkflow(
       deliverables: [],
       trigger,
     };
+  }
+
+  if (triggerInput) {
+    const resolvedInput = path.resolve(triggerInput);
+    if (!run.inputs.includes(resolvedInput)) {
+      run.inputs.push(resolvedInput);
+    }
   }
 
   emit("workflow:started", run, { trigger });
@@ -602,8 +752,26 @@ export async function executeWorkflow(
   run.status = "completed";
   run.current_phase = null;
   run.completed_at = new Date().toISOString();
-  emit("workflow:completed", run);
   saveRun(run);
+
+  // Harvest only explicitly labelled lessons into the pending memory queue.
+  // A harvest failure must be visible but must not rewrite a completed Office
+  // deliverable as failed after its acceptance checks passed.
+  try {
+    const harvested = await harvestWorkflowCompletion(def, run);
+    emit("workflow:completed", run, {
+      harvested_memory_candidates: harvested.created,
+    });
+  } catch (error: any) {
+    const harvestError = error?.message || String(error);
+    console.warn(
+      `Workflow memory harvest failed for ${run.run_id}: ${harvestError}`,
+    );
+    emit("workflow:completed", run, {
+      harvested_memory_candidates: 0,
+      memory_harvest_error: harvestError,
+    });
+  }
 
   return run;
 }
@@ -626,8 +794,13 @@ export function listRuns(workflowName?: string): WorkflowRun[] {
       if (!workflowName || run.workflow === workflowName) {
         runs.push(run);
       }
-    } catch {
-      // Skip corrupted run files
+    } catch (error: any) {
+      console.warn(
+        new CorruptStateError(
+          path.join(dir, file),
+          error?.message || String(error),
+        ).message,
+      );
     }
   }
 

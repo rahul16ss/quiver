@@ -139,6 +139,7 @@ function saveStore(store: ScheduleStore): void {
 export class WorkflowScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private tickRunning = false;
   private agent?: AgentCallback;
 
   constructor(agent?: AgentCallback) {
@@ -233,48 +234,59 @@ export class WorkflowScheduler {
    * Check schedules and trigger any that match the current minute.
    */
   private async tick(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || this.tickRunning) return;
+    this.tickRunning = true;
 
-    const now = new Date();
-    const store = loadStore();
+    try {
+      const now = new Date();
+      const store = loadStore();
 
-    for (const entry of store.schedules) {
-      if (!entry.enabled) continue;
-      if (!cronMatchesDate(entry.cron, now)) continue;
+      for (const entry of store.schedules) {
+        if (!entry.enabled) continue;
+        if (!cronMatchesDate(entry.cron, now)) continue;
 
-      // Prevent double-fire in the same minute
-      if (entry.lastRun) {
-        const lastRunMinute = new Date(entry.lastRun);
-        if (
-          lastRunMinute.getFullYear() === now.getFullYear() &&
-          lastRunMinute.getMonth() === now.getMonth() &&
-          lastRunMinute.getDate() === now.getDate() &&
-          lastRunMinute.getHours() === now.getHours() &&
-          lastRunMinute.getMinutes() === now.getMinutes()
-        ) {
+        // Prevent double-fire in the same minute
+        if (entry.lastRun) {
+          const lastRunMinute = new Date(entry.lastRun);
+          if (
+            lastRunMinute.getFullYear() === now.getFullYear() &&
+            lastRunMinute.getMonth() === now.getMonth() &&
+            lastRunMinute.getDate() === now.getDate() &&
+            lastRunMinute.getHours() === now.getHours() &&
+            lastRunMinute.getMinutes() === now.getMinutes()
+          ) {
+            continue;
+          }
+        }
+
+        // Update last run time before executing so a restart cannot double-fire.
+        entry.lastRun = now.toISOString();
+        saveStore(store);
+
+        // Find and execute the workflow
+        const def = findWorkflow(entry.workflow, entry.packsDir);
+        if (!def) {
+          console.error(`Scheduled workflow "${entry.workflow}" not found in ${entry.packsDir}`);
           continue;
         }
-      }
 
-      // Update last run time
-      entry.lastRun = now.toISOString();
-      saveStore(store);
-
-      // Find and execute the workflow
-      const def = findWorkflow(entry.workflow, entry.packsDir);
-      if (!def) {
-        console.error(`Scheduled workflow "${entry.workflow}" not found in ${entry.packsDir}`);
-        continue;
+        try {
+          const run = await executeWorkflow(def, {
+            agent: this.agent,
+            trigger: "schedule",
+          });
+          if (run.status === "failed") {
+            console.error(
+              `Scheduled workflow "${entry.workflow}" failed:`,
+              run.error || "workflow returned failed status",
+            );
+          }
+        } catch (err: any) {
+          console.error(`Scheduled workflow "${entry.workflow}" failed:`, err?.message || err);
+        }
       }
-
-      try {
-        await executeWorkflow(def, {
-          agent: this.agent,
-          trigger: "schedule",
-        });
-      } catch (err: any) {
-        console.error(`Scheduled workflow "${entry.workflow}" failed:`, err?.message || err);
-      }
+    } finally {
+      this.tickRunning = false;
     }
   }
 

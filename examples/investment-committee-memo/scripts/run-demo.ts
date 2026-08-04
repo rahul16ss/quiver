@@ -146,21 +146,38 @@ function buildDocx(memo: MemoContent): void {
 
 async function screenshotEvidence(): Promise<void> {
   const target = p("screenshots", "evidence-report.png");
+  let browser: import("puppeteer").Browser | undefined;
   try {
     const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({ headless: true });
-    try {
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 900 });
-      await page.goto(pathToFileURL(p(OUTPUT.evidenceHtml)).href, { waitUntil: "networkidle0" });
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      await page.screenshot({ path: target as `${string}.png`, fullPage: true });
-      console.log(`  screenshot written: screenshots/evidence-report.png`);
-    } finally {
-      await browser.close();
-    }
+    browser = await puppeteer.launch({ headless: true, timeout: 15_000 });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    // A viewport capture is deliberate: full-page capture can hang in
+    // headless Chrome on long, file-backed reports and this screenshot is
+    // only a best-effort visual sanity check for the deterministic demo.
+    await page.goto(pathToFileURL(p(OUTPUT.evidenceHtml)).href, { waitUntil: "load", timeout: 15_000 });
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    await page.screenshot({ path: target as `${string}.png`, fullPage: false });
+    console.log(`  screenshot written: screenshots/evidence-report.png`);
   } catch (err) {
     console.warn(`  screenshot skipped (best-effort): ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    if (browser) {
+      const child = browser.process();
+      try {
+        await Promise.race([
+          browser.close(),
+          new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, 2_000);
+            timer.unref();
+          }),
+        ]);
+      } catch {
+        // The screenshot is optional; process cleanup must not turn it into a
+        // demo failure.
+      }
+      if (child && child.exitCode === null && !child.killed) child.kill("SIGTERM");
+    }
   }
 }
 

@@ -1,0 +1,7 @@
+{
+  "name": "quiver-demo-runtime",
+  "private": true,
+  "scripts": {
+    "demo:ic-memo": "npx tsx examples/investment-committee-memo/scripts/run-demo.ts"
+  }
+}

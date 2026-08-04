@@ -47,7 +47,13 @@ export interface WorkflowDefinition {
   /** Retrieval mode */
   retrieval?: { mode: "static" | "dynamic"; network_access: "none" | "public" | "authenticated" };
   /** Data sensitivity level */
-  data_sensitivity: "synthetic" | "public" | "internal" | "confidential" | "mnpi";
+  data_sensitivity:
+    | "synthetic"
+    | "public"
+    | "internal"
+    | "confidential"
+    | "client-confidential"
+    | "mnpi";
   /** Expected deliverable sections */
   deliverable_sections: string[];
   /** Review role description */
@@ -105,6 +111,8 @@ export interface PhaseResult {
   errors?: string[];
   /** Files produced in this phase */
   artifacts?: string[];
+  /** Deterministic acceptance-check results from the verify phase */
+  checks?: Array<{ id: string; pass: boolean; detail: string }>;
 }
 
 export interface WorkflowRun {

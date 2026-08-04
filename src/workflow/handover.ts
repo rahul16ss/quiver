@@ -36,24 +36,7 @@ export function generateHandover(
 
   // Parse acceptance results from the verify phase
   const verifyPhase = run.phases.find((p) => p.phase === "verify");
-  const acceptanceResults: Array<{ id: string; pass: boolean; detail: string }> = [];
-  if (verifyPhase?.output) {
-    // Extract structured results if available
-    const checklistPath = def.acceptance_checks
-      ? path.join(def.packRoot, def.acceptance_checks)
-      : null;
-    if (checklistPath && fs.existsSync(checklistPath)) {
-      const raw = fs.readFileSync(checklistPath, "utf8");
-      const ids = raw.match(/- id: (.+)/g)?.map((m) => m.replace("- id: ", "")) || [];
-      for (const id of ids) {
-        acceptanceResults.push({
-          id,
-          pass: verifyPhase.status === "completed",
-          detail: verifyPhase.status === "completed" ? "passed" : "needs verification",
-        });
-      }
-    }
-  }
+  const acceptanceResults = verifyPhase?.checks || [];
 
   return {
     workflow: def.name,
