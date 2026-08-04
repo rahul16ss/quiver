@@ -5085,6 +5085,40 @@ async function specGapCoverageContract() {
   );
 
   await check(
+    "MCP-STDIO-LISTTOOLS-ARRAY",
+    "US-16.2",
+    "stdio listTools must return a tools array (not the raw JSON-RPC result object)",
+    async () => {
+      const mod = await import("../src/mcp/client.js");
+      const serverPath = path.join(ROOT, "tests/harness/mock_mcp_server.cjs");
+      const conn = new mod.McpConnection("mock-acceptance", {
+        command: process.execPath,
+        args: [serverPath],
+      });
+      try {
+        await conn.connect();
+        const tools = await conn.listTools();
+        if (!Array.isArray(tools)) {
+          throw new Error(
+            `listTools returned ${typeof tools}, expected array (stdio result.tools normalization)`,
+          );
+        }
+        if (!tools.some((t: any) => t.name === "echo")) {
+          throw new Error(`expected echo tool, got ${JSON.stringify(tools)}`);
+        }
+        const result = await conn.callTool("echo", { text: "acceptance" });
+        const blob = JSON.stringify(result);
+        if (!/echo:acceptance/.test(blob)) {
+          throw new Error(`callTool failed: ${blob}`);
+        }
+        return true;
+      } finally {
+        await conn.close();
+      }
+    },
+  );
+
+  await check(
     "MCP-CONFIG-LOADING",
     "US-16.2",
     "MCP config must load from .quiver/mcp.json (local) or ~/.quiver/mcp.json (global)",

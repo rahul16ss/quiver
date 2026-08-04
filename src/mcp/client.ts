@@ -300,7 +300,10 @@ export class McpConnection {
       const result = await this.httpRpc("tools/list", {});
       return result?.tools || [];
     } else {
-      return this.rpc("tools/list", {});
+      const result = await this.rpc("tools/list", {});
+      // stdio JSON-RPC returns the result object itself; normalize to the
+      // same tools array the HTTP transport already exposes.
+      return Array.isArray(result) ? result : result?.tools || [];
     }
   }
 
