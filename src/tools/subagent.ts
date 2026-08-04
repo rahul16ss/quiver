@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from "child_process";
+import type { ChildProcess } from "child_process";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { z } from "zod";
 import { Tool } from "../registry.js";
 import { config } from "../config.js";
+import { createIsolatedEnv, spawnIsolatedProcess } from "../subagents/isolation.js";
 
 /**
  * Subagent — spawn an isolated agent process for a delegated task.
@@ -20,7 +21,9 @@ import { config } from "../config.js";
  * - Isolated exploration (keep heavy reads out of main context)
  * - Specialized tasks (code review, test writing, documentation)
  *
- * The subagent inherits the same .env, tools, and memory as the parent.
+ * The subagent receives a copy of the user's workspace and an explicitly
+ * scoped tool catalog. The real workspace is not exposed; only the minimum
+ * model configuration needed to complete the delegated task is passed.
  * It runs in --json mode and the parent collects the final response.
  *
  * Inspired by Claude Code's Agent tool and Every's fan-out review pattern.
@@ -54,51 +57,37 @@ interface SubagentResult {
  * The subagent runs in an isolated copy of the workspace so it cannot
  * mutate the real project files (US-5.3 scratchpad isolation).
  */
-async function buildSubagentScratchpad(): Promise<string> {
+async function buildSubagentScratchpad(workspaceRoot: string): Promise<string> {
   const scratchDir = path.join(
     os.tmpdir(),
     `quiver-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   );
   await fs.mkdir(scratchDir, { recursive: true });
 
-  // Copy workspace directories (read-only inspection)
-  for (const dir of [
-    "src",
-    "tests",
-    "ui",
-    "docs",
-    "templates",
-    "skills",
-    "Formula",
-    "branding",
-    "bin",
-  ]) {
-    try {
-      await fs.cp(path.join(process.cwd(), dir), path.join(scratchDir, dir), {
-        recursive: true,
-      });
-    } catch {
-      /* best-effort copy */
-    }
-  }
-
-  // Copy config files needed for tsx
-  for (const file of ["package.json", "tsconfig.json"]) {
-    try {
-      await fs.copyFile(
-        path.join(process.cwd(), file),
-        path.join(scratchDir, file),
+  const workspaceSnapshot = path.join(scratchDir, "workspace");
+  await fs.cp(workspaceRoot, workspaceSnapshot, {
+    recursive: true,
+    filter: (source) => {
+      const relative = path.relative(workspaceRoot, source);
+      if (!relative) return true;
+      const parts = relative.split(path.sep);
+      // Keep engagement configuration and user material, but do not clone
+      // operational history, caches, dependencies, or backup copies.
+      return !parts.some(
+        (part, index) =>
+          part === "node_modules" ||
+          part === ".git" ||
+          part === ".quiver-backups" ||
+          (parts[0] === ".quiver" &&
+            (part === ".sessions" || part === "workflow-runs")) ||
+          (index === 0 && part === ".DS_Store"),
       );
-    } catch {
-      /* best-effort */
-    }
-  }
+    },
+  });
 
-  // Do NOT link the real project's installed packages into the scratchpad.
-  // The subagent runs in isolation and must not be able to mutate the real
-  // project's dependencies. tsx is invoked from the parent process PATH.
-
-  return scratchDir;
+  // The Quiver runtime and tsx executable remain installed by the parent;
+  // only the user's workspace is copied into the child working directory.
+  return workspaceSnapshot;
 }
 
 async function runSubagent(
@@ -120,11 +109,16 @@ async function runSubagent(
   const cliPath = getCliPath();
   const tsxPath = getTsxPath();
 
-  // Build the prompt — include tool restriction if specified
+  // Build the delegated prompt. The child receives the canonical Quiver system
+  // prompt as well; this wrapper keeps the task role and result boundary clear.
   const prompt =
-    tools.length > 0
-      ? `${task}\n\n[System: You have access only to these tools: ${tools.join(", ")}]`
-      : task;
+    `Delegated Quiver task:\n${task}\n\n` +
+    "Return a concise result with sources, assumptions, unresolved items, and " +
+    "recommended next steps. This is research or draft material; do not claim " +
+    "independent approval or final sign-off.\n" +
+    (tools.length > 0
+      ? `\n[Harness constraint: this child may use only these tools: ${tools.join(", ")}]`
+      : "");
 
   const args = [cliPath, "--json", "--single-turn", prompt];
 
@@ -138,28 +132,46 @@ async function runSubagent(
     "LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL_NAME",
     "QUIVER_PROJECT_NAME", "QUIVER_MAX_CONTEXT_TOKENS",
     "QUIVER_SESSION_LOG", "QUIVER_SESSION_LOG_MAX_CHARS",
-    "QUIVER_AMBIENT", "QUIVER_OUTPUT_MODE",
+    "QUIVER_AMBIENT", "QUIVER_OUTPUT_MODE", "QUIVER_PROFILE",
+    "QUIVER_CONSENT_GATE", "QUIVER_EVIDENCE_REQUIRED",
+    "QUIVER_OFFICECLI_PATH",
+    "QUIVER_SUBAGENT_TOOLS",
     "SUBAGENT_DEPTH",
   ];
-  const childEnv: Record<string, string | undefined> = {};
-  for (const key of ALLOWED_ENV_KEYS) {
-    if (process.env[key] !== undefined) childEnv[key] = process.env[key];
-  }
-  childEnv.SUBAGENT_DEPTH = String(currentDepth + 1);
-
   // Build scratchpad for isolation (US-5.3)
   let scratchDir: string;
   try {
-    scratchDir = await buildSubagentScratchpad();
-  } catch {
-    scratchDir = process.cwd(); // fallback — best-effort
+    scratchDir = await buildSubagentScratchpad(process.cwd());
+  } catch (error: any) {
+    return {
+      response: "Subagent refused: could not create an isolated workspace copy.",
+      turns: 0,
+      toolCalls: 0,
+      tokens: 0,
+      error: error?.message || String(error),
+    };
   }
 
+  const protectedDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+  );
+  const childEnv = createIsolatedEnv(ALLOWED_ENV_KEYS, {
+    scratchDir,
+    protectedDir,
+    overrides: {
+      SUBAGENT_DEPTH: String(currentDepth + 1),
+      ...(tools.length > 0
+        ? { QUIVER_SUBAGENT_TOOLS: tools.join(",") }
+        : {}),
+    },
+  });
+
   return new Promise((resolve) => {
-    const child: ChildProcess = spawn(tsxPath, args, {
+    const child: ChildProcess = spawnIsolatedProcess(tsxPath, args, {
       cwd: scratchDir,
       env: childEnv,
-      stdio: ["pipe", "pipe", "pipe"],
     });
 
     let stdout = "";
@@ -168,10 +180,18 @@ async function runSubagent(
     let turns = 0;
     let toolCalls = 0;
     let totalTokens = 0;
+    let settled = false;
+
+    const finish = (result: SubagentResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result);
+    };
 
     const timeoutId = setTimeout(() => {
       child.kill();
-      resolve({
+      finish({
         response: lastResponse || "Subagent timed out.",
         turns,
         toolCalls,
@@ -190,6 +210,19 @@ async function runSubagent(
           }
           if (msg.type === "tool_call") {
             toolCalls++;
+            if (toolCalls >= MAX_SUBAGENT_TURNS) {
+              child.kill();
+              finish({
+                response:
+                  lastResponse ||
+                  "Subagent stopped after reaching its bounded tool-call budget.",
+                turns,
+                toolCalls,
+                tokens: totalTokens,
+                error: `Tool-call budget (${MAX_SUBAGENT_TURNS}) exhausted`,
+              });
+              return;
+            }
           }
           if (msg.type === "done") {
             turns = msg.data?.tokenStats?.turns || 0;
@@ -202,14 +235,13 @@ async function runSubagent(
             }
           }
           if (msg.type === "error") {
-            resolve({
+            finish({
               response: lastResponse || "Subagent error.",
               turns,
               toolCalls,
               tokens: totalTokens,
               error: msg.data?.error,
             });
-            clearTimeout(timeoutId);
             child.kill();
           }
         } catch {
@@ -225,7 +257,7 @@ async function runSubagent(
     child.on("exit", (code) => {
       clearTimeout(timeoutId);
       if (code !== 0 && !lastResponse) {
-        resolve({
+        finish({
           response: `Subagent exited with code ${code}.`,
           turns,
           toolCalls,
@@ -233,7 +265,7 @@ async function runSubagent(
           error: stderr.substring(0, 200) || `Exit code ${code}`,
         });
       } else {
-        resolve({
+        finish({
           response: lastResponse || "Subagent completed with no output.",
           turns,
           toolCalls,
@@ -243,8 +275,7 @@ async function runSubagent(
     });
 
     child.on("error", (err) => {
-      clearTimeout(timeoutId);
-      resolve({
+      finish({
         response: `Failed to spawn subagent: ${err.message}`,
         turns: 0,
         toolCalls: 0,
@@ -261,8 +292,8 @@ export const tool: Tool = {
     "Spawns an isolated agent process for a delegated task. The subagent has its own context window, works autonomously, and returns a single text result. " +
     "Use for parallel research, isolated exploration, or specialized tasks (code review, test writing). " +
     "The parent agent doesn't see the subagent's intermediate tool calls — only the final summary. " +
-    "The subagent inherits the same .env, tools, and memory as the parent. " +
-    "You can restrict which tools the subagent has access to (e.g., read-only tools only). " +
+    "The subagent receives a copy of the current workspace and a minimal environment; parent secrets and the real workspace are not exposed. " +
+    "You can restrict which tools the subagent has access to, and that allowlist is enforced in the child runtime (e.g., read-only tools only). " +
     "Do NOT use for simple tasks — only when isolation or parallelism is needed.",
   parameters: z.object({
     task: z

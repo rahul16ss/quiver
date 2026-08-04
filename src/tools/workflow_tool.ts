@@ -28,6 +28,19 @@ import type { WorkflowDefinition, WorkflowPhase } from "../workflow/types.js";
 
 // ─── Default packs directory ──────────────────────────────────────────
 
+let activeAgentCallback: AgentCallback | undefined;
+
+/**
+ * Install the single agent-owned callback used by manual, scheduled, and
+ * watched workflow runs. The CLI owns the Agent; this module only holds the
+ * runtime adapter so workflow services do not create a second model loop.
+ */
+export function setWorkflowAgentCallback(
+  callback: AgentCallback | undefined,
+): void {
+  activeAgentCallback = callback;
+}
+
 function defaultPacksDir(): string {
   return path.join(process.cwd(), "workflow-packs");
 }
@@ -37,12 +50,13 @@ function defaultPacksDir(): string {
 export const tool: Tool = {
   name: "workflow",
   description:
-    "Manage and execute workflow packs for ambient AI document production. " +
+    "Manage and execute workflow packs for governed, reviewable document drafts. " +
     "Actions: 'list' (discover available packs), 'run' (execute a workflow), " +
     "'status' (check run status), 'history' (list past runs), 'cancel' (stop a run), " +
     "'schedule' (set up recurring execution), 'watch' (monitor directories for triggers), " +
     "'review' (manage document review chain), 'handover' (generate training runbook). " +
-    "Use this to orchestrate the full discover→map→build→verify→train→handover lifecycle.",
+    "Use this to orchestrate the full discover→map→build→verify→train→handover lifecycle. " +
+    "The maker-checker and evidence checks are the readiness gate; a saved draft is not automatically final.",
   parameters: z.object({
     action: z
       .enum([
@@ -139,11 +153,12 @@ export const tool: Tool = {
         }
         const skipPhases = (args.skip_phases || []) as WorkflowPhase[];
         const run = await executeWorkflow(def, {
+          agent: activeAgentCallback,
           trigger: "api",
           skipPhases,
         });
         return {
-          status: "ok",
+          status: run.status === "completed" ? "ok" : "error",
           run_id: run.run_id,
           workflow: run.workflow,
           result: run.status,
@@ -153,6 +168,10 @@ export const tool: Tool = {
           })),
           deliverables: run.deliverables.map((d) => path.basename(d)),
           error: run.error || undefined,
+          message:
+            run.status === "completed"
+              ? "Workflow completed."
+              : "Workflow did not complete; inspect the persisted run diagnostics.",
         };
       }
 
@@ -226,7 +245,7 @@ export const tool: Tool = {
             message: `Invalid cron expression: "${args.cron}". Use 5-field format: minute hour day-of-month month day-of-week.`,
           };
         }
-        const scheduler = new WorkflowScheduler();
+        const scheduler = new WorkflowScheduler(activeAgentCallback);
         const entry = scheduler.addSchedule(
           args.workflow,
           args.cron,
@@ -251,7 +270,7 @@ export const tool: Tool = {
             message: "Specify workflow name and watch_dir.",
           };
         }
-        const watcher = new WorkflowWatcher();
+        const watcher = new WorkflowWatcher(activeAgentCallback);
         const rule = watcher.addRule(
           [args.watch_dir],
           [args.watch_pattern || "*"],

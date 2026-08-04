@@ -11,6 +11,7 @@ import * as fsSync from "fs";
 import * as path from "path";
 import { getProjectSessionsDir, getProjectName } from "../paths.js";
 import type { FileReadRecord } from "./file_access.js";
+import { atomicWrite, CorruptStateError } from "../fs/atomic_write.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -79,8 +80,6 @@ export class SessionManager {
     created_at?: string;
   }): Promise<string> {
     const filePath = this.getFilePath();
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-
     const sessionFile: SessionFile = {
       schema_version: SESSION_SCHEMA_VERSION,
       session_id: this.sessionId,
@@ -95,7 +94,7 @@ export class SessionManager {
       metadata: session.metadata,
     };
 
-    await fs.writeFile(filePath, JSON.stringify(sessionFile, null, 2), "utf8");
+    await atomicWrite(filePath, JSON.stringify(sessionFile, null, 2));
     return filePath;
   }
 
@@ -106,7 +105,15 @@ export class SessionManager {
   async load(): Promise<SessionFile> {
     const filePath = this.getFilePath();
     const content = await fs.readFile(filePath, "utf8");
-    const parsed = JSON.parse(content) as SessionFile;
+    let parsed: SessionFile;
+    try {
+      parsed = JSON.parse(content) as SessionFile;
+    } catch (error: any) {
+      throw new CorruptStateError(
+        filePath,
+        `JSON parse failed: ${error?.message || String(error)}`,
+      );
+    }
 
     // Validate schema version
     if (!parsed.schema_version) {
@@ -156,6 +163,8 @@ export interface SessionMetadata {
   sizeBytes: number;
   mtime: Date;
   schemaVersion: number;
+  corrupt?: boolean;
+  error?: string;
 }
 
 /**
@@ -173,14 +182,20 @@ export async function listSessions(): Promise<SessionMetadata[]> {
       try {
         const stat = await fs.stat(filePath);
         let schemaVersion = 0;
+        let corrupt = false;
+        let error: string | undefined;
 
         // Try to read schema version without loading full file
         try {
           const content = await fs.readFile(filePath, "utf8");
           const parsed = JSON.parse(content);
           schemaVersion = parsed.schema_version || 0;
-        } catch {
-          // May be a legacy or corrupt file
+        } catch (err: any) {
+          corrupt = true;
+          error = new CorruptStateError(
+            filePath,
+            `JSON parse failed: ${err?.message || String(err)}`,
+          ).message;
         }
 
         metadata.push({
@@ -189,6 +204,7 @@ export async function listSessions(): Promise<SessionMetadata[]> {
           sizeBytes: stat.size,
           mtime: stat.mtime,
           schemaVersion,
+          ...(corrupt ? { corrupt: true, error } : {}),
         });
       } catch {
         // Skip files that can't be stat'd

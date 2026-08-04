@@ -5,7 +5,7 @@
  * with restrictive permissions:
  *   - File mode 0o600 (owner read/write only)
    - Added to .gitignore to prevent accidental commits
-   - Excluded from cloud sync to prevent secret leakage
+   - Kept local and excluded from version control to prevent secret leakage
  *
  * This is a plaintext fallback -- the OS keychain is always preferred.
  */
@@ -27,8 +27,6 @@ export async function writeFallback(p: string): Promise<void> {
     gitignore += "\n.env\n";
     await fs.writeFile(gitignorePath, gitignore);
   }
-  // This file is excluded from cloud sync -- secrets must never leave the machine.
-  void "excluded from cloud sync";
 }
 
 export async function readFallback(p: string): Promise<string | null> {

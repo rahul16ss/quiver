@@ -23,7 +23,6 @@
  * US-15.4 audit + override.
  */
 
-import { spawn } from "child_process";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
@@ -34,81 +33,42 @@ import {
   resolveTargetedChecks,
   serializeCheckFilter,
 } from "./checker_filter.js";
-import { EvidenceTracker } from "../evidence/tracker.js";
+import { validateEvidenceFile } from "../evidence/tracker.js";
 import { compare as compareBenchmark } from "../document/bar_critic.js";
 import { config } from "../config.js";
+import { createIsolatedEnv, spawnIsolatedProcess } from "./isolation.js";
 
 // ─── Evidence validation (US-17.13 / SPEC §9.3 / §16) ──────────────────
 // The checker must reject a document whose Evidence.json contains unsourced
 // quantitative claims. This is the "every number traceable to a source" DoD.
 // When the tool being checked is an office_doc write, we look for an
-// Evidence.json alongside the document and validate it via EvidenceTracker.
+// Evidence.json alongside the document and validate it via the shared strict
+// evidence reader.
 
-async function validateEvidenceForDocument(
+export async function validateEvidenceForDocument(
   filePath: string,
 ): Promise<{ valid: boolean; problems: string[]; evidencePath: string | null }> {
-  if (!filePath) return { valid: true, problems: [], evidencePath: null };
-  const dir = path.dirname(filePath);
-  const baseName = path.basename(filePath).replace(/\.(docx|xlsx|pptx)$/, "");
-
-  // EvidenceTracker.finalize() writes <base>_Evidence.json (e.g.
-  // IC_Memo_Evidence.json), not a bare Evidence.json. Search for both
-  // the named pattern and any *_Evidence.json in the same directory.
-  let evidencePath: string | null = null;
-
-  // Try the expected name first
-  const expectedPath = path.join(dir, `${baseName}_Evidence.json`);
-  try {
-    await fs.access(expectedPath);
-    evidencePath = expectedPath;
-  } catch {
-    // Fall back to scanning the directory for any *_Evidence.json
-    try {
-      const dirFiles = await fs.readdir(dir);
-      const evidenceFile = dirFiles.find(
-        (f) => f.endsWith("_Evidence.json") || f === "Evidence.json",
-      );
-      if (evidenceFile) {
-        evidencePath = path.join(dir, evidenceFile);
-      }
-    } catch {
-      // Directory not readable — no evidence to validate
-    }
-  }
-
-  if (!evidencePath) {
-    // No evidence file — not an error if the document has no quantitative claims
-    return { valid: true, problems: [], evidencePath: null };
-  }
-  try {
-    const raw = await fs.readFile(evidencePath, "utf8");
-    const model = JSON.parse(raw);
-    const tracker = new EvidenceTracker();
-    // Hydrate tracker from the persisted EvidenceModel
-    if (model.sources) {
-      for (const src of model.sources) {
-        tracker.registerSource(src);
-      }
-    }
-    if (model.claims) {
-      for (const claim of model.claims) {
-        tracker.recordClaim(claim);
-      }
-    }
-    const result = tracker.validateEvidence();
-    return {
-      valid: result.valid,
-      problems: result.problems,
-      evidencePath,
-    };
-  } catch {
-    // Malformed evidence file — flag as a problem
+  if (!filePath) {
     return {
       valid: false,
-      problems: ["Evidence file exists but is malformed or unreadable"],
-      evidencePath,
+      problems: ["Office deliverable path is missing; evidence cannot be resolved"],
+      evidencePath: null,
     };
   }
+
+  const result = await validateEvidenceFile(filePath);
+  if (result.missing && !config.evidenceRequired) {
+    return {
+      valid: true,
+      problems: [],
+      evidencePath: result.evidencePath,
+    };
+  }
+  return {
+    valid: result.valid,
+    problems: result.problems,
+    evidencePath: result.evidencePath,
+  };
 }
 
 // ─── Sandbox separation (US-15.2) ─────────────────────────────────────
@@ -228,7 +188,7 @@ const STRUCTURAL_CHECKS: StructuralCheck[] = [
         const content = await fs.readFile(path.resolve(filePath), "utf8");
         return !content.includes("\ufffd"); // replacement char = bad encoding
       } catch {
-        return true; // can't check — don't block
+        return false; // unable to verify encoding is a checker failure
       }
     },
   },
@@ -374,8 +334,10 @@ async function runFallbackChecks(
  *   1. Deterministic checks: npm test suite (if tests/run_tests.ts exists),
  *      structural file checks (always), evidence validation (for office_doc),
  *      benchmark bar-comparison (if .quiver/benchmark/ configured).
- *   2. Model-based evaluation: the checker model reads the deliverable +
- *      deterministic results and returns approve/revise/reject with reasoning.
+ *   2. Optional model-based evaluation: only an explicitly configured checker
+ *      endpoint may read the deliverable. Remote evaluation additionally
+ *      requires QUIVER_CHECKER_REMOTE_APPROVED=1; otherwise it is a visible
+ *      verification failure rather than a silent fallback.
  *
  * The verdict logic:
  *   - If deterministic checks fail → revise (the model confirms)
@@ -383,9 +345,9 @@ async function runFallbackChecks(
  *   - If both pass → approve
  *   - If the checker can't run at all → reject (catastrophic failure)
  *
- * The checker model is configurable via CHECKER_LLM_MODEL_NAME (falls back
- * to LLM_MODEL_NAME). This is the "never let the builder grade itself"
- * principle enforced at the model level.
+ * The checker model is configurable via CHECKER_LLM_MODEL_NAME and
+ * CHECKER_LLM_API_BASE_URL. It is never implicitly sent to the maker's
+ * endpoint: a missing or blocked checker route is not approval.
  */
 export async function runChecker(
   changeHash: string,
@@ -400,12 +362,11 @@ export async function runChecker(
   let total = 0;
 
   // Sandbox constraints (US-15.2): read-only, no network, no env, no write.
-  // These shape the test-suite spawn env (runAcceptanceTestSuite) and the
-  // model evaluation (the model call uses the checker's own API key, not
-  // the maker's full env).
+  // These shape the test-suite spawn env (runAcceptanceTestSuite). Model
+  // evaluation is separately gated below so the checker cannot create a
+  // hidden outbound path around the harness.
   const sandbox = CHECKER_SANDBOX;
-  // Enforce sandbox: the test suite spawn gets readOnly/noNetwork/noEnv;
-  // the model evaluation gets only the checker API key (not the full env).
+  // Enforce sandbox: the test suite spawn gets readOnly/noNetwork/noEnv.
   const _sandboxReadOnly = sandbox.readOnly;
   const _sandboxNoNetwork = sandbox.noNetwork;
   const _sandboxNoEnv = sandbox.noEnv;
@@ -431,6 +392,9 @@ export async function runChecker(
       failedChecks.push(...testResults.failedChecks);
       evidence.push(`Acceptance tests: ${testResults.passed}/${testResults.total} passed${testResults.failedChecks.length ? ` (failed: ${testResults.failedChecks.join(", ")})` : ""}.`);
     } else {
+      failed++;
+      total++;
+      failedChecks.push("CHECKER-ACCEPTANCE-INFRASTRUCTURE");
       evidence.push("Acceptance tests: could not run (infrastructure failure).");
     }
   }
@@ -474,24 +438,45 @@ export async function runChecker(
       } else if (barResult.ran && barResult.met) {
         evidence.push("Bar comparison: met (draft compares favourably with benchmark).");
       }
-    } catch {
-      evidence.push("Bar comparison: skipped (tooling error).");
+    } catch (err: any) {
+      const failure = "BAR-CHECKER-INFRASTRUCTURE";
+      barGaps = [failure];
+      failedChecks.push(failure);
+      failed++;
+      total++;
+      evidence.push(
+        `Bar comparison: failed to run (${err?.message || String(err)}).`,
+      );
     }
   }
 
-  // ── Step 2: Model-based evaluation ──────────────────────────────────
-  // The checker model reads the deterministic results + the deliverable
-  // and returns a verdict. If no checker model is configured (or the model
-  // call fails), the deterministic results alone determine the verdict.
+  // ── Step 2: Optional model-based evaluation ─────────────────────────
+  // A checker model is a separate outbound data path. It is allowed only
+  // when a dedicated endpoint is configured and the route is explicitly
+  // approved. If that configured route fails, approval is impossible.
 
   let modelVerdict: CheckerVerdict | null = null;
   let modelReasoning = "";
 
-  const checkerModel = config.checkerModelName || config.llmModelName;
-  const checkerBaseUrl = config.checkerBaseUrl || config.llmBaseUrl;
+  const checkerModel = config.checkerModelName;
+  const checkerBaseUrl = config.checkerBaseUrl;
   const checkerApiKey = config.llmApiKey;
+  const checkerConfigured = Boolean(checkerModel && checkerBaseUrl);
+  const checkerRemoteApproved = process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1";
+  let checkerModelUnavailable = false;
+  let checkerIsLocal = false;
+  try {
+    const hostname = new URL(checkerBaseUrl || "").hostname.toLowerCase();
+    checkerIsLocal =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]";
+  } catch {
+    // Invalid endpoint is reported as a checker failure below.
+  }
 
-  if (checkerModel && checkerBaseUrl && checkerApiKey) {
+  if (checkerConfigured && (checkerIsLocal || checkerRemoteApproved)) {
     try {
       const deliverablePath = toolArgs?.file || toolArgs?.filePath || "";
       const deliverableContent = deliverablePath ? await readDeliverable(deliverablePath) : "";
@@ -509,10 +494,18 @@ export async function runChecker(
       modelReasoning = modelResult.reasoning;
       evidence.push(`Checker model (${checkerModel}): ${modelVerdict} — ${modelReasoning}`);
     } catch (err: any) {
-      evidence.push(`Checker model: evaluation failed (${err.message}) — falling back to deterministic-only verdict.`);
+      checkerModelUnavailable = true;
+      evidence.push(`Checker model: evaluation failed (${err.message}) — approval blocked.`);
     }
+  } else if (checkerConfigured) {
+    checkerModelUnavailable = true;
+    evidence.push(
+      checkerIsLocal
+        ? "Checker model: configuration is invalid — approval blocked."
+        : "Checker model: remote evaluation is not explicitly approved (set QUIVER_CHECKER_REMOTE_APPROVED=1) — approval blocked.",
+    );
   } else {
-    evidence.push("Checker model: not configured — using deterministic-only verdict.");
+    evidence.push("Checker model: not configured — deterministic checks are the complete checker.");
   }
 
   // ── Step 3: Compute the final verdict ───────────────────────────────
@@ -522,7 +515,7 @@ export async function runChecker(
   const deterministicVerdict: CheckerVerdict =
     total > 0 && failed === 0 ? "approve" :
     total > 0 && failed > 0 ? "revise" :
-    "approve" as CheckerVerdict; // no deterministic checks ran → don't block
+    "reject" as CheckerVerdict; // no deterministic checks ran → not verified
 
   let verdict: CheckerVerdict;
   if (modelVerdict) {
@@ -533,6 +526,8 @@ export async function runChecker(
     } else {
       verdict = "revise";
     }
+  } else if (checkerModelUnavailable) {
+    verdict = "reject";
   } else {
     verdict = deterministicVerdict;
   }
@@ -584,14 +579,18 @@ async function runAcceptanceTestSuite(
     try { await fs.cp(path.join(workspaceRoot, "templates"), path.join(scratchDir, "templates"), { recursive: true }); } catch {}
   }
 
-  const childEnv: Record<string, string> = {
-    PATH: process.env.PATH || "",
-    HOME: process.env.HOME || "",
-    USER: process.env.USER || "",
-    LANG: process.env.LANG || "en_US.UTF-8",
-    TERM: process.env.TERM || "dumb",
-    QUIVER_NO_COLOR: "1",
-  };
+  const childEnv = createIsolatedEnv(
+    ["PATH", "USER", "LANG", "TERM"],
+    {
+      scratchDir,
+      protectedDir: workspaceRoot,
+      overrides: {
+        LANG: process.env.LANG || "en_US.UTF-8",
+        TERM: process.env.TERM || "dumb",
+        QUIVER_NO_COLOR: "1",
+      },
+    },
+  );
   if (config.checkerModelName) childEnv["CHECKER_LLM_MODEL_NAME"] = config.checkerModelName;
   if (config.checkerBaseUrl) childEnv["CHECKER_LLM_API_BASE_URL"] = config.checkerBaseUrl;
   if (sandbox.noEnv) childEnv["QUIVER_CHECKER_NO_ENV"] = "1";
@@ -602,19 +601,21 @@ async function runAcceptanceTestSuite(
   }
 
   const testPath = path.join(scratchDir, "tests", "run_tests.ts");
-  const workspaceBin = path.join(workspaceRoot, "node_modules", ".bin");
-  const enhancedEnv = { ...childEnv, PATH: `${workspaceBin}:${childEnv.PATH || ""}` };
+  const workspaceBin = path.join(scratchDir, "node_modules", ".bin");
+  const enhancedEnv = {
+    ...childEnv,
+    PATH: `${workspaceBin}${path.delimiter}${childEnv.PATH || ""}`,
+  };
 
   try {
     const out = await new Promise<string>((resolve) => {
       let buf = "";
-      const child = spawn("npx", ["tsx", testPath], {
+      const child = spawnIsolatedProcess("npx", ["tsx", testPath], {
         cwd: scratchDir,
-        stdio: ["ignore", "pipe", "pipe"],
         env: enhancedEnv,
       });
-      child.stdout.on("data", (d) => (buf += d.toString()));
-      child.stderr.on("data", (d) => (buf += d.toString()));
+      child.stdout?.on("data", (d) => (buf += d.toString()));
+      child.stderr?.on("data", (d) => (buf += d.toString()));
       child.on("exit", () => resolve(buf));
       child.on("error", () => resolve(buf));
       setTimeout(() => { try { child.kill("SIGKILL"); } catch {} resolve(buf); }, 180000);
@@ -634,9 +635,21 @@ async function runAcceptanceTestSuite(
       }
       return { ran: true, passed: total - failed, failed, total, failedChecks };
     }
-    return { ran: false, passed: 0, failed: 0, total: 0, failedChecks: [] };
+    return {
+      ran: false,
+      passed: 0,
+      failed: 1,
+      total: 1,
+      failedChecks: ["CHECKER-ACCEPTANCE-INFRASTRUCTURE"],
+    };
   } catch {
-    return { ran: false, passed: 0, failed: 0, total: 0, failedChecks: [] };
+    return {
+      ran: false,
+      passed: 0,
+      failed: 1,
+      total: 1,
+      failedChecks: ["CHECKER-ACCEPTANCE-INFRASTRUCTURE"],
+    };
   }
 }
 
@@ -653,14 +666,24 @@ async function runStructuralChecks(
     try {
       return await runAcceptanceMdChecks(workspaceRoot, toolName, toolArgs);
     } catch {
-      return { passed: 0, failed: 0, total: 0, failedChecks: [] };
+      return {
+        passed: 0,
+        failed: 1,
+        total: 1,
+        failedChecks: ["CHECKER-STRUCTURAL-INFRASTRUCTURE"],
+      };
     }
   }
   // Fallback structural checks
   try {
     return await runFallbackChecks(workspaceRoot, toolName, toolArgs);
   } catch {
-    return { passed: 0, failed: 0, total: 0, failedChecks: [] };
+    return {
+      passed: 0,
+      failed: 1,
+      total: 1,
+      failedChecks: ["CHECKER-STRUCTURAL-INFRASTRUCTURE"],
+    };
   }
 }
 
@@ -679,25 +702,26 @@ interface ModelEvalInput {
 
 async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: CheckerVerdict; reasoning: string }> {
   const systemPrompt =
-    `You are the CHECKER — a structurally isolated verifier that evaluates the maker's work. ` +
-    `You never certify your own work; you evaluate the maker's deliverable independently.\n\n` +
+    `You are the VP CHECKER — a structurally isolated verifier that independently evaluates the Associate (maker)'s work. ` +
+    `You never certify your own work and you never treat a saved file as final by itself.\n\n` +
     `Return a JSON object with exactly two fields:\n` +
     `  "verdict": "approve" | "revise" | "reject"\n` +
     `  "reasoning": a concise explanation (1-3 sentences) of why\n\n` +
     `Rules:\n` +
-    `  - "approve": the deliverable meets all acceptance criteria and is ready.\n` +
-    `  - "revise": there are fixable gaps — the maker should iterate.\n` +
-    `  - "reject": the deliverable is fundamentally broken or the gate could not run.\n` +
-    `  - If deterministic checks failed, you MUST return "revise" or "reject".\n` +
-    `  - If deterministic checks passed, evaluate the actual deliverable quality.\n` +
-    `  - Be harsh — "approve" only when the work is genuinely done.\n`;
+    `  - "approve": every applicable deterministic check passed, the deliverable is materially complete, and evidence supports its claims.\n` +
+    `  - "revise": there are fixable gaps — identify the smallest useful correction.\n` +
+    `  - "reject": the deliverable is fundamentally broken, unsafe, missing required evidence, or the verification gate could not run.\n` +
+    `  - If deterministic checks failed, an evidence file is absent/invalid, a check is unsupported, or the result is empty, return "revise" or "reject"; never approve.\n` +
+    `  - Inspect the actual deliverable and the supplied evidence. Do not invent a source, test result, or approval.\n` +
+    `  - Be demanding but specific: the checker should help the maker fix the root cause, not rubber-stamp it.\n`;
 
   const userPrompt =
     `Tool that produced this work: ${input.toolName || "unknown"}\n` +
     `Deliverable path: ${input.deliverablePath || "n/a"}\n\n` +
     `Deterministic evidence:\n${input.evidence.map((e) => `  - ${e}`).join("\n")}\n\n` +
     `Deliverable content (truncated):\n${input.deliverableContent || "[no file content]"}\n\n` +
-    `Evaluate this work. Return JSON: {"verdict": "...", "reasoning": "..."}`;
+    `Evaluate this work for correctness, source traceability, uncertainty disclosure, and professional usability. ` +
+    `Return JSON: {"verdict": "...", "reasoning": "..."}`;
 
   const response = await fetch(`${input.baseUrl}/chat/completions`, {
     method: "POST",
@@ -747,7 +771,8 @@ async function logCheckerVerdict(result: CheckerResult): Promise<void> {
     try {
       const raw = await fs.readFile(CHECKER_AUDIT_FILE, "utf8");
       chain = AuditChain.deserialize(raw);
-    } catch {
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
       chain = new AuditChain();
     }
     chain.appendEntry(
@@ -756,8 +781,10 @@ async function logCheckerVerdict(result: CheckerResult): Promise<void> {
     );
     await fs.mkdir(path.dirname(CHECKER_AUDIT_FILE), { recursive: true });
     await fs.writeFile(CHECKER_AUDIT_FILE, chain.serialize(), "utf8");
-  } catch {
-    // audit is best-effort
+  } catch (error: any) {
+    throw new Error(
+      `Checker verdict could not be persisted to the audit chain: ${error?.message || String(error)}`,
+    );
   }
 }
 
@@ -788,7 +815,8 @@ export async function overrideVerdict(
     try {
       const raw = await fs.readFile(CHECKER_AUDIT_FILE, "utf8");
       chain = AuditChain.deserialize(raw);
-    } catch {
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
       chain = new AuditChain();
     }
     chain.appendEntry(
@@ -797,8 +825,11 @@ export async function overrideVerdict(
     );
     await fs.mkdir(path.dirname(CHECKER_AUDIT_FILE), { recursive: true });
     await fs.writeFile(CHECKER_AUDIT_FILE, chain.serialize(), "utf8");
-  } catch {
-    // best-effort
+  } catch (error: any) {
+    return {
+      overridden: false,
+      reason: `override was not logged: ${error?.message || String(error)}`,
+    };
   }
   return {
     overridden: true,
@@ -818,6 +849,14 @@ export function isHighRisk(toolName: string, toolArgs?: any): boolean {
   // File-writing tools always require checker verification
   if (["write_file", "replace_content", "apply_patch"].includes(toolName)) {
     return true;
+  }
+
+  // Office mutations are deliverable-producing actions. The checker must
+  // verify the companion evidence package before the operation is accepted;
+  // read-only Office views remain available without this gate.
+  if (toolName === "office_doc") {
+    const action = String(toolArgs?.action || "");
+    return !["get", "view", "query", "validate", "help", "close"].includes(action);
   }
 
   // For run_command, classify the actual command string

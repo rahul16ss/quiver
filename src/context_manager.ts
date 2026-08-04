@@ -12,10 +12,10 @@ import type { Message } from "./agent.js";
  *
  * Two primitives:
  *
- * 1. Summarization: Uses an LLM call to generate a real summary of old
- *    messages. The summary preserves key information (session intent,
- *    artifacts created, decisions made, next steps). The original
- *    conversation is written to a file for reference.
+ * 1. Summarization: Generates a structural summary of old messages without
+ *    making an auxiliary model call. The summary preserves enough information
+ *    to navigate the archived transcript. The original conversation is
+ *    written to a file for reference.
  *
  * 2. Context offloading: Large tool results are saved to files and
  *    replaced in the conversation with file path references + previews.
@@ -23,7 +23,9 @@ import type { Message } from "./agent.js";
  *
  * Both are user-controllable via the /compact command and automatic
  * thresholds. The user can see exactly what was compacted and recover
- * it from the filesystem.
+ * it from the filesystem. Any future model-assisted summary must be routed
+ * through the normal sensitivity and consent path; this module deliberately
+ * has no hidden outbound model call.
  */
 
 const OFFLOAD_THRESHOLD_CHARS = 80000; // ~20K tokens
@@ -102,91 +104,10 @@ async function saveConversationBeforeCompaction(
 }
 
 /**
- * Generate a summary of old messages using an LLM call.
- * This is the "in-context summary" part — it replaces the old messages
- * with a structured summary that preserves key information.
- */
-async function generateSummary(
-  messages: Message[],
-  model: string,
-  apiKey: string,
-  baseUrl: string,
-): Promise<string> {
-  // Build the conversation text for summarization
-  const conversationText = messages
-    .map((m) => {
-      const text = getMessageText(m);
-      const role = m.role.toUpperCase();
-      if (m.tool_calls && m.tool_calls.length > 0) {
-        const toolNames = m.tool_calls.map((tc) => tc.function.name).join(", ");
-        return `${role}: ${text}\n[Tool calls: ${toolNames}]`;
-      }
-      if (m.role === "tool") {
-        return `TOOL_RESULT (${m.name}): ${text.substring(0, 500)}${text.length > 500 ? "..." : ""}`;
-      }
-      return `${role}: ${text}`;
-    })
-    .join("\n\n");
-
-  const summaryPrompt = `Summarize the following conversation between a user and an AI coding agent. Preserve:
-1. Session intent — what the user asked for and why
-2. Key decisions made — architectural choices, approaches selected, trade-offs
-3. Artifacts created or modified — files written, tools created, configs changed
-4. Current state — what's done, what's in progress, what's blocked
-5. Important context — file paths, function names, error messages that are still relevant
-6. Next steps — what the agent was about to do or should do next
-
-Be concise but complete. The summary should let the agent continue working as if it remembers the conversation.
-
-CONVERSATION TO SUMMARIZE:
-${conversationText}`;
-
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a conversation summarizer. Create a structured summary that preserves all actionable information.",
-          },
-          { role: "user", content: summaryPrompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 2000,
-      }),
-      // C1: bound the compaction call so a stalled LLM endpoint cannot hang
-      // the agent forever mid-session. The stream timeouts (US-17.2) only
-      // cover streamChat(); this is a separate one-shot fetch. On timeout we
-      // fall through to the structural fallback summary (caught below).
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Summary generation failed: ${response.status}`);
-    }
-
-    const data: any = await response.json();
-    const summary = data.choices?.[0]?.message?.content;
-    if (!summary) {
-      throw new Error("No summary content in response");
-    }
-    return summary;
-  } catch (error: any) {
-    // Fallback: create a simple structural summary without LLM
-    return generateFallbackSummary(messages);
-  }
-}
-
-/**
- * Fallback summary when LLM call fails — extracts key information
- * structurally without requiring a model call.
+ * Generate a compact structural summary without requiring a model call.
+ * Keeping this deterministic is intentional: compaction runs before the next
+ * turn's sensitivity/consent decision and must never silently send the old
+ * transcript to a second endpoint.
  */
 function generateFallbackSummary(messages: Message[]): string {
   const userMessages = messages.filter((m) => m.role === "user");
@@ -201,7 +122,7 @@ function generateFallbackSummary(messages: Message[]): string {
   const lastUserMsg = userMessages[userMessages.length - 1];
   const lastUserText = lastUserMsg ? getMessageText(lastUserMsg).substring(0, 200) : "";
 
-  return `[Fallback Summary — LLM summarization failed]
+  return `[Structural Summary — no auxiliary model call]
 Session intent: ${lastUserText}
 Messages: ${messages.length} total (${userMessages.length} user, ${toolCalls.length} assistant with tools, ${toolResults.length} tool results)
 Tools used: ${Array.from(toolsUsed).join(", ") || "none"}
@@ -209,10 +130,10 @@ Note: The full conversation was saved to a file. Use view_file to read it if nee
 }
 
 /**
- * Perform context compaction with LLM-powered summarization.
+ * Perform context compaction with a deterministic structural summary.
  *
  * 1. Save the original conversation to a file (filesystem preservation)
- * 2. Generate an LLM summary of old messages
+ * 2. Generate a structural summary without an auxiliary model call
  * 3. Replace old messages with the summary
  * 4. Keep recent messages intact
  *
@@ -278,13 +199,9 @@ export async function compactWithSummarization(
   // 1. Save original conversation to file
   const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
 
-  // 2. Generate LLM summary of old messages
-  const summary = await generateSummary(
-    oldMessages,
-    config.llmModelName,
-    config.llmApiKey,
-    config.llmBaseUrl,
-  );
+  // 2. Generate a local structural summary. Do not make an auxiliary model
+  // call here: the next turn's sensitivity and consent gates have not run yet.
+  const summary = generateFallbackSummary(oldMessages);
 
   // 3. Rebuild messages: system + summary + recent
   messages.length = 0;
@@ -321,7 +238,7 @@ export interface CompactionProposal {
 /**
  * Propose a compaction WITHOUT mutating the conversation (SPEC §7.3 consent):
  * save the original (full history preserved regardless of the decision), generate
- * the LLM summary, and build the would-be compacted message array. Decline → the
+ * a structural summary, and build the would-be compacted message array. Decline → the
  * live conversation is untouched; the saved copy is the accessible full history.
  */
 export async function proposeCompaction(
@@ -353,9 +270,7 @@ export async function proposeCompaction(
     recentMessages = recentMessages.slice(1);
   }
   const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
-  const summary = await generateSummary(
-    oldMessages, config.llmModelName, config.llmApiKey, config.llmBaseUrl,
-  );
+  const summary = generateFallbackSummary(oldMessages);
   const summaryContent =
     "[Context Compacted \u2014 " + oldMessages.length + " messages summarized]\n\n" +
     "The full conversation was saved to: " + savedTo + "\n\n" +

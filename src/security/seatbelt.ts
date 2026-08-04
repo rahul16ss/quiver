@@ -241,7 +241,10 @@ export function spawnSandboxed(
 
   // macOS: use sandbox-exec
   const profilePath = writeProfileFile(profile);
-  const sandboxArgs = ["-p", profilePath, command];
+  // Execute through the same shell contract as run_command. Passing the raw
+  // command as the executable would break pipes, redirects, and chained
+  // commands when sandbox-exec is available.
+  const sandboxArgs = ["-p", profilePath, "/bin/sh", "-c", command];
 
   const child = spawn("sandbox-exec", sandboxArgs, {
     cwd: options.cwd || profile.workspaceRoot,

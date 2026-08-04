@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import picocolors from "picocolors";
+import { resolveSecretSync } from "./secrets/keychain.js";
 
 export type OutputMode = "interactive" | "json" | "quiet";
 
@@ -18,6 +19,24 @@ function parseDryRun(): boolean {
     process.argv.slice(2).includes("--dry-run") ||
     process.argv.slice(2).includes("-n")
   );
+}
+
+function parseFiniteEnvNumber(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseOptionalFiniteEnvNumber(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseFiniteEnvInteger(name: string, fallback: number): number {
+  return Math.trunc(parseFiniteEnvNumber(name, fallback));
 }
 
 // ─── Autonomy System ─────────────────────────────────────────────────
@@ -294,13 +313,13 @@ const _parsedAutonomy = parseAutonomy();
 export const config: Config = {
   llmBaseUrl: process.env.LLM_API_BASE_URL || "",
   llmModelName: process.env.LLM_MODEL_NAME || "",
-  llmApiKey: process.env.LLM_API_KEY || "",
+  llmApiKey: resolveSecretSync("LLM_API_KEY"),
   // Sampling parameters (configurable per deployment via .env).
   // These are passed to every model call; models that don't support a
   // parameter silently ignore it (OpenAI-compatible behavior).
-  temperature: parseFloat(process.env.LLM_TEMPERATURE || "0.7"),
-  topP: process.env.LLM_TOP_P ? parseFloat(process.env.LLM_TOP_P) : undefined,
-  topK: process.env.LLM_TOP_K ? parseFloat(process.env.LLM_TOP_K) : undefined,
+  temperature: parseFiniteEnvNumber("LLM_TEMPERATURE", 0.7),
+  topP: parseOptionalFiniteEnvNumber("LLM_TOP_P"),
+  topK: parseOptionalFiniteEnvNumber("LLM_TOP_K"),
   reasoningEffort: process.env.LLM_REASONING_EFFORT || undefined,
   // Checker model (optional): when set, the checker subagent uses a
   // different model than the maker. Falls back to the primary LLM model.
@@ -309,18 +328,15 @@ export const config: Config = {
   // Local model endpoint (US-17.17 / SPEC §4.3 high-sensitivity escape hatch).
   localLlmBaseUrl: process.env.QUIVER_LOCAL_LLM_API_BASE_URL || "",
   localLlmModelName: process.env.QUIVER_LOCAL_LLM_MODEL_NAME || "",
-  parallelApiKey: process.env.PARALLEL_API_KEY || "",
+  parallelApiKey: resolveSecretSync("PARALLEL_API_KEY"),
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
-  maxContextTokens: parseInt(
-    process.env.QUIVER_MAX_CONTEXT_TOKENS || "120000",
-    10,
-  ),
+  maxContextTokens: parseFiniteEnvInteger("QUIVER_MAX_CONTEXT_TOKENS", 120000),
   outputMode: parseOutputMode(),
   sessionLogEnabled: process.env.QUIVER_SESSION_LOG !== "0",
-  sessionLogMaxChars: parseInt(
-    process.env.QUIVER_SESSION_LOG_MAX_CHARS || "512",
-    10,
+  sessionLogMaxChars: parseFiniteEnvInteger(
+    "QUIVER_SESSION_LOG_MAX_CHARS",
+    512,
   ),
   dryRun: parseDryRun(),
   // Path sandbox (US-9.2). When false (default), file tools enforce
@@ -341,23 +357,29 @@ export const config: Config = {
   // verifies (tsc + tests) and auto-heals+continues until healthy. Set
   // QUIVER_AMBIENT=0 to disable for latency-sensitive one-shot runs.
   ambientEnabled: process.env.QUIVER_AMBIENT !== "0",
-  ambientMaxHealRounds: parseInt(
-    process.env.QUIVER_AMBIENT_MAX_ROUNDS || "5",
-    10,
+  ambientMaxHealRounds: parseFiniteEnvInteger(
+    "QUIVER_AMBIENT_MAX_ROUNDS",
+    5,
   ),
   // Ambient log retention (US-AMBIENT): old session logs are auto-purged once
   // per session startup so non-technical users never manage log disk usage.
   // Default 30 days; 0 = keep forever. Set via QUIVER_LOG_RETENTION_DAYS.
-  logRetentionDays: parseInt(
-    process.env.QUIVER_LOG_RETENTION_DAYS || "30",
-    10,
+  logRetentionDays: parseFiniteEnvInteger(
+    "QUIVER_LOG_RETENTION_DAYS",
+    30,
   ),
+  // Finance-client profiles require a structurally valid evidence companion
+  // before an Office deliverable can be marked final. Other deployments may
+  // explicitly opt out while they are still prototyping.
+  evidenceRequired: process.env.QUIVER_EVIDENCE_REQUIRED !== "0",
   // ── Consent gate (SPEC §6 — "a gate, not a post-hoc log") ──
-  // When enabled, the agent surfaces a pre-action summary and WAITS for the
-  // user to approve / decline / exclude before the model call. Off by default
-  // so legacy behaviour is unchanged. Toggled at runtime via /consent or set
-  // persistently from the desktop settings (QUIVER_CONSENT_GATE=1).
-  consentGateEnabled: process.env.QUIVER_CONSENT_GATE === "1",
+  // The finance-client profile defaults to an explicit pre-action approval.
+  // Other profiles can opt in, while QUIVER_CONSENT_GATE=0 remains an explicit
+  // opt-out for controlled development/testing environments.
+  consentGateEnabled:
+    process.env.QUIVER_CONSENT_GATE === "1" ||
+    (process.env.QUIVER_PROFILE === "finance-client" &&
+      process.env.QUIVER_CONSENT_GATE !== "0"),
 };
 
 // Apply the env-specified trust tier AFTER config is fully initialized
@@ -402,6 +424,8 @@ export interface Config {
   ambientMaxHealRounds: number;
   // Ambient log retention (days; 0 = keep forever).
   logRetentionDays: number;
+  // Require valid Evidence.json for Office deliverable finalization.
+  evidenceRequired: boolean;
   // Consent gate (SPEC §6). When true the agent blocks on a pre-action
   // approval before each model call.
   consentGateEnabled: boolean;
@@ -528,4 +552,61 @@ export function printConfig(): void {
       v(config.maxContextTokens.toLocaleString("en-US")) +
       c(" ctx"),
   );
+}
+
+export interface RuntimeConfigPreflight {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  remoteEndpoint: boolean;
+}
+
+/**
+ * Validate the minimum configuration required to make a model call.
+ *
+ * This is intentionally a preflight, not a provider connectivity test: it
+ * catches missing or malformed configuration without sending user data. A
+ * remote endpoint requires an API key; local endpoints may authenticate
+ * through the local service itself.
+ */
+export function validateRuntimeConfig(): RuntimeConfigPreflight {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const endpoint = config.llmBaseUrl.trim();
+  let remoteEndpoint = true;
+
+  if (!endpoint) {
+    errors.push("LLM_API_BASE_URL is not configured.");
+  } else {
+    try {
+      const parsed = new URL(endpoint);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        errors.push("LLM_API_BASE_URL must use http:// or https://.");
+      }
+      remoteEndpoint = !["localhost", "127.0.0.1", "::1"].includes(
+        parsed.hostname.toLowerCase(),
+      );
+    } catch {
+      errors.push("LLM_API_BASE_URL is not a valid URL.");
+    }
+  }
+
+  if (!config.llmModelName.trim()) {
+    errors.push("LLM_MODEL_NAME is not configured.");
+  }
+  if (remoteEndpoint && !config.llmApiKey.trim()) {
+    errors.push(
+      "LLM_API_KEY is required for a remote endpoint (store it in the OS keychain or .env).",
+    );
+  }
+  if (
+    (config.checkerModelName && !config.checkerBaseUrl) ||
+    (!config.checkerModelName && config.checkerBaseUrl)
+  ) {
+    warnings.push(
+      "Checker model settings are incomplete; Quiver will use the maker model for checking.",
+    );
+  }
+
+  return { valid: errors.length === 0, errors, warnings, remoteEndpoint };
 }

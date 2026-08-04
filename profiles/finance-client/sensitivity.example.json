@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "defaultTier": "high",
+  "modelEndpoints": {
+    "cloud": "configured-by-operator",
+    "local": "configured-by-operator"
+  },
+  "mnpiPatterns": [
+    {
+      "type": "client_or_project_identifier",
+      "pattern": "\\b(?:Client|Customer|Project)\\s+[A-Z][A-Za-z0-9_-]*\\b",
+      "replacement": "[IDENTIFIER]"
+    }
+  ],
+  "classificationRules": [
+    {
+      "type": "approved_public_material",
+      "pattern": "\\bapproved public material\\b",
+      "tier": "low",
+      "reason": "The engagement explicitly marked this material public."
+    }
+  ]
+}

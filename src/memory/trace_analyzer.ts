@@ -6,7 +6,6 @@
  * New extracted memories enter a 'pending' state in the memory review queue.
  */
 
-import { config } from "../config.js";
 import { createMemoryFact, appendMemoryFact, type MemoryFact, type MemoryType } from "./schema.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -27,8 +26,11 @@ export interface ExtractedFact {
 /**
  * Analyze a session trace and extract memory facts.
  *
- * Feeds the session trace to a local or fast remote model to output
- * JSON facts, which are then written to the pending review queue.
+ * Extracts conservative structural facts and writes them to the pending
+ * review queue. This path intentionally makes no outbound model call:
+ * session-completion work runs outside the turn's sensitivity/consent route.
+ * Model-assisted extraction can be added later only through an explicitly
+ * approved gateway callback.
  *
  * @param sessionTrace - The session log entries
  * @param sessionId - The session ID for provenance
@@ -44,29 +46,16 @@ export async function analyzeSessionTrace(
   // Build a compact summary of the session for the extraction LLM
   const traceSummary = buildTraceSummary(sessionTrace);
 
-  try {
-    const extracted = await callExtractionLLM(traceSummary);
-
-    for (const fact of extracted) {
-      const memoryFact = createMemoryFact({
-        type: fact.type,
-        content: fact.content,
-        source_session: sessionId,
-        confidence: fact.confidence,
-        privacy: "project",
-      });
-      await appendMemoryFact(memoryFact);
-      facts.push(memoryFact);
-    }
-  } catch (error: any) {
-    errors.push(`LLM extraction failed: ${error.message}`);
-
-    // Fallback: structural extraction without LLM
-    const structuralFacts = structuralExtraction(sessionTrace, sessionId);
-    for (const fact of structuralFacts) {
-      await appendMemoryFact(fact);
-      facts.push(fact);
-    }
+  // Keep the summary construction above as the input boundary for a future
+  // explicitly approved extractor. For now, the safe default is structural
+  // extraction only; it is deterministic, local, and still provenance-linked.
+  if (!traceSummary.trim()) {
+    errors.push("Session trace contained no extractable events");
+  }
+  const structuralFacts = structuralExtraction(sessionTrace, sessionId);
+  for (const fact of structuralFacts) {
+    await appendMemoryFact(fact);
+    facts.push(fact);
   }
 
   return { facts, errors };
@@ -101,68 +90,6 @@ function buildTraceSummary(trace: any[]): string {
     `Errors encountered: ${errors.length}`,
     ...errors.map((e) => `  - ${e.substring(0, 200)}`),
   ].join("\n");
-}
-
-/**
- * Call the extraction LLM to extract facts from the session trace.
- */
-async function callExtractionLLM(traceSummary: string): Promise<ExtractedFact[]> {
-  const prompt = `Analyze the following session trace from an AI coding agent and extract memory-worthy facts.
-Output a JSON array of facts with this shape:
-[{"type": "workspace_fact" | "user_preference" | "code_behavior" | "architecture_note" | "error_pattern", "content": "...", "confidence": "high" | "medium" | "low"}]
-
-Only extract facts that are:
-1. Durable (will be useful in future sessions)
-2. Specific (not generic programming knowledge)
-3. Accurate (based on what actually happened in the trace)
-
-SESSION TRACE:
-${traceSummary}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(`${config.llmBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.llmApiKey ? { Authorization: `Bearer ${config.llmApiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: config.llmModelName,
-        messages: [
-          {
-            role: "system",
-            content: "You are a memory extraction assistant. Extract durable facts from agent session traces. Output only valid JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 2000,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Extraction LLM failed: ${response.status}`);
-    }
-
-    const data: any = await response.json();
-    const content = data.choices?.[0]?.message?.content || "[]";
-
-    // Parse JSON from the response (handle markdown code blocks)
-    const jsonStr = content
-      .replace(/^```(?:json)?\n?/i, "")
-      .replace(/\n?```$/, "")
-      .trim();
-
-    return JSON.parse(jsonStr) as ExtractedFact[];
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 /**

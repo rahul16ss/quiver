@@ -13,6 +13,7 @@ import * as crypto from "crypto";
 import { getProjectSessionsDir } from "../paths.js";
 import { SessionManager, type SessionFile, type SessionMessage, type ApprovalRecord } from "./schema.js";
 import type { FileReadRecord } from "./file_access.js";
+import { atomicWrite, CorruptStateError } from "../fs/atomic_write.js";
 
 // ─── Checkpoint Manager ──────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export class CheckpointManager {
   private projectId: string;
   private checkpointDir: string;
   private lastCheckpointPath: string | null = null;
+  private checkpointSequence = 0;
 
   constructor(sessionId: string, projectId: string) {
     this.sessionId = sessionId;
@@ -50,9 +52,10 @@ export class CheckpointManager {
     await fs.mkdir(this.checkpointDir, { recursive: true });
 
     const timestamp = Date.now();
+    const sequence = String(++this.checkpointSequence).padStart(4, "0");
     const checkpointPath = path.join(
       this.checkpointDir,
-      `${this.sessionId}_checkpoint_${timestamp}.json`,
+      `${this.sessionId}_checkpoint_${timestamp}_${sequence}_${crypto.randomBytes(3).toString("hex")}.json`,
     );
 
     // Compute checkpoint hash for tamper-evidence (US-9.5)
@@ -64,7 +67,8 @@ export class CheckpointManager {
       adapter: state.adapter,
       timestamp,
     });
-    const prevHash = state.auditHash || "0".repeat(64);
+    const prevHash =
+      state.auditHash || this.getLatestAuditHash() || "0".repeat(64);
     const chainHash = crypto
       .createHash("sha256")
       .update(prevHash + actionPayload)
@@ -87,7 +91,7 @@ export class CheckpointManager {
       },
     };
 
-    await fs.writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf8");
+    await atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2));
 
     // Clean up old checkpoints (keep last 5)
     await this.pruneCheckpoints(5);
@@ -100,8 +104,44 @@ export class CheckpointManager {
    * Get the latest audit chain hash.
    */
   getLatestAuditHash(): string | null {
-    // This would read from the last checkpoint in a full implementation
-    return null;
+    if (this.lastCheckpointPath) {
+      try {
+        const checkpoint = JSON.parse(
+          fsSync.readFileSync(this.lastCheckpointPath, "utf8"),
+        ) as SessionFile;
+        return checkpoint.metadata?.audit_chain_hash || null;
+      } catch (error: any) {
+        throw new CorruptStateError(
+          this.lastCheckpointPath,
+          `JSON parse failed: ${error?.message || String(error)}`,
+        );
+      }
+    }
+
+    if (!fsSync.existsSync(this.checkpointDir)) return null;
+    const latest = fsSync
+      .readdirSync(this.checkpointDir)
+      .filter((file) =>
+        file.startsWith(`${this.sessionId}_checkpoint_`) &&
+        file.endsWith(".json"),
+      )
+      .sort()
+      .pop();
+    if (!latest) return null;
+
+    const latestPath = path.join(this.checkpointDir, latest);
+    try {
+      const checkpoint = JSON.parse(
+        fsSync.readFileSync(latestPath, "utf8"),
+      ) as SessionFile;
+      this.lastCheckpointPath = latestPath;
+      return checkpoint.metadata?.audit_chain_hash || null;
+    } catch (error: any) {
+      throw new CorruptStateError(
+        latestPath,
+        `JSON parse failed: ${error?.message || String(error)}`,
+      );
+    }
   }
 
   /**
@@ -120,7 +160,15 @@ export class CheckpointManager {
       for (const file of sessionCheckpoints) {
         const filePath = path.join(this.checkpointDir, file);
         const content = await fs.readFile(filePath, "utf8");
-        const checkpoint = JSON.parse(content) as SessionFile;
+        let checkpoint: SessionFile;
+        try {
+          checkpoint = JSON.parse(content) as SessionFile;
+        } catch (error: any) {
+          throw new CorruptStateError(
+            filePath,
+            `JSON parse failed: ${error?.message || String(error)}`,
+          );
+        }
         const storedHash = checkpoint.metadata?.audit_chain_hash;
 
         if (!storedHash) continue;
@@ -143,7 +191,8 @@ export class CheckpointManager {
       }
 
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof CorruptStateError) throw error;
       return false;
     }
   }
@@ -163,8 +212,16 @@ export class CheckpointManager {
 
       const latestPath = path.join(this.checkpointDir, sessionCheckpoints[0]);
       const content = await fs.readFile(latestPath, "utf8");
-      return JSON.parse(content) as SessionFile;
-    } catch {
+      try {
+        return JSON.parse(content) as SessionFile;
+      } catch (error: any) {
+        throw new CorruptStateError(
+          latestPath,
+          `JSON parse failed: ${error?.message || String(error)}`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof CorruptStateError) throw error;
       return null;
     }
   }
@@ -204,6 +261,7 @@ export interface CrashDetectionResult {
   sessionId: string | null;
   checkpointPath: string | null;
   sessionFile: SessionFile | null;
+  error?: string;
 }
 
 /**
@@ -221,7 +279,9 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
       return { hasCrashedSession: false, sessionId: null, checkpointPath: null, sessionFile: null };
     }
 
-    const files = await fs.readdir(checkpointDir);
+    const files = (await fs.readdir(checkpointDir)).filter((file) =>
+      /^.+_checkpoint_[0-9]+(?:_[a-z0-9]+)*\.json$/.test(file),
+    );
     if (files.length === 0) {
       return { hasCrashedSession: false, sessionId: null, checkpointPath: null, sessionFile: null };
     }
@@ -231,9 +291,26 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
     const latestCheckpointFile = sorted[0];
     const checkpointPath = path.join(checkpointDir, latestCheckpointFile);
 
+    let parsedSessionFile: SessionFile | null = null;
     try {
       const content = await fs.readFile(checkpointPath, "utf8");
-      const sessionFile = JSON.parse(content) as SessionFile;
+      let sessionFile: SessionFile;
+      try {
+        sessionFile = JSON.parse(content) as SessionFile;
+      } catch (error: any) {
+        const sessionId = latestCheckpointFile.match(/^(.+)_checkpoint_/)?.[1] || null;
+        return {
+          hasCrashedSession: true,
+          sessionId,
+          checkpointPath,
+          sessionFile: null,
+          error: new CorruptStateError(
+            checkpointPath,
+            `JSON parse failed: ${error?.message || String(error)}`,
+          ).message,
+        };
+      }
+      parsedSessionFile = sessionFile;
 
       // Check if the session has a corresponding final session file
       const sessionManager = new SessionManager(sessionFile.session_id, projectId);
@@ -283,11 +360,28 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
       }
 
       return { hasCrashedSession: false, sessionId: null, checkpointPath: null, sessionFile: null };
-    } catch {
-      return { hasCrashedSession: false, sessionId: null, checkpointPath: null, sessionFile: null };
+    } catch (error: any) {
+      return {
+        hasCrashedSession: true,
+        sessionId: parsedSessionFile?.session_id || null,
+        checkpointPath,
+        sessionFile: parsedSessionFile,
+        error: new CorruptStateError(
+          parsedSessionFile
+            ? new SessionManager(parsedSessionFile.session_id, projectId).getFilePath()
+            : checkpointPath,
+          error?.message || String(error),
+        ).message,
+      };
     }
-  } catch {
-    return { hasCrashedSession: false, sessionId: null, checkpointPath: null, sessionFile: null };
+  } catch (error: any) {
+    return {
+      hasCrashedSession: false,
+      sessionId: null,
+      checkpointPath: null,
+      sessionFile: null,
+      error: `Could not inspect checkpoint state: ${error?.message || String(error)}`,
+    };
   }
 }
 

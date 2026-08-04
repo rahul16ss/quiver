@@ -11,7 +11,8 @@
  *       "env": {}
  *     },
  *     "remote": {
- *       "url": "https://example.com/mcp"
+ *       "url": "https://example.com/mcp",
+ *       "sendsIdentifiers": true
  *     }
  *   }
  * }
@@ -25,11 +26,15 @@ export interface StdioServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Set true when tool arguments may carry identifiers to an external service. */
+  sendsIdentifiers?: boolean;
 }
 
 export interface HttpServerConfig {
   url: string;
   headers?: Record<string, string>;
+  /** Set true when tool arguments may carry identifiers to an external service. */
+  sendsIdentifiers?: boolean;
 }
 
 export type McpServerConfig = StdioServerConfig | HttpServerConfig;

@@ -7,6 +7,7 @@ import {
   printFirstRunWizard,
   runOnboardingHandshake,
   redactSecret,
+  validateRuntimeConfig,
   ALL_GRANTS,
   TRUST_TIERS,
   applyTrustTier,
@@ -150,7 +151,7 @@ async function main() {
 
   if (cliOpts.daemon) {
     const sub = cliOpts.daemon;
-    const repoRoot = path.resolve(".");
+    const repoRoot = path.resolve(import.meta.dirname ?? ".", "..");
     if (sub === "install") {
       const r = installDaemonAutostart(repoRoot);
       console.log(r.detail);
@@ -204,6 +205,23 @@ async function main() {
   const isNonTty = !process.stdin.isTTY || !process.stdout.isTTY;
   if (isFirstRun() && !(isSubcommand && isNonTty)) {
     await runOnboardingHandshake();
+  }
+
+  // Fail before opening a model session when the endpoint contract is not
+  // configured. This avoids a confusing provider error after the user has
+  // already started a task.
+  if (!cliOpts.listSessions) {
+    const preflight = validateRuntimeConfig();
+    for (const warning of preflight.warnings) {
+      warn(warning);
+    }
+    if (!preflight.valid) {
+      for (const issue of preflight.errors) {
+        logError(issue);
+      }
+      logDim("Run `quiver init` or configure .env / the OS keychain, then try again.");
+      process.exit(EXIT.CONFIG);
+    }
   }
 
   const t = theme();
@@ -285,6 +303,22 @@ async function main() {
     // MCP errors are non-blocking
   }
 
+  // A delegated subagent receives an enforced tool allowlist from its parent.
+  // Prompt text alone is not a security boundary: remove every unlisted tool
+  // after built-ins and MCP tools have loaded.
+  const subagentToolAllowlist = process.env.QUIVER_SUBAGENT_TOOLS
+    ?.split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (subagentToolAllowlist?.length) {
+    const allowed = new Set(subagentToolAllowlist);
+    for (const tool of globalRegistry.getAllTools()) {
+      if (!allowed.has(tool.name)) {
+        globalRegistry.unregisterTool(tool.name);
+      }
+    }
+  }
+
   // (welcome() already prints the /help hint above)
 
   // ── List sessions mode ──
@@ -322,6 +356,44 @@ async function main() {
   // Instantiate Agent
   const agent = new Agent(globalRegistry);
 
+  // Workflow services are adapters around this one Agent, not a second model
+  // loop. Scheduled/watched runs can ask the same agent to draft and return
+  // the generated phase text; a model-invoked workflow is rejected as a
+  // nested turn so the agent cannot recursively call itself.
+  const { setWorkflowAgentCallback } = await import(
+    "./tools/workflow_tool.js"
+  );
+  const workflowAgentCallback = async (workflowPrompt: string, context: any) => {
+    if (agent.isPromptRunning()) {
+      throw new Error(
+        "Workflow build refused: the agent is already handling a prompt; retry the workflow after this turn completes.",
+      );
+    }
+    let output = "";
+    await agent.prompt(
+      workflowPrompt,
+      (token) => {
+        output += token;
+      },
+      isJson
+        ? (event) => {
+            emitJson(event);
+          }
+        : undefined,
+      context.workflow.data_sensitivity,
+    );
+    return output || "Agent completed the workflow phase without textual output.";
+  };
+  setWorkflowAgentCallback(workflowAgentCallback);
+  if (!cliOpts.singleTurn && (isInteractive || isJson)) {
+    const { WorkflowScheduler } = await import("./workflow/scheduler.js");
+    const { WorkflowWatcher } = await import("./workflow/watcher.js");
+    const scheduler = new WorkflowScheduler(workflowAgentCallback);
+    const watcher = new WorkflowWatcher(workflowAgentCallback);
+    scheduler.start();
+    watcher.start();
+  }
+
   // Track whether a session was resumed (via --continue, --resume, or crash
   let resumedSession = false;
 
@@ -331,12 +403,21 @@ async function main() {
   if (isInteractive && !cliOpts.continue && !cliOpts.resume) {
     try {
       const crash = await detectCrashedSession(getProjectName());
+      if (crash.error) {
+        statusLine("ERROR", crash.error);
+      }
       if (crash.hasCrashedSession && crash.sessionId) {
         await archiveCrashedSession(crash.sessionId);
-        // Silent — no message. Use --resume to pick a session.
+        statusLine(
+          "WARN",
+          `Incomplete session ${crash.sessionId} was archived. Use --resume to inspect saved sessions.`,
+        );
       }
     } catch {
-      // Crash detection must never block startup.
+      statusLine(
+        "ERROR",
+        "Could not inspect prior session state. Check .quiver-backups before continuing.",
+      );
     }
   }
 
@@ -491,8 +572,6 @@ async function main() {
     output: process.stdout,
     terminal: false, // non-terminal — clack manages the terminal
   });
-
-  agent.setSessionReadline(rl);
 
   // ── Event loop keep-alive ──
   // Between prompts, the only thing keeping the event loop alive is the

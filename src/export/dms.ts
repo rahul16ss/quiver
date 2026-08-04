@@ -14,7 +14,6 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync } from "child_process";
 
 export interface DmsExportResult {
   ok: boolean;
@@ -91,6 +90,12 @@ export class SharePointExporter implements DmsExporter {
     const buf = fs.readFileSync(meta.deliverablePath);
     const url = `${this.graphEndpoint}/sites/${this.siteId}/drives/${this.driveId}/root:/${encodeURIComponent(meta.name)}:/content`;
     try {
+      // Microsoft Graph's simple PUT endpoint is limited to small files.
+      // Use an upload session for larger Office deliverables so an ordinary
+      // IC memo or workbook does not fail at the DMS boundary.
+      if (buf.byteLength > 4 * 1024 * 1024) {
+        return await this.uploadLargeFile(url, buf, meta.name);
+      }
       const res = await fetch(url, { method: "PUT", headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/octet-stream" }, body: buf });
       if (!res.ok) return { ok: false, detail: `SharePoint upload failed: ${res.status} ${res.statusText}` };
       const json: any = await res.json();
@@ -98,6 +103,66 @@ export class SharePointExporter implements DmsExporter {
     } catch (e: any) {
       return { ok: false, detail: `SharePoint upload error: ${e?.message || e}` };
     }
+  }
+
+  private async uploadLargeFile(
+    contentUrl: string,
+    buf: Buffer,
+    name: string,
+  ): Promise<DmsExportResult> {
+    const sessionUrl = `${contentUrl.replace(/\/content$/, "")}/createUploadSession`;
+    const session = await fetch(sessionUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        item: {
+          "@microsoft.graph.conflictBehavior": "replace",
+          name,
+        },
+      }),
+    });
+    if (!session.ok) {
+      return {
+        ok: false,
+        detail: `SharePoint upload session failed: ${session.status} ${session.statusText}`,
+      };
+    }
+    const sessionJson: any = await session.json();
+    const uploadUrl = sessionJson?.uploadUrl;
+    if (typeof uploadUrl !== "string" || !uploadUrl) {
+      return { ok: false, detail: "SharePoint upload session returned no uploadUrl." };
+    }
+
+    // Graph requires chunk sizes to be a multiple of 320 KiB.
+    const chunkSize = 10 * 320 * 1024;
+    let responseJson: any = null;
+    for (let start = 0; start < buf.byteLength; start += chunkSize) {
+      const end = Math.min(start + chunkSize, buf.byteLength) - 1;
+      const chunk = buf.subarray(start, end + 1);
+      const response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Length": String(chunk.byteLength),
+          "Content-Range": `bytes ${start}-${end}/${buf.byteLength}`,
+        },
+        body: new Uint8Array(chunk),
+      });
+      if (!response.ok) {
+        return {
+          ok: false,
+          detail: `SharePoint upload chunk failed at bytes ${start}-${end}: ${response.status} ${response.statusText}`,
+        };
+      }
+      responseJson = await response.json().catch(() => null);
+    }
+    return {
+      ok: true,
+      url: responseJson?.webUrl,
+      detail: `Uploaded to SharePoint with an upload session: ${responseJson?.webUrl ?? name}`,
+    };
   }
 }
 

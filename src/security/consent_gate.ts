@@ -13,10 +13,9 @@
  *   E. Inputs — user request, web sources, dropped files
  *   F. Operational metadata — model, sensitivity tier, redactions, trust tier
  *
- * In v1, the gate is informational with an opt-in approval step. It doesn't
- * block by default — the user can enable it with `/consent on`. When enabled,
- * the agent loop calls `renderConsentGate()` before each prompt and waits for
- * user approval.
+ * In v1, the gate blocks the model call until the user explicitly approves.
+ * The finance-client profile enables it by default; other deployments can
+ * enable it with `/consent on` or `QUIVER_CONSENT_GATE=1`.
  *
  * The full six-layer gate with per-layer edit/disable/veto follows usage
  * feedback. This v1 is the pre-action summary rendered from manifest data.
@@ -57,7 +56,8 @@ export interface ConsentGateResult {
 
 /**
  * Check whether the consent gate is enabled.
- * The gate is OFF by default. The user enables it with `/consent on`.
+ * Profile defaults are resolved in config.ts; runtime toggling is available
+ * for interactive users.
  */
 export function isConsentGateEnabled(): boolean {
   return config.consentGateEnabled === true;

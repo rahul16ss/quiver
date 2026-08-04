@@ -3,6 +3,10 @@ import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
 import { classifyCommand, targetsOutsideWorkspace } from "../security/command_policy.js";
+import {
+  createSandboxProfile,
+  spawnSandboxed,
+} from "../security/seatbelt.js";
 
 export const tool: Tool = {
   name: "run_command",
@@ -45,24 +49,90 @@ export const tool: Tool = {
         : picocolors.gray(` [risk: ${classification.risk}]`);
     console.log(picocolors.gray(`   Running command: ${command}`) + riskTag);
 
+    const seatbeltRiskBands = new Set([
+      "destructive",
+      "privileged",
+      "network",
+      "secret-risk",
+      "exfiltration-risk",
+    ]);
+    const useSeatbelt = seatbeltRiskBands.has(classification.risk);
+
     return new Promise((resolve) => {
-      exec(
+      let settled = false;
+      const finish = (
+        stdout: string,
+        stderr: string,
+        exitCode: number,
+        timedOut: boolean,
+        sandboxMethod?: string,
+      ) => {
+        if (settled) return;
+        settled = true;
+        const parts: string[] = [];
+        if (sandboxMethod) parts.push(`SANDBOX: ${sandboxMethod}`);
+        if (stdout) parts.push(`STDOUT:\n${stdout.trim()}`);
+        if (stderr) parts.push(`STDERR:\n${stderr.trim()}`);
+        parts.push(`EXIT CODE: ${exitCode}`);
+        if (timedOut) {
+          parts.push(`(Command timed out after ${effectiveTimeout}ms)`);
+        }
+        resolve(parts.join("\n\n"));
+      };
+
+      if (!useSeatbelt) {
+        exec(
+          command,
+          { maxBuffer, cwd: workingDir, timeout: effectiveTimeout },
+          (error, stdout, stderr) => {
+            finish(
+              stdout,
+              stderr,
+              typeof error?.code === "number" ? error.code : error ? 1 : 0,
+              !!error?.killed,
+            );
+          },
+        );
+        return;
+      }
+
+      // Risky commands run inside macOS Seatbelt. On Windows and when
+      // sandbox-exec is unavailable, spawnSandboxed reports the documented
+      // path-policy fallback instead of pretending to provide OS isolation.
+      const { child, result } = spawnSandboxed(
         command,
-        { maxBuffer, cwd: workingDir, timeout: effectiveTimeout },
-        (error, stdout, stderr) => {
-          const parts: string[] = [];
-          if (stdout) parts.push(`STDOUT:\n${stdout.trim()}`);
-          if (stderr) parts.push(`STDERR:\n${stderr.trim()}`);
-          if (error) {
-            parts.push(`EXIT CODE: ${error.code || 1}`);
-            if (error.killed)
-              parts.push(`(Command timed out after ${effectiveTimeout}ms)`);
-          } else {
-            parts.push(`EXIT CODE: 0`);
-          }
-          resolve(parts.join("\n\n"));
-        },
+        createSandboxProfile(workingDir, {
+          allowNetwork: classification.risk === "network",
+        }),
+        { cwd: workingDir },
       );
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+      }, effectiveTimeout);
+      child.stdout?.on("data", (chunk: Buffer | string) => {
+        if (stdout.length < maxBuffer) stdout += chunk.toString();
+      });
+      child.stderr?.on("data", (chunk: Buffer | string) => {
+        if (stderr.length < maxBuffer) stderr += chunk.toString();
+      });
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        finish(
+          stdout,
+          `${stderr}\n${error.message}`.trim(),
+          1,
+          timedOut,
+          result.method,
+        );
+      });
+      child.once("close", (code) => {
+        clearTimeout(timer);
+        finish(stdout, stderr, code ?? 1, timedOut, result.method);
+      });
     });
   },
 };

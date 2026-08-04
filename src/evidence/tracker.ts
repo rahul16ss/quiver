@@ -25,6 +25,25 @@ import {
   type RunRecord,
   type RunRecordInput,
 } from "./model.js";
+import {
+  readEvidenceFile,
+  validateEvidenceModel,
+} from "./validator.js";
+
+export class EvidenceFinalizationError extends Error {
+  constructor(
+    public readonly validation: {
+      valid: boolean;
+      problems: string[];
+      summary: string;
+    },
+  ) {
+    super(
+      `Evidence finalization blocked: ${validation.problems.join("; ")}`,
+    );
+    this.name = "EvidenceFinalizationError";
+  }
+}
 
 export class EvidenceTracker {
   private sources: Map<string, SourceRecord> = new Map();
@@ -136,6 +155,10 @@ export class EvidenceTracker {
    */
   validateEvidence(): { valid: boolean; problems: string[]; summary: string } {
     const problems: string[] = [];
+    if (this.sources.size === 0 && this.claims.size === 0) {
+      problems.push("evidence must contain at least one registered source");
+      problems.push("evidence must contain at least one recorded claim");
+    }
     const approvedSourceIds = new Set(
       [...this.sources.values()]
         .filter((s) => s.approved)
@@ -148,6 +171,20 @@ export class EvidenceTracker {
     );
 
     for (const claim of this.claims.values()) {
+      const isExplicitlyUnresolved =
+        claim.relationship === "unresolved" ||
+        claim.review_status === "flagged" ||
+        claim.review_status === "unresolved";
+      if (claim.source_ids.length === 0 && !isExplicitlyUnresolved) {
+        problems.push(
+          `${claim.claim_id} has no source references and is not marked unresolved`,
+        );
+      }
+      for (const sourceId of claim.source_ids) {
+        if (!this.sources.has(sourceId)) {
+          problems.push(`${claim.claim_id} references missing source ${sourceId}`);
+        }
+      }
       // Check for excluded source references
       for (const srcId of claim.source_ids) {
         if (excludedSourceIds.has(srcId)) {
@@ -199,12 +236,16 @@ export class EvidenceTracker {
   finalize(
     outputDir: string,
     docFileName?: string,
+    options?: { requireValidEvidence?: boolean },
   ): {
     evidencePath: string;
     runRecordPath: string | null;
     validation: { valid: boolean; problems: string[]; summary: string };
   } {
     const validation = this.validateEvidence();
+    if (options?.requireValidEvidence !== false && !validation.valid) {
+      throw new EvidenceFinalizationError(validation);
+    }
 
     const now = new Date().toISOString();
     const dateLine = `${this.asOf || now.split("T")[0]} · ${this.label} · Draft for review`;
@@ -227,6 +268,14 @@ export class EvidenceTracker {
       generated_at: now,
       generated_by: "live_agent",
     };
+    const shape = validateEvidenceModel(model);
+    if (!shape.valid) {
+      throw new EvidenceFinalizationError({
+        valid: false,
+        problems: shape.problems,
+        summary: "Generated evidence did not satisfy the persisted schema",
+      });
+    }
 
     const baseName = docFileName
       ? docFileName.replace(/\.(docx|xlsx|pptx)$/, "")
@@ -234,6 +283,7 @@ export class EvidenceTracker {
     const evidenceFileName = `${baseName}_Evidence.json`;
     const runRecordFileName = `${baseName}_Run_Record.json`;
 
+    fs.mkdirSync(outputDir, { recursive: true });
     const evidencePath = path.join(outputDir, evidenceFileName);
     fs.writeFileSync(evidencePath, JSON.stringify(model, null, 2), "utf8");
 
@@ -294,4 +344,39 @@ export class EvidenceTracker {
   isFinalized(): boolean {
     return this.finalized;
   }
+}
+
+/**
+ * Validate a document's companion evidence file and its source/claim rules.
+ * This is shared by the checker and GUI review flow so neither can silently
+ * accept a different interpretation of Evidence.json.
+ */
+export async function validateEvidenceFile(documentPath: string): Promise<{
+  valid: boolean;
+  missing: boolean;
+  evidencePath: string;
+  problems: string[];
+  model?: EvidenceModel;
+}> {
+  const loaded = await readEvidenceFile(documentPath);
+  if (!loaded.valid || !loaded.model) {
+    return {
+      valid: false,
+      missing: loaded.missing,
+      evidencePath: loaded.evidencePath,
+      problems: loaded.problems,
+    };
+  }
+
+  const tracker = new EvidenceTracker();
+  for (const source of loaded.model.sources) tracker.registerSource(source);
+  for (const claim of loaded.model.claims) tracker.recordClaim(claim);
+  const semantic = tracker.validateEvidence();
+  return {
+    valid: semantic.valid,
+    missing: false,
+    evidencePath: loaded.evidencePath,
+    problems: semantic.problems,
+    model: loaded.model,
+  };
 }

@@ -21,6 +21,19 @@ interface BackupRecord {
   wasNewFile: boolean;
 }
 
+export class CorruptStateError extends Error {
+  constructor(
+    public readonly statePath: string,
+    reason: string,
+    public readonly recoveryHint = "Restore the latest .quiver-backups copy or discard the corrupt state and start a new session.",
+  ) {
+    super(
+      `Corrupt Quiver state at ${statePath}: ${reason}. ${recoveryHint}`,
+    );
+    this.name = "CorruptStateError";
+  }
+}
+
 /**
  * Session-scoped backup history.
  * Tracks all file writes for rollback capability.
@@ -155,6 +168,64 @@ export async function atomicWrite(
   // Record in history
   sessionBackups.record(resolvedPath, backupPath || "", !fileExists);
 
+  return backupPath;
+}
+
+/**
+ * Synchronous counterpart used by signal and process-exit handlers.
+ * It follows the same temp-file, backup, fsync, rename, and directory-fsync
+ * sequence as atomicWrite().
+ */
+export function atomicWriteSync(
+  filePath: string,
+  content: string | Buffer,
+): string | null {
+  const resolvedPath = path.resolve(filePath);
+  const dir = path.dirname(resolvedPath);
+  fsSync.mkdirSync(dir, { recursive: true });
+
+  let backupPath: string | null = null;
+  const fileExists = fsSync.existsSync(resolvedPath);
+  if (fileExists) {
+    const backupDir = path.join(dir, ".quiver-backups");
+    fsSync.mkdirSync(backupDir, { recursive: true });
+    const basename = path.basename(resolvedPath);
+    const hash = crypto.randomBytes(4).toString("hex");
+    backupPath = path.join(backupDir, `${basename}.${hash}.bak`);
+    fsSync.copyFileSync(resolvedPath, backupPath);
+  }
+
+  const tempPath = `${resolvedPath}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    const fd = fsSync.openSync(tempPath, "w", 0o644);
+    try {
+      fsSync.writeFileSync(fd, content);
+      fsync(fd);
+    } finally {
+      fsSync.closeSync(fd);
+    }
+    fsSync.renameSync(tempPath, resolvedPath);
+
+    try {
+      const dirFd = fsSync.openSync(dir, "r");
+      try {
+        fsync(dirFd);
+      } finally {
+        fsSync.closeSync(dirFd);
+      }
+    } catch {
+      // Best-effort on platforms that do not support directory fsync.
+    }
+  } catch (error) {
+    try {
+      fsSync.unlinkSync(tempPath);
+    } catch {
+      // Ignore cleanup errors.
+    }
+    throw error;
+  }
+
+  sessionBackups.record(resolvedPath, backupPath || "", !fileExists);
   return backupPath;
 }
 

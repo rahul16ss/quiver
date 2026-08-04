@@ -10,7 +10,7 @@ When running under the `finance-client` profile, the following workflow tools ar
 
 - **Approved File Access**: Read and inspect files within explicit project data boundaries.
 - **Native Office Generation**: Drive OfficeCLI for `.docx`, `.xlsx`, and `.pptx` creation.
-- **Evidence Lineage**: Track sources, quantitative figures, and cell read-back lineage.
+- **Evidence Lineage**: Track sources, quantitative figures, and cell read-back lineage. A structurally valid `<deliverable>_Evidence.json` is required before an Office deliverable can be marked final.
 - **Human Review Gates**: Force review of open flags and require signer mark-final sign-off.
 - **Approved Retrieval Connectors**: Scoped data retrieval from configured internal or vendor endpoints.
 - **Tamper-Evident Run Logs**: Local audit log of all model calls, context loads, and review actions.
@@ -33,3 +33,19 @@ The following capabilities are **disabled by default** to minimize attack surfac
 ## 3. Client Onboarding & Deployment Note
 
 Client teams are **not** expected to self-install or configure developer tools during discovery. Environment setup, profile configuration, acceptance testing, and handover documentation are fully scoped as part of the Conviction Studio workflow sprint engagement.
+
+## 4. Sensitivity Configuration
+
+Each engagement must provide `.quiver/sensitivity.json` before model work
+starts. Copy `sensitivity.example.json` as a starting point and replace its
+patterns and endpoints with the engagement-approved values. The finance
+profile defaults to local-only routing; missing, malformed, or invalid
+configuration blocks the model call rather than sending content unclassified.
+
+Set `QUIVER_PROFILE=finance-client` when launching Quiver. This enables the
+consent gate by default, so the user explicitly approves the context and
+endpoint before each model call. `QUIVER_CONSENT_GATE=0` is reserved for
+controlled development or test runs.
+
+For background operation, `quiver daemon install` uses macOS launchd or
+Windows Task Scheduler. Linux service installation is out of scope.

@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { existsSync } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
@@ -21,6 +22,11 @@ let officeCliPath: string | null | undefined;
 
 async function findOfficeCli(): Promise<string | null> {
   if (officeCliPath !== undefined) return officeCliPath;
+  const configured = process.env.QUIVER_OFFICECLI_PATH?.trim();
+  if (configured) {
+    officeCliPath = existsSync(configured) ? configured : findBinary(configured);
+    return officeCliPath;
+  }
   officeCliPath = findBinary("officecli");
   return officeCliPath;
 }
@@ -35,51 +41,70 @@ function runOfficeCli(
   return new Promise(async (resolve) => {
     const binary = await findOfficeCli();
     if (!binary) {
+      const installHint =
+        process.platform === "win32"
+          ? "Install the official Windows binary (PowerShell installer or Scoop): https://github.com/iOfficeAI/OfficeCLI"
+          : "Install it with: curl -fsSL https://d.officecli.ai/install.sh | bash";
       resolve({
         success: false,
         stdout: "",
-        stderr:
-          "OfficeCLI is not installed. Install it with: curl -fsSL https://d.officecli.ai/install.sh | bash",
+        stderr: `OfficeCLI is not installed. ${installHint} You can also set QUIVER_OFFICECLI_PATH.`,
         exitCode: 127,
       });
       return;
     }
 
     const maxBuffer = 1024 * 1024 * 10; // 10MB
+    const maxAttempts = process.platform === "win32" ? 3 : 1;
+    const lockPattern =
+      /being used by another process|sharing violation|access is denied|file is locked/i;
 
-    execFile(
-      binary,
-      args,
-      {
-        maxBuffer,
-        cwd: cwd || process.cwd(),
-        timeout: timeoutMs || 30000,
-      },
-      (error, stdout, stderr) => {
-        const exitCode = error
-          ? typeof error.code === "number"
-            ? error.code
-            : 1
-          : 0;
-        const result: OfficeCliResult = {
-          success: exitCode === 0,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          exitCode,
-        };
+    const attempt = (attemptNumber: number): void => {
+      execFile(
+        binary,
+        args,
+        {
+          maxBuffer,
+          cwd: cwd || process.cwd(),
+          timeout: timeoutMs || 30000,
+        },
+        (error, stdout, stderr) => {
+          const exitCode = error
+            ? typeof error.code === "number"
+              ? error.code
+              : 1
+            : 0;
+          const result: OfficeCliResult = {
+            success: exitCode === 0,
+            stdout: stdout.trim(),
+            stderr: stderr.trim(),
+            exitCode,
+          };
 
-        // Try to parse JSON output if --json was passed
-        if (args.includes("--json") && stdout) {
-          try {
-            result.json = JSON.parse(stdout);
-          } catch {
-            // Not JSON, leave as text
+          // OneDrive/SharePoint sync can briefly hold a document lock.
+          if (
+            !result.success &&
+            attemptNumber < maxAttempts &&
+            lockPattern.test(`${result.stderr}\n${result.stdout}`)
+          ) {
+            setTimeout(() => attempt(attemptNumber + 1), 250 * attemptNumber);
+            return;
           }
-        }
 
-        resolve(result);
-      },
-    );
+          // Try to parse JSON output if --json was passed
+          if (args.includes("--json") && stdout) {
+            try {
+              result.json = JSON.parse(stdout);
+            } catch {
+              // Not JSON, leave as text
+            }
+          }
+
+          resolve(result);
+        },
+      );
+    };
+    attempt(1);
   });
 }
 
@@ -103,6 +128,8 @@ export const tool: Tool = {
     "Supports creating blank documents, adding elements (paragraphs, tables, slides, cells, shapes, comments), " +
     "modifying properties, viewing content, batch operations, and template merging. " +
     "No Microsoft Office installation required. Use this tool when the user needs Word, Excel, or PowerPoint documents.\n\n" +
+    "For quantitative or source-backed deliverables, pair this tool with the evidence tool: register inputs and claims, " +
+    "validate the evidence companion, and do not present the output as final before the review gates pass.\n\n" +
     "Key capabilities:\n" +
     "- Word comments: add comments to paragraphs/runs with `action: 'add', parent: '/body/p[1]', type: 'comment', props: {text: '...', author: '...'}`. " +
     "Query with `action: 'query', selector: 'comment'`. Get with `action: 'get', path: '/comments/comment[1]'`. " +
@@ -286,6 +313,21 @@ export const tool: Tool = {
     // ─── Validate file path for all other actions ────────────────────
     const pathError = validateFilePath(file);
     if (pathError) return `Error: ${pathError}`;
+
+    // OneDrive/SharePoint conflict copies are safer than an implicit
+    // overwrite. On Windows, creating or merging over an existing deliverable
+    // requires an explicit force property after the user has reviewed it.
+    if (
+      process.platform === "win32" &&
+      (action === "create" || action === "merge") &&
+      existsSync(file) &&
+      props?.force !== "true"
+    ) {
+      return (
+        `Error: refusing to overwrite existing Office file '${file}' on Windows. ` +
+        "Review the existing deliverable and set props.force='true' to replace it."
+      );
+    }
 
     // ─── Build CLI args based on action ──────────────────────────────
     const cliArgs: string[] = [];

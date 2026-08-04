@@ -14,7 +14,10 @@
  * metadata (vendor, dataset, timestamp, API ref) that feeds lineage tags.
  *
  * The firm brings its own credentials. Quiver provides connector code; the
- * firm provides API keys. Quiver is not a data reseller.
+ * firm provides API keys. Connector implementations should resolve credentials
+ * with `resolveConnectorSecretSync(name)`, using
+ * `QUIVER_CONNECTOR_<NAME>_API_KEY` in the OS credential store first and the
+ * same environment variable only as a fallback. Quiver is not a data reseller.
  *
  * Sensitivity routing applies to data calls: a connector call that sends a
  * company name to an external API is a remote call — it goes through the same
@@ -34,6 +37,7 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import { createHash } from "crypto";
 
 // ─── Common schemas ────────────────────────────────────────────────────
 
@@ -67,6 +71,11 @@ export interface SearchResult {
   description?: string;
   dataType: ConnectorDataType;
   provenance: Provenance;
+}
+
+export interface ConnectorSearchError {
+  connector: string;
+  error: string;
 }
 
 // ─── Connector interface ───────────────────────────────────────────────
@@ -141,14 +150,19 @@ export class ConnectorRegistry {
     }));
   }
 
+  /** Return connector instances for policy preflight before an external call. */
+  getAll(): DataConnector[] {
+    return Array.from(this.connectors.values());
+  }
+
   /**
    * Search across all connectors (or a specific one).
    */
   async search(
     query: string,
     connectorName?: string,
-  ): Promise<Array<SearchResult & { connector: string }>> {
-    const results: Array<SearchResult & { connector: string }> = [];
+  ): Promise<Array<(SearchResult & { connector: string }) | ConnectorSearchError>> {
+    const results: Array<(SearchResult & { connector: string }) | ConnectorSearchError> = [];
     const connectors = connectorName
       ? [this.connectors.get(connectorName)].filter(Boolean)
       : Array.from(this.connectors.values());
@@ -160,8 +174,12 @@ export class ConnectorRegistry {
         for (const r of connectorResults) {
           results.push({ ...r, connector: connector.name });
         }
-      } catch (err) {
-        // Silently skip failed connectors — one vendor being down shouldn't block others
+      } catch (err: any) {
+        // Preserve the distinction between no results and a vendor outage.
+        results.push({
+          connector: connector.name,
+          error: err?.message || String(err),
+        });
       }
     }
 
@@ -217,8 +235,9 @@ export class ConnectorRegistry {
     identifier: string,
     fields?: string[],
   ): string {
-    const fieldStr = fields ? fields.sort().join(",") : "all";
-    return `${connector}__${identifier}__${fieldStr}`;
+    const fieldStr = fields ? [...fields].sort().join(",") : "all";
+    const logicalKey = `${connector}\u0000${identifier}\u0000${fieldStr}`;
+    return `${connector}__${createHash("sha256").update(logicalKey).digest("hex")}`;
   }
 
   private readCache(key: string): ConnectorResult | null {

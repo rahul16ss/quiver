@@ -1,10 +1,10 @@
 /**
  * Scratchpad helpers — isolated copy-on-write workspace for the checker.
  *
- * Builds a temp directory with copies of src/, tests/, ui/, docs/, config
- * files, AND node_modules — so the checker can run `npx tsx tests/run_tests.ts`
- * with all dependencies available. The copy (not a symlink) ensures the
- * checker can never mutate the real workspace's dependencies.
+ * Builds a temp directory with copies of the workspace and node_modules so
+ * the checker can run `npx tsx tests/run_tests.ts` without mutating the real
+ * workspace's dependencies. A missing dependency is a visible checker
+ * infrastructure failure, never an approval.
  */
 
 import * as path from "path";
@@ -56,8 +56,8 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
       { recursive: true },
     );
   } catch {
-    // If node_modules copy fails (e.g. too large), the checker will
-    // fail-open (0/0 → approve) rather than deadlock.
+    // The checker will report an infrastructure failure if dependencies are
+    // unavailable; it must not convert this into approval.
   }
 
   return scratchDir;

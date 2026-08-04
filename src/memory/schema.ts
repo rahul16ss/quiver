@@ -9,7 +9,7 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { getProjectMemoryDir } from "../paths.js";
-import { atomicWrite } from "../fs/atomic_write.js";
+import { atomicWrite, CorruptStateError } from "../fs/atomic_write.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────
 
@@ -48,6 +48,20 @@ export interface MemoryFact {
  */
 function getFactsPath(): string {
   return path.join(getProjectMemoryDir(), "facts.jsonl");
+}
+
+// Memory facts are shared by workflow harvesters and interactive review
+// actions. Serialize read-modify-write operations so two completions cannot
+// overwrite one another even though each individual write is atomic.
+let memoryWriteQueue: Promise<void> = Promise.resolve();
+
+function enqueueMemoryWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const next = memoryWriteQueue.then(operation, operation);
+  memoryWriteQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
 }
 
 /**
@@ -89,9 +103,18 @@ export function createMemoryFact(params: {
  * Append a memory fact to the facts.jsonl file.
  */
 export async function appendMemoryFact(fact: MemoryFact): Promise<void> {
-  const factsPath = getFactsPath();
-  await fs.mkdir(path.dirname(factsPath), { recursive: true });
-  await fs.appendFile(factsPath, JSON.stringify(fact) + "\n", "utf8");
+  await enqueueMemoryWrite(async () => {
+    const factsPath = getFactsPath();
+    await fs.mkdir(path.dirname(factsPath), { recursive: true });
+    let existing = "";
+    try {
+      existing = await fs.readFile(factsPath, "utf8");
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    const prefix = existing && !existing.endsWith("\n") ? `${existing}\n` : existing;
+    await atomicWrite(factsPath, `${prefix}${JSON.stringify(fact)}\n`);
+  });
 }
 
 /**
@@ -99,15 +122,28 @@ export async function appendMemoryFact(fact: MemoryFact): Promise<void> {
  */
 export async function readAllMemoryFacts(): Promise<MemoryFact[]> {
   const factsPath = getFactsPath();
+  let content: string;
   try {
-    const content = await fs.readFile(factsPath, "utf8");
-    return content
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line) as MemoryFact);
-  } catch {
-    return [];
+    content = await fs.readFile(factsPath, "utf8");
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
   }
+  const facts: MemoryFact[] = [];
+  for (const [index, line] of content
+    .split("\n")
+    .filter((item) => item.trim())
+    .entries()) {
+    try {
+      facts.push(JSON.parse(line) as MemoryFact);
+    } catch {
+      throw new CorruptStateError(
+        factsPath,
+        `invalid JSON on facts line ${index + 1}`,
+      );
+    }
+  }
+  return facts;
 }
 
 /**
@@ -134,14 +170,16 @@ export async function updateMemoryFact(
   factId: string,
   updates: Partial<MemoryFact>,
 ): Promise<void> {
-  const facts = await readAllMemoryFacts();
-  const updated = facts.map((f) =>
-    f.id === factId ? { ...f, ...updates } : f,
-  );
+  await enqueueMemoryWrite(async () => {
+    const facts = await readAllMemoryFacts();
+    const updated = facts.map((f) =>
+      f.id === factId ? { ...f, ...updates } : f,
+    );
 
-  const factsPath = getFactsPath();
-  const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
-  await atomicWrite(factsPath, content);
+    const factsPath = getFactsPath();
+    const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
+    await atomicWrite(factsPath, content);
+  });
 }
 
 /**
@@ -162,30 +200,34 @@ export async function editMemoryFact(factId: string, content: string): Promise<v
  * Delete a memory fact from the facts.jsonl file.
  */
 export async function deleteMemoryFact(factId: string): Promise<void> {
-  const facts = await readAllMemoryFacts();
-  const filtered = facts.filter((f) => f.id !== factId);
+  await enqueueMemoryWrite(async () => {
+    const facts = await readAllMemoryFacts();
+    const filtered = facts.filter((f) => f.id !== factId);
 
-  const factsPath = getFactsPath();
-  const content = filtered.map((f) => JSON.stringify(f)).join("\n");
-  await atomicWrite(factsPath, content + (content ? "\n" : ""));
+    const factsPath = getFactsPath();
+    const content = filtered.map((f) => JSON.stringify(f)).join("\n");
+    await atomicWrite(factsPath, content + (content ? "\n" : ""));
+  });
 }
 
 /**
  * Update the last_used_at and increment hit_count for a memory fact.
  */
 export async function touchMemoryFact(factId: string): Promise<void> {
-  const facts = await readAllMemoryFacts();
-  const updated = facts.map((f) =>
-    f.id === factId
-      ? {
-          ...f,
-          last_used_at: new Date().toISOString(),
-          hit_count: f.hit_count + 1,
-        }
-      : f,
-  );
+  await enqueueMemoryWrite(async () => {
+    const facts = await readAllMemoryFacts();
+    const updated = facts.map((f) =>
+      f.id === factId
+        ? {
+            ...f,
+            last_used_at: new Date().toISOString(),
+            hit_count: f.hit_count + 1,
+          }
+        : f,
+    );
 
-  const factsPath = getFactsPath();
-  const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
-  await atomicWrite(factsPath, content);
+    const factsPath = getFactsPath();
+    const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";
+    await atomicWrite(factsPath, content);
+  });
 }

@@ -8,9 +8,7 @@
 
 import { promises as fs } from "fs";
 import * as fsSync from "fs";
-import * as path from "path";
-import * as os from "os";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -23,18 +21,6 @@ export interface CredentialEntry {
 export type KeychainBackend = "macos-keychain" | "windows-credential-manager" | "linux-secret-service" | "none";
 
 // ─── Backend Detection ──────────────────────────────────────────────
-
-// ─── Shell Escaping ───────────────────────────────────────────────────
-// Service/account values are interpolated into `security`/`cmdkey` shell
-// commands. They must be escaped for the surrounding quote context so a
-// crafted account name can never break out and inject commands (US-1.3).
-
-/** Escape a value for safe interpolation inside a double-quoted shell arg. */
-function shEscapeDouble(value: string): string {
-  // Escape backslash, double quote, backtick, and dollar so the value cannot
-  // terminate the quoted context or trigger command/arithmetic expansion.
-  return String(value).replace(/\\/g, "\\\\").replace(/["`$]/g, "\\$&");
-}
 
 /**
  * Detect which OS credential store backend is available.
@@ -87,17 +73,28 @@ export function isKeychainAvailable(): boolean {
 async function macosSet(service: string, account: string, password: string): Promise<void> {
   // Delete existing entry first (security add-generic-password fails if it exists)
   try {
-    execSync(`security delete-generic-password -s "${shEscapeDouble(service)}" -a "${shEscapeDouble(account)}"`, { stdio: "pipe" });
+    execFileSync("security", [
+      "delete-generic-password",
+      "-s",
+      service,
+      "-a",
+      account,
+    ], { stdio: "pipe" });
   } catch {
     // Entry doesn't exist yet — fine
   }
 
   // Add the new entry
-  const escapedPassword = password.replace(/'/g, "'\\''");
-  execSync(
-    `security add-generic-password -s "${shEscapeDouble(service)}" -a "${shEscapeDouble(account)}" -w '${escapedPassword}' -U`,
-    { stdio: "pipe" },
-  );
+  execFileSync("security", [
+    "add-generic-password",
+    "-s",
+    service,
+    "-a",
+    account,
+    "-w",
+    password,
+    "-U",
+  ], { stdio: "pipe" });
 }
 
 /**
@@ -105,11 +102,15 @@ async function macosSet(service: string, account: string, password: string): Pro
  */
 async function macosGet(service: string, account: string): Promise<string | null> {
   try {
-    const result = execSync(
-      `security find-generic-password -s "${shEscapeDouble(service)}" -a "${shEscapeDouble(account)}" -w`,
-      { stdio: "pipe", encoding: "utf8" },
-    );
-    return result.trim();
+    const result = execFileSync("security", [
+      "find-generic-password",
+      "-s",
+      service,
+      "-a",
+      account,
+      "-w",
+    ], { stdio: "pipe", encoding: "utf8" });
+    return removeCommandTrailingNewline(result);
   } catch {
     return null;
   }
@@ -120,7 +121,13 @@ async function macosGet(service: string, account: string): Promise<string | null
  */
 async function macosDelete(service: string, account: string): Promise<void> {
   try {
-    execSync(`security delete-generic-password -s "${shEscapeDouble(service)}" -a "${shEscapeDouble(account)}"`, { stdio: "pipe" });
+    execFileSync("security", [
+      "delete-generic-password",
+      "-s",
+      service,
+      "-a",
+      account,
+    ], { stdio: "pipe" });
   } catch {
     // Entry doesn't exist — fine
   }
@@ -128,16 +135,36 @@ async function macosDelete(service: string, account: string): Promise<void> {
 
 // ─── Windows Credential Manager ─────────────────────────────────────
 
+function windowsTarget(service: string, account: string): string {
+  if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(account)) {
+    throw new Error("Credential key contains unsupported characters");
+  }
+  return `${service}:${account}`;
+}
+
+function encodePowerShell(script: string): string {
+  return Buffer.from(script, "utf16le").toString("base64");
+}
+
+function removeCommandTrailingNewline(value: string): string {
+  return value.replace(/\r?\n$/, "");
+}
+
 /**
  * Store a credential in Windows Credential Manager using cmdkey.
+ *
+ * Each Quiver credential gets its own target. Using one target for every
+ * account silently overwrote earlier credentials and made keychain hydration
+ * unreliable on Windows.
  */
 async function windowsSet(service: string, account: string, password: string): Promise<void> {
-  // cmdkey reliably stores credentials; values are escaped for the shell context.
+  const target = windowsTarget(service, account);
   try {
-    execSync(
-      `cmdkey /add:"${shEscapeDouble(service)}" /user:"${shEscapeDouble(account)}" /pass:"${shEscapeDouble(password)}"`,
-      { stdio: "pipe" },
-    );
+    execFileSync("cmdkey", [
+      `/add:${target}`,
+      `/user:${account}`,
+      `/pass:${password}`,
+    ], { stdio: "pipe" });
   } catch (e) {
     throw new Error(`Failed to store credential in Windows Credential Manager: ${e}`);
   }
@@ -145,34 +172,85 @@ async function windowsSet(service: string, account: string, password: string): P
 
 /**
  * Retrieve a credential from Windows Credential Manager.
+ *
+ * `cmdkey /list` intentionally never returns passwords, so this uses the
+ * documented CredReadW API through a small, encoded PowerShell bridge. The
+ * encoded command avoids shell interpolation of a credential value.
  */
-async function windowsGet(service: string, account: string): Promise<string | null> {
-  // cmdkey /list deliberately does NOT display stored passwords (by design).
-  // Retrieval requires the Win32 CredRead API via PInvoke. We invoke CredRead
-  // and decode the CREDENTIAL_BLOB; if the PInvoke is unavailable (restricted
-  // policy / missing entry) we return null rather than silently returning the
-  // wrong value.
-  const script =
-    "$sig='[DllImport(\"advapi32.dll\", CharSet=CharSet.Unicode, SetLastError=true)]public static extern bool CredReadW(string t,uint f,uint c,out IntPtr p);[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]public struct CRED{public uint Flags;public uint Type;public string TargetName;public string Comment;public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;public uint CredentialBlobSize;public IntPtr CredentialBlob;public uint Persist;public uint AttributeCount;public IntPtr Attributes;public string TargetAlias;public string UserName;}'; " +
-    "Add-Type -Namespace QC -Name Cred -MemberDefinition $sig; " +
-    "$p=[IntPtr]::Zero; if(-not [QC.Cred]::CredReadW('" + shEscapeDouble(service) + "',1,0,[ref]$p)){return}; " +
-    "$m=[System.Runtime.InteropServices.Marshal]; $c=$m::PtrToStructure($p,[QC.Cred+CRED]); " +
-    "$blob=$m::PtrToStringUni($c.CredentialBlob,$c.CredentialBlobSize/2); $m::Free($p); $blob";
+function windowsRead(service: string, account: string): string | null {
+  let target: string;
   try {
-    const result = execSync(`powershell -NoProfile -Command "${script}"`, { stdio: "pipe", encoding: "utf8" });
-    const trimmed = result.trim();
-    return trimmed ? trimmed : null;
+    target = windowsTarget(service, account);
+  } catch {
+    return null;
+  }
+  const psTarget = target.replace(/'/g, "''");
+  const script = `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class QuiverCredential {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public struct CREDENTIAL {
+    public uint Flags;
+    public uint Type;
+    public IntPtr TargetName;
+    public IntPtr Comment;
+    public long LastWritten;
+    public uint CredentialBlobSize;
+    public IntPtr CredentialBlob;
+    public uint Persist;
+    public uint AttributeCount;
+    public IntPtr Attributes;
+    public IntPtr TargetAlias;
+    public IntPtr UserName;
+  }
+  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern bool CredRead(string target, uint type, uint flags, out IntPtr credential);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  public static extern bool CredFree(IntPtr credential);
+}
+'@
+$ptr = [IntPtr]::Zero
+if ([QuiverCredential]::CredRead('${psTarget}', 1, 0, [ref]$ptr)) {
+  try {
+    $credential = [Runtime.InteropServices.Marshal]::PtrToStructure(
+      $ptr, [type][QuiverCredential+CREDENTIAL]
+    )
+    if ($credential.CredentialBlobSize -gt 0) {
+      [Runtime.InteropServices.Marshal]::PtrToStringUni(
+        $credential.CredentialBlob, [int]($credential.CredentialBlobSize / 2)
+      )
+    }
+  } finally {
+    [QuiverCredential]::CredFree($ptr) | Out-Null
+  }
+}
+`;
+  try {
+    const result = execFileSync("powershell", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodePowerShell(script),
+    ], { stdio: "pipe", encoding: "utf8" });
+    const value = removeCommandTrailingNewline(result);
+    return value || null;
   } catch {
     return null;
   }
 }
 
-/**
- * Delete a credential from Windows Credential Manager.
- */
-async function windowsDelete(service: string): Promise<void> {
+async function windowsGet(service: string, account: string): Promise<string | null> {
+  return windowsRead(service, account);
+}
+
+/** Delete one credential from Windows Credential Manager. */
+async function windowsDelete(service: string, account: string): Promise<void> {
   try {
-    execSync(`cmdkey /delete:"${service}"`, { stdio: "pipe" });
+    execFileSync("cmdkey", [`/delete:${windowsTarget(service, account)}`], {
+      stdio: "pipe",
+    });
   } catch {
     // Entry doesn't exist — fine
   }
@@ -184,11 +262,15 @@ async function windowsDelete(service: string): Promise<void> {
  * Store a credential in Linux Secret Service using secret-tool.
  */
 async function linuxSet(service: string, account: string, password: string): Promise<void> {
-  const escapedPassword = password.replace(/'/g, "'\\''");
-  execSync(
-    `echo '${escapedPassword}' | secret-tool store --label="${service}" service "${service}" account "${account}"`,
-    { stdio: "pipe" },
-  );
+  execFileSync("secret-tool", [
+    "store",
+    "--label",
+    service,
+    "service",
+    service,
+    "account",
+    account,
+  ], { input: password, stdio: ["pipe", "pipe", "pipe"] });
 }
 
 /**
@@ -196,11 +278,14 @@ async function linuxSet(service: string, account: string, password: string): Pro
  */
 async function linuxGet(service: string, account: string): Promise<string | null> {
   try {
-    const result = execSync(
-      `secret-tool lookup service "${service}" account "${account}"`,
-      { stdio: "pipe", encoding: "utf8" },
-    );
-    return result.trim();
+    const result = execFileSync("secret-tool", [
+      "lookup",
+      "service",
+      service,
+      "account",
+      account,
+    ], { stdio: "pipe", encoding: "utf8" });
+    return removeCommandTrailingNewline(result);
   } catch {
     return null;
   }
@@ -211,7 +296,13 @@ async function linuxGet(service: string, account: string): Promise<string | null
  */
 async function linuxDelete(service: string, account: string): Promise<void> {
   try {
-    execSync(`secret-tool clear service "${service}" account "${account}"`, { stdio: "pipe" });
+    execFileSync("secret-tool", [
+      "clear",
+      "service",
+      service,
+      "account",
+      account,
+    ], { stdio: "pipe" });
   } catch {
     // Entry doesn't exist — fine
   }
@@ -291,29 +382,28 @@ export function getCredentialSync(key: string): string | null {
   try {
     switch (backend) {
       case "macos-keychain": {
-        const result = execSync(
-          `security find-generic-password -s "${SERVICE_NAME}" -a "${key}" -w`,
-          { stdio: "pipe", encoding: "utf8" },
-        );
-        return result.trim();
+        const result = execFileSync("security", [
+          "find-generic-password",
+          "-s",
+          SERVICE_NAME,
+          "-a",
+          key,
+          "-w",
+        ], { stdio: "pipe", encoding: "utf8" });
+        return removeCommandTrailingNewline(result);
       }
       case "windows-credential-manager": {
-        const script =
-          "$sig='[DllImport(\"advapi32.dll\", CharSet=CharSet.Unicode, SetLastError=true)]public static extern bool CredReadW(string t,uint f,uint c,out IntPtr p);[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]public struct CRED{public uint Flags;public uint Type;public string TargetName;public string Comment;public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;public uint CredentialBlobSize;public IntPtr CredentialBlob;public uint Persist;public uint AttributeCount;public IntPtr Attributes;public string TargetAlias;public string UserName;}'; " +
-          "Add-Type -Namespace QC -Name Cred -MemberDefinition $sig; " +
-          "$p=[IntPtr]::Zero; if(-not [QC.Cred]::CredReadW('" + shEscapeDouble(SERVICE_NAME) + "',1,0,[ref]$p)){return}; " +
-          "$m=[System.Runtime.InteropServices.Marshal]; $c=$m::PtrToStructure($p,[QC.Cred+CRED]); " +
-          "$blob=$m::PtrToStringUni($c.CredentialBlob,$c.CredentialBlobSize/2); $m::Free($p); $blob";
-        const result = execSync(`powershell -NoProfile -Command "${script}"`, { stdio: "pipe", encoding: "utf8" });
-        const trimmed = result.trim();
-        return trimmed ? trimmed : null;
+        return windowsRead(SERVICE_NAME, key);
       }
       case "linux-secret-service": {
-        const result = execSync(
-          `secret-tool lookup service "${SERVICE_NAME}" account "${key}"`,
-          { stdio: "pipe", encoding: "utf8" },
-        );
-        return result.trim();
+        const result = execFileSync("secret-tool", [
+          "lookup",
+          "service",
+          SERVICE_NAME,
+          "account",
+          key,
+        ], { stdio: "pipe", encoding: "utf8" });
+        return removeCommandTrailingNewline(result);
       }
       default:
         return null;
@@ -325,14 +415,24 @@ export function getCredentialSync(key: string): string | null {
 
 /**
  * Resolve a secret value with explicit-consent ordering (US-1.3):
- *   1. process.env[ref] (env / dotenv fallback — already 0600 + gitignored)
- *   2. OS credential store (keychain preferred)
+ *   1. OS credential store (keychain preferred)
+ *   2. process.env[ref] (env / dotenv fallback — already 0600 + gitignored)
  *   3. "" (never read from plaintext config.json)
  */
 export function resolveSecretSync(ref: string): string {
-  if (process.env[ref]) return process.env[ref];
   const kc = getCredentialSync(ref);
-  return kc ?? "";
+  return kc || process.env[ref] || "";
+}
+
+/** Resolve an engagement-owned connector credential keychain-first. */
+export function resolveConnectorSecretSync(connectorName: string): string {
+  const normalized = connectorName
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!normalized) return "";
+  return resolveSecretSync(`QUIVER_CONNECTOR_${normalized}_API_KEY`);
 }
 
 /**
@@ -349,7 +449,7 @@ export async function deleteCredential(key: string): Promise<void> {
       break;
 
     case "windows-credential-manager":
-      await windowsDelete(SERVICE_NAME);
+      await windowsDelete(SERVICE_NAME, key);
       break;
 
     case "linux-secret-service":
@@ -382,8 +482,12 @@ export async function migrateEnvToKeychain(envPath: string): Promise<{ migrated:
   const newLines: string[] = [];
 
   for (const line of lines) {
-    const match = line.match(/^([A-Z_]+)\s*=\s*(.+)$/);
-    if (match && secretKeys.includes(match[1])) {
+    const match = line.match(/^([A-Z0-9_]+)\s*=\s*(.+)$/);
+    if (
+      match &&
+      (secretKeys.includes(match[1]) ||
+        /^QUIVER_CONNECTOR_[A-Z0-9_]+_API_KEY$/.test(match[1]))
+    ) {
       const key = match[1];
       const value = match[2].replace(/^["']|["']$/g, "");
 

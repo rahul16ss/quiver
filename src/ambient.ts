@@ -1,5 +1,5 @@
 /**
- * Ambient Engine — self-healing + goal-loop as harness characteristics.
+ * Goal-loop Engine — self-healing + goal-loop as harness characteristics.
  *
  * Self-healing and goal-seeking are NOT slash commands; they are always-on
  * behaviors of the harness. This engine is the *completion gate* of the agent
@@ -44,7 +44,7 @@ export interface VerifyResult {
   failedChecks: string[];
 }
 
-export class AmbientEngine {
+export class GoalLoopEngine {
   private healRounds = 0;
 
   constructor(
@@ -83,8 +83,8 @@ export class AmbientEngine {
    * parallel tsc/test pipeline. Returns the verdict mapped to a result.
    *
    * If the checker infrastructure itself throws (e.g. scratchpad cannot be
-   * built in a restricted environment), we treat it as "could not verify" and
-   * return healthy=true so the loop does not spin on an infra failure.
+   * built in a restricted environment), verification is explicitly failed.
+   * The maker-checker must never convert "could not verify" into approval.
    */
   async verify(opts: { cwd?: string; changeHash?: string }): Promise<VerifyResult> {
     const cwd = opts.cwd ?? process.cwd();
@@ -96,18 +96,21 @@ export class AmbientEngine {
       res = await runChecker(changeHash, cwd);
     } catch (err: any) {
       return {
-        healthy: true, // don't heal-loop on infra failure
-        diagnostics: `(ambient verify skipped: checker unavailable — ${err?.message ?? err})`,
-        verdict: "approve",
+        healthy: false,
+        diagnostics: `(ambient verify failed: checker unavailable — ${err?.message ?? err})`,
+        verdict: "reject",
         total: 0,
-        failed: 0,
-        failedChecks: [],
+        failed: 1,
+        failedChecks: ["CHECKER-INFRASTRUCTURE"],
       };
     }
-    const healthy = res.verdict === "approve" && res.failed === 0;
-    const failedList = res.failedChecks.length
-      ? res.failedChecks.join(", ")
-      : "none";
+    const notVerified = res.total === 0;
+    const failedChecks = notVerified
+      ? [...res.failedChecks, "CHECKER-EMPTY-RESULT"]
+      : res.failedChecks;
+    const healthy =
+      !notVerified && res.verdict === "approve" && res.failed === 0;
+    const failedList = failedChecks.length ? failedChecks.join(", ") : "none";
     const diagnostics =
       `Maker-checker completion verdict: ${res.verdict.toUpperCase()} ` +
       `(${res.passed}/${res.total} acceptance criteria met).\n` +
@@ -116,10 +119,10 @@ export class AmbientEngine {
     return {
       healthy,
       diagnostics,
-      verdict: res.verdict,
+      verdict: notVerified ? "reject" : res.verdict,
       total: res.total,
-      failed: res.failed,
-      failedChecks: res.failedChecks,
+      failed: notVerified ? Math.max(1, res.failed) : res.failed,
+      failedChecks,
     };
   }
 
@@ -130,12 +133,13 @@ export class AmbientEngine {
    */
   makeHealDirective(res: VerifyResult, round: number, maxRounds: number): string {
     return (
-      `Ambient self-heal (round ${round}/${maxRounds}): the harness ran the ` +
-      `maker-checker on your completed work and it is NOT yet approved ` +
+      `Goal-loop revision (round ${round}/${maxRounds}): the VP checker ran on ` +
+      `the Associate's completed work and it is NOT yet approved ` +
       `(${res.failed}/${res.total} acceptance criteria failed). Examine the ` +
-      `diagnostics, find the root cause, modify the source, and verify. Do NOT ` +
-      `declare completion until the checker approves. If the same failure ` +
-      `persists, reconsider your approach rather than repeating the same change.\n\n` +
+      `diagnostics, find the root cause, revise the relevant draft or source ` +
+      `artifact, and verify. Do NOT declare completion until the checker ` +
+      `approves. If the same failure persists, reconsider the approach rather ` +
+      `than repeating the same change.\n\n` +
       res.diagnostics
     );
   }
@@ -146,3 +150,7 @@ export class AmbientEngine {
     return `ambient: ON (self-heal+goal-loop via maker-checker, max ${this.maxRounds} heal rounds)`;
   }
 }
+
+// Compatibility export for integrations written before the distinction
+// between the workflow ambient services and the self-healing goal loop.
+export { GoalLoopEngine as AmbientEngine };

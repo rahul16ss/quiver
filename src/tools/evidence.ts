@@ -16,9 +16,14 @@
  */
 
 import { z } from "zod";
+import { AsyncLocalStorage } from "async_hooks";
 import path from "path";
 import { Tool } from "../registry.js";
-import { EvidenceTracker } from "../evidence/tracker.js";
+import { config } from "../config.js";
+import {
+  EvidenceFinalizationError,
+  EvidenceTracker,
+} from "../evidence/tracker.js";
 import type {
   SourceRecord,
   ClaimRecord,
@@ -26,17 +31,67 @@ import type {
   Relationship,
   ReviewStatus,
 } from "../evidence/model.js";
+import type { Provenance } from "../connectors/framework.js";
 
-// Singleton tracker — one per agent session
-let sessionTracker: EvidenceTracker | null = null;
+const trackerContext = new AsyncLocalStorage<EvidenceTracker>();
 
 export function getEvidenceTracker(): EvidenceTracker {
-  if (!sessionTracker) sessionTracker = new EvidenceTracker();
-  return sessionTracker;
+  const tracker = trackerContext.getStore();
+  if (!tracker) {
+    throw new Error(
+      "Evidence tool requires an active agent session; direct unscoped execution is blocked.",
+    );
+  }
+  return tracker;
+}
+
+export function withEvidenceTracker<T>(
+  tracker: EvidenceTracker,
+  callback: () => T,
+): T {
+  return trackerContext.run(tracker, callback);
 }
 
 export function resetEvidenceTracker(): void {
-  sessionTracker = null;
+  trackerContext.getStore()?.reset();
+}
+
+/**
+ * Register provenance from an external data call without making connector
+ * plugins depend on the EvidenceTracker's storage details. Calls outside an
+ * active agent session are reported as unregistered rather than silently
+ * pretending that lineage exists.
+ */
+export function registerConnectorProvenance(
+  provenance: Provenance,
+  sensitivity: string,
+): boolean {
+  try {
+    const sourceId = [
+      "vendor",
+      provenance.vendor,
+      provenance.dataset,
+      provenance.apiRef,
+      provenance.timestamp,
+    ]
+      .join(":")
+      .replace(/[^a-zA-Z0-9:_-]/g, "_");
+    return getEvidenceTracker().registerSource({
+      source_id: sourceId,
+      source_type: "vendor_export",
+      title: `${provenance.vendor} ${provenance.dataset}`,
+      file: `vendor://${provenance.vendor}/${provenance.dataset}`,
+      as_of: provenance.timestamp,
+      location: {
+        url: provenance.url,
+        description: `External connector reference: ${provenance.apiRef}`,
+      },
+      sensitivity,
+      approved: true,
+    }).registered;
+  } catch {
+    return false;
+  }
 }
 
 export const tool: Tool = {
@@ -46,7 +101,8 @@ export const tool: Tool = {
     "Use this when drafting Office documents (Word/Excel/PowerPoint) to ensure every " +
     "quantitative figure is traceable to a source. Call 'register_source' for each input " +
     "file, 'record_claim' for each key figure in the document, and 'finalize' when the " +
-    "document is complete to write Evidence.json alongside it.",
+    "document is complete to write Evidence.json alongside it. Finalization validates " +
+    "the evidence companion; a missing or invalid record is a visible failure, not approval.",
   parameters: z.object({
     action: z
       .enum([
@@ -116,7 +172,7 @@ export const tool: Tool = {
       .boolean()
       .optional()
       .describe(
-        "Whether the source is approved for use. Default true. Used with register_source.",
+        "Whether the source is approved for use. Default false; approval must be explicit. Used with register_source.",
       ),
     excerpt: z
       .string()
@@ -158,7 +214,7 @@ export const tool: Tool = {
       .enum(["verified", "needs_analyst", "flagged", "unresolved"])
       .optional()
       .describe(
-        "Review status for the claim. Used with record_claim or update_claim.",
+        "Review status for the claim. Default needs_analyst; do not imply verification without a real review. Used with record_claim or update_claim.",
       ),
     is_quantitative: z
       .boolean()
@@ -237,7 +293,9 @@ export const tool: Tool = {
           as_of: args.as_of || new Date().toISOString().split("T")[0],
           location,
           sensitivity: args.sensitivity || "public",
-          approved: args.approved !== false,
+          // Source approval is a substantive gate. Missing approval must not
+          // become approval through a convenience default.
+          approved: args.approved === true,
           ...(args.extracted_value
             ? { extracted_value: args.extracted_value }
             : {}),
@@ -300,8 +358,8 @@ export const tool: Tool = {
           claim_id: args.claim_id,
           rendered_text: args.rendered_text,
           source_ids: args.source_ids,
-          relationship: (args.relationship || "sourced") as Relationship,
-          review_status: (args.review_status || "verified") as ReviewStatus,
+          relationship: (args.relationship || "unresolved") as Relationship,
+          review_status: (args.review_status || "needs_analyst") as ReviewStatus,
           reviewer_decision: null,
           is_quantitative: args.is_quantitative !== false,
           ...(args.review_note ? { review_note: args.review_note } : {}),
@@ -342,12 +400,10 @@ export const tool: Tool = {
       }
 
       // ─── reset ─────────────────────────────────────────────────────
-      // H4: the tracker is a process-global singleton. Call reset before
-      // starting a NEW document so the previous document's sources/claims
-      // do not contaminate it (the agent also resets automatically after
-      // finalize, but use this if a document is abandoned mid-draft).
+      // Reset only the current agent session's tracker before starting a new
+      // document. There is no process-global evidence accumulator.
       case "reset": {
-        resetEvidenceTracker();
+        tracker.reset();
         return "✓ Evidence tracker reset — ready for a new document.";
       }
 
@@ -363,8 +419,28 @@ export const tool: Tool = {
       // ─── finalize ───────────────────────────────────────────────────
       case "finalize": {
         tracker.setMetadata({ workflow: args.workflow, company: args.company, title: args.title, subtitle: args.subtitle });
-        const result = tracker.finalize(args.output_dir || "", args.doc_file);
         const docPath = args.doc_file ? path.join(args.output_dir || "", args.doc_file) : args.output_dir || "";
+        let result;
+        try {
+          result = tracker.finalize(args.output_dir || "", args.doc_file, {
+            requireValidEvidence: config.evidenceRequired,
+          });
+        } catch (error) {
+          if (error instanceof EvidenceFinalizationError) {
+            return JSON.stringify({
+              ok: false,
+              action: "finalize",
+              docPath,
+              evidencePath: null,
+              runRecord: null,
+              claims: tracker.getClaims(),
+              sources: tracker.getSources(),
+              validation: error.validation,
+              error: error.message,
+            }, null, 2);
+          }
+          return `Error: Evidence finalization failed: ${String(error)}`;
+        }
         // SPEC §8.1: append a "Lineage & Sources" appendix (endnote form) to the .docx.
         const { appendLineageForTracker } = await import("../document/word_lineage.js");
         const lineageAppendix = await appendLineageForTracker(docPath, tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, review_status: c.review_status, is_quantitative: c.is_quantitative })), tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, file: s.file, location: s.location })));

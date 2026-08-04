@@ -226,7 +226,7 @@ export const tool: Tool = {
     "Extracted facts flow through the same review queue as every other memory fact — the user accepts, edits, or rejects each one via /memory review before it enters active context. " +
     "Uses cadence control (min turns + min minutes since last run) and an incremental index. " +
     "TRANSPARENT: shows exactly what was learned before enqueuing. " +
-    "Use this when you want to learn from past sessions and keep memory up to date automatically.",
+    "Use only when the user or an explicitly configured workflow asks to inspect past sessions; learning never silently changes active context.",
   parameters: z.object({
     action: z
       .enum(["check", "run", "status", "reset"])

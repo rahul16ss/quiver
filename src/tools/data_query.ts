@@ -13,9 +13,8 @@ import type { Tool } from "../registry.js";
 import {
   globalConnectorRegistry,
   loadConnectors,
-  type ConnectorResult,
-  type SearchResult,
 } from "../connectors/framework.js";
+import { registerConnectorProvenance } from "./evidence.js";
 
 let connectorsLoaded = false;
 
@@ -49,6 +48,12 @@ const dataQuerySchema = z.object({
     .array(z.string())
     .optional()
     .describe("Specific fields to fetch (optional, connector-specific)"),
+  data_sensitivity: z
+    .enum(["synthetic", "public", "internal", "confidential", "client-confidential", "mnpi"])
+    .optional()
+    .describe(
+      "Sensitivity of the identifier/query being sent externally. Required as 'public' or 'synthetic' for connectors marked sendsIdentifiers.",
+    ),
 });
 
 export const tool: Tool = {
@@ -56,12 +61,23 @@ export const tool: Tool = {
   description:
     "Query data connectors (SEC EDGAR, FRED, FMP, etc.) for structured financial data. " +
     "Actions: 'list' to see available connectors, 'search' to find entities, 'fetch' to get structured data. " +
-    "Each result carries provenance metadata (vendor, dataset, timestamp, API ref) for lineage tracking.",
+    "Each result carries provenance metadata (vendor, dataset, timestamp, API ref) for lineage tracking. " +
+    "When a connector sends identifiers externally, data_sensitivity must be explicitly public or synthetic and the engagement route must permit the call; confidential and unknown inputs are blocked.",
   parameters: dataQuerySchema,
   async execute(args: z.infer<typeof dataQuerySchema>) {
     await ensureConnectorsLoaded();
 
-    const { action, connector, query, identifier, fields } = args;
+    const { action, connector, query, identifier, fields, data_sensitivity } = args;
+
+    const blockedExternalCall = (connectors: Array<{ name: string; sendsIdentifiers: boolean }>) => {
+      const blocked = connectors
+        .filter((c) => c.sendsIdentifiers)
+        .map((c) => c.name)
+        .filter(() => data_sensitivity !== "public" && data_sensitivity !== "synthetic");
+      return blocked.length > 0
+        ? `External identifier/query blocked for connector(s): ${blocked.join(", ")}. Declare data_sensitivity as public or synthetic only after confirming the engagement permits sending it externally.`
+        : null;
+    };
 
     switch (action) {
       case "list": {
@@ -83,16 +99,26 @@ export const tool: Tool = {
         if (!query) {
           return { content: "Error: 'query' is required for 'search' action." };
         }
+        const connectorInstances = connector
+          ? [globalConnectorRegistry.get(connector)].filter(
+              (item): item is NonNullable<typeof item> => Boolean(item),
+            )
+          : globalConnectorRegistry.getAll();
+        const blocked = blockedExternalCall(connectorInstances);
+        if (blocked) return { content: `Error: ${blocked}` };
         const results = await globalConnectorRegistry.search(query, connector);
         if (results.length === 0) {
           return {
             content: `No results found${connector ? ` from connector '${connector}'` : ""} for query: "${query}"`,
           };
         }
-        const lines = results.map(
-          (r: SearchResult & { connector: string }) =>
-            `  [${r.connector}] ${r.identifier}: ${r.name}${r.description ? ` — ${r.description}` : ""} (${r.dataType})`,
-        );
+        const lines = results.map((r) => {
+          if ("error" in r) {
+            return `  [${r.connector}] ERROR: ${r.error}`;
+          }
+          registerConnectorProvenance(r.provenance, data_sensitivity || "public");
+          return `  [${r.connector}] ${r.identifier}: ${r.name}${r.description ? ` — ${r.description}` : ""} (${r.dataType})`;
+        });
         return {
           content: `Found ${results.length} result(s):\n${lines.join("\n")}`,
           structured: results,
@@ -110,6 +136,12 @@ export const tool: Tool = {
             content: "Error: 'identifier' is required for 'fetch' action.",
           };
         }
+        const connectorInstance = globalConnectorRegistry.get(connector);
+        if (!connectorInstance) {
+          return { content: `Error fetching from '${connector}': connector is not registered.` };
+        }
+        const blocked = blockedExternalCall([connectorInstance]);
+        if (blocked) return { content: `Error: ${blocked}` };
         try {
           const result = await globalConnectorRegistry.fetch(
             connector,
@@ -117,9 +149,13 @@ export const tool: Tool = {
             fields,
           );
           const provenance = `Source: ${result.provenance.vendor} / ${result.provenance.dataset} @ ${result.provenance.timestamp}${result.cachedAt ? " (cached)" : ""}`;
+          const evidenceRegistered = registerConnectorProvenance(
+            result.provenance,
+            data_sensitivity || "public",
+          );
           return {
             content: `${provenance}\n\n${JSON.stringify(result.data, null, 2)}`,
-            structured: result,
+            structured: { ...result, evidenceRegistered },
           };
         } catch (err: any) {
           return {
