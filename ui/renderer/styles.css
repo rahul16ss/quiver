@@ -10,30 +10,57 @@
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Ink — strong primary, gentle secondaries (Apple-ish neutrals) */
-  --ink: #1d1d1f;
-  --ink-soft: #515154;
-  --ink-faint: #8e8e93;
-  --ink-ghost: #aeaeb2;
-  --line: #e8e8ed;
-  --line-soft: #f0f0f4;
+  /* Capital-markets desk — single token source of truth */
+  --ink: #172338;
+  --ink-soft: #536176;
+  --ink-faint: #7f8da1;
+  --ink-ghost: #aeb9c8;
+  --ink-subtle: #9aa8ba;
+  --line: #dce4ee;
+  --line-soft: #e9eef4;
   --bg: #ffffff;
-  --bg-sunken: #fbfbfd;
-  --bg-sunken-2: #f5f5f7;
-  --bg-overlay: rgba(20, 20, 24, 0.34);
-  --accent: #0a84ff;
-  --accent-soft: #eaf3ff;
-  --accent-press: #0070ee;
-  --good: #30b653;
-  --warn: #ff9f0a;
-  --bad: #ff453a;
+  --bg-sunken: #f5f7fa;
+  --bg-sunken-2: #edf1f6;
+  --bg-overlay: rgba(12, 25, 45, 0.48);
+  --accent: #2458d6;
+  --accent-soft: #edf2ff;
+  --accent-press: #1745b5;
+  --good: #21865c;
+  --good-soft: #e8f6ef;
+  --warn: #b97713;
+  --warn-soft: #fff4e0;
+  --bad: #c74646;
+  --bad-soft: #fdeeee;
   --add: #1a7f37;
   --del: #d14343;
-  --radius: 14px;
-  --radius-sm: 9px;
-  --radius-xs: 6px;
-  --gutter: 18px;
+
+  --topbar-bg: #13243b;
+  --topbar-line: #253a56;
+  --topbar-ink: #f8fbff;
+  --topbar-muted: #9fb1c8;
+  --topbar-chip: #1b3150;
+  --topbar-chip-line: #355170;
+
+  --radius: 16px;
+  --radius-sm: 11px;
+  --radius-xs: 7px;
+  --gutter: 20px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 22px;
+  --text-2xl: 30px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-soft: 0 8px 28px rgba(12, 25, 45, 0.08);
+  --shadow-modal: 0 25px 70px rgba(12, 25, 45, 0.22);
 }
 
 * { box-sizing: border-box; }
@@ -689,41 +716,20 @@ button.disabled, .primary-btn.disabled { opacity: 0.45; cursor: not-allowed; }
    - trust, evidence, and draft status are visible without shouting;
    - secondary rails become drawers before they squeeze the work surface;
    - the hierarchy remains usable on a small Windows laptop. */
-:root {
-  --ink: #172338;
-  --ink-soft: #536176;
-  --ink-faint: #7f8da1;
-  --ink-ghost: #aeb9c8;
-  --line: #dce4ee;
-  --line-soft: #e9eef4;
-  --bg: #ffffff;
-  --bg-sunken: #f5f7fa;
-  --bg-sunken-2: #edf1f6;
-  --bg-overlay: rgba(12, 25, 45, 0.48);
-  --accent: #2458d6;
-  --accent-soft: #edf2ff;
-  --accent-press: #1745b5;
-  --good: #21865c;
-  --warn: #b97713;
-  --bad: #c74646;
-  --radius: 16px;
-  --radius-sm: 11px;
-  --radius-xs: 7px;
-  --gutter: 20px;
-}
 
 body {
   background: var(--bg-sunken);
   color: var(--ink);
+  font-size: var(--text-md);
 }
 
 #topbar {
   height: 72px;
   padding: 0 22px;
   gap: 18px;
-  background: #13243b;
-  border-bottom: 1px solid #253a56;
-  color: #f8fbff;
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--topbar-line);
+  color: var(--topbar-ink);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
@@ -1111,9 +1117,9 @@ body {
   .topbar-actions .ghost-btn { padding: 7px 8px; font-size: 12px; }
   .shortcut { display: none; }
   .topbar-actions #sessionsBtn,
-  .topbar-actions #settingsBtn { font-size: 0; }
-  .topbar-actions #sessionsBtn::before { content: "▤"; font-size: 17px; }
-  .topbar-actions #settingsBtn::before { content: "⚙"; font-size: 16px; }
+  .topbar-actions #settingsBtn { font-size: 12px; letter-spacing: 0; }
+  .topbar-actions #sessionsBtn::before,
+  .topbar-actions #settingsBtn::before { content: none; }
   .conversation-header { padding: 20px 17px 16px; }
   .conversation-header h1 { font-size: 20px; }
   .conversation-header-status { display: none; }
@@ -1266,8 +1272,168 @@ body.settings-page .brand-copy { flex: 0 0 auto; }
 }
 .toggle.active { background: var(--accent-soft); border-color: #afc3f3; }
 
+.settings-inline-error,
+.onboarding-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e3a0a0;
+  background: var(--bad-soft, #fdeeee);
+  color: var(--bad);
+  font-size: var(--text-sm, 12.5px);
+}
+
 @media (max-width: 680px) {
   body.onboarding { padding: 18px 10px; }
   .onboarding-card { padding: 32px 24px 28px; }
 }
+
+/* ─── Deliverable evidence states ─── */
+.draft-card.evidence-pending {
+  border-color: #e2c58a;
+  background: linear-gradient(180deg, #fffdf8 0%, #fff 100%);
+}
+.draft-card.evidence-pending .draft-sub { color: var(--warn); }
+.draft-card.evidence-invalid {
+  border-color: #e3a0a0;
+  background: linear-gradient(180deg, #fff7f7 0%, #fff 100%);
+}
+.draft-card.evidence-invalid .draft-sub { color: var(--bad); }
+.draft-card.ready {
+  border-color: #b7dcc8;
+  box-shadow: 0 1px 0 rgba(33, 134, 92, 0.08);
+}
+.ctx-item.excluded {
+  opacity: 0.55;
+  text-decoration: line-through;
+  background: var(--bad-soft);
+  border-color: #efc2c2;
+}
+#context-plane.ctx-focused {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* ─── SVG icon helpers ─── */
+.draft-icon,
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg-sunken-2);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.draft-icon svg,
+.icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.draft-icon.word { color: #2b579a; background: #eaf1fb; }
+.draft-icon.excel { color: #217346; background: #e8f5ee; }
+.draft-icon.ppt { color: #b7472a; background: #fbebe7; }
+
+/* ─── In-app confirm dialog ─── */
+.app-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: var(--bg-overlay);
+  padding: var(--space-5);
+}
+.app-dialog[hidden] { display: none !important; }
+.app-dialog-card {
+  width: min(420px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow-modal);
+  padding: 22px;
+}
+.app-dialog-card h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+.app-dialog-card p {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* Overlay dialog semantics */
+.overlay[role="dialog"] .overlay-card,
+.overlay .overlay-panel {
+  box-shadow: var(--shadow-modal);
+}
+.overlay:not([hidden]) {
+  animation: fadeIn 0.16s var(--ease-out);
+}
+
+/* Activity live region quiet chrome */
+#activityLog[aria-live] { outline: none; }
+
+/* ─── Dark mode ─── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8eef8;
+    --ink-soft: #b7c3d6;
+    --ink-faint: #8b99ae;
+    --ink-ghost: #66768c;
+    --ink-subtle: #7e8ea3;
+    --line: #2c3b52;
+    --line-soft: #243247;
+    --bg: #101826;
+    --bg-sunken: #0c1320;
+    --bg-sunken-2: #162235;
+    --bg-overlay: rgba(4, 10, 18, 0.62);
+    --accent: #6b93f5;
+    --accent-soft: #1a2742;
+    --accent-press: #8aacff;
+    --good: #4dbc8a;
+    --good-soft: #143226;
+    --warn: #e0b15a;
+    --warn-soft: #3a2d14;
+    --bad: #e07373;
+    --bad-soft: #3a1b1b;
+    --topbar-bg: #0a1220;
+    --topbar-line: #1c2a40;
+    --topbar-ink: #f2f6fc;
+    --topbar-muted: #8ea0b8;
+    --topbar-chip: #152338;
+    --topbar-chip-line: #2a3f5c;
+  }
+  body { background: var(--bg-sunken); color: var(--ink); }
+  #conversation-plane,
+  .conversation-header,
+  .input-bar,
+  .app-dialog-card,
+  .draft-card {
+    background: var(--bg);
+  }
+  .chip,
+  .ghost-btn,
+  #promptInput {
+    background: var(--bg-sunken-2);
+    border-color: var(--line);
+    color: var(--ink);
+  }
+}
+
 

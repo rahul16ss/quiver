@@ -181,6 +181,36 @@ function withoutSecrets(config: QuiverConfig): QuiverConfig {
   };
 }
 
+/**
+ * One-time migration: if an older config still has plaintext API keys, move
+ * them into the OS credential store and rewrite the JSON without secrets.
+ */
+async function migratePlaintextCredentials(config: QuiverConfig): Promise<QuiverConfig> {
+  try {
+    const { setCredential } = await import("../src/secrets/keychain.js");
+    let migrated = false;
+    const llm =
+      config.provider?.apiKey ||
+      config.llmApiKey ||
+      "";
+    const parallel = config.parallelApiKey || "";
+    if (llm && llm.trim()) {
+      await setCredential("LLM_API_KEY", llm.trim());
+      migrated = true;
+    }
+    if (parallel && parallel.trim()) {
+      await setCredential("PARALLEL_API_KEY", parallel.trim());
+      migrated = true;
+    }
+    if (!migrated) return config;
+    const cleaned = withoutSecrets(config);
+    await saveConfig(cleaned);
+    return cleaned;
+  } catch {
+    return withoutSecrets(config);
+  }
+}
+
 async function storedCredential(key: string): Promise<string> {
   try {
     const { getCredential } = await import("../src/secrets/keychain.js");
@@ -1057,7 +1087,8 @@ async function listSkills(workspacePath: string, skillsDirConfig: string): Promi
 function registerIpcHandlers(): void {
   // Config
   ipcMain.handle("config:load", async () => {
-    const config = await loadConfig();
+    const loaded = await loadConfig();
+    const config = await migratePlaintextCredentials(loaded);
     // Computed flag (never persisted — see saveConfig): lets the renderer
     // show a one-time warning banner when the configured workspace IS the
     // app source tree (Epic 2 §2.5). The hard block applies regardless.

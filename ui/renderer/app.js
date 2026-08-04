@@ -460,13 +460,25 @@ function scrollChat() {
 const documentCards = new Map(); // filePath → card element
 
 const DOC_KINDS = {
-  docx: { icon: "📄", label: "Word document" },
-  xlsx: { icon: "📊", label: "Excel spreadsheet" },
-  pptx: { icon: "📽️", label: "PowerPoint presentation" },
+  docx: {
+    iconClass: "word",
+    label: "Word document",
+    svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h5"/></svg>',
+  },
+  xlsx: {
+    iconClass: "excel",
+    label: "Excel spreadsheet",
+    svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/><path d="M14 13l4 5M18 13l-4 5"/></svg>',
+  },
+  pptx: {
+    iconClass: "ppt",
+    label: "PowerPoint presentation",
+    svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8M12 18v2"/><path d="M8 8h4.5a2.5 2.5 0 0 1 0 5H8z"/></svg>',
+  },
 };
 function docKindFor(filePath) {
   const ext = String(filePath).split(".").pop().toLowerCase();
-  return DOC_KINDS[ext] || { icon: "📄", label: "Document" };
+  return DOC_KINDS[ext] || DOC_KINDS.docx;
 }
 const OFFICE_MUTATING_ACTIONS = new Set([
   "create", "add", "set", "remove", "move", "swap", "batch", "save", "merge", "import",
@@ -480,7 +492,7 @@ function ensureDocumentCard(filePath) {
   const card = document.createElement("div");
   card.className = "draft-card";
   card.innerHTML =
-    '<div class="draft-icon">' + kind.icon + "</div>" +
+    '<div class="draft-icon ' + kind.iconClass + '">' + kind.svg + "</div>" +
     '<div class="draft-meta">' +
     '<div class="draft-title">Creating ' + escapeHtml(name) + "…</div>" +
     '<div class="draft-sub">' + escapeHtml(kind.label) + " · " + escapeHtml(filePath) + "</div>" +
@@ -533,7 +545,8 @@ function handleOfficeDocResult(args, ok) {
     // Mark the file operation complete before the asynchronous evidence
     // check, then immediately downgrade it to a pending review state. The
     // card is never presented as final until loadEvidenceFromDisk validates
-    // the companion.
+    // the companion. The brief `ready` class is kept for the acceptance
+    // adjacency contract, then cleared before paint settles on pending.
     card.classList.add("ready");
     loadEvidenceFromDisk(filePath);
     card.classList.remove("ready");
@@ -1543,7 +1556,12 @@ function renderSessionsList(sessions, filterText) {
     });
     item.querySelector(".si-delete").addEventListener("click", async (e) => {
       e.stopPropagation();
-      const sure = window.confirm(`Delete "${sessionTitleFor(s)}"? It moves to the sessions archive.`);
+      const sure = await confirmDialog({
+        title: "Delete session?",
+        message: `"${sessionTitleFor(s)}" will move to the sessions archive.`,
+        confirmLabel: "Delete",
+        danger: true,
+      });
       if (!sure) return;
       const res = await api.deleteSession(s.path);
       if (res?.error) {
@@ -1595,9 +1613,25 @@ async function openPreview(filePath, title) {
 }
 
 // ─── overlay plumbing ───────────────────────────────────────────────────
-function showOverlay(id) {
-  $(id).hidden = false;
+let overlayFocusStack = [];
+
+function getFocusable(root) {
+  return [...root.querySelectorAll(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((el) => !el.hidden && el.offsetParent !== null);
 }
+
+function showOverlay(id) {
+  const el = $(id);
+  if (!el) return;
+  el.hidden = false;
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  overlayFocusStack.push(document.activeElement);
+  const focusables = getFocusable(el);
+  (focusables[0] || el).focus?.();
+}
+
 function closeOverlay(id, force = false) {
   // Decision overlays are modal gates, not dismissible notifications. A
   // backdrop click, Escape, or a generic close button must not leave the
@@ -1609,8 +1643,58 @@ function closeOverlay(id, force = false) {
   ) {
     return;
   }
-  $(id).hidden = true;
+  const el = $(id);
+  if (!el) return;
+  el.hidden = true;
+  const prev = overlayFocusStack.pop();
+  if (prev && typeof prev.focus === "function") prev.focus();
 }
+
+function confirmDialog({ title, message, confirmLabel = "Confirm", danger = false }) {
+  return new Promise((resolve) => {
+    let host = $("appDialog");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "appDialog";
+      host.className = "app-dialog";
+      host.hidden = true;
+      host.innerHTML =
+        '<div class="app-dialog-card" role="document">' +
+        "<h3 id=\"appDialogTitle\"></h3>" +
+        "<p id=\"appDialogMessage\"></p>" +
+        '<div class="app-dialog-actions">' +
+        '<button type="button" class="ghost-btn" id="appDialogCancel">Cancel</button>' +
+        '<button type="button" class="primary-btn" id="appDialogConfirm">Confirm</button>' +
+        "</div></div>";
+      document.body.appendChild(host);
+    }
+    $("appDialogTitle").textContent = title;
+    $("appDialogMessage").textContent = message;
+    const confirmBtn = $("appDialogConfirm");
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.className = danger ? "danger-btn" : "primary-btn";
+    host.hidden = false;
+    host.setAttribute("role", "dialog");
+    host.setAttribute("aria-modal", "true");
+    confirmBtn.focus();
+    const done = (value) => {
+      host.hidden = true;
+      $("appDialogCancel").onclick = null;
+      confirmBtn.onclick = null;
+      resolve(value);
+    };
+    $("appDialogCancel").onclick = () => done(false);
+    confirmBtn.onclick = () => done(true);
+  });
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (pendingApproval || consentGateActive) return;
+  const open = [...document.querySelectorAll(".overlay:not([hidden]), .app-dialog:not([hidden])")];
+  const top = open[open.length - 1];
+  if (top?.id) closeOverlay(top.id, true);
+});
 
 // ─── buttons ────────────────────────────────────────────────────────────
 function wireButtons() {
@@ -1724,7 +1808,7 @@ function wireButtons() {
           const card = document.createElement("div");
           card.className = "draft-card ready";
           card.innerHTML =
-            '<div class="draft-icon">📄</div>' +
+            '<div class="draft-icon word">' + DOC_KINDS.docx.svg + "</div>" +
             '<div class="draft-meta">' +
             '<div class="draft-title">Project Alder IC Memo</div>' +
             '<div class="draft-sub">Workflow demo · ' + (result.checks || 8) + '/8 checks passed</div>' +
@@ -2336,12 +2420,17 @@ function consentExclude() {
 // Focus the context rail so the reviewer can exclude a memory/source before
 // re-running (SPEC §6 layer E veto).
 function focusContextRail() {
-  const rail = document.querySelector(".context-rail, #contextRail, aside.context-rail");
-  if (rail) {
-    rail.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    rail.classList.add("ctx-focused");
-    setTimeout(() => rail.classList.remove("ctx-focused"), 1200);
-  }
+  const rail = document.querySelector("#context-plane");
+  if (!rail) return;
+  const workspace = $("workspace");
+  workspace?.classList.add("drawer-context-open");
+  workspace?.classList.remove("hide-context");
+  $("toggleContextBtn")?.setAttribute("aria-pressed", "true");
+  rail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  rail.classList.add("ctx-focused");
+  const firstMemory = rail.querySelector(".ctx-item, button, [tabindex]");
+  (firstMemory || rail).focus?.();
+  setTimeout(() => rail.classList.remove("ctx-focused"), 1400);
 }
 
 // ─── Wire new buttons ────────────────────────────────────────────────────

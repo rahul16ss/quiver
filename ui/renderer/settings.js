@@ -57,6 +57,20 @@ async function browseWorkspace() {
   const selected = await api.selectWorkspaceDir();
   if (selected) $("workspacePath").value = selected;
 }
+function showSettingsError(message) {
+  let el = document.getElementById("settingsInlineError");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "settingsInlineError";
+    el.className = "settings-inline-error";
+    el.setAttribute("role", "alert");
+    const host = document.querySelector(".settings-body") || document.body;
+    host.prepend(el);
+  }
+  el.hidden = false;
+  el.textContent = message;
+}
+
 async function saveSettings() {
   let grants = $("autonomyMode").value;
   if (isToggleActive("browserVisible")) {
@@ -69,11 +83,11 @@ async function saveSettings() {
     try {
       const stored = await api.settingsSetCredential("LLM_API_KEY", key);
       if (!stored) {
-        alert("Quiver could not access the system credential store. The key was not saved.");
+        showSettingsError("Quiver could not access the system credential store. The key was not saved.");
         return;
       }
     } catch {
-      alert("Quiver could not access the system credential store. The key was not saved.");
+      showSettingsError("Quiver could not access the system credential store. The key was not saved.");
       return;
     }
   }
@@ -82,11 +96,11 @@ async function saveSettings() {
     try {
       const stored = await api.settingsSetCredential("PARALLEL_API_KEY", parallelKey);
       if (!stored) {
-        alert("Quiver could not store the second provider key securely. It was not saved.");
+        showSettingsError("Quiver could not store the second provider key securely. It was not saved.");
         return;
       }
     } catch {
-      alert("Quiver could not store the second provider key securely. It was not saved.");
+      showSettingsError("Quiver could not store the second provider key securely. It was not saved.");
       return;
     }
   }
@@ -109,7 +123,7 @@ async function saveSettings() {
     sessionLogMaxChars: parseInt($("sessionLogMaxChars").value, 10) || 512,
   });
   if (!saved) {
-    alert("Quiver could not save these settings securely.");
+    showSettingsError("Quiver could not save these settings securely.");
     return;
   }
   await api.loadMain();

@@ -38,6 +38,14 @@ $("onbStartBtn").addEventListener("click", async () => {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = "Get started";
-    alert("Could not save your key. You can add it later in Settings.");
+    let err = document.getElementById("onbError");
+    if (!err) {
+      err = document.createElement("p");
+      err.id = "onbError";
+      err.className = "onboarding-error";
+      err.setAttribute("role", "alert");
+      btn.parentElement?.appendChild(err);
+    }
+    err.textContent = "Could not save your key. You can add it later in Settings.";
   }
 });
