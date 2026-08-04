@@ -106,14 +106,15 @@ npm run demo:portfolio-review
 
 ## 6. Data handling
 
-Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no telemetry.
+Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no product telemetry.
 
 ### Recommended finance-client deployment configuration
 
 The repository documents a recommended hardened deployment posture for institutional engagements:
 
 - **Enabled**: Approved file access, Office document tools, evidence tracking, review gates, local audit logging.
-- **Disabled by default**: Arbitrary shell execution, unapproved tool servers, dynamic tool creation, automatic background cloud sync.
+- **Disabled by default**: Arbitrary shell execution, unapproved tool servers.
+- **Removed**: Dynamic tool creation, automatic background cloud sync.
 
 See [profiles/finance-client/README.md](profiles/finance-client/README.md) for detailed configuration guidance.
 
@@ -126,7 +127,7 @@ See [profiles/finance-client/README.md](profiles/finance-client/README.md) for d
 | **Native Office Output** | Builds `.docx`, `.xlsx`, and `.pptx` around configured templates |
 | **Evidence & Lineage** | Tracks Excel-sourced figures to cell coordinates; other evidence remains file/page/section/URL scoped |
 | **Reviewer Sign-off** | Blocks mark-final status while open flags remain; logs overrides |
-| **Data Handling** | Operator-configured endpoints; local models & zero telemetry supported |
+| **Data Handling** | Operator-configured endpoints; local models supported; no product telemetry |
 | **Desktop App** | Electron GUI for chat, context inspection, and reviewer sign-off |
 | **Reference Workflows** | Executable demo pipelines for dealmaking, research, and wealth |
 

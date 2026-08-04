@@ -23,10 +23,13 @@ The following capabilities are **disabled by default** to minimize attack surfac
 
 - ✕ Arbitrary shell command execution (`run_command` disabled)
 - ✕ Unapproved external tool servers / MCP tools
-- ✕ Dynamic tool creation at runtime
-- ✕ Automatic background cloud folder synchronization
 - ✕ Unapproved public web scraping outside declared sources
 - ✕ Parallel subagent spawning without approval gate
+
+The following capabilities were **removed** from Quiver (not profile toggles):
+
+- ✕ Dynamic tool creation at runtime
+- ✕ Automatic background cloud folder synchronization
 
 ---
 

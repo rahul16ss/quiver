@@ -2,7 +2,7 @@
  * Memory Privacy Labels — US-12.3
  *
  * Support labels: public, project, private, secret.
- * - public: safe for remote models & cloud sync
+ * - public: safe for remote models
  * - project: allowed for project-specific approved models
  * - private: sent to remote models only with explicit opt-in
  * - secret: never sent to remote models, never synced
@@ -65,7 +65,7 @@ export function filterByPrivacy(
 export function getPrivacyDescription(privacy: MemoryPrivacy): string {
   switch (privacy) {
     case "public":
-      return "Safe for remote models and cloud sync";
+      return "Safe for remote models";
     case "project":
       return "Project-scoped — only for approved models";
     case "private":

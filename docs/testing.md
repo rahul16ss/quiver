@@ -45,8 +45,7 @@ untrusted-content wrapping, path sandboxing, secret redaction, audit chain,
 diff/atomic-write safety, prompt assembly, token budgeting, tool sandbox
 manifest, subagent recursion limits, diagnostics, Electron GUI hardening
 (sandbox/CSP/window-state/IPC), adapter conformance, config schema
-validation/migration, Homebrew formula, cloud sync (opt-in, encrypted,
-consent-gated), and the maker-checker verification discipline.
+validation/migration, Homebrew formula, and the maker-checker verification discipline.
 
 If you believe a check is wrong, raise it in writing — do not edit the
 contract.

@@ -48,7 +48,7 @@ export async function loadReviewedMemoryContext(): Promise<string> {
     if (!facts || facts.length === 0) return "";
     // US-12.3: filter facts by privacy label before they reach the model. A
     // remote provider never sees `private`/`secret` facts; `secret` facts are
-    // excluded from every remote context (and from cloud sync).
+    // excluded from every remote context.
     const isRemote = !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(config.llmBaseUrl);
     const safe = filterByPrivacy(facts, {
       isRemote,

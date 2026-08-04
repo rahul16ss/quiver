@@ -26,10 +26,14 @@ Hard rules:
    broken GUI before.
 3. Public claims are governed by the capability truth table in the Conviction
    Studio repo. Never claim: data stays local by default (the model endpoint
-   is user-configured — a cloud endpoint is common), redaction/sensitivity
-   routing, live lineage during drafting, ZDR, or "compliance-ready". Cell
-   lineage is claimable only for Excel-sourced figures in
-   `examples/investment-committee-memo/`.
+   is user-configured — a cloud endpoint is common), ZDR, or "compliance-ready".
+   Sensitivity routing and redaction exist as engagement-configured,
+   fail-closed controls (missing/invalid `.quiver/sensitivity.json` refuses the
+   turn); public wording must still use the truth-table umbrella — "Data
+   handling and model use are configured around the workflow's sensitivity" —
+   not imply automatic or always-on local routing. Never claim live lineage
+   during drafting as a universal property. Cell lineage is claimable only for
+   Excel-sourced figures in `examples/investment-committee-memo/`.
 4. Business surfaces say **Draft only / Draft and research / Assisted** —
    never "yolo" (internal alias only, see `docs/advanced.md`).
 5. Commits are signed `Co-Authored-By: Quiver <quiver@convictionstudio.com>`

@@ -53,10 +53,10 @@ Per-project memory files:
 - `skill_accretion` — Learned skills
 
 ## Privacy Labels
-- `public` — Safe for remote models and cloud sync
+- `public` — Safe for remote models
 - `project` — Project-scoped, only for approved models
 - `private` — Only sent to remote with explicit opt-in
-- `secret` — Never sent to remote, never synced
+- `secret` — Never sent to remote
 
 ## Review Queue
 

@@ -100,12 +100,11 @@ Configure servers in `.quiver/mcp.json`:
 MCP tools appear as `mcp_<server>_<tool>` and are transparent in the audit trail.
 See `.quiver/mcp.example.json`.
 
-## Cloud folder sync (legacy / opt-in)
+## Cloud folder sync — removed
 
-Folder-based sync to `{cloud}/Quiver/` (Google Drive, OneDrive, Dropbox, iCloud)
-exists but is **disabled by default and strictly opt-in** — detecting a cloud folder
-is never consent. Do not enable it for client engagements unless it is explicit,
-documented, and consistent with the client's security policy. See `docs/sync.md`.
+Automatic background cloud-folder sync (Google Drive / OneDrive / Dropbox /
+iCloud) was removed, not left as a disabled toggle. Use local synced M365
+folders or the engagement DMS export path instead.
 
 ## Vision fallback
 

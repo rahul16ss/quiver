@@ -50,12 +50,18 @@ export interface Tool {
 ### Evidence & Lineage
 - `evidence` — Track sources and claims during document drafting. Actions: `register_source`, `exclude_source`, `record_claim`, `update_claim`, `register_input`, `validate`, `finalize`, `status`. Writes `Evidence.json` and `Run_Record.json` alongside Office documents.
 
+### Documents & Export
+- `pdf_read` — Render PDF pages to PNG for multimodal reading (tables, charts, layout preserved). Backends: PyMuPDF, then pdftoppm.
+- `dms_export` — Export a finished deliverable to the firm's DMS (SharePoint, NetDocuments, …). Actions: `export`, `list`, `status`. No adapter configured → clear configuration hint, not a silent success.
+- `examples` — Episodic examples store. Actions: `promote`, `list`, `remove`, `context`. Promoted deliverables load as episodic memory in the consent gate.
+
 ### Data Connectors
 - `data_query` — Unified interface to registered data-vendor connectors. Actions: `list` (show connectors), `search` (find entities), `fetch` (get data), `status`. Auto-loads connectors from `.quiver/connectors/`. Every result carries provenance metadata.
 
 ### Agent Orchestration
 - `subagent` — Spawn isolated agent processes
 - `bar_critic` — Structural bar-comparison of a draft against a benchmark deliverable in `.quiver/benchmark/`. Actions: `compare` (run comparison), `status` (check if benchmark configured), `list` (list benchmarks). Opt-in per engagement; no-op without a benchmark (SPEC §10.1)
+- `workflow` — Discover, run, inspect, schedule, and watch workflow packs. Ambient integration point for full pipeline runs from natural language.
 - `todo_write` — Manage task checklists
 - `ask_question` — Ask user clarifying questions
 
