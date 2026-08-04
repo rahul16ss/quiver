@@ -332,29 +332,112 @@ async function downscaleImage(buf: Buffer, ext: string): Promise<Buffer> {
  * for transmission (US-5.4). Returns null if the file is not a valid
  * image or is too large.
  */
-// encodeFileAsDataURL removed — the OpenAI-compatible API only accepts
-// image_url for actual images. Non-image files (PDFs, Office docs) must
-// go through their respective tools (pdf_read, office_doc).
-
 export async function encodeImageAsDataURL(
   filePath: string,
 ): Promise<string | null> {
+  const encoded = await encodeFileAsDataURL(filePath);
+  return encoded?.kind === "image" ? encoded.dataUrl : null;
+}
+
+/** MIME types for native document / data attachments (not images). */
+const DOCUMENT_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  csv: "text/csv",
+  json: "application/json",
+  txt: "text/plain",
+  md: "text/markdown",
+};
+
+/**
+ * Result of native multimodal encoding for the model.
+ * Images use OpenAI-compatible `image_url`; documents use `file` parts
+ * (`file_data` data URL) so multimodal models receive raw bytes — no
+ * render/OCR/text-extraction in the harness.
+ */
+export type EncodedAttachment =
+  | { kind: "image"; dataUrl: string }
+  | { kind: "file"; filename: string; file_data: string; mime: string };
+
+/** Validate PDF magic bytes (%PDF). */
+export function validatePdfMagic(filePath: string): boolean {
+  try {
+    const fd = fsSync.openSync(filePath, "r");
+    const header = Buffer.alloc(5);
+    fsSync.readSync(fd, header, 0, 5, 0);
+    fsSync.closeSync(fd);
+    return header.toString("ascii") === "%PDF-";
+  } catch {
+    return false;
+  }
+}
+
+/** OpenXML Office packages are ZIP archives (PK..). */
+export function validateZipMagic(filePath: string): boolean {
+  try {
+    const fd = fsSync.openSync(filePath, "r");
+    const header = Buffer.alloc(4);
+    fsSync.readSync(fd, header, 0, 4, 0);
+    fsSync.closeSync(fd);
+    return header[0] === 0x50 && header[1] === 0x4b;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Encode any local file as a native multimodal attachment.
+ * Images get EXIF stripping + downscaling; PDFs and other documents get
+ * raw base64 — the model handles them natively. Returns null if the file
+ * is missing, not a file, or over the size limit.
+ */
+export async function encodeFileAsDataURL(
+  filePath: string,
+): Promise<EncodedAttachment | null> {
   try {
     const resolved = path.resolve(filePath);
     const stat = await fs.stat(resolved);
+
     if (!stat.isFile()) return null;
-    if (stat.size > MAX_IMAGE_SIZE) return null;
-    const ext = validateImageMagic(resolved);
-    if (!ext) return null; // not an image — reject
+    if (stat.size > MAX_IMAGE_SIZE) {
+      console.error(
+        picocolors.yellow(
+          `     File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 20MB limit): ${resolved}`,
+        ),
+      );
+      return null;
+    }
+
+    const imgExt = validateImageMagic(resolved);
+    if (imgExt) {
+      const raw = await fs.readFile(resolved);
+      let sanitized: Buffer;
+      if (imgExt === "jpg" || imgExt === "jpeg") sanitized = stripJpegMetadata(raw);
+      else if (imgExt === "png") sanitized = stripPngMetadata(raw);
+      else sanitized = raw;
+      const downscaled = await downscaleImage(sanitized, imgExt);
+      const base64 = downscaled.toString("base64");
+      const mime = imgExt === "jpg" ? "jpeg" : imgExt;
+      return { kind: "image", dataUrl: `data:image/${mime};base64,${base64}` };
+    }
+
+    const ext = path.extname(resolved).toLowerCase().replace(/^\./, "");
+    if (ext === "pdf" && !validatePdfMagic(resolved)) return null;
+    if (["docx", "xlsx", "pptx"].includes(ext) && !validateZipMagic(resolved)) {
+      return null;
+    }
+
     const raw = await fs.readFile(resolved);
-    let sanitized: Buffer;
-    if (ext === "jpg" || ext === "jpeg") sanitized = stripJpegMetadata(raw);
-    else if (ext === "png") sanitized = stripPngMetadata(raw);
-    else sanitized = raw;
-    const downscaled = await downscaleImage(sanitized, ext);
-    const base64 = downscaled.toString("base64");
-    const mime = ext === "jpg" ? "jpeg" : ext;
-    return `data:image/${mime};base64,${base64}`;
+    const mime = DOCUMENT_MIME[ext] || "application/octet-stream";
+    const base64 = raw.toString("base64");
+    return {
+      kind: "file",
+      filename: path.basename(resolved),
+      file_data: `data:${mime};base64,${base64}`,
+      mime,
+    };
   } catch {
     return null;
   }
@@ -362,28 +445,23 @@ export async function encodeImageAsDataURL(
 
 // ─── File Marker Processing ───────────────────────────────────────────
 
-export type FileContent =
-  | string
-  | Array<
-      | { type: "text"; text: string }
-      | { type: "image_url"; image_url: { url: string } }
-    >;
+export type MultimodalContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "file"; file: { filename: string; file_data: string } };
+
+export type FileContent = string | MultimodalContentPart[];
 
 /**
  * Detect [File: path] markers in user input/tool results and convert to
- * multimodal message parts. Only image files (validated by magic bytes)
- * are encoded as image_url content parts — the OpenAI-compatible API
- * only accepts image_url for actual images (PNG, JPEG, GIF, WebP).
+ * multimodal message parts. The harness does not render, OCR, or extract —
+ * it attaches raw bytes for the multimodal model:
+ *   - Images → `image_url` (data:image/...;base64,...)
+ *   - PDFs / documents → `file` (file_data data URL)
  *
- * Non-image files (PDFs, Office docs, etc.) are NOT encoded here — the
- * API doesn't accept them as image_url. The agent should use the right
- * tool for those:
- *   - PDFs → pdf_read (renders pages as images, which ARE image_url-compatible)
- *   - Office docs → office_doc (officecli extracts text/structure)
- *   - Text files → view_file (reads raw UTF-8, no marker needed)
- *
- * If a [File: path] marker points to a non-image file, it's replaced with
- * a text instruction telling the agent what tool to use instead.
+ * OfficeCLI remains the path for surgical/deterministic Office create/edit
+ * (cells, comments, validation). Native attachment here is for the model to
+ * *see* the file; it does not replace OfficeCLI for edits.
  */
 export async function processFileMarkers(
   input: string,
@@ -393,10 +471,7 @@ export async function processFileMarkers(
 
   if (matches.length === 0) return input;
 
-  const parts: Array<
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } }
-  > = [];
+  const parts: MultimodalContentPart[] = [];
 
   let lastIdx = 0;
   let filesEncoded = 0;
@@ -411,24 +486,21 @@ export async function processFileMarkers(
       if (textBefore) parts.push({ type: "text", text: textBefore });
     }
 
-    // Only encode actual images — the API rejects non-images as image_url
-    const dataUrl = await encodeImageAsDataURL(rawPath);
-    if (dataUrl) {
-      parts.push({ type: "image_url", image_url: { url: dataUrl } });
+    const encoded = await encodeFileAsDataURL(rawPath);
+    if (encoded?.kind === "image") {
+      parts.push({ type: "image_url", image_url: { url: encoded.dataUrl } });
+      filesEncoded++;
+    } else if (encoded?.kind === "file") {
+      parts.push({
+        type: "file",
+        file: { filename: encoded.filename, file_data: encoded.file_data },
+      });
       filesEncoded++;
     } else {
-      // Not an image (or file not found). Don't try to encode it as a
-      // data URL — the API will reject it. Tell the agent what to do.
-      const ext = path.extname(rawPath).toLowerCase();
-      let hint = `[File: ${rawPath} — could not encode. `;
-      if (ext === ".pdf") {
-        hint += `Use the pdf_read tool to read this PDF.]`;
-      } else if ([".docx", ".xlsx", ".pptx"].includes(ext)) {
-        hint += `Use the office_doc tool with action "view" to read this Office document.]`;
-      } else {
-        hint += `The file may not exist, may not be a valid image, or may be too large.]`;
-      }
-      parts.push({ type: "text", text: hint });
+      parts.push({
+        type: "text",
+        text: `[File: ${rawPath} — could not load. The file may not exist, failed magic validation, or may be too large.]`,
+      });
     }
 
     lastIdx = matchEnd;
@@ -442,7 +514,7 @@ export async function processFileMarkers(
   if (filesEncoded > 0 && config.outputMode === "interactive") {
     console.log(
       picocolors.gray(
-        `   📎 ${filesEncoded} image${filesEncoded > 1 ? "s" : ""} encoded for the model`,
+        `   📎 ${filesEncoded} file${filesEncoded > 1 ? "s" : ""} encoded for the model`,
       ),
     );
   }

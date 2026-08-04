@@ -16,7 +16,12 @@ import {
   OFFICE_MUTATING_ACTIONS,
 } from "./cards.js";
 import { docKindFor } from "./icons.js";
-import { showConsentGate, focusContextRail } from "./consent.js";
+import {
+  showConsentGate,
+  showCompactionGate,
+  showEvidenceConsentGate,
+  focusContextRail,
+} from "./consent.js";
 import {
   renderLineageChipsForDocument,
   recordDeliverableContext,
@@ -144,6 +149,17 @@ function handleAgentEvent(ev) {
       // a window restart would otherwise re-prompt for an already-completed
       // turn.
       if (state.liveRunActive) showConsentGate(ev.data);
+      break;
+    }
+    case "compaction_proposed": {
+      // SPEC §7.3: context rewrite requires explicit approval — never auto-apply
+      // on the GUI/json path. The agent is blocked on stdin until we respond.
+      if (state.liveRunActive) showCompactionGate(ev.data);
+      break;
+    }
+    case "evidence_consent_proposed": {
+      // Human/VP promote for sources/claims — second stdin wait after tool approval.
+      if (state.liveRunActive) showEvidenceConsentGate(ev.data);
       break;
     }
     case "consent_declined": {

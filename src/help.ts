@@ -74,6 +74,9 @@ export function printHelp(): void {
     `    quiver signin                   Sign in via Ollama (cloud models, web search)`,
   );
   console.log(
+    `    quiver workflow <action> …      Run Ambient Workflow Engine (list|run|schedule|watch|…)`,
+  );
+  console.log(
     `    quiver --single-turn "prompt"    Run a single prompt and exit`,
   );
   console.log(

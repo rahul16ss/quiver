@@ -1,20 +1,17 @@
 /**
-* PDF Reader Tool — multimodal PDF page reading.
-*
-* Renders PDF pages to PNG images and returns [File: path] markers
-* so the agent loop can encode them as vision content for the model.
-*
-* This is a multimodal approach: the model "sees" the page as an image,
-* preserving tables, charts, layout, and visual context that text
-* extraction destroys.
-*
-* Rendering backends (tried in order):
-*   1. PyMuPDF (fitz) — Python, fast, high-quality. Primary.
-*   2. pdftoppm (poppler) — CLI, widely available. Fallback.
-*
-* If neither is available, the tool returns a clear error with install
-* instructions.
-*/
+ * PDF Reader Tool — optional page-to-PNG helper.
+ *
+ * Primary PDF path: attach with `[File: path]` so the multimodal model
+ * receives the native PDF (`file` content part). Use this tool only when
+ * you specifically need a rendered page image (narrow page range).
+ *
+ * Rendering backends (tried in order):
+ *   1. PyMuPDF (fitz) — Python, fast, high-quality. Primary.
+ *   2. pdftoppm (poppler) — CLI, widely available. Fallback.
+ *
+ * If neither is available, the tool returns a clear error with install
+ * instructions.
+ */
 
 import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
@@ -215,6 +212,59 @@ async function renderWithPdftoppm(
     totalPages,
     renderedPages: pages.length,
     backend: "pdftoppm",
+  };
+}
+
+/**
+ * Shared PDF→PNG renderer for the maker (`pdf_read`) and the VP checker.
+ * Re-renders on demand so checker verification does not depend on stale
+ * `/tmp/quiver-pdf-*` files from the maker's earlier tool calls.
+ */
+export async function renderPdfPages(
+  filePath: string,
+  pageNumbers: number[],
+  options: { dpi?: number; outputDir?: string } = {},
+): Promise<{ pngPaths: string[]; backend: string; totalPages: number }> {
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`PDF not found: ${resolved}`);
+  }
+  const pages = [...new Set(pageNumbers.filter((p) => Number.isFinite(p) && p >= 1))].sort(
+    (a, b) => a - b,
+  );
+  if (pages.length === 0) {
+    throw new Error("No valid PDF page numbers to render");
+  }
+
+  const backend = await detectBackend();
+  if (!backend) {
+    throw new Error(
+      "No PDF rendering backend found (install PyMuPDF or poppler). Checker cannot visually verify PDF sources.",
+    );
+  }
+
+  const dpi = options.dpi ?? 150;
+  const outputDir =
+    options.outputDir ||
+    path.join(os.tmpdir(), `quiver-pdf-checker-${process.pid}-${Date.now()}`);
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const startPage = pages[0];
+  const endPage = pages[pages.length - 1];
+  const renderResult =
+    backend === "pymupdf"
+      ? await renderWithPyMuPDF(resolved, startPage, endPage, dpi, outputDir)
+      : await renderWithPdftoppm(resolved, startPage, endPage, dpi, outputDir);
+
+  const pageSet = new Set(pages);
+  const filtered = renderResult.pages.filter((p) => pageSet.has(p.pageNumber));
+  if (filtered.length === 0) {
+    throw new Error(`PDF render produced no pages for ${path.basename(resolved)} (requested ${pages.join(",")})`);
+  }
+  return {
+    pngPaths: filtered.map((p) => p.pngPath),
+    backend: renderResult.backend,
+    totalPages: renderResult.totalPages,
   };
 }
 

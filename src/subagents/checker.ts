@@ -36,7 +36,14 @@ import {
 import { validateEvidenceFile } from "../evidence/tracker.js";
 import { compare as compareBenchmark } from "../document/bar_critic.js";
 import { config } from "../config.js";
+import {
+  isVertexConfigured,
+  resolveCheckerBaseUrl,
+  resolveLlmBearerToken,
+} from "../providers/vertex_auth.js";
 import { createIsolatedEnv, spawnIsolatedProcess } from "./isolation.js";
+import { buildCheckerVisionContent } from "./checker_vision.js";
+import type { FileContent } from "../file_encoder.js";
 
 // ─── Evidence validation (US-17.13 / SPEC §9.3 / §16) ──────────────────
 // The checker must reject a document whose Evidence.json contains unsourced
@@ -57,10 +64,15 @@ export async function validateEvidenceForDocument(
   }
 
   const result = await validateEvidenceFile(filePath);
-  if (result.missing && !config.evidenceRequired) {
+  // Missing companion is always a visible failure — never convert absence
+  // into approval. QUIVER_EVIDENCE_REQUIRED controls whether finalize/verdict
+  // hard-blocks, not whether missing looks "valid".
+  if (result.missing) {
     return {
-      valid: true,
-      problems: [],
+      valid: false,
+      problems: result.problems.length
+        ? result.problems
+        : ["Evidence.json companion is missing"],
       evidencePath: result.evidencePath,
     };
   }
@@ -152,9 +164,9 @@ const STRUCTURAL_CHECKS: StructuralCheck[] = [
     id: "FILE-EXISTS",
     description: "written file must exist on disk",
     fn: async (_root, toolName, toolArgs) => {
-      if (!toolName || !toolArgs) return true;
+      if (!toolName || !toolArgs) return false;
       const filePath = toolArgs?.filePath || toolArgs?.path || "";
-      if (!filePath) return true;
+      if (!filePath) return false;
       try {
         await fs.access(path.resolve(filePath));
         return true;
@@ -167,23 +179,29 @@ const STRUCTURAL_CHECKS: StructuralCheck[] = [
     id: "FILE-NON-EMPTY",
     description: "written file must not be empty",
     fn: async (_root, toolName, toolArgs) => {
-      if (!toolName || !toolArgs) return true;
+      if (!toolName || !toolArgs) return false;
       const filePath = toolArgs?.filePath || toolArgs?.path || "";
-      if (!filePath) return true;
+      if (!filePath) return false;
       if (toolName === "write_file") {
         const content = toolArgs?.content || "";
         return content.trim().length > 0;
       }
-      return true;
+      // Non-write tools with a path: require the file to exist and be non-empty.
+      try {
+        const st = await fs.stat(path.resolve(filePath));
+        return st.isFile() && st.size > 0;
+      } catch {
+        return false;
+      }
     },
   },
   {
     id: "FILE-VALID-ENCODING",
     description: "written file must be valid UTF-8",
     fn: async (_root, toolName, toolArgs) => {
-      if (!toolName || !toolArgs) return true;
+      if (!toolName || !toolArgs) return false;
       const filePath = toolArgs?.filePath || toolArgs?.path || "";
-      if (!filePath) return true;
+      if (!filePath) return false;
       try {
         const content = await fs.readFile(path.resolve(filePath), "utf8");
         return !content.includes("\ufffd"); // replacement char = bad encoding
@@ -197,10 +215,10 @@ const STRUCTURAL_CHECKS: StructuralCheck[] = [
     description:
       "written file must not contain TODO/FIXME/XXX/PLACEHOLDER markers",
     fn: async (_root, toolName, toolArgs) => {
-      if (!toolName || !toolArgs) return true;
+      if (!toolName || !toolArgs) return false;
       if (toolName !== "write_file") return true;
       const content = toolArgs?.content || "";
-      if (!content) return true;
+      if (!content) return false;
       const placeholders = /\b(TODO|FIXME|XXX|PLACEHOLDER|lorem ipsum)\b/i;
       return !placeholders.test(content);
     },
@@ -264,34 +282,42 @@ async function runAcceptanceMdChecks(
   failedChecks: string[];
 }> {
   const criteria = await parseAcceptanceMd(workspaceRoot);
-  const failedChecks: string[] = [];
-  let passed = 0;
-  let failed = 0;
+  if (criteria.length === 0) {
+    return { passed: 0, failed: 0, total: 0, failedChecks: [] };
+  }
 
-  for (const criterion of criteria) {
-    // Run structural checks as a baseline
-    let met = true;
+  // Fail closed: acceptance.md criteria are human checklist text, not
+  // machine-evaluated assertions. Never rubber-stamp N/N from FILE-* alone.
+  // Structural checks (when a tool target exists) are a baseline only; unmet
+  // criteria still fail so the checker cannot approve on theater.
+  let structuralOk = true;
+  if (toolName && toolArgs) {
     for (const check of STRUCTURAL_CHECKS) {
       try {
-        const ok = await check.fn(workspaceRoot, toolName, toolArgs);
-        if (!ok) {
-          met = false;
+        if (!(await check.fn(workspaceRoot, toolName, toolArgs))) {
+          structuralOk = false;
           break;
         }
       } catch {
-        met = false;
+        structuralOk = false;
         break;
       }
     }
-    if (met) {
-      passed++;
-    } else {
-      failed++;
-      failedChecks.push(`${criterion.section}/${criterion.id}`);
-    }
+  } else {
+    structuralOk = false;
   }
 
-  return { passed, failed, total: criteria.length, failedChecks };
+  const failedChecks = criteria.map(
+    (c) =>
+      `ACCEPTANCE-MD-UNSUPPORTED/${c.section}/${c.id}` +
+      (structuralOk ? "" : "+STRUCTURAL"),
+  );
+  return {
+    passed: 0,
+    failed: criteria.length,
+    total: criteria.length,
+    failedChecks,
+  };
 }
 
 async function runFallbackChecks(
@@ -304,6 +330,13 @@ async function runFallbackChecks(
   total: number;
   failedChecks: string[];
 }> {
+  // Fail closed: with no tool/file target these checks would vacuous-pass
+  // (historical "4/4 approve nothing" hole). Skip them so ambient / no-args
+  // verify cannot rubber-stamp an empty workspace.
+  if (!toolName || !toolArgs || typeof toolArgs !== "object") {
+    return { passed: 0, failed: 0, total: 0, failedChecks: [] };
+  }
+
   const failedChecks: string[] = [];
   let passed = 0;
   let failed = 0;
@@ -459,10 +492,10 @@ export async function runChecker(
   let modelReasoning = "";
 
   const checkerModel = config.checkerModelName;
-  const checkerBaseUrl = config.checkerBaseUrl;
-  const checkerApiKey = config.llmApiKey;
+  const checkerBaseUrl = resolveCheckerBaseUrl() || config.checkerBaseUrl;
   const checkerConfigured = Boolean(checkerModel && checkerBaseUrl);
-  const checkerRemoteApproved = process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1";
+  const checkerRemoteApproved =
+    process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1" || isVertexConfigured();
   let checkerModelUnavailable = false;
   let checkerIsLocal = false;
   try {
@@ -480,6 +513,9 @@ export async function runChecker(
     try {
       const deliverablePath = toolArgs?.file || toolArgs?.filePath || "";
       const deliverableContent = deliverablePath ? await readDeliverable(deliverablePath) : "";
+      const checkerApiKey = await resolveLlmBearerToken({
+        forceVertex: /aiplatform\.googleapis\.com/i.test(checkerBaseUrl),
+      });
       const modelResult = await runModelEvaluation({
         model: checkerModel,
         baseUrl: checkerBaseUrl,
@@ -489,6 +525,7 @@ export async function runChecker(
         deliverableContent,
         toolName,
         toolArgs,
+        workspaceRoot,
       });
       modelVerdict = modelResult.verdict;
       modelReasoning = modelResult.reasoning;
@@ -698,6 +735,7 @@ interface ModelEvalInput {
   deliverableContent: string;
   toolName?: string;
   toolArgs?: any;
+  workspaceRoot?: string;
 }
 
 async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: CheckerVerdict; reasoning: string }> {
@@ -712,16 +750,20 @@ async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: Che
     `  - "revise": there are fixable gaps — identify the smallest useful correction.\n` +
     `  - "reject": the deliverable is fundamentally broken, unsafe, missing required evidence, or the verification gate could not run.\n` +
     `  - If deterministic checks failed, an evidence file is absent/invalid, a check is unsupported, or the result is empty, return "revise" or "reject"; never approve.\n` +
-    `  - Inspect the actual deliverable and the supplied evidence. Do not invent a source, test result, or approval.\n` +
+    `  - Inspect the actual deliverable and the supplied evidence. When images or documents are attached natively, inspect them directly and confirm cited figures against those files.\n` +
+    `  - Do not invent a source, test result, or approval.\n` +
     `  - Be demanding but specific: the checker should help the maker fix the root cause, not rubber-stamp it.\n`;
 
-  const userPrompt =
-    `Tool that produced this work: ${input.toolName || "unknown"}\n` +
-    `Deliverable path: ${input.deliverablePath || "n/a"}\n\n` +
-    `Deterministic evidence:\n${input.evidence.map((e) => `  - ${e}`).join("\n")}\n\n` +
-    `Deliverable content (truncated):\n${input.deliverableContent || "[no file content]"}\n\n` +
-    `Evaluate this work for correctness, source traceability, uncertainty disclosure, and professional usability. ` +
-    `Return JSON: {"verdict": "...", "reasoning": "..."}`;
+  // Multimodal parity with the maker: same native [File:] encoding path
+  // (images → image_url, documents → file). Fail-closed when required
+  // sources cannot encode — never approve blind.
+  const vision = await buildCheckerVisionContent({
+    deliverablePath: input.deliverablePath,
+    deliverableContent: input.deliverableContent,
+    evidenceLines: input.evidence,
+    toolName: input.toolName,
+    workspaceRoot: input.workspaceRoot,
+  });
 
   const response = await fetch(`${input.baseUrl}/chat/completions`, {
     method: "POST",
@@ -733,7 +775,7 @@ async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: Che
       model: input.model,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "user", content: vision.content as FileContent },
       ],
       temperature: 0.1,
       max_tokens: 500,
@@ -754,7 +796,11 @@ async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: Che
   const parsed = JSON.parse(jsonMatch[0]);
   const verdict = (["approve", "revise", "reject"].includes(parsed.verdict) ? parsed.verdict : "revise") as CheckerVerdict;
   const reasoning = String(parsed.reasoning || "No reasoning provided").substring(0, 500);
-  return { verdict, reasoning };
+  const visionNote =
+    vision.imageCount > 0
+      ? ` [vision: ${vision.imageCount} image(s)]`
+      : "";
+  return { verdict, reasoning: reasoning + visionNote };
 }
 
 // ─── Audit + override (US-15.4) ───────────────────────────────────────

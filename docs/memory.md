@@ -8,7 +8,7 @@ Quiver implements multiple distinct memory structures, all stored as plain text 
 
 ### 1. Core Memory (`~/.quiver/core.json`)
 Global identity and human context, shared across all projects:
-- `identity` — Who the agent is
+- `identity` — Engagement preferences (tone/audience hints). Product role identity lives only in `skills/system-prompt/SKILL.md`.
 - `human_context` — Who the user is
 
 ### 2. Project Memory (`~/.quiver/projects/{project_id}/memory/`)

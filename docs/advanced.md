@@ -55,6 +55,14 @@ scratchpad. Three behaviors are driven by it:
 3. **Completion self-heal** — at task completion the checker runs once in full mode
    to catch non-targeted regressions; capped at 5 rounds (`QUIVER_AMBIENT_MAX_ROUNDS`).
 
+When model evaluation is enabled (`CHECKER_LLM_*`), the VP checker receives the
+same native multimodal path the Associate uses: Evidence.json PDF/image/document
+sources are attached via `[File:]` → `processFileMarkers` (`image_url` for
+images, `file` parts for PDFs/documents) in `src/subagents/checker_vision.ts`.
+No PDF→PNG conversion or deliverable screenshots in that path. Required
+attachments that cannot encode fail closed (approval blocked). Prefer a
+multimodal (text + image + document) checker model on Ollama Cloud (or local).
+
 `/override` is the manual escape hatch. Customer-facing name for all of this:
 **verified before delivery** — do not use "maker-checker" with clients.
 

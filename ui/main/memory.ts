@@ -89,7 +89,8 @@ export async function loadCoreMemory(): Promise<any> {
     return JSON.parse(content);
   } catch {
     return {
-      identity: "You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.",
+      identity:
+        "Prefer concise, source-backed drafts suitable for analysts, researchers, consultants, and legal professionals. Never invent facts or sources.",
       human_context: "",
       project_context: "",
     };

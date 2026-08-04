@@ -57,6 +57,47 @@ export function resetEvidenceTracker(): void {
 }
 
 /**
+ * Human/VP consent for evidence promote actions (approve source / verify claim).
+ * Quiet mode fails closed unless QUIVER_AUTO_APPROVE_EVIDENCE=1.
+ * Interactive: Y/n (empty → yes). JSON/GUI: explicit approve token via stdin.
+ */
+async function requireHumanEvidenceConsent(prompt: string): Promise<boolean> {
+  if (config.outputMode === "quiet") {
+    return process.env.QUIVER_AUTO_APPROVE_EVIDENCE === "1";
+  }
+  try {
+    const { emitAgentUiEvent } = await import("../agent_ui_events.js");
+    emitAgentUiEvent({
+      type: "evidence_consent_proposed",
+      data: { text: prompt },
+    });
+    const { askQuestionRaw } = await import("../utils/prompt.js");
+    if (config.outputMode === "interactive") {
+      const { card } = await import("../cli_ui.js");
+      card({
+        title: "Evidence approval required",
+        body: [prompt],
+        footer: "Only you (not the model) can approve sources or verify claims.",
+        accent: "brand",
+      });
+    }
+    const ans = (await askQuestionRaw(
+      config.outputMode === "interactive"
+        ? "  Approve? [Y/n]: "
+        : "",
+    ))
+      .trim()
+      .toLowerCase();
+    if (config.outputMode === "interactive") {
+      return !ans.startsWith("n");
+    }
+    return /^(a|y|yes|approve|allow)$/.test(ans);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Register provenance from an external data call without making connector
  * plugins depend on the EvidenceTracker's storage details. Calls outside an
  * active agent session are reported as unregistered rather than silently
@@ -87,7 +128,9 @@ export function registerConnectorProvenance(
         description: `External connector reference: ${provenance.apiRef}`,
       },
       sensitivity,
-      approved: true,
+      // Connector auto-registration is provenance only — not VP approval.
+      // Quantitative claims must cite approved sources or be flagged.
+      approved: false,
     }).registered;
   } catch {
     return false;
@@ -107,6 +150,7 @@ export const tool: Tool = {
     action: z
       .enum([
         "register_source",
+        "approve_source",
         "exclude_source",
         "record_claim",
         "update_claim",
@@ -121,7 +165,7 @@ export const tool: Tool = {
       .string()
       .optional()
       .describe(
-        "Source ID (e.g., SRC-001). Required for register_source and exclude_source.",
+        "Source ID (e.g., SRC-001). Required for register_source, approve_source, and exclude_source.",
       ),
     source_type: z
       .enum([
@@ -172,7 +216,7 @@ export const tool: Tool = {
       .boolean()
       .optional()
       .describe(
-        "Whether the source is approved for use. Default false; approval must be explicit. Used with register_source.",
+        "Ignored on register_source (maker cannot self-approve). Use action approve_source after human consent.",
       ),
     excerpt: z
       .string()
@@ -293,9 +337,9 @@ export const tool: Tool = {
           as_of: args.as_of || new Date().toISOString().split("T")[0],
           location,
           sensitivity: args.sensitivity || "public",
-          // Source approval is a substantive gate. Missing approval must not
-          // become approval through a convenience default.
-          approved: args.approved === true,
+          // Source approval is a human/VP gate — the maker model cannot
+          // self-approve sources via tool args (principles: enforced approval).
+          approved: false,
           ...(args.extracted_value
             ? { extracted_value: args.extracted_value }
             : {}),
@@ -307,8 +351,24 @@ export const tool: Tool = {
 
         const result = tracker.registerSource(source);
         return result.registered
-          ? `✓ Source ${result.source_id} registered: "${source.title}" (${source.source_type}, ${source.approved ? "approved" : "not approved"})`
+          ? `✓ Source ${result.source_id} registered: "${source.title}" (${source.source_type}, pending approval — use approve_source after human review)`
           : `Error: Could not register source ${result.source_id} (tracker may be finalized).`;
+      }
+
+      // ─── approve_source (human/VP only) ─────────────────────────────
+      case "approve_source": {
+        if (!args.source_id)
+          return "Error: source_id is required for approve_source.";
+        const consented = await requireHumanEvidenceConsent(
+          `Approve source ${args.source_id} for quantitative citation?`,
+        );
+        if (!consented) {
+          return `Error: source ${args.source_id} was not approved (human declined or consent unavailable).`;
+        }
+        const result = tracker.approveSource(args.source_id);
+        return result.approved
+          ? `✓ Source ${result.source_id} approved for citation.`
+          : `Error: Could not approve source ${args.source_id} (missing or finalized).`;
       }
 
       // ─── exclude_source ──────────────────────────────────────────────
@@ -354,12 +414,18 @@ export const tool: Tool = {
           }
         }
 
+        // Maker cannot self-verify. "verified" is reserved for human/VP review.
+        const makerStatus: ReviewStatus =
+          args.review_status === "verified"
+            ? "needs_analyst"
+            : ((args.review_status || "needs_analyst") as ReviewStatus);
+
         const claim: ClaimRecord = {
           claim_id: args.claim_id,
           rendered_text: args.rendered_text,
           source_ids: args.source_ids,
           relationship: (args.relationship || "unresolved") as Relationship,
-          review_status: (args.review_status || "needs_analyst") as ReviewStatus,
+          review_status: makerStatus,
           reviewer_decision: null,
           is_quantitative: args.is_quantitative !== false,
           ...(args.review_note ? { review_note: args.review_note } : {}),
@@ -379,6 +445,18 @@ export const tool: Tool = {
           return "Error: claim_id is required for update_claim.";
         if (!args.review_status)
           return "Error: review_status is required for update_claim.";
+
+        if (args.review_status === "verified") {
+          const consented = await requireHumanEvidenceConsent(
+            `Mark claim ${args.claim_id} as verified?`,
+          );
+          if (!consented) {
+            return (
+              "Error: claim was not marked verified (human declined or consent unavailable). " +
+              "Use needs_analyst, flagged, or unresolved without consent."
+            );
+          }
+        }
 
         const result = tracker.updateClaimStatus(
           args.claim_id,
@@ -463,8 +541,9 @@ export const tool: Tool = {
         if (sources.length > 0) {
           lines.push(`  Sources:`);
           for (const s of sources) {
+            const pending = !s.approved && !excluded.some((e) => e.source_id === s.source_id);
             lines.push(
-              `    ${s.source_id}: ${s.title} (${s.approved ? "approved" : "excluded"})`,
+              `    ${s.source_id}: ${s.title} (${s.approved ? "approved" : pending ? "pending approval" : "excluded"})`,
             );
           }
         }

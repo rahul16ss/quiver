@@ -49,6 +49,10 @@ export interface ModelEvent {
   toolCallName?: string;
   toolCallArguments?: string;
   toolCallIndex?: number;
+  /** Opaque provider fields on tool_calls that must be echoed later. */
+  toolCallPassthrough?: Record<string, unknown>;
+  /** @deprecated use toolCallPassthrough */
+  toolCallExtraContent?: Record<string, unknown>;
   error?: string;
   finishReason?: string;
   usage?: {
@@ -138,26 +142,46 @@ export function describeUnknownChunk(chunk: unknown): string {
 // ─── Provider Registry ───────────────────────────────────────────────
 
 import { config } from "../config.js";
+import {
+  isVertexHost,
+  resolveLlmBearerToken,
+  resolveMakerBaseUrl,
+} from "./vertex_auth.js";
+import { extractToolCallPassthrough } from "./tool_call_passthrough.js";
 
 /**
- * OpenAI-compatible provider (works with Ollama, OpenRouter, etc.)
+ * OpenAI-compatible provider (works with Ollama, OpenRouter, Vertex OpenAI-compat, etc.)
  */
 export class OpenAICompatibleProvider implements ModelProvider {
   id: string;
   private baseUrl: string;
   private apiKey: string;
+  /** Optional async resolver for short-lived tokens (Vertex OAuth). */
+  private resolveApiKey?: () => Promise<string>;
 
-  constructor(id: string, baseUrl: string, apiKey: string) {
+  constructor(
+    id: string,
+    baseUrl: string,
+    apiKey: string,
+    resolveApiKey?: () => Promise<string>,
+  ) {
     this.id = id;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
+    this.resolveApiKey = resolveApiKey;
+  }
+
+  private async bearerToken(): Promise<string> {
+    if (this.resolveApiKey) return (await this.resolveApiKey()) || "";
+    return this.apiKey || "";
   }
 
   async listModels(): Promise<ModelInfo[]> {
     try {
+      const apiKey = await this.bearerToken();
       const response = await fetch(`${this.baseUrl}/models`, {
         headers: {
-          ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         },
       });
       if (!response.ok) return [];
@@ -220,11 +244,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     let response: Response;
     try {
+      const apiKey = await this.bearerToken();
       response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
         },
         body: JSON.stringify({
           model: request.model,
@@ -343,12 +368,23 @@ export class OpenAICompatibleProvider implements ModelProvider {
             if (delta?.tool_calls) {
               for (const tc of delta.tool_calls) {
                 const idx = typeof tc.index === "number" ? tc.index : 0;
+                // Pass through unknown tool_call fields verbatim — never drop
+                // provider-required echo bags (transport concern only).
+                const passthrough = extractToolCallPassthrough(
+                  tc as Record<string, unknown>,
+                );
                 if (tc.function?.name) {
                   yield {
                     type: "tool_call_start",
                     toolCallId: tc.id,
                     toolCallName: tc.function.name,
                     toolCallIndex: idx,
+                    ...(passthrough
+                      ? {
+                          toolCallPassthrough: passthrough,
+                          toolCallExtraContent: passthrough,
+                        }
+                      : {}),
                   };
                 }
                 if (tc.function?.arguments) {
@@ -357,6 +393,26 @@ export class OpenAICompatibleProvider implements ModelProvider {
                     toolCallId: tc.id,
                     toolCallArguments: tc.function.arguments,
                     toolCallIndex: idx,
+                    ...(passthrough
+                      ? {
+                          toolCallPassthrough: passthrough,
+                          toolCallExtraContent: passthrough,
+                        }
+                      : {}),
+                  };
+                }
+                // Passthrough-only chunk (name/args already streamed).
+                if (
+                  passthrough &&
+                  !tc.function?.name &&
+                  !tc.function?.arguments
+                ) {
+                  yield {
+                    type: "tool_call_delta",
+                    toolCallId: tc.id,
+                    toolCallIndex: idx,
+                    toolCallPassthrough: passthrough,
+                    toolCallExtraContent: passthrough,
                   };
                 }
               }
@@ -455,11 +511,18 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 /**
  * Get the active model provider based on config.
+ * Vertex BYOK: builds the customer project URL and refreshes OAuth tokens.
  */
 export function getActiveProvider(): ModelProvider {
-  const baseUrl = config.llmBaseUrl;
+  const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
   const apiKey = config.llmApiKey;
-  return new OpenAICompatibleProvider("default", baseUrl, apiKey);
+  const vertex = isVertexHost(baseUrl);
+  return new OpenAICompatibleProvider(
+    vertex ? "vertex" : "default",
+    baseUrl,
+    apiKey,
+    vertex ? () => resolveLlmBearerToken({ forceVertex: true }) : undefined,
+  );
 }
 
 /**

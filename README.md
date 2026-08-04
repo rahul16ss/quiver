@@ -21,7 +21,7 @@ Quiver helps investment, advisory, and wealth management teams build inspection-
 
 ## 2. Reference workflows & pack library
 
-Quiver includes an **Ambient Workflow Engine** (`quiver workflow`) and 12 declared pack manifests across 3 families:
+Quiver includes an **Ambient Workflow Engine** (`quiver workflow`) and **13** declared pack manifests across 3 families:
 
 | Family | Workflow Pack | Intended purpose and deliverable |
 | :--- | :--- | :--- |
@@ -41,19 +41,21 @@ Quiver includes an **Ambient Workflow Engine** (`quiver workflow`) and 12 declar
 
 Pack maturity is explicit. `investment-committee-memo`, `post-earnings-evidence-pack`,
 and `portfolio-review-pack` are the three credential-free, runnable reference demos.
-The other nine entries are `scaffold` packs: they provide a declared workflow,
+The other **ten** entries are `scaffold` packs: they provide a declared workflow,
 sample inputs, and acceptance intent, but are not marketed as production-ready
 document generators until they have their own runnable demo and acceptance gate.
+Scaffold packs may name intended formats (including `.pdf`) that the current
+`office_doc` tool does not yet emit — treat those as templates, not runnable
+pipelines.
 
-Run any workflow pack on demand:
+Run any workflow pack on demand (requires configured model; one-shot CLI):
 ```bash
+quiver workflow list
 quiver workflow run investment-committee-memo
 ```
-Or set up background schedules / file watchers:
-```bash
-quiver workflow schedule investment-committee-memo --cron "0 8 * * 1"
-quiver workflow watch post-earnings-evidence-pack --dir ./inbox --pattern "*.pdf"
-```
+For recurring/file-triggered automation, register a schedule or watch rule and
+keep an interactive `quiver` session (or the daemon) running — one-shot
+`quiver workflow schedule|watch` registers the rule then exits.
 
 ---
 
@@ -106,7 +108,7 @@ npm run demo:portfolio-review
 
 ## 6. Data handling
 
-Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no product telemetry.
+Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`, or Vertex AI via the customer’s own `VERTEX_PROJECT_ID` (Google bills that GCP project — Quiver does not use a shared Conviction Studio Google account). When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no product telemetry.
 
 ### Recommended finance-client deployment configuration
 

@@ -12,6 +12,10 @@ export interface ToolCall {
     name: string;
     arguments: string; // JSON string
   };
+  /** Opaque provider fields to echo on later turns (transport only). */
+  passthrough?: Record<string, unknown>;
+  /** @deprecated legacy session shape — still echoed via shapeOutboundToolCall */
+  extra_content?: Record<string, unknown>;
 }
 
 export interface Message {

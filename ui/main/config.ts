@@ -17,6 +17,14 @@ export interface QuiverConfig {
   provider: ProviderConfig;
   parallelApiKey: string;
   llmApiKey: string;
+  /** Customer GCP project for Vertex AI (BYOK billing). Path-only credentials. */
+  vertexProjectId?: string;
+  /** Vertex location (global or region). */
+  vertexLocation?: string;
+  /** Absolute path to the customer's service-account JSON (never the JSON body). */
+  googleApplicationCredentials?: string;
+  /** Optional checker model (from CHECKER_LLM_MODEL_NAME / Settings). */
+  checkerModelName?: string;
   /** Comma-separated autonomy grants (e.g. "write_file,run_command" or "yolo"). */
   autonomyGrants: string;
   maxContextTokens: number;
@@ -80,6 +88,10 @@ export const DEFAULT_CONFIG: QuiverConfig = {
   },
   parallelApiKey: "",
   llmApiKey: "",
+  vertexProjectId: config.vertexProjectId || "",
+  vertexLocation: config.vertexLocation || "global",
+  googleApplicationCredentials: config.googleApplicationCredentials || "",
+  checkerModelName: config.checkerModelName || "",
   autonomyGrants: "",
   maxContextTokens: config.maxContextTokens,
   memoryDir: "./memory",
@@ -180,10 +192,14 @@ export async function saveConfig(config: QuiverConfig): Promise<boolean> {
 
 export async function isConfigured(): Promise<boolean> {
   const cfg = await loadConfig();
+  const vertexReady = Boolean(
+    (cfg.vertexProjectId || process.env.VERTEX_PROJECT_ID || "").trim(),
+  );
   return Boolean(
     cfg.provider.apiKey ||
       (await storedCredential("LLM_API_KEY")) ||
-      process.env.LLM_API_KEY,
+      process.env.LLM_API_KEY ||
+      vertexReady,
   );
 }
 
@@ -231,14 +247,24 @@ export async function syncToEnv(cfg: QuiverConfig): Promise<void> {
       }
     }
 
+    const vertexProject = (cfg.vertexProjectId || "").trim();
     const replacements: Record<string, string> = {
       LLM_API_BASE_URL: cfg.provider.baseUrl,
       LLM_MODEL_NAME: cfg.provider.modelName,
       LLM_API_KEY: "",
       PARALLEL_API_KEY: "",
+      VERTEX_PROJECT_ID: vertexProject,
+      VERTEX_LOCATION: (cfg.vertexLocation || "global").trim() || "global",
+      GOOGLE_APPLICATION_CREDENTIALS: (
+        cfg.googleApplicationCredentials || ""
+      ).trim(),
+      CHECKER_LLM_MODEL_NAME: (cfg.checkerModelName || "").trim(),
       QUIVER_AUTONOMY: cfg.autonomyGrants || "",
       QUIVER_MAX_CONTEXT_TOKENS: String(cfg.maxContextTokens),
     };
+    // Intentionally omit QUIVER_CHECKER_REMOTE_APPROVED from .env persistence.
+    // The GUI sets it only in the agent child process env (agent-bridge) so
+    // CLI sessions do not permanently inherit a loosened checker policy.
 
     for (const [key, value] of Object.entries(replacements)) {
       const regex = new RegExp(`^${key}=.*$`, "m");

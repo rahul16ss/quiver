@@ -22,6 +22,7 @@ import * as path from "path";
 import * as os from "os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import * as crypto from "crypto";
+import { fileURLToPath } from "url";
 
 const GLOBAL_ROOT = path.join(os.homedir(), ".quiver");
 
@@ -135,8 +136,8 @@ export function getProjectToolsDir(): string {
 
 /**
  * Ensure all required directories exist.
- * Called once at startup. Also seeds the global skills directory with
- * the system-prompt skill if it doesn't exist yet.
+ * Called once at startup. Seeds ~/.quiver/skills with every packaged skill
+ * that is missing (never overwrites an existing user-edited skill).
  */
 export async function ensureDirectories(): Promise<void> {
   const { promises: fs } = await import("fs");
@@ -145,15 +146,37 @@ export async function ensureDirectories(): Promise<void> {
   await fs.mkdir(getProjectMemoryDir(), { recursive: true });
   await fs.mkdir(getProjectSessionsDir(), { recursive: true });
 
-  // Seed system-prompt skill if missing
-  const globalSkillDir = path.join(GLOBAL_ROOT, "skills", "system-prompt");
-  const globalSkillFile = path.join(globalSkillDir, "SKILL.md");
-  if (!existsSync(globalSkillFile)) {
-    // Try to copy from local ./skills/system-prompt/SKILL.md
-    const localSkill = path.resolve(process.cwd(), "skills", "system-prompt", "SKILL.md");
-    if (existsSync(localSkill)) {
-      await fs.mkdir(globalSkillDir, { recursive: true });
-      await fs.copyFile(localSkill, globalSkillFile);
-    }
+  await seedPackagedSkills();
+}
+
+/**
+ * Copy any missing packaged skills into ~/.quiver/skills/.
+ * Existing skill directories are left alone so user edits are preserved.
+ */
+export async function seedPackagedSkills(): Promise<void> {
+  const { promises: fs } = await import("fs");
+  const packageSkillsRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "skills",
+  );
+  if (!existsSync(packageSkillsRoot)) return;
+
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(packageSkillsRoot);
+  } catch {
+    return;
+  }
+
+  for (const name of entries) {
+    const srcDir = path.join(packageSkillsRoot, name);
+    const srcFile = path.join(srcDir, "SKILL.md");
+    if (!existsSync(srcFile)) continue;
+    const destDir = path.join(GLOBAL_ROOT, "skills", name);
+    const destFile = path.join(destDir, "SKILL.md");
+    if (existsSync(destFile)) continue;
+    await fs.mkdir(destDir, { recursive: true });
+    await fs.copyFile(srcFile, destFile);
   }
 }

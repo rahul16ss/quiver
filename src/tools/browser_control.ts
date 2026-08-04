@@ -1,46 +1,34 @@
 import { z } from "zod";
-import puppeteer, { Browser } from "puppeteer";
+import puppeteer, { Browser, Page } from "puppeteer";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { Tool } from "../registry.js";
 import { config } from "../config.js";
 import { getProjectSessionsDir } from "../paths.js";
+import { isPrivateUrl } from "../security/private_url.js";
 
-/**
- * SSRF protection: blocks navigation to private/internal IP ranges.
- * Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable (default: enabled).
- */
-function isPrivateUrl(urlStr: string): boolean {
-  if (process.env.QUIVER_BLOCK_PRIVATE_IPS === "0") return false;
-  try {
-    const parsed = new URL(urlStr);
-    // Scheme allowlist: only http/https navigation is permitted. Non-web
-    // schemes (file:, data:, etc.) are blocked — file:// would otherwise read
-    // arbitrary local files via the browser (US-16.5 SSRF, R-HIGH-10).
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return true;
+/** Pages that already have the persistent SSRF request interceptor. */
+const ssrfGuardedPages = new WeakSet<Page>();
+
+async function ensureSsrfGuard(page: Page): Promise<void> {
+  if (ssrfGuardedPages.has(page)) return;
+  await page.setRequestInterception(true);
+  page.on("request", async (req) => {
+    try {
+      if (await isPrivateUrl(req.url())) {
+        await req.abort("blockedbyclient");
+        return;
+      }
+      await req.continue();
+    } catch {
+      try {
+        await req.abort("failed");
+      } catch {
+        /* ignore */
+      }
     }
-    const hostname = parsed.hostname;
-    if (
-      hostname === "localhost" ||
-      hostname === "0.0.0.0" ||
-      hostname.startsWith("127.") ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("169.254.") ||
-      hostname === "::1" ||
-      hostname.startsWith("fc") ||
-      hostname.startsWith("fd") ||
-      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)
-    ) {
-      return true;
-    }
-    return false;
-  } catch {
-    // Fail-closed: a malformed/unparseable URL is treated as private and
-    // blocked, never allowed through the SSRF guard (US-16.5, R-HIGH-10).
-    return true;
-  }
+  });
+  ssrfGuardedPages.add(page);
 }
 
 export const tool: Tool = {
@@ -128,19 +116,25 @@ export const tool: Tool = {
 
       // Standard viewport
       await page.setViewport({ width: 1280, height: 800 });
+      // Persistent SSRF gate for this page (navigate, click, redirects, etc.).
+      await ensureSsrfGuard(page);
 
       let resultText = "";
 
       switch (action) {
         case "navigate": {
           if (!url) throw new Error("URL is required for 'navigate' action.");
-          // SSRF protection
-          if (isPrivateUrl(url)) {
+          if (await isPrivateUrl(url)) {
             throw new Error(
               `URL '${url}' points to a private/internal network address. Blocked for security. Set QUIVER_BLOCK_PRIVATE_IPS=0 to disable.`,
             );
           }
           await page.goto(url, { waitUntil: "networkidle2" });
+          if (await isPrivateUrl(page.url())) {
+            throw new Error(
+              `Navigation landed on private/internal URL '${page.url()}'. Blocked for security.`,
+            );
+          }
           resultText = `Successfully navigated to ${url}. Current URL: ${page.url()}`;
           break;
         }

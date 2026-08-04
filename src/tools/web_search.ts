@@ -1,27 +1,39 @@
 import { z } from "zod";
 import { config } from "../config.js";
 import { Tool } from "../registry.js";
+import { isOllamaHost, resolveMakerBaseUrl } from "../providers/vertex_auth.js";
+
+function defaultSearchProvider(): "ollama" | "parallel" {
+  // Prefer Parallel whenever its key is present — Vertex/Gemini keys must
+  // never be mistaken for Ollama Pro credentials.
+  if (config.parallelApiKey) return "parallel";
+  const base = resolveMakerBaseUrl() || config.llmBaseUrl;
+  if (config.llmApiKey && isOllamaHost(base)) return "ollama";
+  return "parallel";
+}
 
 export const tool: Tool = {
   name: "web_search",
   description:
-    "Searches the web using Ollama Pro or Parallel.ai web search API and returns relevant excerpts.",
+    "Searches the web using Parallel.ai (preferred) or Ollama Pro web search and returns relevant excerpts.",
   parameters: z.object({
     query: z.string().describe("The search query string."),
     provider: z
       .enum(["ollama", "parallel"])
       .optional()
       .describe(
-        "Optional search provider override. Prioritizes Ollama Pro if not specified and LLM_API_KEY is set.",
+        "Optional search provider override. Defaults to Parallel.ai when PARALLEL_API_KEY is set; Ollama Pro only when the model host is Ollama.",
       ),
   }),
   execute: async ({ query, provider }) => {
-    const selectedProvider =
-      provider || (config.llmApiKey ? "ollama" : "parallel");
+    const selectedProvider = provider || defaultSearchProvider();
 
     if (selectedProvider === "ollama") {
       if (!config.llmApiKey) {
         return "Error: LLM_API_KEY is not set in the configuration (.env). Please configure it to use Ollama web search.";
+      }
+      if (!isOllamaHost(resolveMakerBaseUrl() || config.llmBaseUrl)) {
+        return "Error: Ollama web search is only available when the model provider is Ollama. Use Parallel.ai (PARALLEL_API_KEY) or omit provider.";
       }
 
       try {

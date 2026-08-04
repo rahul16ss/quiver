@@ -85,6 +85,9 @@ function configLabel(env: Record<string, string | undefined>, cwd: string, args:
     env: {
       LLM_API_BASE_URL: env.LLM_API_BASE_URL,
       LLM_MODEL_NAME: env.LLM_MODEL_NAME,
+      VERTEX_PROJECT_ID: env.VERTEX_PROJECT_ID,
+      VERTEX_LOCATION: env.VERTEX_LOCATION,
+      CHECKER_LLM_MODEL_NAME: env.CHECKER_LLM_MODEL_NAME,
       QUIVER_AUTONOMY: env.QUIVER_AUTONOMY,
       QUIVER_MAX_CONTEXT_TOKENS: env.QUIVER_MAX_CONTEXT_TOKENS,
       QUIVER_PROFILE: env.QUIVER_PROFILE,
@@ -171,6 +174,10 @@ export async function startAgent(config: QuiverConfig, resumeLatest: boolean = f
     LLM_MODEL_NAME: config.provider.modelName,
     LLM_API_KEY: config.llmApiKey || config.provider.apiKey,
     PARALLEL_API_KEY: config.parallelApiKey,
+    VERTEX_PROJECT_ID: config.vertexProjectId || "",
+    VERTEX_LOCATION: config.vertexLocation || "global",
+    GOOGLE_APPLICATION_CREDENTIALS: config.googleApplicationCredentials || "",
+    CHECKER_LLM_MODEL_NAME: config.checkerModelName || "",
     QUIVER_AUTONOMY: config.autonomyGrants || "",
     QUIVER_MAX_CONTEXT_TOKENS: String(config.maxContextTokens),
     QUIVER_OUTPUT_MODE: "json",
@@ -184,6 +191,9 @@ export async function startAgent(config: QuiverConfig, resumeLatest: boolean = f
         : "0",
     QUIVER_PROTECTED_DIR: getQuiverInstallDir(),
   };
+  if ((config.vertexProjectId || "").trim()) {
+    (env as Record<string, string>).QUIVER_CHECKER_REMOTE_APPROVED = "1";
+  }
 
   if (app.isPackaged) {
     (env as Record<string, string>).APP_ROOT = process.resourcesPath;

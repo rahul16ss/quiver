@@ -18,6 +18,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as crypto from "crypto";
+import { execFileSync } from "child_process";
 import type {
   WorkflowDefinition,
   WorkflowRun,
@@ -28,6 +29,13 @@ import type {
   WorkflowEventType,
 } from "./types.js";
 import { PHASE_ORDER } from "./types.js";
+import { findBinary } from "../utils/find_binary.js";
+import type {
+  ClaimRecord,
+  ExcelCellVerification,
+  ExcelDerivedVerification,
+  EvidenceModel,
+} from "../evidence/model.js";
 import { loadExpectedStructure, checkDrift, type DriftResult } from "./drift.js";
 import { atomicWriteSync, CorruptStateError } from "../fs/atomic_write.js";
 import { validateEvidenceFile } from "../evidence/tracker.js";
@@ -292,6 +300,139 @@ interface AcceptanceCheck {
   description: string;
 }
 
+function officecliJson(args: string[]): any {
+  const bin = findBinary("officecli");
+  if (!bin) throw new Error("officecli binary not found");
+  const out = execFileSync(bin, [...args, "--json"], {
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  try {
+    return JSON.parse(out).data;
+  } catch {
+    return JSON.parse(out);
+  }
+}
+
+function resolveWorkbookPath(fileHint: string, searchRoots: string[]): string | null {
+  const base = path.basename(fileHint);
+  const candidates = [
+    fileHint,
+    ...searchRoots.map((root) => path.join(root, base)),
+    ...searchRoots.map((root) => path.join(root, fileHint)),
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return null;
+}
+
+function readCellNumeric(
+  workbook: string,
+  sheet: string,
+  cell: string,
+): { ok: boolean; text: string; num: number } {
+  const data = officecliJson(["get", workbook, `/${sheet}/${cell}`]);
+  const text = String(data?.results?.[0]?.text ?? "");
+  const num = Number(String(text).replace(/[^0-9.\-]/g, ""));
+  return { ok: Number.isFinite(num), text, num };
+}
+
+function verifyExcelLineageAgainstWorkbooks(
+  models: EvidenceModel[],
+  searchRoots: string[],
+): { pass: boolean; detail: string } {
+  const claims = models.flatMap((m) =>
+    m.claims.filter(
+      (c) =>
+        c.verification?.type === "excel_cell" ||
+        c.verification?.type === "excel_derived",
+    ),
+  ) as ClaimRecord[];
+  if (claims.length === 0) {
+    return {
+      pass: false,
+      detail: "No Excel verification record was found in evidence.",
+    };
+  }
+  const failures: string[] = [];
+  let checked = 0;
+  for (const claim of claims) {
+    const v = claim.verification!;
+    if (v.type === "excel_cell") {
+      const cell = v as ExcelCellVerification;
+      const wb = resolveWorkbookPath(cell.file, searchRoots);
+      if (!wb) {
+        failures.push(`${claim.claim_id}: workbook not found (${cell.file})`);
+        continue;
+      }
+      try {
+        const { ok, text, num } = readCellNumeric(wb, cell.sheet, cell.cell);
+        checked++;
+        if (!ok || Math.abs(num - cell.expected_raw) > 1e-6) {
+          failures.push(
+            `${claim.claim_id}: ${cell.sheet}!${cell.cell} expected ${cell.expected_raw}, got ${text || "(empty)"}`,
+          );
+        }
+      } catch (e: any) {
+        failures.push(
+          `${claim.claim_id}: cell re-read failed (${e?.message || String(e)})`,
+        );
+      }
+    } else if (v.type === "excel_derived") {
+      const der = v as ExcelDerivedVerification;
+      const wb = resolveWorkbookPath(der.file, searchRoots);
+      if (!wb) {
+        failures.push(`${claim.claim_id}: workbook not found (${der.file})`);
+        continue;
+      }
+      try {
+        const num = readCellNumeric(
+          wb,
+          der.numerator.sheet,
+          der.numerator.cell,
+        );
+        const den = readCellNumeric(
+          wb,
+          der.denominator.sheet,
+          der.denominator.cell,
+        );
+        checked++;
+        if (
+          !num.ok ||
+          Math.abs(num.num - der.numerator.expected_raw) > 1e-6 ||
+          !den.ok ||
+          Math.abs(den.num - der.denominator.expected_raw) > 1e-6
+        ) {
+          failures.push(
+            `${claim.claim_id}: derived cells drifted (num=${num.text}, den=${den.text})`,
+          );
+        }
+      } catch (e: any) {
+        failures.push(
+          `${claim.claim_id}: derived re-read failed (${e?.message || String(e)})`,
+        );
+      }
+    }
+  }
+  if (failures.length > 0) {
+    return {
+      pass: false,
+      detail: `Excel lineage re-read failed: ${failures.slice(0, 3).join("; ")}`,
+    };
+  }
+  if (checked === 0) {
+    return {
+      pass: false,
+      detail: "Excel lineage records present but no cells could be re-read.",
+    };
+  }
+  return {
+    pass: true,
+    detail: `Re-read and verified ${checked} Excel cell/derived record(s).`,
+  };
+}
+
 function readAcceptanceChecks(checklistPath: string): AcceptanceCheck[] {
   const raw = fs.readFileSync(checklistPath, "utf8");
   return raw
@@ -332,6 +473,7 @@ async function evaluateAcceptanceCheck(
   check: AcceptanceCheck,
   run: WorkflowRun,
   outputFiles: string[],
+  def: WorkflowDefinition,
 ): Promise<{ pass: boolean; detail: string }> {
   const officeFiles = outputFiles.filter((file) =>
     /\.(docx|xlsx|pptx)$/i.test(file),
@@ -359,6 +501,26 @@ async function evaluateAcceptanceCheck(
       ? { pass: true, detail: `${outputFiles.length} output file(s) exist.` }
       : { pass: false, detail: "No non-empty output files were found." };
   }
+  // Excel / cell lineage must run before the generic "lineage" companion check —
+  // otherwise names like excel_lineage_verified match "lineage" and false-pass
+  // on Evidence.json alone without any excel_cell / excel_derived records.
+  if (name.includes("excel") || name.includes("cell")) {
+    if (models.length === 0) {
+      return {
+        pass: false,
+        detail: "No valid evidence models available to evaluate Excel lineage.",
+      };
+    }
+    const searchRoots = [
+      path.join(def.packRoot, def.outputs?.directory || "output"),
+      path.join(def.packRoot, "inputs"),
+      path.join(def.packRoot, "fixtures"),
+      def.packRoot,
+      path.join(def.packRoot, "..", "..", "examples", "investment-committee-memo", "fixtures"),
+    ];
+    const result = verifyExcelLineageAgainstWorkbooks(models, searchRoots);
+    return result;
+  }
   if (name.includes("evidence") || name.includes("lineage")) {
     return validEvidence.length === officeFiles.length && officeFiles.length > 0
       ? { pass: true, detail: "Every Office output has valid companion evidence." }
@@ -367,19 +529,13 @@ async function evaluateAcceptanceCheck(
           detail: `${validEvidence.length}/${officeFiles.length} Office outputs have valid companion evidence.`,
         };
   }
-  if (name.includes("excel") || name.includes("cell")) {
-    const verified = models.some((model) =>
-      model.claims.some(
-        (claim) =>
-          claim.verification?.type === "excel_cell" ||
-          claim.verification?.type === "excel_derived",
-      ),
-    );
-    return verified
-      ? { pass: true, detail: "Evidence contains an Excel cell or derived verification." }
-      : { pass: false, detail: "No Excel verification record was found in evidence." };
-  }
   if (name.includes("unresolved")) {
+    if (models.length === 0) {
+      return {
+        pass: false,
+        detail: "No valid evidence models available to evaluate unresolved claims.",
+      };
+    }
     const unresolved = models.flatMap((model) =>
       model.claims.filter(
         (claim) =>
@@ -387,12 +543,48 @@ async function evaluateAcceptanceCheck(
           claim.review_status === "unresolved",
       ),
     );
-    const surfaced = unresolved.every(
+    if (unresolved.length === 0) {
+      return {
+        pass: true,
+        detail: "0 unresolved item(s) are surfaced for review.",
+      };
+    }
+    const noteOk = unresolved.every(
       (claim) => typeof claim.review_note === "string" && claim.review_note.trim(),
     );
-    return surfaced
-      ? { pass: true, detail: `${unresolved.length} unresolved item(s) are surfaced for review.` }
-      : { pass: false, detail: "Unresolved claims lack a review note." };
+    if (!noteOk) {
+      return { pass: false, detail: "Unresolved claims lack a review note." };
+    }
+    // Stated criterion: listed in review checklist — require claim_ids appear
+    // in a review checklist artifact among outputs (md/html/txt).
+    const checklistFiles = outputFiles.filter((f) =>
+      /review.?checklist|checklist/i.test(path.basename(f)),
+    );
+    if (checklistFiles.length === 0) {
+      return {
+        pass: false,
+        detail: "No review checklist artifact found among outputs to surface unresolved items.",
+      };
+    }
+    const checklistText = checklistFiles
+      .map((f) => {
+        try {
+          return fs.readFileSync(f, "utf8");
+        } catch {
+          return "";
+        }
+      })
+      .join("\n");
+    const missing = unresolved.filter((c) => !checklistText.includes(c.claim_id));
+    return missing.length === 0
+      ? {
+          pass: true,
+          detail: `${unresolved.length} unresolved item(s) listed in review checklist.`,
+        }
+      : {
+          pass: false,
+          detail: `Unresolved claims missing from checklist: ${missing.map((c) => c.claim_id).join(", ")}`,
+        };
   }
 
   return {
@@ -427,6 +619,7 @@ async function executeVerify(
             check,
             run,
             outputFiles,
+            def,
           );
           checkResults.push({ id: check.id, ...result });
           if (!result.pass) {

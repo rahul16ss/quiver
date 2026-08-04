@@ -26,6 +26,7 @@ const KNOWN_FLAGS = [
   "--single-turn",
   "init",
   "signin",
+  "workflow",
   "--continue",
   "-c",
   "--resume",
@@ -47,6 +48,8 @@ export interface CliOptions {
   init: boolean;
   signin: boolean;
   daemon?: string; // 'install' | 'uninstall' | 'status'
+  /** Remaining argv after `quiver workflow` (e.g. ["run","investment-committee-memo"]). */
+  workflowArgs?: string[];
   singleTurn?: string;
   continue?: boolean;
   resume?: boolean;
@@ -54,6 +57,7 @@ export interface CliOptions {
   model?: string;
   yolo?: boolean;
   unknownFlags: string[];
+  unknownPositionals: string[];
 }
 
 type ColorFn = (s: string) => string;
@@ -241,12 +245,14 @@ export function parseCliArgs(argv: string[]): CliOptions {
     init: false,
     signin: false,
     daemon: undefined,
+    workflowArgs: undefined,
     continue: false,
     resume: false,
     listSessions: false,
     model: undefined,
     yolo: false,
     unknownFlags: [],
+    unknownPositionals: [],
   };
 
   // Normalize argv before dispatch so the parser supports two POSIX-isms the
@@ -307,6 +313,11 @@ export function parseCliArgs(argv: string[]): CliOptions {
       if (next && !next.startsWith("-")) i++;
       continue;
     }
+    if (arg === "workflow") {
+      // Consume the rest of argv so flags like --cron/--dir stay with workflow.
+      opts.workflowArgs = expanded.slice(i + 1);
+      break;
+    }
     if (arg === "--single-turn") {
       const next = expanded[i + 1];
       if (!next || next.startsWith("-")) {
@@ -343,6 +354,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg.startsWith("-")) {
       opts.unknownFlags.push(arg);
+    } else {
+      // Bare unknown positionals used to be silently ignored (so
+      // `quiver workflow run …` looked like a successful chat start).
+      opts.unknownPositionals.push(arg);
     }
   }
 

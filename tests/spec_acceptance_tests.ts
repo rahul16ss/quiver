@@ -13,7 +13,7 @@
  */
 
 import picocolors from "picocolors";
-import { promises as fs, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, realpathSync } from "fs";
+import { promises as fs, existsSync, readFileSync, readdirSync, mkdirSync, rmSync, realpathSync, writeFileSync, mkdtempSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execSync, spawn } from "child_process";
@@ -141,7 +141,12 @@ import {
   registerConnectorProvenance,
   withEvidenceTracker,
 } from "../src/tools/evidence.js";
-import { validateEvidenceForDocument } from "../src/subagents/checker.js";
+import { validateEvidenceForDocument, runChecker } from "../src/subagents/checker.js";
+import { parseCliArgs } from "../src/cli_ui.js";
+import { seedPackagedSkills, getGlobalRoot } from "../src/paths.js";
+import { resolveTargetedChecks } from "../src/subagents/checker_filter.js";
+import { loadCoreMemory, DEFAULT_CORE_IDENTITY } from "../src/state.js";
+import { purgeOldLogs } from "../src/session_logger.js";
 import {
   isScratchModeActive,
   resolveScratchPath,
@@ -183,7 +188,6 @@ import {
   getHistory,
   getVersionContent,
 } from "../src/memory/versioned.js";
-import { resolveTargetedChecks } from "../src/subagents/checker_filter.js";
 import { architectReviewContract } from "./architect_review_tests.js";
 import { mergedSmokeContract } from "./merged_smoke_tests.js";
 
@@ -828,7 +832,7 @@ async function configStartupUXContract() {
   // Core (7): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY,
   //   QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS, QUIVER_SESSION_LOG,
   //   QUIVER_SESSION_LOG_MAX_CHARS.
-  // Optional: PARALLEL_API_KEY.
+  // Optional: PARALLEL_API_KEY, Vertex BYOK (customer GCP), checker overrides.
   // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_NAME,
   //   VISION_MODEL_BASE_URL, VISION_MODEL_API_KEY, CONTEXT7_API_KEY,
   //   BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by QUIVER_AUTONOMY).
@@ -847,6 +851,10 @@ async function configStartupUXContract() {
     "LLM_REASONING_EFFORT",
     "CHECKER_LLM_MODEL_NAME",
     "CHECKER_LLM_API_BASE_URL",
+    "VERTEX_PROJECT_ID",
+    "VERTEX_LOCATION",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "QUIVER_CHECKER_REMOTE_APPROVED",
     "QUIVER_AUTONOMY",
     "QUIVER_MAX_CONTEXT_TOKENS",
     "QUIVER_SESSION_LOG",
@@ -991,15 +999,19 @@ async function configStartupUXContract() {
         llmBaseUrl: config.llmBaseUrl,
         llmModelName: config.llmModelName,
         llmApiKey: config.llmApiKey,
+        vertexProjectId: config.vertexProjectId,
+        googleApplicationCredentials: config.googleApplicationCredentials,
       };
       try {
         config.llmBaseUrl = "";
         config.llmModelName = "";
         config.llmApiKey = "";
+        config.vertexProjectId = "";
+        config.googleApplicationCredentials = "";
         const missing = validateRuntimeConfig();
         if (
           missing.valid ||
-          !missing.errors.some((e) => /LLM_API_BASE_URL/.test(e)) ||
+          !missing.errors.some((e) => /LLM_API_BASE_URL|VERTEX_PROJECT_ID/.test(e)) ||
           !missing.errors.some((e) => /LLM_MODEL_NAME/.test(e))
         ) {
           return false;
@@ -1021,7 +1033,121 @@ async function configStartupUXContract() {
         config.llmBaseUrl = saved.llmBaseUrl;
         config.llmModelName = saved.llmModelName;
         config.llmApiKey = saved.llmApiKey;
+        config.vertexProjectId = saved.vertexProjectId;
+        config.googleApplicationCredentials = saved.googleApplicationCredentials;
       }
+    },
+  );
+
+  await check(
+    "VERTEX-BYOK-URL-AND-BILLING",
+    "US-1.3",
+    "Vertex OpenAI-compat URLs must be built from VERTEX_PROJECT_ID; auth must require the engagement's own GCP credentials (no shared vendor project fallback)",
+    async () => {
+      const {
+        buildVertexOpenAiBaseUrl,
+        clearVertexTokenCache,
+      } = await import("../src/providers/vertex_auth.js");
+      const globalUrl = buildVertexOpenAiBaseUrl("cust-proj-123", "global");
+      const regional = buildVertexOpenAiBaseUrl("cust-proj-123", "us-central1");
+      if (
+        globalUrl !==
+        "https://aiplatform.googleapis.com/v1/projects/cust-proj-123/locations/global/endpoints/openapi"
+      ) {
+        throw new Error(`unexpected global Vertex URL: ${globalUrl}`);
+      }
+      if (
+        regional !==
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/cust-proj-123/locations/us-central1/endpoints/openapi"
+      ) {
+        throw new Error(`unexpected regional Vertex URL: ${regional}`);
+      }
+
+      const authSrc = codeOnly("src/providers/vertex_auth.ts");
+      if (!/does not provide a shared Google Cloud project/i.test(authSrc)) {
+        throw new Error("vertex_auth must refuse shared vendor GCP billing");
+      }
+      if (!/customer's own GCP project/i.test(authSrc)) {
+        throw new Error("vertex_auth must require customer-owned credentials");
+      }
+
+      const saved = {
+        llmBaseUrl: config.llmBaseUrl,
+        llmModelName: config.llmModelName,
+        llmApiKey: config.llmApiKey,
+        vertexProjectId: config.vertexProjectId,
+        googleApplicationCredentials: config.googleApplicationCredentials,
+      };
+      try {
+        clearVertexTokenCache();
+        config.llmBaseUrl = "";
+        config.llmApiKey = "";
+        config.llmModelName = "google/gemini-2.5-pro";
+        config.vertexProjectId = "customer-byok-project";
+        config.googleApplicationCredentials = "";
+        const pf = validateRuntimeConfig();
+        if (!pf.valid) {
+          throw new Error(`Vertex BYOK preflight should be valid: ${pf.errors.join("; ")}`);
+        }
+        // Startup must stay quiet — BYOK is enforced in auth, not as a scare warning.
+        if (pf.warnings.some((w) => /Conviction Studio/i.test(w))) {
+          throw new Error("preflight must not show vendor legal copy on every launch");
+        }
+        return true;
+      } finally {
+        config.llmBaseUrl = saved.llmBaseUrl;
+        config.llmModelName = saved.llmModelName;
+        config.llmApiKey = saved.llmApiKey;
+        config.vertexProjectId = saved.vertexProjectId;
+        config.googleApplicationCredentials = saved.googleApplicationCredentials;
+      }
+    },
+  );
+
+  await check(
+    "WEB-TOOLS-PARALLEL-FIRST-NOT-VERTEX-AS-OLLAMA",
+    "US-16.3",
+    "web_search/scrape_url must prefer Parallel.ai and must not treat a Vertex/Gemini host as Ollama Pro",
+    () => {
+      const search = codeOnly("src/tools/web_search.ts");
+      const scrape = codeOnly("src/tools/scrape_url.ts");
+      if (!/isOllamaHost/.test(search) || !/isOllamaHost/.test(scrape)) {
+        throw new Error("web tools must gate Ollama Pro on isOllamaHost");
+      }
+      if (!/parallelApiKey/.test(search) || !/defaultSearchProvider/.test(search)) {
+        throw new Error("web_search must prefer Parallel when PARALLEL_API_KEY is set");
+      }
+      if (!/defaultScrapeProvider/.test(scrape)) {
+        throw new Error("scrape_url must use Parallel-first default selection");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "VERTEX-GUI-BYOK-SETTINGS",
+    "US-1.3",
+    "Settings UI must collect customer Vertex project/location/credentials path and must not invite pasting service-account JSON into config",
+    () => {
+      const html = srcText("ui/renderer/settings.html");
+      const js = srcText("ui/renderer/settings.js");
+      const cfg = codeOnly("ui/main/config.ts");
+      if (!/vertexProjectId/.test(html) || !/googleApplicationCredentials/.test(html)) {
+        throw new Error("settings.html missing Vertex BYOK fields");
+      }
+      if (!/organization.?s own Google Cloud project|organization.?s Google Cloud project/i.test(html)) {
+        throw new Error("settings must explain billing is on the org's Google Cloud project");
+      }
+      if (/Conviction Studio/i.test(html)) {
+        throw new Error("settings customer copy must not name-drop Conviction Studio");
+      }
+      if (!/private_key/.test(js) || !/file path/.test(js)) {
+        throw new Error("settings.js must reject pasted service-account JSON bodies");
+      }
+      if (!/VERTEX_PROJECT_ID/.test(cfg) || !/GOOGLE_APPLICATION_CREDENTIALS/.test(cfg)) {
+        throw new Error("GUI syncToEnv must write Vertex env vars");
+      }
+      return true;
     },
   );
 
@@ -1518,9 +1644,14 @@ async function memoryGovernanceContract() {
     () => {
       const assembler = srcText("src/prompt/assembler.ts");
       const state = srcText("src/state.ts");
+      const agent = codeOnly("src/agent.ts");
       const leaksPending =
         /readPendingMemoryFacts|readAllMemoryFacts/.test(assembler) ||
         /readPendingMemoryFacts|readAllMemoryFacts/.test(state);
+      // loadMemory must explicitly skip the facts store (GUI already does).
+      if (!/facts\.jsonl/.test(agent)) {
+        throw new Error("agent loadMemory must skip facts.jsonl by name");
+      }
       return !leaksPending;
     },
   );
@@ -3893,6 +4024,7 @@ async function checkerAuditAddendumContract(tmpWs: string) {
     () => {
       const cli = codeOnly("src/cli.ts");
       const cfg = codeOnly("src/config.ts");
+      const logger = codeOnly("src/session_logger.ts");
       // CLI must call purgeOldLogs at startup
       if (!/purgeOldLogs/.test(cli))
         throw new Error(
@@ -3911,6 +4043,11 @@ async function checkerAuditAddendumContract(tmpWs: string) {
       if (!/0.*keep.*forever|keep.*forever.*0|QUIVER_LOG_RETENTION_DAYS/i.test(cfg))
         throw new Error(
           "config does not document 0 = keep forever for logRetentionDays — US-13.3",
+        );
+      // Retention must also cover compacted/ + checkpoints/ subdirs
+      if (!/compacted/.test(logger) || !/checkpoints/.test(logger))
+        throw new Error(
+          "purgeOldLogs must purge sessions/compacted and sessions/checkpoints artifacts",
         );
       return true;
     },
@@ -4513,6 +4650,27 @@ async function specGapCoverageContract() {
           needsApprovalFor("run_command", "safe") === true &&
           needsApprovalFor("run_command", "destructive") === true &&
           needsApprovalFor("web_search") === true
+        );
+      } finally {
+        applyTrustTier(null);
+      }
+    },
+  );
+
+  await check(
+    "TRUST-TIER-OBSERVE-READS-FREE",
+    "US-6.4",
+    "observe tier must auto-approve workspace read tools (view_file/list_dir/glob/grep_search/pdf_read) while still gating writes",
+    () => {
+      applyTrustTier("observe");
+      try {
+        return (
+          needsApprovalFor("view_file") === false &&
+          needsApprovalFor("list_dir") === false &&
+          needsApprovalFor("glob") === false &&
+          needsApprovalFor("grep_search") === false &&
+          needsApprovalFor("pdf_read") === false &&
+          needsApprovalFor("write_file") === true
         );
       } finally {
         applyTrustTier(null);
@@ -5581,20 +5739,18 @@ async function extendedCapabilitiesContract() {
   );
 
   // ─── US-16.5: Browser control with SSRF protection ───────────────────
-  // isPrivateUrl() is not exported, so these are scoped source-text checks
-  // over its function body. They FAIL today (file:// and 0.0.0.0 are not
-  // blocked and the catch is fail-open) — discriminating, per R-HIGH-10.
+  // Shared guard lives in src/security/private_url.ts (used by browser_control
+  // and scrape_url). Discriminating checks assert the real scheme/IP/DNS gate.
 
   await check(
     "BROWSER-SSRF-BLOCKS-FILE-SCHEME",
     "US-16.5",
     "isPrivateUrl must block file: URLs — today new URL('file:///etc/passwd').hostname is '' which matches no private-IP branch, so file:// navigation is allowed (arbitrary local-file read via the browser). The guard must reject the file: scheme explicitly.",
     () => {
-      const c = codeOnly("src/tools/browser_control.ts");
+      const c = codeOnly("src/security/private_url.ts");
       const i = c.indexOf("function isPrivateUrl(");
       if (i === -1) return false;
-      const j = c.indexOf("\n}", i);
-      const body = c.slice(i, j === -1 ? c.length : j + 2);
+      const body = c.slice(i, i + 1200);
       // Must reference the file: scheme (parsed.protocol === 'file:' or similar).
       return /file:/.test(body) || /parsed\.protocol/.test(body);
     },
@@ -5605,12 +5761,8 @@ async function extendedCapabilitiesContract() {
     "US-16.5",
     "isPrivateUrl must block 0.0.0.0 (and ideally 0.0.0.0/8) — today '0.0.0.0' matches no branch so it is treated as a public address, allowing SSRF to the host's local network stack.",
     () => {
-      const c = codeOnly("src/tools/browser_control.ts");
-      const i = c.indexOf("function isPrivateUrl(");
-      if (i === -1) return false;
-      const j = c.indexOf("\n}", i);
-      const body = c.slice(i, j === -1 ? c.length : j + 2);
-      return /0\.0\.0\.0/.test(body);
+      const c = codeOnly("src/security/private_url.ts");
+      return /0\.0\.0\.0/.test(c) && /isPrivateIpAddress/.test(c);
     },
   );
 
@@ -5619,15 +5771,14 @@ async function extendedCapabilitiesContract() {
     "US-16.5",
     "isPrivateUrl must fail CLOSED — a malformed/unparseable URL must be treated as private (blocked), not allowed. Today the catch returns false (fail-open), so a crafted URL that throws in the URL parser bypasses the SSRF guard.",
     () => {
-      const c = codeOnly("src/tools/browser_control.ts");
+      const c = codeOnly("src/security/private_url.ts");
       const i = c.indexOf("function isPrivateUrl(");
       if (i === -1) return false;
-      const j = c.indexOf("\n}", i);
-      const body = c.slice(i, j === -1 ? c.length : j + 2);
-      // The catch block must return true (fail-closed), not false.
+      const body = c.slice(i);
+      // Outer catch must return true (fail-closed), not false.
       const catchIdx = body.lastIndexOf("catch");
       if (catchIdx === -1) return false;
-      const catchBody = body.slice(catchIdx);
+      const catchBody = body.slice(catchIdx, catchIdx + 80);
       return /return\s+true/.test(catchBody) && !/return\s+false/.test(catchBody);
     },
   );
@@ -5640,6 +5791,32 @@ async function extendedCapabilitiesContract() {
       const c = codeOnly("src/tools/browser_control.ts");
       // The navigate path must invoke isPrivateUrl and abort when it returns true.
       return /isPrivateUrl\s*\(/.test(c) && /Blocked|blocked|private\/internal/i.test(c);
+    },
+  );
+
+  await check(
+    "BROWSER-SSRF-RESOLVES-DNS",
+    "US-16.5 / Gauntlet",
+    "Shared SSRF guard must DNS-resolve hostnames and block private resolved addresses (IPv4-mapped, ::1, localtest.me class)",
+    async () => {
+      const { isPrivateUrl } = await import("../src/security/private_url.js");
+      if (!(await isPrivateUrl("http://[::1]/"))) {
+        throw new Error("bracketed ::1 must be blocked");
+      }
+      if (!(await isPrivateUrl("http://[::ffff:127.0.0.1]/"))) {
+        throw new Error("IPv4-mapped loopback must be blocked");
+      }
+      if (!(await isPrivateUrl("http://127.0.0.1/"))) {
+        throw new Error("127.0.0.1 must be blocked");
+      }
+      if (!(await isPrivateUrl("file:///etc/passwd"))) {
+        throw new Error("file: must be blocked");
+      }
+      // localtest.me resolves to 127.0.0.1 — must be blocked via DNS check
+      if (!(await isPrivateUrl("http://localtest.me/"))) {
+        throw new Error("DNS→loopback hostname must be blocked");
+      }
+      return true;
     },
   );
 
@@ -7185,6 +7362,188 @@ async function extendedCapabilitiesContract() {
     },
   );
 
+  await check(
+    "CHECKER-VISION-MULTIMODAL",
+    "US-15.1 / S8 / S9",
+    "VP checker model evaluation must feed the same native multimodal [File:] path the maker uses (Evidence.json PDF/image/document sources as image_url or file parts) — no PDF→PNG/screenshot conversion; fail-closed when required attachments cannot encode",
+    () => {
+      const checker = codeOnly("src/subagents/checker.ts");
+      const vision = codeOnly("src/subagents/checker_vision.ts");
+      const encoder = codeOnly("src/file_encoder.ts");
+      const wired =
+        /buildCheckerVisionContent/.test(checker) &&
+        /processFileMarkers/.test(vision) &&
+        /encodeFileAsDataURL/.test(encoder) &&
+        /type:\s*"file"/.test(encoder) &&
+        /requiredAttachments/.test(vision);
+      const failClosed =
+        /Checker vision encoding incomplete/.test(vision) ||
+        /required source file missing/.test(vision);
+      const noConvert =
+        !/renderPdfPages/.test(vision) &&
+        !/renderDocument/.test(vision) &&
+        !/screenshot/.test(vision);
+      const reusesMakerPath = /from ["'].*file_encoder/.test(
+        srcText("src/subagents/checker_vision.ts"),
+      );
+      return wired && failClosed && noConvert && reusesMakerPath;
+    },
+  );
+
+  await check(
+    "CHECKER-VISION-BEHAVIORAL",
+    "US-15.1 / S9",
+    "buildCheckerVisionContent must encode a cited image as image_url and a cited PDF as a native file part, and reject when a required source file is missing",
+    async () => {
+      const mod = await import("../src/subagents/checker_vision.js");
+      const tmp = mkdtempSync(path.join(os.tmpdir(), "quiver-checker-vision-"));
+      try {
+        // Minimal valid 1×1 PNG
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "base64",
+        );
+        const imgPath = path.join(tmp, "chart.png");
+        writeFileSync(imgPath, png);
+        // Minimal PDF with valid magic
+        const pdfPath = path.join(tmp, "filing.pdf");
+        writeFileSync(
+          pdfPath,
+          Buffer.from(
+            "%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n",
+            "utf8",
+          ),
+        );
+        const docPath = path.join(tmp, "Memo.docx");
+        // Valid ZIP magic so a fake OpenXML package can encode as a file part
+        writeFileSync(docPath, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]));
+        const evidencePath = path.join(tmp, "Memo_Evidence.json");
+        writeFileSync(
+          evidencePath,
+          JSON.stringify({
+            label: "test",
+            workflow: "test",
+            workflow_version: "1",
+            company: "Test",
+            title: "Test memo",
+            subtitle: "",
+            as_of: "2026-01-01",
+            date_line: "2026-01-01",
+            generated_at: "2026-01-01T00:00:00Z",
+            generated_by: "live_agent",
+            review_status: "draft_for_review",
+            lineage_note: "test",
+            summary: { sources_reviewed: 2, sources_excluded: 0, claims_total: 0, figures_flagged: 0 },
+            claims: [],
+            sources: [
+              {
+                source_id: "SRC-IMG",
+                source_type: "other",
+                title: "Chart",
+                file: "chart.png",
+                as_of: "2026-01-01",
+                location: {},
+                sensitivity: "public",
+                approved: true,
+              },
+              {
+                source_id: "SRC-PDF",
+                source_type: "filing",
+                title: "10-K",
+                file: "filing.pdf",
+                as_of: "2026-01-01",
+                location: { page: 12 },
+                sensitivity: "public",
+                approved: true,
+              },
+            ],
+            sources_excluded: [],
+          }),
+          "utf8",
+        );
+
+        const ok = await mod.buildCheckerVisionContent({
+          deliverablePath: docPath,
+          deliverableContent: "[binary]",
+          evidenceLines: ["Evidence validation: all claims sourced or flagged."],
+          toolName: "office_doc",
+          workspaceRoot: tmp,
+        });
+        if (!Array.isArray(ok.content)) {
+          throw new Error("expected multimodal content array");
+        }
+        const images = ok.content.filter((p: any) => p.type === "image_url");
+        const files = ok.content.filter((p: any) => p.type === "file");
+        if (images.length < 1) {
+          throw new Error(`expected ≥1 image_url, got ${images.length}`);
+        }
+        if (files.length < 1) {
+          throw new Error(`expected ≥1 native file part for PDF, got ${files.length}`);
+        }
+        const pdfPart = files.find(
+          (p: any) => p?.type === "file" && /filing\.pdf/i.test(p?.file?.filename || ""),
+        ) as { type: "file"; file: { filename: string; file_data: string } } | undefined;
+        if (!pdfPart || !String(pdfPart.file.file_data || "").startsWith("data:application/pdf")) {
+          throw new Error("PDF source must encode as data:application/pdf file part");
+        }
+        if (ok.requiredAttachments < 2) {
+          throw new Error("requiredAttachments should be ≥2 for cited image + PDF");
+        }
+
+        // Missing required visual → fail-closed throw
+        writeFileSync(
+          evidencePath,
+          JSON.stringify({
+            label: "test",
+            workflow: "test",
+            workflow_version: "1",
+            company: "Test",
+            title: "Test memo",
+            subtitle: "",
+            as_of: "2026-01-01",
+            date_line: "2026-01-01",
+            generated_at: "2026-01-01T00:00:00Z",
+            generated_by: "live_agent",
+            review_status: "draft_for_review",
+            lineage_note: "test",
+            summary: { sources_reviewed: 1, sources_excluded: 0, claims_total: 0, figures_flagged: 0 },
+            claims: [],
+            sources: [
+              {
+                source_id: "SRC-MISS",
+                source_type: "filing",
+                title: "Missing PDF",
+                file: "does-not-exist.pdf",
+                as_of: "2026-01-01",
+                location: { page: 1 },
+                sensitivity: "public",
+                approved: true,
+              },
+            ],
+            sources_excluded: [],
+          }),
+          "utf8",
+        );
+        let threw = false;
+        try {
+          await mod.buildCheckerVisionContent({
+            deliverablePath: docPath,
+            deliverableContent: "[binary]",
+            evidenceLines: [],
+            toolName: "office_doc",
+            workspaceRoot: tmp,
+          });
+        } catch (e: any) {
+          threw = /Checker vision|missing|required/i.test(String(e?.message || e));
+        }
+        if (!threw) throw new Error("expected fail-closed throw for missing PDF source");
+        return true;
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+  );
+
   // ─── PRODUCT-REQUIREMENT CHECKS (checker-owned audit 2026-07-17) ───
   // The checks below assert buyer-surface moments from docs/product/user-stories.md
   // and SPEC §16 (Definition of Done) that the prior vendor-authored suite never
@@ -7599,13 +7958,16 @@ async function extendedCapabilitiesContract() {
     "Wiring: for a mid-tier (cloud-redacted) turn, the model call must send a REDACTED copy of the messages — the system prompt (which holds loaded memory, core context, skills) and tool results, not just the current user input — so identifiers don't leak to the cloud via context. This must not mutate this.messages (history preserved). Inspects the call-site redaction block.",
     () => {
       const a = codeOnly("src/agent.ts");
-      // a cloud-redacted branch at the call site that maps messages through
-      // the structured-content redaction helper
-      const branch = /route\s*===\s*"cloud-redacted"[\s\S]{0,400}?messagesToSend\s*=\s*this\.messages\.map\([\s\S]{0,300}?redactMessageContent/.test(a);
-      // it sends the redacted copy (messagesToSend), not this.messages, to streamChat
-      const sendsCopy = /messages:\s*messagesToSend\s*as\s*any\[\]/.test(a);
-      // non-mutating (uses .map on a copy, sets messagesToSend, doesn't assign back to this.messages)
-      const nonMutating = !/this\.messages\s*=\s*messagesToSend/.test(a);
+      // cloud-redacted branch loads redactMessageContent and applies it to a
+      // copy of messages before streamChat (messagesForAttempt / messagesToSend).
+      const branch =
+        /route\s*===\s*"cloud-redacted"[\s\S]{0,800}?redactMessageContent/.test(a) &&
+        (/messagesForAttempt\s*\(/.test(a) || /messagesToSend/.test(a));
+      const sendsCopy =
+        /messages:\s*messagesForAttempt\s*\(\)/.test(a) ||
+        /messages:\s*messagesToSend\s*as\s*any\[\]/.test(a);
+      const nonMutating = !/this\.messages\s*=\s*messagesToSend/.test(a) &&
+        !/this\.messages\s*=\s*messagesForAttempt/.test(a);
       return branch && sendsCopy && nonMutating;
     },
   );
@@ -7930,14 +8292,17 @@ async function extendedCapabilitiesContract() {
   await check(
     "VISION-ROUTER-MARKER-AND-MAGIC",
     "US-16.7",
-    "file_encoder must detect [File: path] markers, validate images by magic bytes (not extension), and encode as base64 data URLs",
+    "file_encoder must detect [File: path] markers, validate images by magic bytes (not extension), encode images as image_url and documents as native file parts",
     () => {
       const c = codeOnly("src/file_encoder.ts");
       return (
         /\[File:/.test(c) &&
         /magic/i.test(c) &&
         /0x89|IMAGE_MAGIC|magicBytes/i.test(c) &&
-        /data:image\/|base64/.test(c)
+        /data:image\/|base64/.test(c) &&
+        /encodeFileAsDataURL/.test(c) &&
+        /type:\s*"file"/.test(c) &&
+        /application\/pdf/.test(c)
       );
     },
   );
@@ -8424,6 +8789,508 @@ async function extendedCapabilitiesContract() {
         }
       }
       return count >= 12;
+    },
+  );
+
+  await check(
+    "WORKFLOW-CLI-TOP-LEVEL",
+    "US-18.1 / Phase 2",
+    "parseCliArgs must accept `workflow …` and reject unknown bare positionals (no silent ignore)",
+    () => {
+      const wf = parseCliArgs([
+        "workflow",
+        "run",
+        "investment-committee-memo",
+      ]);
+      if (!wf.workflowArgs || wf.workflowArgs[0] !== "run") {
+        throw new Error("workflow args not parsed");
+      }
+      if (wf.workflowArgs[1] !== "investment-committee-memo") {
+        throw new Error("workflow name not preserved");
+      }
+      const sched = parseCliArgs([
+        "workflow",
+        "schedule",
+        "investment-committee-memo",
+        "--cron",
+        "0 8 * * 1",
+      ]);
+      if (!sched.workflowArgs?.includes("--cron")) {
+        throw new Error("schedule --cron was not preserved for workflow");
+      }
+      const junk = parseCliArgs(["not-a-real-command"]);
+      if (!junk.unknownPositionals.includes("not-a-real-command")) {
+        throw new Error("unknown positional was silently dropped");
+      }
+      const cli = codeOnly("src/cli.ts");
+      if (!/workflowArgs/.test(cli) || !/parseWorkflowCliArgs/.test(cli)) {
+        throw new Error("cli.ts missing top-level workflow handler");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "CHECKER-NO-VACUOUS-STRUCTURAL-APPROVE",
+    "US-15.1 / Phase 2",
+    "runChecker without a tool/file target must not rubber-stamp approve via vacuous structural 4/4",
+    async () => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), "qv-chk-vacuous-"));
+      const savedChecker = quiverConfig.checkerModelName;
+      const savedModel = quiverConfig.llmModelName;
+      try {
+        quiverConfig.checkerModelName = "";
+        quiverConfig.llmModelName = "";
+        const r = await runChecker("deadbeef-vacuous", tmp);
+        if (r.verdict === "approve") {
+          throw new Error(
+            `vacuous approve: verdict=${r.verdict} passed=${r.passed}/${r.total} evidence=${r.evidence}`,
+          );
+        }
+        if (r.total === 4 && r.passed === 4) {
+          throw new Error("structural checks still vacuous-pass with no tool args");
+        }
+        return true;
+      } finally {
+        quiverConfig.checkerModelName = savedChecker;
+        quiverConfig.llmModelName = savedModel;
+        try {
+          rmSync(tmp, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+  );
+
+  await check(
+    "SINGLE-TURN-REFUSAL-EXITS-NONZERO",
+    "US-2.5 / Phase 2",
+    "cli single-turn must exit ERROR when sensitivity/consent refuses (not EXIT.OK)",
+    () => {
+      const cli = codeOnly("src/cli.ts");
+      if (!/isTurnRefusalEvent/.test(cli)) {
+        throw new Error("cli.ts missing isTurnRefusalEvent helper");
+      }
+      if (!/refused \? EXIT\.ERROR : EXIT\.OK/.test(cli)) {
+        throw new Error("single-turn does not exit ERROR on refusal");
+      }
+      const agent = codeOnly("src/agent.ts");
+      if (!/consent:\s*action,\s*refused:\s*true/.test(agent)) {
+        throw new Error("consent decline done event missing refused:true");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "SUBAGENT-VERTEX-ENV-PASSTHROUGH",
+    "US-5.3 / Phase 2",
+    "subagent isolated env allowlist must include Vertex BYOK + checker vars",
+    () => {
+      const c = codeOnly("src/tools/subagent.ts");
+      for (const key of [
+        "VERTEX_PROJECT_ID",
+        "VERTEX_LOCATION",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "QUIVER_CHECKER_REMOTE_APPROVED",
+        "CHECKER_LLM_MODEL_NAME",
+      ]) {
+        if (!c.includes(`"${key}"`) && !c.includes(`"${key}",`)) {
+          // allow either quoted form in the array
+          if (!new RegExp(`["']${key}["']`).test(c)) {
+            throw new Error(`subagent ALLOWED_ENV_KEYS missing ${key}`);
+          }
+        }
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "SKILLS-SEED-ALL-PACKAGED",
+    "US-1.1 / Phase 2",
+    "ensureDirectories/seedPackagedSkills must seed every packaged skill, not only system-prompt",
+    async () => {
+      const pathsSrc = codeOnly("src/paths.ts");
+      if (!/seedPackagedSkills/.test(pathsSrc)) {
+        throw new Error("paths.ts missing seedPackagedSkills");
+      }
+      if (!/ensureDirectories\(\)/.test(codeOnly("src/cli.ts"))) {
+        throw new Error("cli.ts does not call ensureDirectories at startup");
+      }
+      // Behavioral: seeding into a temp GLOBAL is hard; assert package skills
+      // exist and the seeder copies any missing name (not just system-prompt).
+      const pkgSkills = path.join(process.cwd(), "skills");
+      const names = readdirSync(pkgSkills).filter((n) =>
+        existsSync(path.join(pkgSkills, n, "SKILL.md")),
+      );
+      if (names.length < 5) {
+        throw new Error(`expected packaged skills, found ${names.length}`);
+      }
+      if (!names.includes("due-diligence") || !names.includes("investment-brief")) {
+        throw new Error("packaged skill set missing claimed finance skills");
+      }
+      // Call seeder — must be a no-op success when skills already present.
+      await seedPackagedSkills();
+      const globalSkills = path.join(getGlobalRoot(), "skills");
+      for (const n of ["due-diligence", "investment-brief", "regulatory-summary"]) {
+        if (!existsSync(path.join(globalSkills, n, "SKILL.md"))) {
+          throw new Error(`global skills missing ${n} after seedPackagedSkills`);
+        }
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GUI-CHECKER-APPROVAL-NOT-PERSISTED",
+    "US-1.3 / Phase 2",
+    "GUI must not write QUIVER_CHECKER_REMOTE_APPROVED into shared .env (session env only)",
+    () => {
+      const cfg = codeOnly("ui/main/config.ts");
+      if (/replacements\.QUIVER_CHECKER_REMOTE_APPROVED\s*=\s*["']1["']/.test(cfg)) {
+        throw new Error("config.ts still persists QUIVER_CHECKER_REMOTE_APPROVED into .env");
+      }
+      const bridge = codeOnly("ui/main/agent-bridge.ts");
+      if (!/QUIVER_CHECKER_REMOTE_APPROVED/.test(bridge)) {
+        throw new Error("agent-bridge should still set checker approval in child env");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "IDENTITY-SINGLE-SOURCE",
+    "US-17.7 / Phase 2",
+    "product identity must come from system-prompt skill; core.json must not be a competing You-are-Quiver agent role; consent version from skill frontmatter",
+    async () => {
+      const agent = codeOnly("src/agent.ts");
+      if (/systemPromptVersion:\s*["']3\.1\.0["']/.test(agent)) {
+        throw new Error("consent still hardcodes systemPromptVersion 3.1.0");
+      }
+      if (!/systemSkill\?\.version|systemPromptVersion:\s*String\(systemSkill/.test(agent)) {
+        throw new Error("consent must read system prompt version from skill");
+      }
+      // Catch fallback must not be a second product bible
+      if (/You are Quiver, a local-first work assistant for professional research/.test(agent)) {
+        throw new Error("agent.ts still embeds a long hardcoded identity fallback");
+      }
+      const mem = await loadCoreMemory();
+      if (/self-evolving coding|You are Quiver, an AI/.test(mem.identity)) {
+        throw new Error(`core identity still competing agent role: ${mem.identity}`);
+      }
+      if (!DEFAULT_CORE_IDENTITY.includes("analysts")) {
+        throw new Error("DEFAULT_CORE_IDENTITY missing business-user language");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "CHECKER-FILTER-PREFIX-MAP",
+    "US-15.3 / Phase 2",
+    "resolveTargetedChecks must use prefix maps for skills/providers/workflow-packs/ui trees (not only exact paths)",
+    () => {
+      const skillHit = resolveTargetedChecks("write_file", {
+        filePath: "skills/due-diligence/SKILL.md",
+      });
+      if (skillHit.full) {
+        throw new Error("skills/* still falls back to full suite");
+      }
+      const providerHit = resolveTargetedChecks("write_file", {
+        filePath: "src/providers/vertex_auth.ts",
+      });
+      if (providerHit.full) {
+        throw new Error("src/providers/* still falls back to full suite");
+      }
+      const uiHit = resolveTargetedChecks("replace_content", {
+        filePath: "ui/main/config.ts",
+      });
+      if (uiHit.full) {
+        throw new Error("ui/main/* still falls back to full suite");
+      }
+      const unknown = resolveTargetedChecks("write_file", {
+        filePath: "totally-unknown/xyz.zzz",
+      });
+      if (!unknown.full) {
+        throw new Error("truly unknown paths must still full-suite fail-safe");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "SESSION-RETENTION-SUBDIRS",
+    "US-13.3 / Phase 2",
+    "purgeOldLogs must be callable and cover compacted/checkpoints (behavioral smoke)",
+    async () => {
+      // 0 = keep forever no-op
+      const n = await purgeOldLogs(0);
+      if (n !== 0) throw new Error("purgeOldLogs(0) must be a no-op");
+      // Very large retention should purge nothing recent
+      const n2 = await purgeOldLogs(36500);
+      if (typeof n2 !== "number" || n2 < 0) {
+        throw new Error("purgeOldLogs must return a non-negative count");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-CONNECTOR-PROVENANCE-UNAPPROVED",
+    "US-17.16 / Phase 3b",
+    "auto-registered connector sources must not be pre-approved (VP must still gate quantitative claims)",
+    () => {
+      const tracker = new EvidenceTracker();
+      withEvidenceTracker(tracker, () =>
+        registerConnectorProvenance(
+          {
+            vendor: "gauntlet-vendor",
+            dataset: "x",
+            timestamp: new Date().toISOString(),
+            apiRef: "ref/1",
+          },
+          "public",
+        ),
+      );
+      const src = tracker.getSources()[0];
+      if (!src || src.approved !== false) {
+        throw new Error("connector provenance must register with approved:false");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-ISOLATION-PRESERVES-ADC",
+    "US-5.3 / Phase 2",
+    "createIsolatedEnv must preserve Vertex ADC path when remapping HOME",
+    () => {
+      const iso = codeOnly("src/subagents/isolation.ts");
+      if (!/GOOGLE_APPLICATION_CREDENTIALS/.test(iso)) {
+        throw new Error("isolation must set GOOGLE_APPLICATION_CREDENTIALS from real-home ADC");
+      }
+      if (!/application_default_credentials/.test(iso)) {
+        throw new Error("isolation must look for application_default_credentials.json");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-ACCEPTANCE-MD-NO-RUBBER-STAMP",
+    "US-15.1 / Phase 2",
+    "acceptance.md criteria must not be vacuous-passed via FILE-* structural checks alone",
+    () => {
+      const chk = codeOnly("src/subagents/checker.ts");
+      if (!/ACCEPTANCE-MD-UNSUPPORTED/.test(chk)) {
+        throw new Error("runAcceptanceMdChecks must fail closed with ACCEPTANCE-MD-UNSUPPORTED");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-DOCS-PACK-COUNT-HONEST",
+    "US-18.1 / Phase 2",
+    "README/capabilities must not under-count scaffolds (13 packs, 10 scaffolds)",
+    () => {
+      const readme = readFileSync(path.join(ROOT, "README.md"), "utf8");
+      const caps = readFileSync(path.join(ROOT, "docs/capabilities.md"), "utf8");
+      if (/12 declared pack/.test(readme)) {
+        throw new Error("README still says 12 packs");
+      }
+      if (/9 scaffolds/.test(caps) && !/10 scaffolds/.test(caps)) {
+        throw new Error("capabilities.md still says 9 scaffolds");
+      }
+      if (/Signed Desktop Update Infrastructure\*\* \| Shipped/.test(caps)) {
+        throw new Error("capabilities still marks signed updates as Shipped");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-SCRAPE-SSRF-FAIL-CLOSED",
+    "US-16.3 / US-16.5",
+    "scrape_url must use shared fail-closed SSRF guard (private_url.ts)",
+    () => {
+      const scrape = codeOnly("src/tools/scrape_url.ts");
+      if (!/from\s+"\.\.\/security\/private_url\.js"/.test(scrape)) {
+        throw new Error("scrape_url must import isPrivateUrl from security/private_url");
+      }
+      if (!/isPrivateUrl\s*\(/.test(scrape)) {
+        throw new Error("scrape_url must call isPrivateUrl on the live path");
+      }
+      const guard = codeOnly("src/security/private_url.ts");
+      if (!/function isPrivateUrl\(/.test(guard)) {
+        throw new Error("shared isPrivateUrl missing");
+      }
+      const i = guard.indexOf("function isPrivateUrl(");
+      const body = guard.slice(i);
+      const catchIdx = body.lastIndexOf("catch");
+      if (catchIdx === -1) throw new Error("isPrivateUrl has no catch");
+      const catchBody = body.slice(catchIdx, catchIdx + 80);
+      if (!/return\s+true/.test(catchBody) || /return\s+false/.test(catchBody)) {
+        throw new Error("SSRF catch must return true (fail-closed)");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-VERIFY-EXCEL-BEFORE-LINEAGE",
+    "US-15.1 / Phase 2",
+    "workflow verify must evaluate excel/cell checks before generic lineage so excel_lineage_verified cannot false-pass on Evidence.json alone",
+    () => {
+      const c = codeOnly("src/workflow/orchestrator.ts");
+      const fn = c.indexOf("async function evaluateAcceptanceCheck");
+      if (fn === -1) throw new Error("evaluateAcceptanceCheck missing");
+      const excelIdx = c.indexOf('name.includes("excel")', fn);
+      const lineageIdx = c.indexOf('name.includes("lineage")', fn);
+      if (excelIdx === -1 || lineageIdx === -1) {
+        throw new Error("excel and lineage branches must both exist");
+      }
+      if (excelIdx > lineageIdx) {
+        throw new Error("excel/cell branch must be evaluated before lineage branch");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-VERIFY-UNRESOLVED-NO-VACUOUS",
+    "US-15.1 / Phase 2",
+    "workflow unresolved check must fail when no valid evidence models exist (not vacuous-pass via [].every)",
+    () => {
+      const c = codeOnly("src/workflow/orchestrator.ts");
+      const fn = c.indexOf("async function evaluateAcceptanceCheck");
+      if (fn === -1) throw new Error("evaluateAcceptanceCheck missing");
+      const unresolvedIdx = c.indexOf('name.includes("unresolved")', fn);
+      if (unresolvedIdx === -1) throw new Error("unresolved branch missing");
+      const slice = c.slice(unresolvedIdx, unresolvedIdx + 2500);
+      if (!/models\.length\s*===\s*0/.test(slice)) {
+        throw new Error("unresolved branch must fail closed when models.length === 0");
+      }
+      if (!/checklistText/.test(slice) || !/\.claim_id/.test(slice)) {
+        throw new Error("unresolved branch must require claim_ids in a review checklist artifact");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-VERIFY-EXCEL-REREAD",
+    "US-15.1 / Phase 2",
+    "excel_lineage_verified must re-read workbook cells via officecli, not merely detect verification records",
+    () => {
+      const c = codeOnly("src/workflow/orchestrator.ts");
+      if (!/verifyExcelLineageAgainstWorkbooks/.test(c)) {
+        throw new Error("verifyExcelLineageAgainstWorkbooks helper missing");
+      }
+      if (!/expected_raw/.test(c) || !/officecli/.test(c)) {
+        throw new Error("excel verify must compare expected_raw via officecli re-read");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-COMPACTION-CONSENT-JSON",
+    "SPEC §7.3",
+    "compaction must wait for approval on json/GUI path and fail closed (never default approved=true)",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      const i = a.indexOf('type: "compaction_proposed"');
+      if (i === -1) throw new Error("compaction_proposed emit missing");
+      const slice = a.slice(i, i + 2200);
+      if (/let approved = true/.test(slice)) {
+        throw new Error("compaction must not default approved=true");
+      }
+      if (!/let approved = false/.test(slice)) {
+        throw new Error("compaction must default approved=false (fail closed)");
+      }
+      if (!/askQuestionRaw/.test(slice)) {
+        throw new Error("compaction must wait via askQuestionRaw outside quiet mode");
+      }
+      const chat = readFileSync(path.join(ROOT, "ui/renderer/js/chat.js"), "utf8");
+      if (!/compaction_proposed/.test(chat) || !/showCompactionGate/.test(chat)) {
+        throw new Error("GUI must handle compaction_proposed");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-SSRF-REDIRECT-RECHECK",
+    "US-16.5",
+    "fetchPublicUrl must re-check each redirect hop; scrape_url must use it; browser navigate must intercept requests",
+    () => {
+      const guard = codeOnly("src/security/private_url.ts");
+      if (!/fetchPublicUrl/.test(guard) || !/redirect:\s*"manual"/.test(guard)) {
+        throw new Error("fetchPublicUrl must follow redirects manually");
+      }
+      const scrape = codeOnly("src/tools/scrape_url.ts");
+      if (!/fetchPublicUrl/.test(scrape)) {
+        throw new Error("scrape_url must use fetchPublicUrl");
+      }
+      const browser = codeOnly("src/tools/browser_control.ts");
+      if (!/setRequestInterception/.test(browser)) {
+        throw new Error("browser navigate must intercept requests for redirect SSRF");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-OFFICE-SNAPSHOT-ROLLBACK",
+    "US-15.1 / US-10.2",
+    "office_doc mutating actions must snapshotForRollback so maker-checker reject can restore",
+    () => {
+      const office = codeOnly("src/tools/office_doc.ts");
+      if (!/snapshotForRollback/.test(office)) {
+        throw new Error("office_doc must call snapshotForRollback before writes");
+      }
+      const life = codeOnly("src/lifecycle.ts");
+      if (!/QUIVER_ALLOW_UNROLLBACKABLE_SHELL/.test(life)) {
+        throw new Error("wrapToolCall must block unrollbackable high-risk shell by default");
+      }
+      return true;
+    },
+  );
+
+  await check(
+    "GAUNTLET-EVIDENCE-NO-SELF-APPROVE",
+    "US-17.16 / principles",
+    "maker evidence tool cannot self-approve sources; approve_source + verified require human consent; unapproved≠excluded",
+    () => {
+      const ev = codeOnly("src/tools/evidence.ts");
+      if (/approved:\s*args\.approved\s*===\s*true/.test(ev)) {
+        throw new Error("register_source must not honor maker-supplied approved:true");
+      }
+      if (!/approved:\s*false/.test(ev)) {
+        throw new Error("register_source must force approved:false");
+      }
+      if (!/approve_source/.test(ev) || !/requireHumanEvidenceConsent/.test(ev)) {
+        throw new Error("approve_source with human consent must exist");
+      }
+      if (!/evidence_consent_proposed/.test(ev)) {
+        throw new Error("evidence consent must emit evidence_consent_proposed for GUI");
+      }
+      const chat = readFileSync(path.join(ROOT, "ui/renderer/js/chat.js"), "utf8");
+      if (!/evidence_consent_proposed/.test(chat) || !/showEvidenceConsentGate/.test(chat)) {
+        throw new Error("GUI must handle evidence_consent_proposed");
+      }
+      const tracker = codeOnly("src/evidence/tracker.ts");
+      if (!/excludedSources\.keys\(\)/.test(tracker) && !/this\.excludedSources\.keys/.test(tracker)) {
+        throw new Error("validateEvidence must treat only excludedSources as excluded");
+      }
+      const browser = codeOnly("src/tools/browser_control.ts");
+      if (!/ensureSsrfGuard/.test(browser)) {
+        throw new Error("browser SSRF guard must persist across actions");
+      }
+      return true;
     },
   );
 }

@@ -220,6 +220,36 @@
     </div>
   </div>
 
+  <!-- ─── Compaction consent (SPEC §7.3) ──────────────────────────────── -->
+  <div id="compactionOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3>Context compaction proposed</h3>
+        <button class="close-btn" data-close="compactionOverlay">×</button>
+      </div>
+      <div id="compactionSummary" class="consent-gate-summary"></div>
+      <div class="overlay-actions">
+        <button id="compactionApproveBtn" class="primary-btn">Approve compaction</button>
+        <button id="compactionDeclineBtn" class="danger-btn">Keep full history</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Evidence promote consent (principles §3) ────────────────────── -->
+  <div id="evidenceConsentOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3>Evidence approval required</h3>
+        <button class="close-btn" data-close="evidenceConsentOverlay">×</button>
+      </div>
+      <div id="evidenceConsentSummary" class="consent-gate-summary"></div>
+      <div class="overlay-actions">
+        <button id="evidenceConsentApproveBtn" class="primary-btn">Approve</button>
+        <button id="evidenceConsentDeclineBtn" class="danger-btn">Decline</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ─── Deliverable context view (S11 / SPEC §6) ───────────────────── -->
   <div id="deliverableContextOverlay" class="overlay" hidden>
     <div class="overlay-card wide">

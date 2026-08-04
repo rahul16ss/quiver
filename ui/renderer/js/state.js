@@ -19,6 +19,8 @@ export const state = {
   activeOverlayTrap: null,
   consentGateActive: false,
   consentGateShown: false,
+  compactionGateActive: false,
+  evidenceConsentActive: false,
   currentVerificationClaim: null,
   currentReviewDocument: null,
   documentCards: new Map(),

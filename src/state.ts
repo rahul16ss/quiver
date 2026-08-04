@@ -10,6 +10,13 @@ export interface CoreMemory {
   project_context: string;
 }
 
+/** Default engagement preferences — not a second agent role prompt. */
+export const DEFAULT_CORE_IDENTITY =
+  "Prefer concise, source-backed drafts suitable for analysts, researchers, consultants, and legal professionals. Never invent facts or sources.";
+
+const LEGACY_CODING_IDENTITY_RE =
+  /self-evolving coding|elite autonomous coding|coding and research assistant|AI coding\s*&\s*research agent|coding\s*&\s*research agent|You are Quiver,\s*(an AI|a self-evolving|a local-first)/i;
+
 export interface AgentFile {
   format: "quiver-qf";
   version: string;
@@ -32,12 +39,14 @@ export interface AgentFile {
  * Identity and human_context are global (shared across projects).
  * project_context is per-project (loaded from the project's memory dir).
  * If files don't exist, returns default starting memory fields.
+ *
+ * Legacy coding-agent identity strings are migrated in place so old installs
+ * stop competing with skills/system-prompt/SKILL.md.
  */
 export async function loadCoreMemory(): Promise<CoreMemory> {
   const corePath = getCoreMemoryPath();
   let globalMemory: { identity: string; human_context: string } = {
-    identity:
-      "You are Quiver, an AI work assistant for business users — analysts, researchers, consultants, and legal professionals.",
+    identity: DEFAULT_CORE_IDENTITY,
     human_context: "",
   };
 
@@ -45,6 +54,17 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
   try {
     const content = await fs.readFile(corePath, "utf8");
     globalMemory = JSON.parse(content);
+    if (
+      typeof globalMemory.identity === "string" &&
+      LEGACY_CODING_IDENTITY_RE.test(globalMemory.identity)
+    ) {
+      globalMemory.identity = DEFAULT_CORE_IDENTITY;
+      await fs.writeFile(
+        corePath,
+        JSON.stringify(globalMemory, null, 2),
+        "utf8",
+      );
+    }
   } catch {
     // First run — create with defaults
     await fs.mkdir(path.dirname(corePath), { recursive: true });

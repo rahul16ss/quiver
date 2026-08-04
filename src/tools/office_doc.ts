@@ -314,6 +314,12 @@ export const tool: Tool = {
     const pathError = validateFilePath(file);
     if (pathError) return `Error: ${pathError}`;
 
+    // Snapshot before mutating so maker-checker reject can rollbackLast().
+    if (_writeActions.has(action) && file) {
+      const { snapshotForRollback } = await import("../fs/atomic_write.js");
+      await snapshotForRollback(file);
+    }
+
     // OneDrive/SharePoint conflict copies are safer than an implicit
     // overwrite. On Windows, creating or merging over an existing deliverable
     // requires an explicit force property after the user has reviewed it.

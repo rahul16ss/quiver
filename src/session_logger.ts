@@ -413,34 +413,62 @@ export async function listSessionLogs(): Promise<LogMetadata[]> {
 }
 
 /**
- * Purge session logs older than the specified number of days.
- * Supports the /logs purge --older-than Nd CLI command.
+ * Purge session logs and retention artifacts older than the specified number
+ * of days. Supports the /logs purge --older-than Nd CLI command and ambient
+ * startup retention.
  *
- * @param olderThanDays - Delete logs older than this many days
+ * Deletes:
+ *   - top-level session_*.json / .state.json / _audit.json (not *checkpoint*)
+ *   - sessions/compacted/* older than cutoff
+ *   - sessions/checkpoints/* older than cutoff
+ *
+ * @param olderThanDays - Delete logs older than this many days (0 = no-op)
  * @returns Number of files purged
  */
 export async function purgeOldLogs(olderThanDays: number): Promise<number> {
+  if (!olderThanDays || olderThanDays <= 0) return 0;
+
   const sessionsDir = getProjectSessionsDir();
   const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
 
-  try {
-    const files = await fs.readdir(sessionsDir);
-    const logFiles = files.filter((f) => f.endsWith(".json") && !f.includes("checkpoint"));
-
+  async function purgeInDir(dir: string, predicate: (name: string) => boolean): Promise<number> {
     let purged = 0;
-    for (const file of logFiles) {
-      const filePath = path.join(sessionsDir, file);
+    let files: string[] = [];
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      return 0;
+    }
+    for (const file of files) {
+      if (!predicate(file)) continue;
+      const filePath = path.join(dir, file);
       try {
         const stat = await fs.stat(filePath);
+        if (!stat.isFile()) continue;
         if (stat.mtimeMs < cutoff) {
           await fs.unlink(filePath);
           purged++;
         }
       } catch {
-        // Skip files that can't be stat'd
+        // Skip files that can't be stat'd / unlinked
       }
     }
+    return purged;
+  }
 
+  try {
+    let purged = await purgeInDir(
+      sessionsDir,
+      (f) => f.endsWith(".json") && !f.includes("checkpoint"),
+    );
+    purged += await purgeInDir(
+      path.join(sessionsDir, "compacted"),
+      (f) => f.endsWith(".json"),
+    );
+    purged += await purgeInDir(
+      path.join(sessionsDir, "checkpoints"),
+      (f) => f.endsWith(".json"),
+    );
     return purged;
   } catch {
     return 0;

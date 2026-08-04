@@ -11,12 +11,17 @@ async function loadSettings() {
   $("workspacePath").value = currentConfig.workspacePath || "";
   $("modelName").value = currentConfig.provider?.modelName || "";
   $("baseUrl").value = currentConfig.provider?.baseUrl || "";
+  $("checkerModelName").value = currentConfig.checkerModelName || "";
+  $("vertexProjectId").value = currentConfig.vertexProjectId || "";
+  $("vertexLocation").value = currentConfig.vertexLocation || "global";
+  $("googleApplicationCredentials").value =
+    currentConfig.googleApplicationCredentials || "";
   $("maxContextTokens").value = currentConfig.maxContextTokens || 120000;
   $("apiKey").value = "";
   $("parallelApiKey").value = "";
   $("apiKey").placeholder = currentConfig.credentials?.llmApiKeyStored
     ? "Stored in your system credential store"
-    : "Enter provider key";
+    : "Enter provider key (skip for Vertex)";
   $("parallelApiKey").placeholder = currentConfig.credentials?.parallelApiKeyStored
     ? "Stored in your system credential store"
     : "Optional provider key";
@@ -105,6 +110,19 @@ async function saveSettings() {
     }
   }
 
+  const credPath = $("googleApplicationCredentials").value.trim();
+  if (
+    credPath &&
+    (credPath.includes("{") ||
+      credPath.includes('"private_key"') ||
+      credPath.length > 512)
+  ) {
+    showSettingsError(
+      "Paste only the file path to your Google service-account JSON — not the file contents. Billing stays on your Google Cloud project.",
+    );
+    return;
+  }
+
   const saved = await api.saveConfig({
     ...currentConfig,
     workspacePath: $("workspacePath").value.trim(),
@@ -114,6 +132,10 @@ async function saveSettings() {
       modelName: $("modelName").value.trim(),
       baseUrl: $("baseUrl").value.trim(),
     },
+    checkerModelName: $("checkerModelName").value.trim(),
+    vertexProjectId: $("vertexProjectId").value.trim(),
+    vertexLocation: $("vertexLocation").value.trim() || "global",
+    googleApplicationCredentials: credPath,
     llmApiKey: "",
     parallelApiKey: "",
     maxContextTokens: parseInt($("maxContextTokens").value, 10) || 120000,

@@ -73,6 +73,62 @@ function consentExclude() {
   focusContextRail();
 }
 
+function showCompactionGate(data) {
+  const summary = $("compactionSummary");
+  if (!summary) return;
+  const removed = data?.removedCount ?? "?";
+  const kept = data?.keptRecent ?? "?";
+  const before = data?.tokensBefore != null ? Number(data.tokensBefore).toLocaleString("en-US") : "?";
+  const after = data?.tokensAfter != null ? Number(data.tokensAfter).toLocaleString("en-US") : "?";
+  const saved = data?.savedTo || "—";
+  summary.innerHTML =
+    `<div class="ap-row"><span class="ap-label">Messages:</span><span class="ap-value">${escapeHtml(String(removed))} → summary, keep ${escapeHtml(String(kept))} recent</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Tokens:</span><span class="ap-value">${escapeHtml(before)} → ${escapeHtml(after)}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Full history:</span><span class="ap-value">${escapeHtml(String(saved))}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Note:</span><span class="ap-value">Approving replaces older messages in this session with a summary. Your full history stays on disk.</span></div>`;
+  showOverlay("compactionOverlay");
+  state.compactionGateActive = true;
+}
+
+function compactionApprove() {
+  state.compactionGateActive = false;
+  closeOverlay("compactionOverlay", true);
+  addActivity("Compaction approved — older messages summarized", "ok");
+  api.consentRespond("approve");
+}
+
+function compactionDecline() {
+  state.compactionGateActive = false;
+  closeOverlay("compactionOverlay", true);
+  addActivity("Compaction declined — full history kept", "warn");
+  api.consentRespond("decline");
+}
+
+function showEvidenceConsentGate(data) {
+  const summary = $("evidenceConsentSummary");
+  if (!summary) return;
+  const text = data?.text || "Approve this evidence promote action?";
+  summary.innerHTML =
+    `<div class="ap-row"><span class="ap-label">Request:</span><span class="ap-value">${escapeHtml(String(text))}</span></div>` +
+    `<div class="ap-row"><span class="ap-label">Note:</span><span class="ap-value">Only you can approve sources or verify claims — the model cannot self-certify.</span></div>`;
+  showOverlay("evidenceConsentOverlay");
+  state.evidenceConsentActive = true;
+}
+
+function evidenceConsentApprove() {
+  state.evidenceConsentActive = false;
+  closeOverlay("evidenceConsentOverlay", true);
+  addActivity("Evidence promote approved", "ok");
+  api.consentRespond("approve");
+}
+
+function evidenceConsentDecline() {
+  state.evidenceConsentActive = false;
+  closeOverlay("evidenceConsentOverlay", true);
+  addActivity("Evidence promote declined", "warn");
+  api.consentRespond("decline");
+}
+
 // Focus the context rail so the reviewer can exclude a memory/source before
 // re-running (SPEC §6 layer E veto).
 function focusContextRail() {
@@ -95,5 +151,11 @@ export {
   consentApprove,
   consentDecline,
   consentExclude,
+  showCompactionGate,
+  compactionApprove,
+  compactionDecline,
+  showEvidenceConsentGate,
+  evidenceConsentApprove,
+  evidenceConsentDecline,
   focusContextRail,
 };

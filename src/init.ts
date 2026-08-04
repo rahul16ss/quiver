@@ -115,6 +115,16 @@ export async function runInitWizard(): Promise<void> {
 
   console.log("");
   statusLine("OK", "Setup complete. Run 'quiver' to start a session.");
+  try {
+    const { ensureDirectories } = await import("./paths.js");
+    await ensureDirectories();
+    statusLine("OK", "Seeded local skills and project directories.");
+  } catch (err: any) {
+    statusLine(
+      "WARN",
+      `Could not seed skills/directories: ${err?.message || String(err)}`,
+    );
+  }
   console.log(
     t.gray("  Configure LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point Quiver at any OpenAI-compatible endpoint.\n"),
   );

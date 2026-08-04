@@ -51,7 +51,7 @@ export interface Tool {
 - `evidence` — Track sources and claims during document drafting. Actions: `register_source`, `exclude_source`, `record_claim`, `update_claim`, `register_input`, `validate`, `finalize`, `status`. Writes `Evidence.json` and `Run_Record.json` alongside Office documents.
 
 ### Documents & Export
-- `pdf_read` — Render PDF pages to PNG for multimodal reading (tables, charts, layout preserved). Backends: PyMuPDF, then pdftoppm.
+- `pdf_read` — Optional: render a narrow PDF page range to PNG when a page image is specifically needed. Primary path is native `[File: path]` attachment for multimodal models. Backends: PyMuPDF, then pdftoppm.
 - `dms_export` — Export a finished deliverable to the firm's DMS (SharePoint, NetDocuments, …). Actions: `export`, `list`, `status`. No adapter configured → clear configuration hint, not a silent success.
 - `examples` — Episodic examples store. Actions: `promote`, `list`, `remove`, `context`. Promoted deliverables load as episodic memory in the consent gate.
 

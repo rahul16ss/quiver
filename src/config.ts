@@ -249,12 +249,26 @@ export function hasGrant(grant: AutonomyGrant): boolean {
   return config.autonomyGrants.has(grant) || config.autonomyGrants.has("yolo");
 }
 
+/** Read-only inspection tools — auto-approved; path policy still applies. */
+const READ_ONLY_TOOLS = new Set([
+  "view_file",
+  "list_dir",
+  "glob",
+  "grep_search",
+  "pdf_read",
+  "find_all",
+]);
+
 /** Check if the agent should prompt for approval before a tool call. */
 export function needsApprovalFor(
   toolName: string,
   commandRisk?: string,
 ): boolean {
   if (hasGrant("yolo")) return false;
+
+  // Observe+ promise: workspace reads without a prompt. Writes/commands/web
+  // still gate. Path sandbox / readScope remain the hard boundary.
+  if (READ_ONLY_TOOLS.has(toolName)) return false;
 
   // ── File-mutation tools (workspace writes) ──
   if (toolName === "write_file") return !hasGrant("write_file");
@@ -325,6 +339,14 @@ export const config: Config = {
   // different model than the maker. Falls back to the primary LLM model.
   checkerModelName: process.env.CHECKER_LLM_MODEL_NAME || "",
   checkerBaseUrl: process.env.CHECKER_LLM_API_BASE_URL || "",
+  // ── Vertex AI (Gemini) — customer-owned GCP only ────────────────────
+  // Each engagement brings its own GCP project + billing. Quiver never
+  // ships a shared Conviction Studio Google Cloud account. When
+  // VERTEX_PROJECT_ID is set, the OpenAI-compat base URL is derived if
+  // LLM_API_BASE_URL is empty (see src/providers/vertex_auth.ts).
+  vertexProjectId: process.env.VERTEX_PROJECT_ID || "",
+  vertexLocation: process.env.VERTEX_LOCATION || "global",
+  googleApplicationCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || "",
   // Local model endpoint (US-17.17 / SPEC §4.3 high-sensitivity escape hatch).
   localLlmBaseUrl: process.env.QUIVER_LOCAL_LLM_API_BASE_URL || "",
   localLlmModelName: process.env.QUIVER_LOCAL_LLM_MODEL_NAME || "",
@@ -403,6 +425,12 @@ export interface Config {
   // Checker model (optional different model for the checker).
   checkerModelName: string;
   checkerBaseUrl: string;
+  /** Customer GCP project for Vertex AI (BYOK billing). Empty = not using Vertex. */
+  vertexProjectId: string;
+  /** Vertex location (e.g. global, us-central1). */
+  vertexLocation: string;
+  /** Path to the customer's service-account JSON (or rely on ADC). */
+  googleApplicationCredentials: string;
   // Local model endpoint (US-17.17 high-sensitivity escape hatch).
   localLlmBaseUrl: string;
   localLlmModelName: string;
@@ -567,16 +595,23 @@ export interface RuntimeConfigPreflight {
  * This is intentionally a preflight, not a provider connectivity test: it
  * catches missing or malformed configuration without sending user data. A
  * remote endpoint requires an API key; local endpoints may authenticate
- * through the local service itself.
+ * through the local service itself. Vertex BYOK may use VERTEX_PROJECT_ID
+ * + customer ADC instead of LLM_API_BASE_URL / LLM_API_KEY.
  */
 export function validateRuntimeConfig(): RuntimeConfigPreflight {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const endpoint = config.llmBaseUrl.trim();
+  const endpoint =
+    config.llmBaseUrl.trim() ||
+    (config.vertexProjectId
+      ? `https://aiplatform.googleapis.com/v1/projects/${config.vertexProjectId}/locations/${config.vertexLocation || "global"}/endpoints/openapi`
+      : "");
   let remoteEndpoint = true;
 
   if (!endpoint) {
-    errors.push("LLM_API_BASE_URL is not configured.");
+    errors.push(
+      "LLM_API_BASE_URL is not configured (or set VERTEX_PROJECT_ID for customer-owned Vertex AI).",
+    );
   } else {
     try {
       const parsed = new URL(endpoint);
@@ -594,17 +629,24 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
   if (!config.llmModelName.trim()) {
     errors.push("LLM_MODEL_NAME is not configured.");
   }
-  if (remoteEndpoint && !config.llmApiKey.trim()) {
+
+  const vertexByok =
+    Boolean(config.vertexProjectId) ||
+    /aiplatform\.googleapis\.com/i.test(endpoint);
+  if (remoteEndpoint && !config.llmApiKey.trim() && !vertexByok) {
     errors.push(
       "LLM_API_KEY is required for a remote endpoint (store it in the OS keychain or .env).",
     );
   }
   if (
-    (config.checkerModelName && !config.checkerBaseUrl) ||
+    (config.checkerModelName &&
+      !config.checkerBaseUrl &&
+      !config.vertexProjectId &&
+      !config.llmBaseUrl) ||
     (!config.checkerModelName && config.checkerBaseUrl)
   ) {
     warnings.push(
-      "Checker model settings are incomplete; Quiver will use the maker model for checking.",
+      "Checker model settings are incomplete; set CHECKER_LLM_API_BASE_URL or VERTEX_PROJECT_ID, or Quiver will use the maker endpoint when possible.",
     );
   }
 

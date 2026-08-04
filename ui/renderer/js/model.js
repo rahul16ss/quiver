@@ -12,19 +12,22 @@ const MODEL_LABELS = [
   ["llama3.2", "Llama 3.2"],
   ["llama3.1", "Llama 3.1"],
   ["llama3", "Llama 3"],
+  ["qwen3.5", "Qwen 3.5"],
+  ["qwen3", "Qwen 3"],
   ["qwen2.5", "Qwen 2.5"],
   ["qwen2", "Qwen 2"],
   ["deepseek-r1", "DeepSeek R1"],
   ["deepseek", "DeepSeek"],
   ["phi3", "Phi-3"],
+  ["mistral-large", "Mistral Large"],
   ["mistral", "Mistral"],
   ["mixtral", "Mixtral"],
   ["codellama", "Code Llama"],
   ["codestral", "Codestral"],
   ["command-r", "Command R"],
 ];
-// Size tags we lift into a quiet suffix (e.g. Gemma 3 · 4B).
-const SIZE_TAG = /:(\d+b|\d+x\d+b)/i;
+// Size tags we lift into a quiet suffix (e.g. Gemma 3 · 4B / Qwen 3.5 · 397B).
+const SIZE_TAG = /:(\d+(?:\.\d+)?b|\d+x\d+b)/i;
 function friendlyModelName(id) {
   const raw = String(id || "").trim();
   if (!raw) return "—";

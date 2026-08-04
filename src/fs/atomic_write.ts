@@ -81,6 +81,13 @@ export class BackupHistory {
   clear(): void {
     this.records = [];
   }
+
+  /**
+   * Remove and return the most recent backup record (after a successful rollback).
+   */
+  popLast(): BackupRecord | null {
+    return this.records.pop() ?? null;
+  }
 }
 
 // Global session backup history
@@ -272,7 +279,32 @@ export async function rollbackLast(): Promise<{ restored: string; wasNewFile: bo
   if (!last) return null;
 
   await rollbackWrite(last.backupPath, last.originalPath);
+  sessionBackups.popLast();
   return { restored: last.originalPath, wasNewFile: last.wasNewFile };
+}
+
+/**
+ * Snapshot a file before an out-of-band mutation (e.g. officecli) so
+ * rollbackLast() can restore it if the maker-checker rejects the change.
+ * If the file does not exist yet, records a "new file" rollback (delete on reject).
+ */
+export async function snapshotForRollback(filePath: string): Promise<string | null> {
+  const resolvedPath = path.resolve(filePath);
+  const dir = path.dirname(resolvedPath);
+  const fileExists = fsSync.existsSync(resolvedPath);
+  let backupPath: string | null = null;
+
+  if (fileExists) {
+    const backupDir = path.join(dir, ".quiver-backups");
+    await fs.mkdir(backupDir, { recursive: true });
+    const basename = path.basename(resolvedPath);
+    const hash = crypto.randomBytes(4).toString("hex");
+    backupPath = path.join(backupDir, `${basename}.${hash}.bak`);
+    await fs.copyFile(resolvedPath, backupPath);
+  }
+
+  sessionBackups.record(resolvedPath, backupPath || "", !fileExists);
+  return backupPath;
 }
 
 /**

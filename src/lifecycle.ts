@@ -329,22 +329,16 @@ export function registerBuiltinHooks(
   );
 
   // wrap_tool_call: Maker-checker verification gate (US-15.1).
-  // The maker (agent) cannot self-certify its own work, so high-risk tool
-  // calls are delegated to the structurally isolated checker subagent before
-  // the change is committed. The checker runs the acceptance contract against
-  // a copy-on-write scratchpad and emits an approve | reject | revise verdict;
-  // a reject aborts the pipeline so the workspace is never mutated without an
-  // independent verification pass.
+  // High-risk tool calls run, then the structurally isolated checker evaluates
+  // the result. File-backed tools snapshot before mutate so reject/revise can
+  // rollbackLast(); unrollbackable shell is refused in wrapToolCall itself.
+  // A reject aborts the pipeline — independent verification is required.
   registry.register(
     "wrap_tool_call",
     "builtin.maker-checker-gate",
     async (ctx) => {
       // US-15.1: high-risk ops are ALWAYS verified — the maker cannot
-      // self-certify, so the checker runs the acceptance contract against a
-      // copy-on-write scratchpad before a high-risk change is committed. This
-      // is an ambient characteristic of the harness (on every run, no opt-out)
-      // per the user's maker-checker-for-every-run vision and the acceptance
-      // contract (US-15.1 forbids gating it behind an env flag).
+      // self-certify. Ambient characteristic of the harness (no opt-out).
       if (ctx.toolCall && isHighRisk(ctx.toolCall.name, ctx.toolCall.args)) {
         const changeHash = String(
           ctx.metadata?.changeHash ??
@@ -453,7 +447,10 @@ export async function wrapModelCall(
 
 /**
  * Wrap a tool call with lifecycle hooks.
- * Fires wrap_tool_call hooks before the tool executes.
+ * Fires wrap_tool_call hooks after the tool executes so the checker can
+ * validate the resulting workspace; file-backed tools register backups so
+ * reject/revise can rollbackLast(). Unrollbackable high-risk shell commands
+ * are refused up front when the maker-checker gate would apply.
  *
  * @param ctx - The lifecycle context (toolCall populated).
  * @param toolFn - The actual tool execution function.
@@ -463,8 +460,22 @@ export async function wrapToolCall(
   ctx: LifecycleContext,
   toolFn: () => Promise<any>,
 ): Promise<any> {
-  // Execute the tool first so its changes are written to the workspace
-  // and can be validated by the checker (US-15.1, US-15.3).
+  // Shell side effects cannot be rolled back. Refuse high-risk run_command
+  // under the ambient maker-checker gate unless explicitly opted in.
+  if (
+    ctx.toolCall?.name === "run_command" &&
+    isHighRisk(ctx.toolCall.name, ctx.toolCall.args) &&
+    process.env.QUIVER_ALLOW_UNROLLBACKABLE_SHELL !== "1"
+  ) {
+    throw new Error(
+      "High-risk run_command is blocked under maker-checker because shell " +
+        "side effects cannot be rolled back. Use file-based tools, or set " +
+        "QUIVER_ALLOW_UNROLLBACKABLE_SHELL=1 to acknowledge the risk.",
+    );
+  }
+
+  // Execute the tool so its changes are written to the workspace and can be
+  // validated by the checker (US-15.1, US-15.3). File tools snapshot first.
   ctx.toolResult = await toolFn();
 
   // wrap_tool_call: fire hooks that audit or verify the modifications
@@ -474,7 +485,11 @@ export async function wrapToolCall(
     const { rollbackLast } = await import("./fs/atomic_write.js");
     let rollbackError: string | null = null;
     try {
-      await rollbackLast();
+      const rolled = await rollbackLast();
+      if (!rolled) {
+        rollbackError =
+          "no backup was registered for this mutation (workspace may retain the rejected change)";
+      }
     } catch (rbErr: any) {
       // Rollback failure must propagate — do not swallow it.
       // A rejected destructive edit left on disk is a safety violation.

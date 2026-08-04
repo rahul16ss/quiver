@@ -41,7 +41,9 @@ function closeOverlay(id, force = false) {
   if (
     !force &&
     ((id === "approvalOverlay" && state.pendingApproval) ||
-      (id === "consentGateOverlay" && state.consentGateActive))
+      (id === "consentGateOverlay" && state.consentGateActive) ||
+      (id === "compactionOverlay" && state.compactionGateActive) ||
+      (id === "evidenceConsentOverlay" && state.evidenceConsentActive))
   ) {
     return;
   }
@@ -96,7 +98,7 @@ function confirmDialog({ title, message, confirmLabel = "Confirm", danger = fals
 document.addEventListener("keydown", (e) => {
   trapFocus(e);
   if (e.key !== "Escape") return;
-  if (state.pendingApproval || state.consentGateActive) return;
+  if (state.pendingApproval || state.consentGateActive || state.compactionGateActive || state.evidenceConsentActive) return;
   const open = [...document.querySelectorAll(".overlay:not([hidden]), .app-dialog:not([hidden])")];
   const top = open[open.length - 1];
   if (top?.id) closeOverlay(top.id, true);

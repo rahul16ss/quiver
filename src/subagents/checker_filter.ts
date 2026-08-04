@@ -177,6 +177,8 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "STATUS-LINE-NUMBER-FORMAT",
     "MULTILINE-NO-ESCAPE-NON-TTY",
     "CLEANUP-CLI-WIRED",
+    "WORKFLOW-CLI-TOP-LEVEL",
+    "SUBCOMMAND-BYPASSES-ONBOARDING",
   ],
   // Diff
   "src/diff.ts": ["DIFF-UNIFIED-HEADERS", "DIFF-RISKY-FILES"],
@@ -299,7 +301,147 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   "docs/index.html": ["LANDING-PAGE-HERO"],
   // Homebrew
   "Formula/quiver.rb": ["HOMEBREW-REAL-SHA256"],
+  // Vertex / provider BYOK
+  "src/providers/vertex_auth.ts": [
+    "VERTEX-BYOK-URL-AND-BILLING",
+    "VERTEX-GUI-BYOK-SETTINGS",
+    "CONFIG-RUNTIME-PREFLIGHT",
+  ],
+  "src/providers/tool_call_passthrough.ts": [
+    "WIRE-PROVIDER-ADAPTER",
+    "SELF-HEAL-REPAIR-METHOD",
+    "SELF-HEAL-400-RETRY",
+  ],
+  "src/security/seatbelt.ts": [
+    "SEATBELT-MODULE-EXISTS",
+    "SEATBELT-PROFILE-GEN",
+    "SEATBELT-PLATFORM-DETECT",
+    "SEATBELT-YOLO-BYPASS",
+    "SEATBELT-STATUS-CMD",
+    "SEATBELT-SPAWN-EXEC-FUNCTIONS",
+    "RUN-COMMAND-SEATBELT-WIRED",
+  ],
+  "src/security/approval_cache.ts": [
+    "APPROVAL-THREE-SCOPES",
+    "APPROVAL-CACHE-SCOPED-BEHAVIOR",
+    "APPROVAL-CACHE-ONCE-NOT-CACHED",
+  ],
+  "src/paths.ts": [
+    "SKILLS-SEED-ALL-PACKAGED",
+    "FIRST-RUN-CORE-JSON",
+  ],
 };
+
+/**
+ * Prefix → checks for whole trees that share acceptance IDs.
+ * Longest matching prefix wins. Exact FILE_TO_CHECKS entries still win first.
+ */
+const PREFIX_TO_CHECKS: Array<{ prefix: string; checks: string[] }> = [
+  {
+    prefix: "skills/system-prompt/",
+    checks: [
+      "BUSINESS-USER-SYSTEM-PROMPT",
+      "EVIDENCE-SYSTEM-PROMPT",
+      "PDF-READ-SYSTEM-PROMPT",
+      "SCRATCH-AREA-SYSTEM-PROMPT",
+      "CONNECTOR-SYSTEM-PROMPT",
+      "SENSITIVITY-SYSTEM-PROMPT",
+      "RLF-SYSTEM-PROMPT",
+      "OFFICE-DOC-SYSTEM-PROMPT-COMMENTS",
+    ],
+  },
+  {
+    prefix: "skills/",
+    checks: ["BUSINESS-USER-SYSTEM-PROMPT", "TSC-CLEAN"],
+  },
+  {
+    prefix: "workflow-packs/",
+    checks: [
+      "WORKFLOW-ENGINE-PACKS-COUNT",
+      "WORKFLOW-PACKS-STRUCTURE-VALID",
+      "WORKFLOW-FAMILIES-IN-README",
+    ],
+  },
+  {
+    prefix: "src/providers/",
+    checks: [
+      "WIRE-PROVIDER-ADAPTER",
+      "ADAPTER-PROMPT-ORDER",
+      "ADAPTER-TOOL-FORMAT",
+      "ADAPTER-ERROR-RECOVERY",
+      "VERTEX-BYOK-URL-AND-BILLING",
+    ],
+  },
+  {
+    prefix: "src/workflow/",
+    checks: [
+      "WORKFLOW-ENGINE-ORCHESTRATOR",
+      "WORKFLOW-ENGINE-SCHEDULER",
+      "WORKFLOW-ENGINE-WATCHER",
+      "WORKFLOW-ENGINE-REVIEW",
+      "WORKFLOW-ENGINE-HANDOVER",
+      "WORKFLOW-CLI-TOP-LEVEL",
+    ],
+  },
+  {
+    prefix: "src/security/",
+    checks: [
+      "PATH-SYMLINK-ESCAPE",
+      "PATH-INSIDE-WORKSPACE",
+      "PATH-BLOCKED-GLOBS",
+      "WIRE-PATH-SANDBOX-TOOLS",
+      "SECRET-DETECT-REDACT",
+      "SECRET-REMOTE-WARN",
+      "SENSITIVITY-MODULE-EXISTS",
+      "CONSENT-GATE-MODULE-EXISTS",
+    ],
+  },
+  {
+    prefix: "ui/main/",
+    checks: [
+      "GUI-SANDBOX-WIRED",
+      "GUI-CSP-ENFORCED",
+      "GUI-HARDENING-RULES",
+      "GUI-IPC-CONTRACT",
+      "GUI-SETTINGS-SECTIONS",
+      "GUI-SETTINGS-IPC-WIRED",
+      "GUI-CHECKER-APPROVAL-NOT-PERSISTED",
+      "VERTEX-GUI-BYOK-SETTINGS",
+    ],
+  },
+  {
+    prefix: "ui/renderer/",
+    checks: [
+      "GUI-SANDBOX-WIRED",
+      "GUI-CSP-ENFORCED",
+      "GUI-HARDENING-RULES",
+      "GUI-DIFF-APPROVAL",
+      "GUI-PREVIEW-PANEL",
+      "GUI-IMAGE-DROP-SUPPORT",
+      "GUI-EVIDENCE-LOAD-FROM-DISK",
+    ],
+  },
+  {
+    prefix: "scripts/",
+    checks: ["TSC-CLEAN"],
+  },
+  {
+    prefix: "tests/",
+    checks: ["TSC-CLEAN", "MAKER-CHECKER-SPEC-AWARE"],
+  },
+];
+
+function checksForNormalizedPath(normalized: string): string[] {
+  const exact = FILE_TO_CHECKS[normalized];
+  if (exact && exact.length > 0) return exact;
+
+  let best: { prefix: string; checks: string[] } | null = null;
+  for (const entry of PREFIX_TO_CHECKS) {
+    if (!normalized.startsWith(entry.prefix)) continue;
+    if (!best || entry.prefix.length > best.prefix.length) best = entry;
+  }
+  return best ? best.checks : [];
+}
 
 // ─── Tool name → check ID mapping ──────────────────────────────────────
 // When the high-risk operation is a run_command, we run the command-policy
@@ -382,8 +524,8 @@ export function resolveTargetedChecks(
   // Normalize the path (remove leading ./, normalize separators)
   const normalized = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
 
-  // Look up the file in our mapping
-  const fileChecks = FILE_TO_CHECKS[normalized] || [];
+  // Exact file map first, then longest-prefix tree map.
+  const fileChecks = checksForNormalizedPath(normalized);
 
   if (fileChecks.length === 0) {
     // Unknown file — run all checks (safe fallback)
@@ -397,10 +539,14 @@ export function resolveTargetedChecks(
   // Combine file-specific checks with always-on checks, deduplicated
   const checks = [...new Set([...fileChecks, ...ALWAYS_ON_CHECKS])];
 
+  const viaPrefix =
+    !FILE_TO_CHECKS[normalized] || FILE_TO_CHECKS[normalized].length === 0;
   return {
     checkIds: checks,
     full: false,
-    reason: `${normalized} → ${fileChecks.length} file checks + ${ALWAYS_ON_CHECKS.length} always-on gates (${checks.length} total)`,
+    reason: viaPrefix
+      ? `prefix match for ${normalized} → ${checks.length} targeted checks + always-on gates`
+      : `file ${normalized} → ${checks.length} targeted checks + always-on gates`,
   };
 }
 

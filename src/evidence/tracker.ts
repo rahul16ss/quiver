@@ -91,6 +91,24 @@ export class EvidenceTracker {
     return { source_id: sourceId, excluded: true };
   }
 
+  /**
+   * Human/VP promote: only this path (or fixture/API callers) may set
+   * approved:true. The maker tool must not self-approve.
+   */
+  approveSource(sourceId: string): { source_id: string; approved: boolean } {
+    if (this.finalized) {
+      return { source_id: sourceId, approved: false };
+    }
+    const src = this.sources.get(sourceId);
+    if (!src) {
+      return { source_id: sourceId, approved: false };
+    }
+    src.approved = true;
+    delete src.exclusion_reason;
+    this.excludedSources.delete(sourceId);
+    return { source_id: sourceId, approved: true };
+  }
+
   // ─── Claim Management ───────────────────────────────────────────────
 
   recordClaim(claim: ClaimRecord): { claim_id: string; recorded: boolean } {
@@ -155,20 +173,29 @@ export class EvidenceTracker {
    */
   validateEvidence(): { valid: boolean; problems: string[]; summary: string } {
     const problems: string[] = [];
-    if (this.sources.size === 0 && this.claims.size === 0) {
-      problems.push("evidence must contain at least one registered source");
+    if (this.claims.size === 0) {
       problems.push("evidence must contain at least one recorded claim");
+    }
+    if (this.sources.size === 0) {
+      const allExplicitlyUnresolved =
+        this.claims.size > 0 &&
+        [...this.claims.values()].every(
+          (c) =>
+            c.relationship === "unresolved" ||
+            c.review_status === "flagged" ||
+            c.review_status === "unresolved",
+        );
+      if (!allExplicitlyUnresolved) {
+        problems.push("evidence must contain at least one registered source");
+      }
     }
     const approvedSourceIds = new Set(
       [...this.sources.values()]
         .filter((s) => s.approved)
         .map((s) => s.source_id),
     );
-    const excludedSourceIds = new Set(
-      [...this.sources.values()]
-        .filter((s) => !s.approved)
-        .map((s) => s.source_id),
-    );
+    // Explicitly excluded only — unapproved/pending is NOT the same as excluded.
+    const excludedSourceIds = new Set(this.excludedSources.keys());
 
     for (const claim of this.claims.values()) {
       const isExplicitlyUnresolved =

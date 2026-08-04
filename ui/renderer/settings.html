@@ -32,8 +32,9 @@
     <section class="settings-section">
       <h2>Model Provider</h2>
       <p class="settings-help">The AI engine Quiver uses. Most people can leave this as is.</p>
-      <label>Model <input id="modelName" class="field" placeholder="The model name" /></label>
-      <label>Provider address <input id="baseUrl" class="field" placeholder="https://your-provider.example/v1" /></label>
+      <label>Model <input id="modelName" class="field" placeholder="Model name from your provider" /></label>
+      <label>Provider address <input id="baseUrl" class="field" placeholder="Leave empty when using Google Cloud (Vertex) below" /></label>
+      <label>Checker model (optional) <input id="checkerModelName" class="field" placeholder="Optional different model for the checker" /></label>
       <label>Workspace folder
         <span class="field-row">
           <input id="workspacePath" class="field" placeholder="Where Quiver does its work" />
@@ -46,11 +47,20 @@
       </label>
     </section>
 
+    <!-- Google Cloud (Vertex) — customer pays their own bill -->
+    <section class="settings-section">
+      <h2>Google Cloud (Vertex AI)</h2>
+      <p class="settings-help">Connect Quiver to your organization’s Google Cloud project. Model usage is billed on that project. Enter only the path to a service-account file if you use one — never paste the file contents here.</p>
+      <label>Google Cloud project ID <input id="vertexProjectId" class="field" placeholder="your-gcp-project-id" /></label>
+      <label>Region <input id="vertexLocation" class="field" placeholder="global" /></label>
+      <label>Service account file path <input id="googleApplicationCredentials" class="field" placeholder="/absolute/path/to/service-account.json" /></label>
+    </section>
+
     <!-- Model credentials -->
     <section class="settings-section">
       <h2>Model credentials</h2>
-      <p class="settings-help">Stored in your computer's keychain or credential manager when available — never written to the settings file. A configured remote provider may receive the context you approve.</p>
-      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your model provider key" /></label>
+      <p class="settings-help">For non-Google providers, store the API key in your computer's keychain. For Vertex, leave this empty and use the Google Cloud section above. A configured remote provider may receive the context you approve.</p>
+      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your model provider key (not needed for Vertex)" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
     </section>
 

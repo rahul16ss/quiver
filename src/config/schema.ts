@@ -8,6 +8,7 @@
 // ─── Schema ──────────────────────────────────────────────────────────
 
 import { config } from "../config.js";
+import { resolveMakerBaseUrl } from "../providers/vertex_auth.js";
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
@@ -46,9 +47,10 @@ export function getDefaultConfig(): ConfigSchema {
   return {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: {
-      provider: "custom",
+      provider: config.vertexProjectId ? "vertex" : "custom",
       model_name: config.llmModelName,
-      base_url: config.llmBaseUrl,
+      // Vertex BYOK may leave LLM_API_BASE_URL empty; surface the derived URL.
+      base_url: resolveMakerBaseUrl() || config.llmBaseUrl,
       api_key_ref: "LLM_API_KEY",
       max_context_tokens: config.maxContextTokens,
       max_output_tokens: 16384,
@@ -92,7 +94,14 @@ export function validateConfig(config: any): ValidationResult {
     errors.push("Missing model config section");
   } else {
     if (!config.model.model_name) errors.push("model.model_name is required");
-    if (!config.model.base_url) errors.push("model.base_url is required");
+    // Vertex BYOK can omit base_url when VERTEX_PROJECT_ID derives the endpoint.
+    const hasVertexProject =
+      (typeof config.model.vertex_project_id === "string" &&
+        config.model.vertex_project_id.trim().length > 0) ||
+      config.model.provider === "vertex";
+    if (!config.model.base_url && !hasVertexProject) {
+      errors.push("model.base_url is required");
+    }
     if (typeof config.model.max_context_tokens !== "number" || config.model.max_context_tokens <= 0) {
       errors.push("model.max_context_tokens must be a positive number");
     }

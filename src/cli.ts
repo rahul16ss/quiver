@@ -70,6 +70,7 @@ import {
   getCoreMemoryPath,
   getSkillsDir,
   getProjectSessionsDir,
+  ensureDirectories,
 } from "./paths.js";
 import * as path from "path";
 import { readFileSync } from "fs";
@@ -113,6 +114,64 @@ function printTurnCost(
   },
 ): void {
   // No-op — clean CLI, no per-turn noise.
+}
+
+/** True when an agent onEvent payload means the turn was refused / aborted. */
+function isTurnRefusalEvent(event: { type?: string; data?: any }): boolean {
+  if (!event || typeof event !== "object") return false;
+  if (event.type === "sensitivity_refused") return true;
+  if (event.type === "consent_declined" || event.type === "consent_exclude")
+    return true;
+  if (event.type === "done") {
+    const d = event.data || {};
+    if (d.refused === true) return true;
+    if (d.consent === "decline" || d.consent === "exclude") return true;
+  }
+  return false;
+}
+
+/**
+ * Map `quiver workflow …` argv into the workflow tool's execute args.
+ * Supports the README surface: list | run | schedule | watch | status | …
+ */
+function parseWorkflowCliArgs(argv: string[]): Record<string, unknown> {
+  const action = (argv[0] || "list").toLowerCase();
+  const out: Record<string, unknown> = { action };
+  const rest = argv.slice(1);
+  const takeValue = (flag: string): string | undefined => {
+    const idx = rest.indexOf(flag);
+    if (idx === -1) return undefined;
+    const v = rest[idx + 1];
+    if (!v || v.startsWith("-")) return undefined;
+    return v;
+  };
+
+  if (action === "list") {
+    return out;
+  }
+  if (action === "run" || action === "schedule" || action === "watch") {
+    const name = rest.find((t) => !t.startsWith("-"));
+    if (name) out.workflow = name;
+  }
+  if (action === "status" || action === "cancel" || action === "handover") {
+    const id = rest.find((t) => !t.startsWith("-"));
+    if (id) out.run_id = id;
+  }
+  if (action === "history") {
+    const name = rest.find((t) => !t.startsWith("-"));
+    if (name) out.workflow = name;
+  }
+  if (action === "schedule") {
+    const cron = takeValue("--cron");
+    if (cron) out.cron = cron;
+  }
+  if (action === "watch") {
+    const dir = takeValue("--dir");
+    const pattern = takeValue("--pattern");
+    if (dir) out.watch_dir = dir;
+    if (pattern) out.watch_pattern = pattern;
+  }
+  return out;
 }
 
 // ─── Main ───────────────────────────────────────────────────────────
@@ -166,9 +225,27 @@ async function main() {
     }
   }
 
+  // Top-level `quiver workflow …` is handled after the Agent + callback are
+  // wired (below) so `workflow run` can actually draft.
+
   if (cliOpts.unknownFlags.length > 0) {
     printUnknownFlagHints(cliOpts.unknownFlags);
     process.exit(EXIT.USAGE);
+  }
+
+  if (cliOpts.unknownPositionals.length > 0) {
+    statusLine(
+      "ERROR",
+      `Unknown command: ${cliOpts.unknownPositionals.join(" ")}. Try \`quiver --help\`.`,
+    );
+    process.exit(EXIT.USAGE);
+  }
+
+  // Seed ~/.quiver/skills (and project dirs) before any agent session.
+  try {
+    await ensureDirectories();
+  } catch {
+    /* best-effort — never block startup */
   }
 
   // ── Non-interactive no-args guard (US-2.5) ──
@@ -184,6 +261,7 @@ async function main() {
     cliOpts.init ||
     cliOpts.signin ||
     !!cliOpts.daemon ||
+    !!cliOpts.workflowArgs ||
     cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
   if (
     nonTtyStream &&
@@ -394,6 +472,37 @@ async function main() {
     watcher.start();
   }
 
+  // Top-level `quiver workflow …` — agent callback is now live.
+  if (cliOpts.workflowArgs) {
+    try {
+      const { tool: workflowTool } = await import("./tools/workflow_tool.js");
+      const args = parseWorkflowCliArgs(cliOpts.workflowArgs);
+      // schedule/watch only register rules; they need a long-lived process.
+      // Be honest when the user asks for background automation from a
+      // one-shot CLI invocation.
+      if (
+        (args.action === "schedule" || args.action === "watch") &&
+        !isInteractive &&
+        !isJson
+      ) {
+        statusLine(
+          "WARN",
+          `\`quiver workflow ${args.action}\` registers the rule, then exits. Keep an interactive \`quiver\` session (or the daemon) running for the scheduler/watcher to fire.`,
+        );
+      }
+      const res = await workflowTool.execute(args as any);
+      console.log(JSON.stringify(res, null, 2));
+      const failed =
+        res &&
+        typeof res === "object" &&
+        (res as any).status === "error";
+      process.exit(failed ? EXIT.ERROR : EXIT.OK);
+    } catch (err: any) {
+      statusLine("ERROR", err?.message || String(err));
+      process.exit(EXIT.ERROR);
+    }
+  }
+
   // Track whether a session was resumed (via --continue, --resume, or crash
   let resumedSession = false;
 
@@ -521,16 +630,22 @@ async function main() {
   // ── Single-turn mode ──
   if (cliOpts.singleTurn) {
     const promptText = cliOpts.singleTurn;
+    let refused = false;
+    const trackEvent = (event: { type?: string; data?: any }) => {
+      if (isTurnRefusalEvent(event)) refused = true;
+    };
+
     if (isJson) {
       try {
         await agent.prompt(
           promptText,
           (token) => {},
           (event) => {
+            trackEvent(event);
             emitJson(event);
           },
         );
-        process.exit(EXIT.OK);
+        process.exit(refused ? EXIT.ERROR : EXIT.OK);
       } catch (err: any) {
         emitJson(
           { type: "error", data: { error: err.message } },
@@ -549,13 +664,19 @@ async function main() {
       ? new TerminalMarkdownRenderer(process.stdout)
       : null;
     try {
-      await agent.prompt(promptText, (token) => {
-        if (md) md.push(token);
-        else process.stdout.write(token);
-      });
+      await agent.prompt(
+        promptText,
+        (token) => {
+          if (md) md.push(token);
+          else process.stdout.write(token);
+        },
+        (event) => {
+          trackEvent(event);
+        },
+      );
       if (md) md.flush();
       console.log("");
-      process.exit(EXIT.OK);
+      process.exit(refused ? EXIT.ERROR : EXIT.OK);
     } catch (err: any) {
       statusLine("ERROR", err.message);
       process.exit(EXIT.ERROR);

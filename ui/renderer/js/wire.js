@@ -35,6 +35,10 @@ import {
   consentApprove,
   consentDecline,
   consentExclude,
+  compactionApprove,
+  compactionDecline,
+  evidenceConsentApprove,
+  evidenceConsentDecline,
 } from "./consent.js";
 
 function wireButtons() {
@@ -196,6 +200,14 @@ function wireNewButtons() {
   if (cd) cd.addEventListener("click", consentDecline);
   const ce = $("consentExcludeBtn");
   if (ce) ce.addEventListener("click", consentExclude);
+  const cpa = $("compactionApproveBtn");
+  if (cpa) cpa.addEventListener("click", compactionApprove);
+  const cpd = $("compactionDeclineBtn");
+  if (cpd) cpd.addEventListener("click", compactionDecline);
+  const eca = $("evidenceConsentApproveBtn");
+  if (eca) eca.addEventListener("click", evidenceConsentApprove);
+  const ecd = $("evidenceConsentDeclineBtn");
+  if (ecd) ecd.addEventListener("click", evidenceConsentDecline);
   const mf2 = $("markFinalBtn");
   if (mf2) mf2.addEventListener("click", () => markFinalForCurrentDocument());
   const ov = $("overrideBtn");
