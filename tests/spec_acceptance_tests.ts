@@ -62,6 +62,7 @@ import {
 } from "../src/diff.js";
 import {
   atomicWrite,
+  atomicWriteSync,
   rollbackLast,
   sessionBackups,
 } from "../src/fs/atomic_write.js";
@@ -76,7 +77,10 @@ import {
   isSafeForRemote,
   formatPrivacyLabel,
 } from "../src/memory/privacy.js";
-import { createMemoryFact } from "../src/memory/schema.js";
+import {
+  createMemoryFact,
+  readAllMemoryFacts,
+} from "../src/memory/schema.js";
 import {
   listAdapters,
   getAdapter,
@@ -99,7 +103,7 @@ import {
   encodeImageAsDataURL,
   MAX_IMAGE_DIMENSION,
 } from "../src/file_encoder.js";
-import { config } from "../src/config.js";
+import { config, validateRuntimeConfig } from "../src/config.js";
 import type { MemoryFact } from "../src/memory/schema.js";
 import {
   TRUST_TIERS,
@@ -127,8 +131,17 @@ import { ApprovalCache } from "../src/security/approval_cache.js";
 // These let the contract assert spec-required BEHAVIOR by importing and
 // calling the real modules, instead of grepping for identifiers the vendor
 // happened to ship (anti-fitting).
-import { EvidenceTracker } from "../src/evidence/tracker.js";
+import {
+  EvidenceTracker,
+  validateEvidenceFile,
+} from "../src/evidence/tracker.js";
 import type { SourceRecord, ClaimRecord } from "../src/evidence/model.js";
+import {
+  getEvidenceTracker,
+  registerConnectorProvenance,
+  withEvidenceTracker,
+} from "../src/tools/evidence.js";
+import { validateEvidenceForDocument } from "../src/subagents/checker.js";
 import {
   isScratchModeActive,
   resolveScratchPath,
@@ -142,9 +155,12 @@ import {
 import {
   classifySensitivity,
   redactMnpi,
+  redactMessageContent,
   routeForTier,
   applySensitivityRouting,
   formatRedactionReceipt,
+  loadSensitivityConfig,
+  SensitivityConfigError,
   type SensitivityConfig,
 } from "../src/security/sensitivity.js";
 import {
@@ -548,10 +564,10 @@ async function secretsStorageContract() {
       const fallbackOk =
         env.includes("0o600") &&
         env.includes(".gitignore") &&
-        /excluded from (cloud )?sync/i.test(env);
+        /local|machine|version control|gitignore/i.test(env);
       if (!fallbackOk)
         throw new Error(
-          "env_fallback.ts does not enforce 0600 + gitignore + sync exclusion",
+          "env_fallback.ts does not enforce 0600 + local-only + gitignore fallback",
         );
       // Onboarding write path (the real first-run secret write) must set 0600…
       if (!/0o600/.test(cfg))
@@ -789,6 +805,7 @@ async function configStartupUXContract() {
     "QUIVER_SESSION_LOG_MAX_CHARS",
     "QUIVER_AMBIENT",
     "QUIVER_LOG_RETENTION_DAYS",
+    "QUIVER_EVIDENCE_REQUIRED",
     "PARALLEL_API_KEY",
   ]);
   const RETIRED_ENV = [
@@ -899,7 +916,10 @@ async function configStartupUXContract() {
         );
       // The single key LLM_API_KEY must back the model.
       const llm = /llmApiKey\s*:\s*process\.env\.[^\n]+/.exec(cfg)?.[0] || "";
-      if (!/LLM_API_KEY/.test(llm))
+      const keychainHydration = /resolveSecretSync\(\s*["']LLM_API_KEY["']\s*\)/.test(
+        cfg,
+      );
+      if (!/LLM_API_KEY/.test(llm) && !keychainHydration)
         throw new Error(
           "llmApiKey does not derive from LLM_API_KEY — the single key must power the model",
         );
@@ -911,6 +931,63 @@ async function configStartupUXContract() {
           "onboarding/init writes OLLAMA_API_KEY= to .env — it must write LLM_API_KEY= (the single key)",
         );
       return true;
+    },
+  );
+
+  await check(
+    "CONFIG-RUNTIME-PREFLIGHT",
+    "US-1.3",
+    "startup preflight must reject incomplete remote configuration, accept local endpoints without a key, and identify remote endpoints without contacting them",
+    () => {
+      const saved = {
+        llmBaseUrl: config.llmBaseUrl,
+        llmModelName: config.llmModelName,
+        llmApiKey: config.llmApiKey,
+      };
+      try {
+        config.llmBaseUrl = "";
+        config.llmModelName = "";
+        config.llmApiKey = "";
+        const missing = validateRuntimeConfig();
+        if (
+          missing.valid ||
+          !missing.errors.some((e) => /LLM_API_BASE_URL/.test(e)) ||
+          !missing.errors.some((e) => /LLM_MODEL_NAME/.test(e))
+        ) {
+          return false;
+        }
+
+        config.llmBaseUrl = "http://127.0.0.1:11434/v1";
+        config.llmModelName = "local-model";
+        const local = validateRuntimeConfig();
+        if (!local.valid || local.remoteEndpoint) return false;
+
+        config.llmBaseUrl = "https://provider.example/v1";
+        const remote = validateRuntimeConfig();
+        return (
+          !remote.valid &&
+          remote.remoteEndpoint &&
+          remote.errors.some((e) => /LLM_API_KEY/.test(e))
+        );
+      } finally {
+        config.llmBaseUrl = saved.llmBaseUrl;
+        config.llmModelName = saved.llmModelName;
+        config.llmApiKey = saved.llmApiKey;
+      }
+    },
+  );
+
+  await check(
+    "KEYCHAIN-WINDOWS-ARGUMENT-SAFE",
+    "US-1.3",
+    "credential operations must pass values as process arguments or encoded PowerShell, never interpolate secrets into a shell command",
+    () => {
+      const keychain = codeOnly("src/secrets/keychain.ts");
+      return (
+        /execFileSync\("cmdkey"/.test(keychain) &&
+        /-EncodedCommand/.test(keychain) &&
+        !/execSync\(`(?:[^`]|`[^`])*\\\$\\{[^}]*password/.test(keychain)
+      );
     },
   );
 
@@ -1930,6 +2007,23 @@ async function absorbedContract(tmpWs: string) {
     },
   );
 
+  await check(
+    "ATOMIC-WRITE-SYNC-ROLLBACK",
+    "US-10.2 / Phase 2",
+    "synchronous exit-path writes must use the same temp-file, fsync, rename, and backup guarantees as asynchronous atomic writes",
+    async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-atomic-sync-"));
+      tmpDirs.push(tmp);
+      const file = path.join(tmp, "state.json");
+      atomicWriteSync(file, '{"version":1}');
+      sessionBackups.clear();
+      const backup = atomicWriteSync(file, '{"version":2}');
+      if (!backup || readFileSync(file, "utf8") !== '{"version":2}') return false;
+      await rollbackLast();
+      return readFileSync(file, "utf8") === '{"version":1}';
+    },
+  );
+
   // US-11.1 prompt assembly deterministic ordering
   await check(
     "PROMPT-ASSEMBLY-SECTIONS",
@@ -2689,6 +2783,49 @@ async function missingSpecContract(tmpWs: string) {
     },
   );
 
+  await check(
+    "CHECKPOINT-ATOMIC-AUDIT-CHAIN",
+    "US-13.2 / US-9.5 / Phase 2",
+    "checkpoints must be atomically written, chain successive audit hashes, expose the latest hash, and surface corrupt checkpoint JSON",
+    async () => {
+      const proj = `accept_checkpoint_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const prevProj = process.env.QUIVER_PROJECT_NAME;
+      process.env.QUIVER_PROJECT_NAME = proj;
+      const projRoot = path.join(os.homedir(), ".quiver", "projects", proj);
+      tmpDirs.push(projRoot);
+      try {
+        const { CheckpointManager } = await import("../src/session/checkpoint.js");
+        const manager = new CheckpointManager("checkpoint_chain", proj);
+        const state = {
+          messages: [],
+          approvals: [],
+          fileReadHashes: [],
+          model: "test-model",
+          adapter: "default",
+          metadata: { total_loops: 1, total_tool_calls: 0, total_tokens: 0 },
+        };
+        const firstPath = await manager.checkpoint(state);
+        const firstHash = manager.getLatestAuditHash();
+        if (!firstHash || firstHash.length !== 64) return false;
+        const secondPath = await manager.checkpoint(state);
+        const secondHash = manager.getLatestAuditHash();
+        if (!secondHash || secondHash === firstHash || firstPath === secondPath) return false;
+        if (!(await manager.verifyAuditChain())) return false;
+
+        await fs.writeFile(secondPath, "{", "utf8");
+        try {
+          manager.getLatestAuditHash();
+          return false;
+        } catch (error) {
+          return /Corrupt Quiver state/.test(String(error));
+        }
+      } finally {
+        if (prevProj === undefined) delete process.env.QUIVER_PROJECT_NAME;
+        else process.env.QUIVER_PROJECT_NAME = prevProj;
+      }
+    },
+  );
+
   // US-9.1 / US-9.5: security documentation must exist and be substantive.
   await check(
     "THREAT-MODEL-DOC",
@@ -3251,6 +3388,26 @@ async function seatbeltSandboxContract() {
           "spawnSandboxed/execSandboxed do not accept a workspace/profile parameter",
         );
       return true;
+    },
+  );
+
+  await check(
+    "RUN-COMMAND-SEATBELT-WIRED",
+    "US-17.10 / Phase 2",
+    "risky run_command bands must use Seatbelt on macOS and expose the documented fallback elsewhere",
+    () => {
+      const command = codeOnly("src/tools/run_command.ts");
+      const seatbelt = codeOnly("src/security/seatbelt.ts");
+      return (
+        /spawnSandboxed/.test(command) &&
+        /createSandboxProfile/.test(command) &&
+        /destructive/.test(command) &&
+        /privileged/.test(command) &&
+        /network/.test(command) &&
+        /fallback/.test(seatbelt) &&
+        /sandbox-exec/.test(seatbelt) &&
+        /"\/bin\/sh",\s*"-c",\s*command/.test(seatbelt)
+      );
     },
   );
 }
@@ -4534,6 +4691,48 @@ async function specGapCoverageContract() {
     },
   );
 
+  await check(
+    "MEMORY-EPISODIC-HARVEST-REVIEW-QUEUE",
+    "US-12.2 / Phase 2c",
+    "completed workflows must harvest only explicitly labelled candidates into the pending, provenance-bearing review queue and deduplicate reruns",
+    async () => {
+      const project = `accept_harvest_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const previousProject = process.env.QUIVER_PROJECT_NAME;
+      process.env.QUIVER_PROJECT_NAME = project;
+      const projectRoot = path.join(os.homedir(), ".quiver", "projects", project);
+      tmpDirs.push(projectRoot);
+      try {
+        const { harvestWorkflowCompletion } = await import(
+          "../src/memory/episodic_harvester.js"
+        );
+        const def = {
+          name: "test-workflow",
+          data_sensitivity: "public",
+        } as any;
+        const run = {
+          run_id: "WF-HARVEST-001",
+          status: "completed",
+          phases: [
+            {
+              phase: "train",
+              output: "Decision: use the approved quarterly template.",
+            },
+          ],
+        } as any;
+        const first = await harvestWorkflowCompletion(def, run);
+        if (first.created !== 1) return false;
+        const facts = await readAllMemoryFacts();
+        if (facts.length !== 1 || facts[0].reviewed) return false;
+        if (facts[0].source_session !== run.run_id) return false;
+        const second = await harvestWorkflowCompletion(def, run);
+        return second.created === 0 && second.skipped === 1;
+      } finally {
+        if (previousProject === undefined) delete process.env.QUIVER_PROJECT_NAME;
+        else process.env.QUIVER_PROJECT_NAME = previousProject;
+      }
+    },
+  );
+
   // ─── US-13.5: Ambient self-heal + goal-loop (behavioral) ────────────
 
   await check(
@@ -4599,6 +4798,28 @@ async function specGapCoverageContract() {
           "ambient.ts spawns a parallel tsc/npm-test — spec requires single primitive",
         );
       return true;
+    },
+  );
+
+  await check(
+    "AMBIENT-FAILS-CLOSED",
+    "US-13.5 / Phase 2",
+    "checker infrastructure failure, empty results, and exhausted heal budgets must be visible failures rather than approval",
+    () => {
+      const ambient = codeOnly("src/ambient.ts");
+      const checker = codeOnly("src/subagents/checker.ts");
+      const agentCode = codeOnly("src/agent.ts");
+      return (
+        /healthy:\s*false/.test(ambient) &&
+        /CHECKER-INFRASTRUCTURE/.test(ambient) &&
+        /CHECKER-EMPTY-RESULT/.test(ambient) &&
+        /CHECKER-ACCEPTANCE-INFRASTRUCTURE/.test(checker) &&
+        /deterministicVerdict[\s\S]{0,250}reject/.test(checker) &&
+        /override was not logged/.test(checker) &&
+        !/can't check\s*[—-]\s*don't block/.test(checker) &&
+        /ambient_verify_exhausted/.test(agentCode) &&
+        /Ambient maker-checker verification did not approve/.test(agentCode)
+      );
     },
   );
 
@@ -4814,6 +5035,26 @@ async function specGapCoverageContract() {
     },
   );
 
+  await check(
+    "SUBAGENT-USER-WORKSPACE-AND-TOOLS",
+    "US-5.3 / Phase 2",
+    "user subagents must copy the user's workspace, refuse on isolation failure, and enforce the requested tool allowlist in the child runtime",
+    () => {
+      const sa = codeOnly("src/tools/subagent.ts");
+      const cli = codeOnly("src/cli.ts");
+      return (
+        /buildSubagentScratchpad\(process\.cwd\(\)\)/.test(sa) &&
+        /fs\.cp\(workspaceRoot,\s*workspaceSnapshot/.test(sa) &&
+        /node_modules/.test(sa) &&
+        /could not create an isolated workspace copy/.test(sa) &&
+        /QUIVER_SUBAGENT_TOOLS/.test(sa + cli) &&
+        /unregisterTool/.test(cli) &&
+        /createIsolatedEnv/.test(sa) &&
+        /protectedDir/.test(sa)
+      );
+    },
+  );
+
   // ─── US-16.2: MCP client (source) ───────────────────────────────────
 
   await check(
@@ -4864,6 +5105,19 @@ async function specGapCoverageContract() {
     () => {
       const sc = codeOnly("src/slash_commands.ts");
       return /name:\s*["']\/mcp["']/.test(sc);
+    },
+  );
+
+  await check(
+    "MCP-PROVENANCE-AND-SENSITIVITY",
+    "US-16.2 / Phase 3b",
+    "MCP tool wrappers must apply declared identifier sensitivity gating and attach MCP provenance to the active evidence tracker",
+    () => {
+      const c = codeOnly("src/mcp/client.ts");
+      return /sendsIdentifiers/.test(c) &&
+        /data_sensitivity/.test(c) &&
+        /registerConnectorProvenance/.test(c) &&
+        /MCP tool/.test(c);
     },
   );
 
@@ -5437,6 +5691,126 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "EVIDENCE-FINALIZE-FAILS-CLOSED",
+    "US-17.13 / Phase 2",
+    "EvidenceTracker.finalize() must refuse invalid quantitative lineage and must not write a misleading Evidence.json or Run_Record.json",
+    async () => {
+      const t = new EvidenceTracker();
+      t.recordClaim({
+        claim_id: "c-unsourced",
+        rendered_text: "Revenue was 42.",
+        source_ids: [],
+        relationship: "sourced",
+        review_status: "verified",
+        reviewer_decision: null,
+        is_quantitative: true,
+      });
+      const out = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-evidence-invalid-"));
+      tmpDirs.push(out);
+      try {
+        t.finalize(out, "Invalid_Memo.docx");
+        return false;
+      } catch (error) {
+        if (!/Evidence finalization blocked/.test(String(error))) return false;
+        return (
+          !existsSync(path.join(out, "Invalid_Memo_Evidence.json")) &&
+          !existsSync(path.join(out, "Invalid_Memo_Run_Record.json"))
+        );
+      }
+    },
+  );
+
+  await check(
+    "EVIDENCE-FILE-STRICT-VALIDATION",
+    "US-17.13 / Phase 2",
+    "the shared persisted-evidence reader must reject missing, malformed, and schema-invalid companion files",
+    async () => {
+      const out = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-evidence-reader-"));
+      tmpDirs.push(out);
+      const doc = path.join(out, "Reader_Memo.docx");
+      const missing = await validateEvidenceFile(doc);
+      if (!missing.missing || missing.valid) return false;
+
+      const evidence = path.join(out, "Reader_Memo_Evidence.json");
+      await fs.writeFile(evidence, "{", "utf8");
+      const malformed = await validateEvidenceFile(doc);
+      if (malformed.valid || malformed.missing) return false;
+
+      await fs.writeFile(evidence, JSON.stringify({}), "utf8");
+      const schemaInvalid = await validateEvidenceFile(doc);
+      return (
+        !schemaInvalid.valid &&
+        schemaInvalid.problems.some((problem) => /claims|sources|review_status/.test(problem))
+      );
+    },
+  );
+
+  await check(
+    "EVIDENCE-TRACKER-SESSION-SCOPED",
+    "US-17.13 / Phase 2",
+    "evidence tool state must be owned by an agent session rather than a process-global singleton",
+    async () => {
+      const first = new EvidenceTracker();
+      const second = new EvidenceTracker();
+      await withEvidenceTracker(first, async () => {
+        if (getEvidenceTracker() !== first) return false;
+        first.setMetadata({ company: "First" });
+        first.registerSource({
+          source_id: "first-source",
+          source_type: "internal_note",
+          title: "First source",
+          file: "first.txt",
+          as_of: "2026-01-01",
+          location: {},
+          sensitivity: "public",
+          approved: true,
+        });
+        return withEvidenceTracker(second, async () => {
+          if (getEvidenceTracker() !== second) return false;
+          second.setMetadata({ company: "Second" });
+          return (
+            getEvidenceTracker() !== first &&
+            second.getSources().length === 0
+          );
+        });
+      });
+      return first !== second && first.getSources().length === 1 && second.getSources().length === 0;
+    },
+  );
+
+  await check(
+    "CHECKER-EVIDENCE-MISSING-REJECTS",
+    "US-15.1 / Phase 2",
+    "the maker-checker must reject a missing or semantically invalid evidence companion instead of treating it as a clean document",
+    async () => {
+      const out = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-checker-evidence-"));
+      tmpDirs.push(out);
+      const doc = path.join(out, "Checker_Memo.docx");
+      const missing = await validateEvidenceForDocument(doc);
+      if (missing.valid || !missing.problems.some((problem) => /missing/i.test(problem))) {
+        return false;
+      }
+
+      const t = new EvidenceTracker();
+      t.recordClaim({
+        claim_id: "checker-unsourced",
+        rendered_text: "EBITDA was 12.",
+        source_ids: [],
+        relationship: "sourced",
+        review_status: "verified",
+        reviewer_decision: null,
+        is_quantitative: true,
+      });
+      t.finalize(out, "Checker_Memo.docx", { requireValidEvidence: false });
+      const invalid = await validateEvidenceForDocument(doc);
+      return (
+        !invalid.valid &&
+        invalid.problems.some((problem) => /checker-unsourced|approved source/i.test(problem))
+      );
+    },
+  );
+
+  await check(
     "EVIDENCE-TOOL-EXISTS",
     "US-17.13",
     "Evidence tool must exist at src/tools/evidence.ts and export a tool object with name 'evidence'",
@@ -5931,6 +6305,87 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "CONNECTOR-CACHE-KEY-SAFE",
+    "US-17.16 / Phase 3b",
+    "connector cache keys must hash vendor identifiers so values such as BRK/A cannot escape the cache directory as path segments",
+    async () => {
+      const reg = new ConnectorRegistry(3600);
+      let calls = 0;
+      const fake: DataConnector = {
+        name: `cache-key-${Date.now()}`,
+        label: "Cache key test",
+        dataTypes: ["Generic"],
+        requiresAuth: false,
+        sendsIdentifiers: false,
+        async search() { return []; },
+        async fetch(identifier) {
+          calls++;
+          return {
+            identifier,
+            dataType: "Generic",
+            data: {},
+            provenance: {
+              vendor: "test",
+              dataset: "cache",
+              timestamp: new Date().toISOString(),
+              apiRef: "cache-test",
+            },
+          };
+        },
+      };
+      reg.register(fake);
+      await reg.fetch(fake.name, "BRK/A");
+      await reg.fetch(fake.name, "BRK/A");
+      return calls === 1;
+    },
+  );
+
+  await check(
+    "CONNECTOR-SEARCH-SURFACES-FAILURES",
+    "US-17.16 / Phase 3b",
+    "connector search must distinguish a vendor failure from a legitimate empty result",
+    async () => {
+      const reg = new ConnectorRegistry(3600);
+      const fake: DataConnector = {
+        name: `search-error-${Date.now()}`,
+        label: "Search error test",
+        dataTypes: ["Generic"],
+        requiresAuth: false,
+        sendsIdentifiers: false,
+        async search() { throw new Error("vendor unavailable"); },
+        async fetch() { throw new Error("not used"); },
+      };
+      reg.register(fake);
+      const results = await reg.search("query", fake.name);
+      return results.length === 1 && "error" in results[0] &&
+        results[0].error.includes("vendor unavailable");
+    },
+  );
+
+  await check(
+    "CONNECTOR-PROVENANCE-AUTO-EVIDENCE",
+    "US-17.16 / Phase 3b",
+    "external connector provenance must register automatically with the active session evidence tracker",
+    () => {
+      const tracker = new EvidenceTracker();
+      const registered = withEvidenceTracker(tracker, () =>
+        registerConnectorProvenance(
+          {
+            vendor: "acceptance-vendor",
+            dataset: "quarterly",
+            timestamp: new Date().toISOString(),
+            apiRef: "api/ref/1",
+          },
+          "public",
+        ),
+      );
+      return registered &&
+        tracker.getSources().length === 1 &&
+        tracker.getSources()[0].source_type === "vendor_export";
+    },
+  );
+
+  await check(
     "CONNECTOR-TOOL-EXISTS",
     "US-17.16",
     "data_query tool must exist at src/tools/data_query.ts with the unified agent-facing interface",
@@ -5971,6 +6426,23 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
+    "CONNECTOR-SENSITIVITY-GATE",
+    "US-17.16 / Phase 3b",
+    "data_query must refuse external identifier calls unless the request explicitly declares an approved public or synthetic sensitivity",
+    () => {
+      const framework = codeOnly("src/connectors/framework.ts");
+      const tool = codeOnly("src/tools/data_query.ts");
+      const keychain = codeOnly("src/secrets/keychain.ts");
+      return /sendsIdentifiers/.test(framework) &&
+        /data_sensitivity/.test(tool) &&
+        /blockedExternalCall/.test(tool) &&
+        /public.*synthetic/.test(tool) &&
+        /resolveConnectorSecretSync/.test(keychain) &&
+        /QUIVER_CONNECTOR_/.test(keychain);
+    },
+  );
+
+  await check(
     "CONNECTOR-SYSTEM-PROMPT",
     "US-17.16",
     "System prompt must document the data_query tool and connector framework",
@@ -6004,18 +6476,22 @@ async function extendedCapabilitiesContract() {
   await check(
     "SENSITIVITY-CLASSIFY",
     "US-17.17",
-    "Behavioral: classifySensitivity must return 'high' for live-deal/MNPI text, 'mid' for client/acquisition text, and 'low' for generic research — per SPEC §4.3 sensitivity tiers",
+    "Behavioral: classifySensitivity must use engagement-owned regex rules and an explicit default, never source-code keywords",
     () => {
       const cfg: SensitivityConfig = {
+        version: 1,
         defaultTier: "low",
         modelEndpoints: { cloud: "cloud", local: "local" },
         mnpiPatterns: [],
-        highSensitivityKeywords: ["live deal", "client name", "mnpi"],
-        midSensitivityKeywords: ["client", "acquisition", "valuation"],
+        classificationRules: [
+          { type: "live_deal", pattern: "\\blive deal\\b", tier: "high" },
+          { type: "client_work", pattern: "\\bclient\\b", tier: "mid" },
+        ],
       };
       if (classifySensitivity("this is a live deal model", cfg).tier !== "high") return false;
       if (classifySensitivity("client acquisition analysis", cfg).tier !== "mid") return false;
       if (classifySensitivity("generic macroeconomic research", cfg).tier !== "low") return false;
+      if (classifySensitivity("MNPI deal confidential", cfg).tier !== "low") return false;
       return true;
     },
   );
@@ -6026,6 +6502,7 @@ async function extendedCapabilitiesContract() {
     "Behavioral: redactMnpi must strip MNPI patterns (client names, deal terms, financial figures), return a per-redaction record, and leave a redaction receipt a user can read — per SPEC §11.2 (the consent gate itemizes what was stripped, not a silent strip)",
     () => {
       const cfg: SensitivityConfig = {
+        version: 1,
         defaultTier: "low",
         modelEndpoints: { cloud: "cloud", local: "local" },
         mnpiPatterns: [
@@ -6033,7 +6510,7 @@ async function extendedCapabilitiesContract() {
           { type: "deal_term", pattern: "\\bdeal value of \\$[\\d,]+", replacement: "[DEAL_TERM]" },
           { type: "financial_figure", pattern: "\\$[\\d,]+(?:\\.\\d+)?(?:\\s*(?:million|billion|M|B))?", replacement: "[FIGURE]" },
         ],
-        highSensitivityKeywords: [], midSensitivityKeywords: [],
+        classificationRules: [],
       };
       const { redactedText, redactions } = redactMnpi("Client Acme signed a term sheet; deal value of $50; revenue $48.2 million.", cfg);
       if (!redactions.some((r) => r.type === "client_name")) return false;
@@ -6041,6 +6518,15 @@ async function extendedCapabilitiesContract() {
       if (!redactions.some((r) => r.type === "financial_figure")) return false;
       if (!/\[CLIENT_NAME\]/.test(redactedText)) return false;
       if (!/\[FIGURE\]/.test(redactedText)) return false;
+      const structured = redactMessageContent(
+        [
+          { type: "text", text: "Client Acme discussed revenue $48.2 million." },
+          { type: "image_url", image_url: { url: "data:image/png;base64,..." } },
+        ],
+        cfg,
+      ) as any[];
+      if (structured[0].text.includes("Client Acme")) return false;
+      if (structured[1].type !== "image_url") return false;
       const receipt = formatRedactionReceipt(redactions);
       if (receipt === "No redactions applied.") return false;
       if (!/client name/.test(receipt)) return false;
@@ -6057,13 +6543,16 @@ async function extendedCapabilitiesContract() {
       if (routeForTier("mid") !== "cloud-redacted") return false;
       if (routeForTier("low") !== "cloud") return false;
       const cfg: SensitivityConfig = {
+        version: 1,
         defaultTier: "low",
         modelEndpoints: { cloud: "cloud", local: "local" },
         mnpiPatterns: [
           { type: "client_name", pattern: "\\bClient\\s+[A-Z][a-z]+\\b", replacement: "[CLIENT_NAME]" },
         ],
-        highSensitivityKeywords: ["live deal"],
-        midSensitivityKeywords: ["client"],
+        classificationRules: [
+          { type: "live_deal", pattern: "\\blive deal\\b", tier: "high" },
+          { type: "client_work", pattern: "\\bclient\\b", tier: "mid" },
+        ],
       };
       const high = applySensitivityRouting("this is a live deal model", cfg);
       if (high.route !== "local" || high.redactions.length !== 0) return false;
@@ -6086,6 +6575,73 @@ async function extendedCapabilitiesContract() {
     },
   );
 
+  await check(
+    "SENSITIVITY-CONFIG-FAILS-CLOSED",
+    "US-17.17 / Phase 2",
+    "sensitivity configuration must be strict, engagement-owned, and fail closed on missing JSON, malformed JSON, or invalid regex",
+    async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "quiver-sensitivity-"));
+      tmpDirs.push(tmp);
+      const configPath = path.join(tmp, ".quiver", "sensitivity.json");
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      const valid = {
+        version: 1,
+        defaultTier: "high",
+        modelEndpoints: { cloud: "cloud", local: "local" },
+        mnpiPatterns: [
+          { type: "codename", pattern: "\\bProject Aurora\\b", replacement: "[PROJECT]" },
+        ],
+        classificationRules: [
+          { type: "public", pattern: "\\bpublic release\\b", tier: "low" },
+        ],
+      };
+      await fs.writeFile(configPath, JSON.stringify(valid), "utf8");
+      const loaded = loadSensitivityConfig(configPath);
+      if (applySensitivityRouting("ordinary work", loaded).route !== "local") return false;
+      if (
+        applySensitivityRouting("public release summary", loaded).route !== "cloud"
+      ) {
+        return false;
+      }
+      const confidential = applySensitivityRouting(
+        "ordinary work",
+        loaded,
+        "client-confidential",
+      );
+      if (confidential.route !== "local") return false;
+
+      await fs.writeFile(configPath, "{", "utf8");
+      try {
+        loadSensitivityConfig(configPath);
+        return false;
+      } catch (error) {
+        if (!(error instanceof SensitivityConfigError)) return false;
+      }
+      await fs.writeFile(
+        configPath,
+        JSON.stringify({
+          ...valid,
+          mnpiPatterns: [
+            { type: "bad", pattern: "[", replacement: "[BAD]" },
+          ],
+        }),
+        "utf8",
+      );
+      try {
+        loadSensitivityConfig(configPath);
+        return false;
+      } catch (error) {
+        if (!(error instanceof SensitivityConfigError)) return false;
+      }
+      try {
+        loadSensitivityConfig(path.join(tmp, ".quiver", "missing.json"));
+        return false;
+      } catch (error) {
+        return error instanceof SensitivityConfigError;
+      }
+    },
+  );
+
   // ─── US-17.18: Agent loop integration (sensitivity + consent gate) ────
   // The sensitivity routing and consent gate modules must be wired into
   // the agent loop, not just exist as standalone modules.
@@ -6102,6 +6658,21 @@ async function extendedCapabilitiesContract() {
         /sensitivity_routing/.test(c) &&
         /formatRedactionReceipt/.test(c)
       );
+    },
+  );
+
+  await check(
+    "SENSITIVITY-AGENT-FAILS-CLOSED",
+    "US-17.18 / Phase 2",
+    "the agent must refuse before appending or sending a turn when sensitivity configuration cannot be loaded, and audit receipts must not contain original sensitive values",
+    () => {
+      const a = codeOnly("src/agent.ts");
+      const refuses = /sensitivity_refused/.test(a) &&
+        /no model call was made/.test(a) &&
+        /invalid or missing sensitivity configuration/.test(a) &&
+        /refused:\s*true/.test(a);
+      const noOriginals = !/redactions:\s*sensResult\.redactions\.map[\s\S]{0,250}?original:\s*r\.original/.test(a);
+      return refuses && noOriginals;
     },
   );
 
@@ -6490,7 +7061,11 @@ async function extendedCapabilitiesContract() {
       const agent = codeOnly("src/agent.ts");
       const provider = codeOnly("src/providers/types.ts");
       return (
-        /temperature:\s*parseFloat\s*\(\s*process\.env\.LLM_TEMPERATURE/.test(cfg) &&
+        /(?:parseFloat\s*\(\s*process\.env\.LLM_TEMPERATURE|parseFiniteEnvNumber\(\s*["']LLM_TEMPERATURE["']\s*,)/.test(
+          cfg,
+        ) &&
+        /LLM_TOP_P/.test(cfg) &&
+        /LLM_TOP_K/.test(cfg) &&
         /config\.temperature/.test(agent) &&
         /top_p/.test(provider) &&
         /reasoning_effort/.test(provider)
@@ -6683,13 +7258,16 @@ async function extendedCapabilitiesContract() {
     "Definition of Done: client-confidential (high-sensitivity) data must be provably NOT transmitted to any remote endpoint — routed to the local model with no redactions leaked. SPEC §16 / §11.2 / §4.3.",
     () => {
       const cfg: SensitivityConfig = {
+        version: 1,
         defaultTier: "low",
         modelEndpoints: { cloud: "cloud", local: "local" },
         mnpiPatterns: [
           { type: "client_name", pattern: "\\bClient\\s+[A-Z][a-z]+\\b", replacement: "[CLIENT_NAME]" },
         ],
-        highSensitivityKeywords: ["live deal", "client name", "mnpi"],
-        midSensitivityKeywords: ["client", "acquisition"],
+        classificationRules: [
+          { type: "live_deal", pattern: "\\blive deal\\b", tier: "high" },
+          { type: "client_work", pattern: "\\bclient\\b", tier: "mid" },
+        ],
       };
       const high = applySensitivityRouting("live deal model with client name Acme", cfg);
       if (high.route !== "local") return false; // never sent to a remote endpoint
@@ -6900,7 +7478,7 @@ async function extendedCapabilitiesContract() {
   await check(
     "DAEMON-AUTOSTART-INSTALL",
     "Epic 1 / SPEC §4.1",
-    "Wiring: the daemon ships a launchd LaunchAgent template + install/uninstall/status so it can start at login and survive a logout/reboot (stage-1 daemon was window/app-restart only). A `quiver daemon install|uninstall|status` CLI command wires it. (Other platforms are no-ops pending a Windows service / Linux unit.)",
+    "Wiring: the daemon ships a launchd LaunchAgent template plus Windows Task Scheduler install/uninstall/status so it can start at login and survive a logout/reboot. A `quiver daemon install|uninstall|status` CLI command wires it; Linux remains out of scope.",
     async () => {
       const plist = path.join(ROOT, "scripts", "com.quiver.daemon.plist");
       if (!existsSync(plist)) return false;
@@ -6909,8 +7487,9 @@ async function extendedCapabilitiesContract() {
       const { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } = await import("../src/daemon/client.js");
       if (typeof installDaemonAutostart !== "function" || typeof uninstallDaemonAutostart !== "function" || typeof isDaemonAutostartInstalled !== "function") return false;
       const cli = codeOnly("src/cli.ts");
+      const client = codeOnly("src/daemon/client.ts");
       const wired = /cliOpts\.daemon/.test(cli) && /installDaemonAutostart/.test(cli) && /uninstallDaemonAutostart/.test(cli);
-      return wired;
+      return wired && /schtasks/.test(client) && /ONLOGON/.test(client);
     },
   );
 
@@ -6938,8 +7517,9 @@ async function extendedCapabilitiesContract() {
     "Wiring: for a mid-tier (cloud-redacted) turn, the model call must send a REDACTED copy of the messages — the system prompt (which holds loaded memory, core context, skills) and tool results, not just the current user input — so identifiers don't leak to the cloud via context. This must not mutate this.messages (history preserved). Inspects the call-site redaction block.",
     () => {
       const a = codeOnly("src/agent.ts");
-      // a cloud-redacted branch at the call site that maps messages through redactMnpi
-      const branch = /route\s*===\s*"cloud-redacted"[\s\S]{0,400}?messagesToSend\s*=\s*this\.messages\.map\([\s\S]{0,300}?redactMnpi/.test(a);
+      // a cloud-redacted branch at the call site that maps messages through
+      // the structured-content redaction helper
+      const branch = /route\s*===\s*"cloud-redacted"[\s\S]{0,400}?messagesToSend\s*=\s*this\.messages\.map\([\s\S]{0,300}?redactMessageContent/.test(a);
       // it sends the redacted copy (messagesToSend), not this.messages, to streamChat
       const sendsCopy = /messages:\s*messagesToSend\s*as\s*any\[\]/.test(a);
       // non-mutating (uses .map on a copy, sets messagesToSend, doesn't assign back to this.messages)
@@ -7056,13 +7636,15 @@ async function extendedCapabilitiesContract() {
   await check(
     "PRELOAD-CORE-API-PRESENT",
     "Epic-2 §2.6 / IPC drift",
-    "preload.ts and preload.js must both expose the core-memory editor + memory review list API. A prior patch deleted loadCoreMemory/saveCoreMemory/memoryReviewList from preload.ts while preload.js kept them — silent drift the IPC-IN-SYNC channel-set check does not catch.",
+    "preload.ts and preload.js must both expose the core-memory editor, memory review, workflow rerun, and evidence-load APIs. A prior patch deleted renderer methods from preload.js while preload.ts kept them — silent drift the IPC-IN-SYNC channel-set check does not catch.",
     () => {
       const ts = srcText("ui/preload.ts");
       const js = srcText("ui/preload.js");
       return (
         /loadCoreMemory/.test(ts) && /saveCoreMemory/.test(ts) && /memoryReviewList/.test(ts) &&
-        /loadCoreMemory/.test(js) && /saveCoreMemory/.test(js) && /memoryReviewList/.test(js)
+        /rerunWorkflow/.test(ts) && /loadEvidence/.test(ts) &&
+        /loadCoreMemory/.test(js) && /saveCoreMemory/.test(js) && /memoryReviewList/.test(js) &&
+        /rerunWorkflow/.test(js) && /loadEvidence/.test(js)
       );
     },
   );
@@ -7074,9 +7656,13 @@ async function extendedCapabilitiesContract() {
     () => {
       const checker = codeOnly("src/subagents/checker.ts");
       const tracker = codeOnly("src/evidence/tracker.ts");
+      const validator = codeOnly("src/evidence/validator.ts");
       const trackerNaming = /_Evidence\.json/.test(tracker);
-      // The checker must reference the tracker's actual naming scheme, not a bare Evidence.json that the tracker never produces.
-      const checkerMatchesReal = /_Evidence\.json/.test(checker) || /readdir|glob|_Evidence/.test(checker);
+      // The checker may delegate path resolution to the shared validator, but
+      // that validator must still use the tracker's actual naming scheme.
+      const checkerMatchesReal =
+        /validateEvidenceFile/.test(checker) &&
+        /_Evidence\.json/.test(validator);
       return trackerNaming && checkerMatchesReal;
     },
   );
@@ -7173,6 +7759,22 @@ async function extendedCapabilitiesContract() {
       const mainHandles = /ipcMain\.handle\(\s*["']review:markFinal["']/.test(main) && /ipcMain\.handle\(\s*["']review:override["']/.test(main);
       const mainLogs = /logReviewDecision/.test(main) && /appendEntry|AuditChain/.test(main);
       return blocks && appIpc && mainHandles && mainLogs;
+    },
+  );
+
+  await check(
+    "REVIEW-FLOW-EVIDENCE-GATE",
+    "S10 / Phase 2",
+    "GUI mark-final and override must block missing or invalid evidence and surface the IPC error instead of marking the card final optimistically",
+    () => {
+      const app = codeOnly("ui/renderer/app.js");
+      const main = codeOnly("ui/main.ts");
+      return (
+        /validateEvidenceFile/.test(main) &&
+        /evidenceRequired/.test(main) &&
+        /res\?\.blocked|res\.blocked/.test(app) &&
+        /evidenceProblems|evidence or review validation failed/.test(app)
+      );
     },
   );
 
@@ -7663,6 +8265,42 @@ async function extendedCapabilitiesContract() {
       return /WorkflowWatcher/.test(c) &&
         /fs\.watch/.test(c) &&
         /globMatch/.test(c);
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-CALLBACK-AND-VERIFY-GATE",
+    "US-18.1 / Phase 2",
+    "workflow builds must require the real AgentCallback and verify must reject missing, unsupported, or unevaluated acceptance checks",
+    () => {
+      const orchestrator = codeOnly("src/workflow/orchestrator.ts");
+      const tool = codeOnly("src/tools/workflow_tool.ts");
+      return (
+        /No agent callback[\s\S]{0,180}errors\.push/.test(orchestrator) &&
+        /Unsupported acceptance check/.test(orchestrator) &&
+        /requires an acceptance checklist/.test(orchestrator) &&
+        /checks:\s*checkResults/.test(orchestrator) &&
+        /setWorkflowAgentCallback/.test(tool) &&
+        /agent:\s*activeAgentCallback/.test(tool)
+      );
+    },
+  );
+
+  await check(
+    "WORKFLOW-ENGINE-TRIGGERS-SERIALIZED",
+    "US-18.1 / Phase 2",
+    "scheduler ticks must not overlap and watcher runs must preserve the triggering file path",
+    () => {
+      const scheduler = codeOnly("src/workflow/scheduler.ts");
+      const watcher = codeOnly("src/workflow/watcher.ts");
+      const orchestrator = codeOnly("src/workflow/orchestrator.ts");
+      return (
+        /tickRunning/.test(scheduler) &&
+        /if\s*\(!this\.running\s*\|\|\s*this\.tickRunning\)/.test(scheduler) &&
+        /run\.status\s*===\s*"failed"/.test(scheduler) &&
+        /triggerInput:\s*filePath/.test(watcher) &&
+        /triggerInput\?:\s*string/.test(orchestrator)
+      );
     },
   );
 
