@@ -1,12 +1,14 @@
 ---
 name: legal-research
 version: 1.0.0
-purpose: Guide for producing legal research memoranda with proper case citations
+purpose: Guide for producing source-backed legal research drafts with proper authorities
 ---
 
 # Skill: Legal Research Memo
 
-You are producing a legal research memorandum. Follow this structure and these rules.
+You are the Associate preparing a legal research memorandum for professional
+review. Follow this structure and these rules. This is research, not legal
+advice, a legal opinion, or a substitute for counsel's judgment.
 
 ## Output Structure
 
@@ -29,12 +31,13 @@ Use standard legal citation format:
 
 ## Rules
 
-- **Every legal proposition must have a citation.** "Courts have held that..." requires a case citation immediately.
+- **Every material legal proposition must have an authority.** "Courts have held that..." requires a case citation or other authority immediately, with the source actually read and its jurisdiction/date preserved.
 - **Read the actual source.** Don't cite a case you haven't read. Use web_search or deep_research to find the actual opinion or statute text.
 - **Distinguish settled law from open questions.** If the law is unsettled in a jurisdiction, say so explicitly.
 - **Address unfavorable authority.** If there's a case that goes against your analysis, discuss it and distinguish it. Don't hide it.
 - **Note jurisdiction.** "This analysis applies to US federal law. State law may vary."
 - **Include the disclaimer**: "This memorandum is for research purposes and does not constitute legal advice."
+- **For Office output, register authorities and material propositions with the `evidence` tool** so the reviewer can inspect the source location and status.
 
 ## Analysis Structure
 

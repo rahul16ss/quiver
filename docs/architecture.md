@@ -2,7 +2,7 @@
 
 ## Overview
 
-Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; it is built around five primary architectural systems:
+Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; product principles and boundaries are kept in [principles.md](principles.md). The engine is built around five primary architectural systems:
 
 1. **Filesystem Context Manager** (`src/context_manager.ts`, `src/paths.ts`)
 2. **Harness-Adapter & Provider Split Engine** (`src/adapters/`, `src/providers/`)
@@ -92,7 +92,7 @@ User Input
 > (lifecycle `wrap_tool_call` hooks); and every turn writes a checkpoint via
 > `CheckpointManager` for crash recovery. The maker-checker gate is
 > **always-on and unconditional** for high-risk operations (US-15.1 forbids an
-> env opt-out); at task completion the AmbientEngine runs the same `runChecker`
+> env opt-out); at task completion the GoalLoopEngine runs the same `runChecker`
 > once in full mode and auto-heals on `revise`/`reject` (US-13.5). The internal
 > trust-tier ladder (`observe`→`propose`→`build`→`operate`, plus an
 > unrestricted top tier) shapes read scope +

@@ -15,7 +15,7 @@ Quiver helps investment, advisory, and wealth management teams build inspection-
 - **Controlled context & approved inputs**: Workflows operate within declared file and data boundaries.
 - **Inspectable evidence**: Important figures can be connected to Excel cell coordinates, document pages, sections or URLs—or flagged for review.
 - **Native Office output**: Drafts land in Word (`.docx`), Excel (`.xlsx`), or PowerPoint (`.pptx`).
-- **Reviewer-in-the-loop sign-off**: Output remains a draft until a human reviewer approves or flags items.
+- **Reviewer-in-the-loop sign-off**: Output remains a draft until a human reviewer approves or flags items; finance-client sign-off also requires a valid companion evidence file.
 
 ---
 
@@ -57,7 +57,23 @@ quiver workflow watch post-earnings-evidence-pack --dir ./inbox --pattern "*.pdf
 
 ---
 
-## 3. Quick start
+## 3. Installation
+
+Quiver is developed on macOS and supports Windows as the primary customer
+platform. Linux is not a supported customer target.
+
+- **macOS:** install Node.js, run `npm ci`, and install OfficeCLI using its
+  official installer.
+- **Windows:** install Node.js, run `npm ci`, and install the official
+  `officecli-win-x64.exe` or `officecli-win-arm64.exe` distribution (PowerShell
+  installer or Scoop). If OfficeCLI is not on `PATH`, set
+  `QUIVER_OFFICECLI_PATH` to its full path.
+- Run `quiver init` once. It prefers the macOS Keychain or Windows Credential
+  Manager for the model key and checks whether OfficeCLI is available.
+
+---
+
+## 4. Quick start
 
 ```bash
 # Clone repository
@@ -78,17 +94,17 @@ npm run demo:portfolio-review
 
 ---
 
-## 4. Core principles
+## 5. Core principles
 
 1. **Start with the deliverable**: Output lands natively in Word, Excel, or PowerPoint.
-2. **Sources you can inspect**: Important claims can be connected to cells, pages, sections or URLs—or explicitly flagged for review.
+2. **Sources you can inspect**: Important claims can be connected to Excel cells or to file, page, section, or URL evidence—or explicitly flagged for review.
 3. **Reviewer-in-the-loop governance**: Drafts require human sign-off; overrides are recorded in a local audit chain.
 4. **Data handling configured per engagement**: Model endpoints and privacy boundaries are explicitly set by the operator.
 5. **Reproducible verification**: Workflow behavior is validated against explicit acceptance checks.
 
 ---
 
-## 5. Data handling
+## 6. Data handling
 
 Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no telemetry.
 
@@ -103,22 +119,22 @@ See [profiles/finance-client/README.md](profiles/finance-client/README.md) for d
 
 ---
 
-## 6. Capability summary & detailed documentation
+## 7. Capability summary & detailed documentation
 
 | Capability | Summary |
 | :--- | :--- |
-| **Native Office Output** | Builds `.docx`, `.xlsx`, and `.pptx` matching house templates |
-| **Evidence & Lineage** | Tracks quantitative claims down to cell coordinates in Excel |
+| **Native Office Output** | Builds `.docx`, `.xlsx`, and `.pptx` around configured templates |
+| **Evidence & Lineage** | Tracks Excel-sourced figures to cell coordinates; other evidence remains file/page/section/URL scoped |
 | **Reviewer Sign-off** | Blocks mark-final status while open flags remain; logs overrides |
 | **Data Handling** | Operator-configured endpoints; local models & zero telemetry supported |
 | **Desktop App** | Electron GUI for chat, context inspection, and reviewer sign-off |
 | **Reference Workflows** | Executable demo pipelines for dealmaking, research, and wealth |
 
-For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](docs/capabilities.md).
+For the governing principles, see [docs/principles.md](docs/principles.md). For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](docs/capabilities.md).
 
 ---
 
-## 7. Development
+## 8. Development
 
 ```bash
 # Type check
@@ -133,6 +149,6 @@ npm run gui
 
 ---
 
-## 8. License
+## 9. License
 
 Apache-2.0. Operating foundation for Conviction Studio.

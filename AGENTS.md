@@ -19,10 +19,11 @@ Repo-local canon:
 Hard rules:
 1. `npm test` (checker-owned acceptance contract) is **read-only** — never
    edit tests to pass; adapt the implementation to the check's intent.
-2. Release gate: `npm test` green · `npx tsc --noEmit` clean ·
-   `npm run demo:ic-memo` 8/8 · a **visual** GUI walkthrough (launch → send →
-   approval → deliverable card → session resume → settings) with screenshots
-   you actually read. "Tests green" has shipped a broken GUI before.
+2. Release gate: `npm test` green · `npx tsc --noEmit` clean · all three
+   reference workflow demos passing · daemon smoke · a **visual** GUI
+   walkthrough (launch → send → approval → deliverable card → session resume →
+   settings) with screenshots you actually read. "Tests green" has shipped a
+   broken GUI before.
 3. Public claims are governed by the capability truth table in the Conviction
    Studio repo. Never claim: data stays local by default (the model endpoint
    is user-configured — a cloud endpoint is common), redaction/sensitivity
@@ -35,3 +36,6 @@ Hard rules:
    — never an AI/Claude trailer.
 6. GUI-spawned agents must never write into this repo (QUIVER_PROTECTED_DIR
    hard block) — keep that guard and its negative test intact.
+
+The shared operating principles (including the Associate/VP maker-checker
+model and honesty boundaries) are in [`docs/principles.md`](docs/principles.md).

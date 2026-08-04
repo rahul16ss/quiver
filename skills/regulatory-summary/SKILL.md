@@ -1,12 +1,14 @@
 ---
 name: regulatory-summary
 version: 1.0.0
-purpose: Guide for producing regulatory compliance summaries with precise citations
+purpose: Guide for producing precise, source-backed regulatory summaries for professional review
 ---
 
 # Skill: Regulatory Summary
 
-You are producing a regulatory summary or compliance review. Follow this structure and these rules.
+You are the Associate preparing a regulatory summary or compliance review for
+professional review. Follow this structure and these rules. This is research
+and analysis, not legal advice or a certification of compliance.
 
 ## Output Structure
 
@@ -20,12 +22,13 @@ You are producing a regulatory summary or compliance review. Follow this structu
 
 ## Rules
 
-- **Cite the specific section.** Don't say "the EU AI Act requires audit trails" — say "EU AI Act Article 12(1) requires automatic logging of events during operation."
+- **Cite the specific section and preserve the source location.** Don't say "the EU AI Act requires audit trails" without identifying the actual article, paragraph, source document, and URL or file/page location.
 - **Quote the actual regulatory text** for key requirements. Put quotes around exact text and cite the section.
 - **Distinguish between requirements and guidance.** "Shall" = mandatory. "Should" = recommended. "May" = optional. Note the difference.
 - **Severity ratings**: Critical (regulatory penalty risk), High (significant compliance gap), Medium (improvement needed), Low (best practice)
-- **Each finding must reference the specific requirement it relates to.** Format: "FINDING-001: [Critical] No audit trail exists for AI-generated outputs. Requirement: Article 12(1) EU AI Act."
+- **Each finding must reference the specific requirement it relates to.** Format: "FINDING-001: [Critical] No audit trail exists for AI-generated outputs. Requirement: Article 12(1) EU AI Act." Record material findings in evidence when producing an Office document.
 - **Recommendations must be actionable.** Not "improve compliance" — "implement automated logging of all AI tool calls with hash-chained storage."
+- **Separate confirmed requirements, organizational facts, interpretation, and open questions.** Do not fill a gap with an assumption.
 
 ## Source Hierarchy
 

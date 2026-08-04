@@ -1,13 +1,15 @@
 ---
 name: office-doc
-description: Create, edit, and manage Office documents (.docx, .xlsx, .pptx) using the office_doc tool (powered by OfficeCLI). Use when the user needs Word, Excel, or PowerPoint documents — reports, spreadsheets, presentations, investment briefs, compliance reviews, etc.
+description: Create, edit, and verify Office document drafts (.docx, .xlsx, .pptx) using office_doc and evidence lineage
 ---
 
 # Office Document Creation
 
-Use the `office_doc` tool to create and edit Office documents. The tool wraps the
-OfficeCLI engine — a single binary that handles .docx, .xlsx, and .pptx files
-without requiring Microsoft Office to be installed.
+Use the `office_doc` tool to create and edit Office document drafts. The tool
+wraps the OfficeCLI engine — a single binary that handles .docx, .xlsx, and
+.pptx files without requiring Microsoft Office to be installed. A document is
+not final merely because it saved successfully: evidence validation and
+professional review still apply.
 
 ## When to Use
 
@@ -118,6 +120,9 @@ office_doc: {
 4. **Save** with `action: "save"` (flushes to disk)
 5. **View** with `action: "view"` to verify content
 6. **Validate** with `action: "validate"` to check for errors
+7. **Evidence**: register material sources and quantitative claims with the
+   `evidence` tool, then validate and finalize the evidence companion before
+   presenting the document as ready.
 
 ### Help
 When unsure about available element types or properties:
@@ -160,3 +165,5 @@ office_doc: { action: "help", file: "", format: "pptx" }
 - **Always save** before the user opens the file in another application
 - **Validate** after complex operations to catch any structural issues
 - **Use batch** for multiple operations — it's more efficient than individual calls
+- **Treat synced folders carefully** — use explicit overwrite intent for an
+  existing deliverable and allow the Windows sync-lock retry path to work.

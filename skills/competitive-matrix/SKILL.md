@@ -1,12 +1,14 @@
 ---
 name: competitive-matrix
 version: 1.0.0
-purpose: Guide for producing competitive analysis matrices with verified data
+purpose: Guide for producing objective, source-backed competitive matrices for professional review
 ---
 
 # Skill: Competitive Matrix
 
-You are producing a competitive matrix. Follow this structure and these rules.
+You are the Associate preparing a competitive matrix for professional review.
+Follow this structure and these rules. The matrix is a draft; its data
+freshness, evidence, and interpretation must remain visible.
 
 ## Output Structure
 
@@ -36,12 +38,13 @@ Include at least 5 of these dimensions in the table:
 
 ## Rules
 
-- **Every data point in the table must have a citation.** Use footnote-style numbering [1], [2] and list sources at the bottom.
-- **Use company websites as primary source** for pricing and features. Verify by actually visiting the pricing page.
+- **Every material data point must be source-backed or marked "Not publicly disclosed" / "Data limited".** In Office output, register the source and exact location with the `evidence` tool; use footnotes or source IDs in the table.
+- **Use company websites as primary source** for pricing and features. Verify by actually visiting the pricing page when the approved research route allows it.
 - **Use Crunchbase or press releases for funding data.** Don't guess funding amounts.
 - **Note data freshness.** If pricing was last verified 6 months ago, note it.
 - **Acknowledge data gaps.** If a competitor doesn't publish pricing, write "Not publicly disclosed" — don't estimate.
 - **Be objective.** Don't favor one competitor over another. State facts, let the reader draw conclusions.
+- **Label analysis separately from observed facts.** Do not turn marketing language, an estimate, or an analyst inference into a verified feature or metric.
 
 ## What NOT to Do
 

@@ -1,12 +1,14 @@
 ---
 name: due-diligence
 version: 1.0.0
-purpose: Guide for producing comprehensive due diligence reports
+purpose: Guide for producing evidence-backed due diligence drafts for professional review
 ---
 
 # Skill: Due Diligence
 
-You are producing a due diligence report for an M&A or investment transaction. Follow this structure and these rules.
+You are the Associate preparing a due diligence draft for an M&A or investment
+transaction. Follow this structure and these rules. A draft is not a sign-off
+or a conclusion that the checker or a professional has approved it.
 
 ## Output Structure
 
@@ -23,11 +25,12 @@ You are producing a due diligence report for an M&A or investment transaction. F
 ## Rules
 
 - **Separate confirmed facts from estimates.** Use "Confirmed:" and "Estimated:" labels.
-- **Every claim has a citation.** Financial figures cite filings or press releases. Legal items cite contracts or court records.
+- **Material claims must be source-backed or explicitly unresolved.** Use the `evidence` tool for Office output and record the source location (file, page, section, cell, or URL), not just a bare citation.
 - **Red flags are evidence-based.** A red flag must include: (1) what was found, (2) why it's concerning, (3) source.
 - **Open questions are explicit.** Don't hide gaps — list them as "OPEN-Q-001: Confirm customer concentration — only 2 of top 10 customers publicly disclosed."
 - **Risk assessment is holistic.** Consider financial, legal, commercial, and technical risks together.
-- **Note data limitations.** If the DD is based only on public sources, state: "This assessment is based on publicly available information. A full DD with access to confidential data may reveal additional findings."
+- **Note data limitations.** State whether the work uses public, internal, or engagement-approved confidential sources. Do not imply that unavailable data was checked.
+- **Preserve sensitivity boundaries.** Do not send confidential or MNPI material to an external data or model endpoint unless the engagement route explicitly permits it.
 
 ## Financial DD Checklist
 
