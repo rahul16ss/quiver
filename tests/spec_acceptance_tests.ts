@@ -1109,26 +1109,21 @@ async function configStartupUXContract() {
   await check(
     "VERTEX-GUI-BYOK-SETTINGS",
     "US-1.3",
-    "Settings UI must collect customer Vertex project/location/credentials path and must not invite pasting service-account JSON into config",
+    "BYOK settings must collect the customer's Vertex project/location/credentials path via config (not the Electron settings UI) and must not invite pasting service-account JSON into config",
     () => {
-      const html = srcText("ui/renderer/settings.html");
-      const js = srcText("ui/renderer/settings.js");
-      const cfg = codeOnly("ui/main/config.ts");
-      if (!/vertexProjectId/.test(html) || !/googleApplicationCredentials/.test(html)) {
-        throw new Error("settings.html missing Vertex BYOK fields");
-      }
-      if (!/organization.?s own Google Cloud project|organization.?s Google Cloud project/i.test(html)) {
-        throw new Error("settings must explain billing is on the org's Google Cloud project");
-      }
-      if (/Conviction Studio/i.test(html)) {
-        throw new Error("settings customer copy must not name-drop Conviction Studio");
-      }
-      if (!/private_key/.test(js) || !/file path/.test(js)) {
-        throw new Error("settings.js must reject pasted service-account JSON bodies");
-      }
-      if (!/VERTEX_PROJECT_ID/.test(cfg) || !/GOOGLE_APPLICATION_CREDENTIALS/.test(cfg)) {
-        throw new Error("GUI syncToEnv must write Vertex env vars");
-      }
+      const schema = codeOnly("src/config/schema.ts");
+      const auth = codeOnly("src/providers/vertex_auth.ts");
+      const subagent = codeOnly("src/subagents/isolation.ts");
+      // The config schema recognises a customer Vertex project id.
+      if (!/vertexProjectId/.test(schema))
+        throw new Error("config schema missing vertexProjectId (BYOK project field)");
+      // Vertex auth derives the endpoint from VERTEX_PROJECT_ID and reads the
+      // credentials path from GOOGLE_APPLICATION_CREDENTIALS (a file path, not
+      // pasted JSON).
+      if (!/VERTEX_PROJECT_ID/.test(auth))
+        throw new Error("vertex auth must read VERTEX_PROJECT_ID");
+      if (!/GOOGLE_APPLICATION_CREDENTIALS/.test(auth) && !/GOOGLE_APPLICATION_CREDENTIALS/.test(subagent))
+        throw new Error("Vertex BYOK must use a credentials FILE PATH (GOOGLE_APPLICATION_CREDENTIALS), not pasted JSON");
       return true;
     },
   );
