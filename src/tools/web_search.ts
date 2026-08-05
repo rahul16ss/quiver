@@ -1,109 +1,59 @@
 import { z } from "zod";
 import { config } from "../config.js";
 import { Tool } from "../registry.js";
-import { isOllamaHost, resolveMakerBaseUrl } from "../providers/vertex_auth.js";
 
-function defaultSearchProvider(): "ollama" | "parallel" {
-  // Prefer Parallel whenever its key is present — Vertex/Gemini keys must
-  // never be mistaken for Ollama Pro credentials.
-  if (config.parallelApiKey) return "parallel";
-  const base = resolveMakerBaseUrl() || config.llmBaseUrl;
-  if (config.llmApiKey && isOllamaHost(base)) return "ollama";
-  return "parallel";
-}
-
+/**
+ * web_search — Parallel.ai is the sole public-web search gateway (ADR-003).
+ * The Ollama Cloud web-search route was removed; there is no separate cloud
+ * search route and no silent fallback. Fails closed when PARALLEL_API_KEY is
+ * unset.
+ */
 export const tool: Tool = {
   name: "web_search",
   description:
-    "Searches the web using Parallel.ai (preferred) or Ollama Pro web search and returns relevant excerpts.",
+    "Searches the public web using Parallel.ai and returns relevant excerpts. " +
+    "Parallel is the sole public-web research gateway; no other cloud search route is used.",
   parameters: z.object({
     query: z.string().describe("The search query string."),
-    provider: z
-      .enum(["ollama", "parallel"])
-      .optional()
-      .describe(
-        "Optional search provider override. Defaults to Parallel.ai when PARALLEL_API_KEY is set; Ollama Pro only when the model host is Ollama.",
-      ),
   }),
-  execute: async ({ query, provider }) => {
-    const selectedProvider = provider || defaultSearchProvider();
+  execute: async ({ query }) => {
+    const apiKey = config.parallelApiKey;
+    if (!apiKey) {
+      return "Error: PARALLEL_API_KEY is not set in the configuration (.env). Parallel is the sole public-web search gateway.";
+    }
 
-    if (selectedProvider === "ollama") {
-      if (!config.llmApiKey) {
-        return "Error: LLM_API_KEY is not set in the configuration (.env). Please configure it to use Ollama web search.";
-      }
-      if (!isOllamaHost(resolveMakerBaseUrl() || config.llmBaseUrl)) {
-        return "Error: Ollama web search is only available when the model provider is Ollama. Use Parallel.ai (PARALLEL_API_KEY) or omit provider.";
-      }
+    try {
+      const response = await fetch("https://api.parallel.ai/v1/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          objective: query,
+          search_queries: [query],
+          mode: "basic", // Lower latency for interactive agent loops
+        }),
+      });
 
-      try {
-        const response = await fetch("https://ollama.com/api/web_search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${config.llmApiKey}`,
-          },
-          body: JSON.stringify({
-            query,
-            max_results: 5,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          return `Error: Ollama web search failed with status ${response.status}: ${errorText}`;
-        }
-
-        const data: any = await response.json();
-        const results = (data.results || []).map((item: any, idx: number) => {
-          return `[Result ${idx + 1}]\nTitle: ${item.title || "No Title"}\nURL: ${item.url}\nExcerpts:\n- ${item.content || item.snippet || "No snippet available."}`;
-        });
-
-        return results.length > 0
-          ? results.join("\n\n")
-          : "No search results found.";
-      } catch (error: any) {
-        return `Error performing Ollama web search: ${error.message}`;
-      }
-    } else {
-      const apiKey = config.parallelApiKey;
-      if (!apiKey) {
-        return "Error: PARALLEL_API_KEY is not set in the configuration (.env). Please configure it to use Parallel web search.";
+      if (!response.ok) {
+        const errorText = await response.text();
+        return `Error: Parallel search failed with status ${response.status}: ${errorText}`;
       }
 
-      try {
-        const response = await fetch("https://api.parallel.ai/v1/search", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            objective: query,
-            search_queries: [query],
-            mode: "basic", // Lower latency for interactive agent loops
-          }),
-        });
+      const data: any = await response.json();
+      const results = (data.results || []).map((item: any, idx: number) => {
+        const excerpts = (item.excerpts || [])
+          .map((ex: string) => `- ${ex}`)
+          .join("\n");
+        return `[Result ${idx + 1}]\nTitle: ${item.title || "No Title"}\nURL: ${item.url}\nExcerpts:\n${excerpts || "No excerpts available."}`;
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          return `Error: Parallel search failed with status ${response.status}: ${errorText}`;
-        }
-
-        const data: any = await response.json();
-        const results = (data.results || []).map((item: any, idx: number) => {
-          const excerpts = (item.excerpts || [])
-            .map((ex: string) => `- ${ex}`)
-            .join("\n");
-          return `[Result ${idx + 1}]\nTitle: ${item.title || "No Title"}\nURL: ${item.url}\nExcerpts:\n${excerpts || "No excerpts available."}`;
-        });
-
-        return results.length > 0
-          ? results.join("\n\n")
-          : "No search results found.";
-      } catch (error: any) {
-        return `Error performing Parallel web search: ${error.message}`;
-      }
+      return results.length > 0
+        ? results.join("\n\n")
+        : "No search results found.";
+    } catch (error: any) {
+      return `Error performing Parallel web search: ${error.message}`;
     }
   },
 };

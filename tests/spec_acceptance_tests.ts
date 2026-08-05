@@ -1107,18 +1107,19 @@ async function configStartupUXContract() {
   await check(
     "WEB-TOOLS-PARALLEL-FIRST-NOT-VERTEX-AS-OLLAMA",
     "US-16.3",
-    "web_search/scrape_url must prefer Parallel.ai and must not treat a Vertex/Gemini host as Ollama Pro",
+    "web_search/scrape_url must use Parallel as the sole public-web gateway and must not route to Ollama Cloud (ADR-003)",
     () => {
       const search = codeOnly("src/tools/web_search.ts");
       const scrape = codeOnly("src/tools/scrape_url.ts");
-      if (!/isOllamaHost/.test(search) || !/isOllamaHost/.test(scrape)) {
-        throw new Error("web tools must gate Ollama Pro on isOllamaHost");
+      // Parallel is the sole public-web gateway; no Ollama Cloud web route.
+      if (/ollama\.com\/api\/web_(search|fetch)/.test(search) || /ollama\.com\/api\/web_(search|fetch)/.test(scrape)) {
+        throw new Error("web tools must not route to Ollama Cloud web APIs (removed per ADR-003)");
       }
-      if (!/parallelApiKey/.test(search) || !/defaultSearchProvider/.test(search)) {
-        throw new Error("web_search must prefer Parallel when PARALLEL_API_KEY is set");
+      if (!/parallelApiKey/.test(search) || !/parallelApiKey/.test(scrape)) {
+        throw new Error("web tools must gate on PARALLEL_API_KEY (Parallel is the sole gateway)");
       }
-      if (!/defaultScrapeProvider/.test(scrape)) {
-        throw new Error("scrape_url must use Parallel-first default selection");
+      if (!/api\.parallel\.ai/.test(search) || !/api\.parallel\.ai/.test(scrape)) {
+        throw new Error("web tools must call api.parallel.ai");
       }
       return true;
     },
