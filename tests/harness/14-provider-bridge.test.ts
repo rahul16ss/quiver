@@ -10,6 +10,8 @@ import picocolors from "picocolors";
 import { ModelProfileRegistry, starterCatalog } from "../../src/harness/model-profile.js";
 import { QuiverOpenRouterProvider, type ChatModelLike } from "../../src/harness/provider-bridge.js";
 import type { ChatRequest } from "../../src/providers/types.js";
+import { getOpenRouterProvider } from "../../src/providers/types.js";
+import { config } from "../../src/config.js";
 
 let passed = 0, failed = 0;
 const failures: string[] = [];
@@ -84,6 +86,21 @@ async function run() {
   const errProvider = new QuiverOpenRouterProvider({ apiKey: "k", profiles, profileSlug: "openai-gpt-4o" }, async () => errMock);
   const errEvents = await collect(errProvider.streamChat(req, new AbortController().signal));
   check("BRIDGE-STREAM-ERROR-SURFACED", errEvents.some((e) => e.type === "error" && /boom/.test(e.error)));
+
+  // ── getOpenRouterProvider accessor ────────────────────────────────────
+  const savedKey = config.openRouterApiKey;
+  const savedProfile = config.openRouterModelProfile;
+  config.openRouterApiKey = "";
+  config.openRouterModelProfile = "";
+  check("ACCESSOR-NULL-WHEN-UNCONFIGURED", (await getOpenRouterProvider()) === null);
+  config.openRouterApiKey = "sk-or-test";
+  config.openRouterModelProfile = "openai-gpt-4o";
+  const orProv = await getOpenRouterProvider();
+  check("ACCESSOR-RETURNS-BRIDGE-WHEN-CONFIGURED", !!orProv && orProv.id === "openrouter");
+  config.openRouterModelProfile = "nonexistent-profile";
+  check("ACCESSOR-NULL-FOR-UNKNOWN-PROFILE", (await getOpenRouterProvider()) === null);
+  config.openRouterApiKey = savedKey;
+  config.openRouterModelProfile = savedProfile;
 }
 
 await run();

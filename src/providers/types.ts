@@ -543,3 +543,28 @@ export function getLocalProvider(): ModelProvider | null {
     config.llmApiKey, // single API key (US-1.3); local Ollama ignores it
   );
 }
+
+/**
+ * OpenRouter provider accessor — the sole cloud model gateway (ADR-001).
+ * Returns a QuiverOpenRouterProvider (bridging ChatOpenRouter to the legacy
+ * ModelProvider interface with ZDR enforcement) when OPENROUTER_API_KEY and a
+ * certified OPENROUTER_MODEL_PROFILE are configured; otherwise null. The final
+ * getActiveProvider() flip to prefer this for cloud configs is gated on spec
+ * updates. Local/private endpoints continue to use getLocalProvider().
+ */
+export async function getOpenRouterProvider(): Promise<ModelProvider | null> {
+  if (!config.openRouterApiKey || !config.openRouterModelProfile) return null;
+  const { QuiverOpenRouterProvider } = await import("../harness/provider-bridge.js");
+  const { ModelProfileRegistry, starterCatalog } = await import("../harness/model-profile.js");
+  const profiles = new ModelProfileRegistry();
+  for (const p of starterCatalog()) profiles.register(p);
+  try {
+    return new QuiverOpenRouterProvider({
+      apiKey: config.openRouterApiKey,
+      profiles,
+      profileSlug: config.openRouterModelProfile,
+    });
+  } catch {
+    return null;
+  }
+}

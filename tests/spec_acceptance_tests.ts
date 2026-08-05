@@ -863,6 +863,8 @@ async function configStartupUXContract() {
     "QUIVER_LOG_RETENTION_DAYS",
     "QUIVER_EVIDENCE_REQUIRED",
     "PARALLEL_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_MODEL_PROFILE",
   ]);
   const RETIRED_ENV = [
     "OLLAMA_API_KEY",

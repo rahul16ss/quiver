@@ -377,6 +377,13 @@ export const config: Config = {
   localLlmBaseUrl: process.env.QUIVER_LOCAL_LLM_API_BASE_URL || "",
   localLlmModelName: process.env.QUIVER_LOCAL_LLM_MODEL_NAME || "",
   parallelApiKey: resolveSecretSync("PARALLEL_API_KEY"),
+  // ── OpenRouter — the sole cloud model gateway (ADR-001). When set, the
+  // harness QuiverOpenRouterProvider enforces ZDR/data_collection=deny/
+  // require_parameters/no-fallback on every cloud request. The legacy
+  // OpenAI-compatible path remains for local/private endpoints; the final
+  // getActiveProvider() flip is gated on spec updates.
+  openRouterApiKey: resolveSecretSync("OPENROUTER_API_KEY"),
+  openRouterModelProfile: process.env.OPENROUTER_MODEL_PROFILE || "",
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
   maxContextTokens: parseFiniteEnvInteger("QUIVER_MAX_CONTEXT_TOKENS", 120000),
@@ -461,6 +468,10 @@ export interface Config {
   localLlmBaseUrl: string;
   localLlmModelName: string;
   parallelApiKey: string;
+  /** OpenRouter API key (sole cloud gateway, ADR-001). Empty = not configured. */
+  openRouterApiKey: string;
+  /** Certified ModelProfile slug to use for OpenRouter cloud requests. */
+  openRouterModelProfile: string;
   browserHeadless: boolean;
   autonomyGrants: Set<AutonomyGrant>;
   maxContextTokens: number;
