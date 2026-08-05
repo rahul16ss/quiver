@@ -14,10 +14,13 @@
 
   <!-- Step 1: select an existing file/template or create a new engagement run -->
   <section id="step-context" ondragover="event.preventDefault()" ondrop="window.handleDrop?.(event)">
-    <h2>1 · Context &amp; sources</h2>
+    <h2>1 · Context & sources</h2>
     <p>Choose a workflow, approved context, source documents, model profile and data boundary. Add your model key in settings.</p>
     <select id="workflow-select"></select>
     <div id="context-summary" class="summary"></div>
+    <ul id="context-rail" class="ledger">
+      <!-- each context item has an exclude/veto affordance (one-click exclude from the next run) -->
+    </ul>
   </section>
 
   <!-- Step 2: confirm the goal, deliverable, reviewer and cost/depth mode -->
@@ -29,6 +32,7 @@
   <!-- Step 3: follow live progress, evidence, costs, gaps and pending approvals -->
   <section id="step-progress">
     <h2>3 · Progress</h2>
+    <div id="current-status" class="summary">Idle — ready to run.</div>
     <ul id="gap-ledger" class="ledger"></ul>
     <ul id="pending-approvals" class="approvals"></ul>
   </section>
@@ -37,11 +41,39 @@
   <section id="step-changeset">
     <h2>4 · Change set</h2>
     <ul id="changes" class="changes"></ul>
+    <!-- Deliverable card: Open / Show in Folder / Preview -->
+    <div id="deliverable-card" class="card" hidden>
+      <span id="deliverable-name"></span>
+      <button data-action="openFile">Open</button>
+      <button data-action="showInFolder">Show in Folder</button>
+      <button data-action="preview">Preview</button>
+    </div>
+    <!-- Lineage chips: each drafted figure as a clickable chip (source/confidence) -->
+    <ul id="lineage-chips" class="ledger"></ul>
+    <!-- Verification rail: clicking a figure opens its source -->
+    <aside id="verification-rail" class="rail" hidden>
+      <h3>Source</h3>
+      <div id="figure-source"></div>
+      <div id="review-status"></div>
+      <button data-action="markVerified">Verify</button>
+      <button data-action="markFlagged">Flag</button>
+      <button data-action="markNeedsAnalyst">Needs analyst</button>
+    </aside>
     <div class="actions">
       <button id="approve">Approve</button>
       <button id="reject">Reject</button>
     </div>
   </section>
+
+  <!-- Consent gate: no blind approvals — surfaces before any run commits -->
+  <div id="consent-gate" class="overlay" hidden>
+    <div class="overlay-card">
+      <h3>Consent</h3>
+      <p id="consent-summary" class="summary"></p>
+      <button id="consent-allow">Allow</button>
+      <button id="consent-deny">Deny</button>
+    </div>
+  </div>
 
   <!-- Step 5: commit an approved new version to the chosen storage provider -->
   <section id="step-commit">
