@@ -149,6 +149,8 @@ import {
   resolveMakerBaseUrl,
 } from "./vertex_auth.js";
 import { extractToolCallPassthrough } from "./tool_call_passthrough.js";
+import { QuiverOpenRouterProvider } from "../harness/provider-bridge.js";
+import { ModelProfileRegistry, starterCatalog } from "../harness/model-profile.js";
 
 /**
  * OpenAI-compatible provider (works with Ollama, OpenRouter, Vertex OpenAI-compat, etc.)
@@ -518,6 +520,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
  * Vertex BYOK: builds the customer project URL and refreshes OAuth tokens.
  */
 export function getActiveProvider(): ModelProvider {
+  // OpenRouter is the sole cloud model gateway (ADR-001). When an OpenRouter
+  // key + a certified profile are configured, prefer the QuiverOpenRouterProvider
+  // bridge (ZDR-enforcing). Otherwise fall back to the legacy OpenAI-compatible
+  // provider for local/private/Vertex configs. The final removal of the legacy
+  // cloud path is gated on spec updates.
+  const or = tryOpenRouterProvider();
+  if (or) return or;
   const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
   const apiKey = config.llmApiKey;
   const vertex = isVertexHost(baseUrl);
@@ -527,6 +536,17 @@ export function getActiveProvider(): ModelProvider {
     apiKey,
     vertex ? () => resolveLlmBearerToken({ forceVertex: true }) : undefined,
   );
+}
+
+function tryOpenRouterProvider(): ModelProvider | null {
+  if (!config.openRouterApiKey || !config.openRouterModelProfile) return null;
+  try {
+    const profiles = new ModelProfileRegistry();
+    for (const p of starterCatalog()) profiles.register(p);
+    return new QuiverOpenRouterProvider({ apiKey: config.openRouterApiKey, profiles, profileSlug: config.openRouterModelProfile });
+  } catch {
+    return null;
+  }
 }
 
 /**

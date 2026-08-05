@@ -10,7 +10,7 @@ import picocolors from "picocolors";
 import { ModelProfileRegistry, starterCatalog } from "../../src/harness/model-profile.js";
 import { QuiverOpenRouterProvider, type ChatModelLike } from "../../src/harness/provider-bridge.js";
 import type { ChatRequest } from "../../src/providers/types.js";
-import { getOpenRouterProvider } from "../../src/providers/types.js";
+import { getOpenRouterProvider, getActiveProvider } from "../../src/providers/types.js";
 import { config } from "../../src/config.js";
 
 let passed = 0, failed = 0;
@@ -101,6 +101,18 @@ async function run() {
   check("ACCESSOR-NULL-FOR-UNKNOWN-PROFILE", (await getOpenRouterProvider()) === null);
   config.openRouterApiKey = savedKey;
   config.openRouterModelProfile = savedProfile;
+
+  // ── getActiveProvider flip (ADR-001) ──────────────────────────────────
+  // When OpenRouter is configured, getActiveProvider() returns the bridge;
+  // when unset, it returns the legacy OpenAI-compatible provider.
+  config.openRouterApiKey = "sk-or-test";
+  config.openRouterModelProfile = "openai-gpt-4o";
+  const flipped = getActiveProvider();
+  check("FLIP-ACTIVE-PROVIDER-IS-BRIDGE", flipped.id === "openrouter");
+  config.openRouterApiKey = "";
+  config.openRouterModelProfile = "";
+  const legacy = getActiveProvider();
+  check("FLIP-LEGACY-WHEN-UNCONFIGURED", legacy.id !== "openrouter");
 }
 
 await run();
