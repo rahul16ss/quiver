@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiver</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Quiver</h1>
+    <p class="tagline">Capital-markets workflow harness — draft, evidence, approve, commit.</p>
+  </header>
+
+  <!-- Step 1: select an existing file/template or create a new engagement run -->
+  <section id="step-context">
+    <h2>1 · Context &amp; sources</h2>
+    <p>Choose a workflow, approved context, source documents, model profile and data boundary.</p>
+    <select id="workflow-select"></select>
+    <div id="context-summary" class="summary"></div>
+  </section>
+
+  <!-- Step 2: confirm the goal, deliverable, reviewer and cost/depth mode -->
+  <section id="step-goal">
+    <h2>2 · Goal</h2>
+    <div id="goal-summary" class="summary"></div>
+  </section>
+
+  <!-- Step 3: follow live progress, evidence, costs, gaps and pending approvals -->
+  <section id="step-progress">
+    <h2>3 · Progress</h2>
+    <ul id="gap-ledger" class="ledger"></ul>
+    <ul id="pending-approvals" class="approvals"></ul>
+  </section>
+
+  <!-- Step 4: inspect a semantic/visual change set; accept/reject changes -->
+  <section id="step-changeset">
+    <h2>4 · Change set</h2>
+    <ul id="changes" class="changes"></ul>
+    <div class="actions">
+      <button id="approve">Approve</button>
+      <button id="reject">Reject</button>
+    </div>
+  </section>
+
+  <!-- Step 5: commit an approved new version to the chosen storage provider -->
+  <section id="step-commit">
+    <h2>5 · Commit</h2>
+    <div id="commit-status" class="summary"></div>
+  </section>
+
+  <footer>
+    <p>Loopback-only · per-install secret · no LAN exposure. Partial completion is shown honestly.</p>
+  </footer>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>
