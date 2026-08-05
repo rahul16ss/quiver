@@ -1,6 +1,6 @@
 # Reproducible Test Report — refactor checkpoint
 
-> Commit: `e8a8b21` (on top of audit baseline `061d56e`).
+> Commit: `99d5c19` (on top of audit baseline `061d56e`).
 > Reproduce on Node v22 (tsx, no build step).
 
 ## Commands
@@ -9,7 +9,7 @@
 | :--- | :--- | :--- |
 | Type check | `npx tsc --noEmit -p tsconfig.json` | clean (exit 0) |
 | Spec acceptance (checker-owned) | `npm test` | **447 / 447** pass |
-| Harness gate (refactor) | `npm test` (runs after spec gate) | **245 / 245** pass |
+| Harness gate (refactor) | `npm test` (runs after spec gate) | **327 / 327** pass |
 | Offline + OfficeCLI e2e | `npm run test:e2e -- --tier=a,b` | **34 / 34** pass |
 | Live contract (opt-in) | `QUIVER_LIVE_CONTRACT=1 npx tsx tests/harness/live/run.ts` | skipped by default |
 
@@ -30,6 +30,10 @@ child process via `tests/harness/run.ts`. Repeated full runs are deterministic.
 | `07-storage-providers.test.ts` | 18 | Local root enforcement + atomic commit + conflict fail-closed + synced reduced-guarantee; Graph ETag conflict no-replace + delta; Drive revisionId conflict→sibling + no silent Google-native conversion |
 | `08-workflow-scenarios.test.ts` | 97 | all twelve reference scenarios positive + per-invariant negative (substitution/no-approval/wrong-mime/no-evidence); structural catalog validation; sensitivity boundaries |
 | `09-security-threats.test.ts` | 17 | prompt injection wrapping; SSRF loopback/private/metadata blocked; Office macro/IRM/DDE high-risk; path traversal; credential detection/redaction; TraceSink content redaction; MNPI fail-closed; MCP untrusted wrapping |
+| `10-domain-broker.test.ts` | 24 | MaterialClaim validation; source precedence + contradiction; actual-vs-estimate reconciliation; period keys; entitlements; IntegrationBroker approvals + MNPI-on-public refusal; MCP untrusted wrapping + provenance |
+| `11-experience-plane.test.ts` | 20 | loopback-only binding; per-install secret + CSRF; strict origin validation; secure headers; UI path-traversal guard; UI serving; secret persistence; launcher CLI |
+| `12-integration-e2e.test.ts` | 14 | four planes compose end-to-end (research → model ZDR → stage → edit working copy → candidate/evidence/diff → goal loop pauses at approval → resume → commit → reproducible run record → trace redaction) |
+| `13-customer-pack-fixture.test.ts` | 24 | shipped pack validates (secret-free, MNPI fail-closed, no auto-promote); registry load/export; twelve workflows match harness catalog; source precedence covers all categories; PromptCompiler compiles from pack; PolicyEngine enforces three profiles |
 
 ## Live contract tests (not run)
 
