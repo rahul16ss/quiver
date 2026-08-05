@@ -136,6 +136,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "CONFIG-SCHEMA-VALIDATE-MIGRATE",
     "SECRET-SCHEMA-USES-REFS",
     "SYNC-DEFAULT-OFF",
+    "GUI-SETTINGS-SECTIONS",
   ],
   // Onboarding
   "src/onboarding.ts": [
@@ -287,8 +288,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   ],
   "src/subagents/scratchpad_helpers.ts": ["MAKER-CHECKER-SCRATCHPAD"],
   // (adversarial removed — dead code)
-  // GUI settings
-  "ui/settings.ts": ["GUI-SETTINGS-SECTIONS"],
+  // Browser-UI settings (config schema — Phase 8) — merged into src/config/schema.ts above
   // Memory review queue
   "src/memory/review_queue.ts": ["MEMORY-REVIEW-QUEUE-MODULE"],
   // (cleanup removed — dead code)
@@ -398,7 +398,7 @@ const PREFIX_TO_CHECKS: Array<{ prefix: string; checks: string[] }> = [
     ],
   },
   {
-    prefix: "ui/main/",
+    prefix: "src/harness/",
     checks: [
       "GUI-SANDBOX-WIRED",
       "GUI-CSP-ENFORCED",
@@ -411,7 +411,7 @@ const PREFIX_TO_CHECKS: Array<{ prefix: string; checks: string[] }> = [
     ],
   },
   {
-    prefix: "ui/renderer/",
+    prefix: "src/harness/ui/",
     checks: [
       "GUI-SANDBOX-WIRED",
       "GUI-CSP-ENFORCED",
