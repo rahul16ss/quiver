@@ -11,6 +11,7 @@
  */
 import picocolors from "picocolors";
 import { runSpecAcceptanceTests } from "./spec_acceptance_tests.js";
+import { runHarnessTests } from "./harness/run.js";
 
 async function main() {
   console.log(picocolors.cyan("\n🧪 Quiver — Spec Acceptance Gate (checker-owned)"));
@@ -21,6 +22,15 @@ async function main() {
     process.exit(1);
   }
   console.log(picocolors.cyan("\n🎉 All spec acceptance checks passed.\n"));
+
+  // Harness gate (refactor): narrow interfaces + concrete implementations.
+  // Additive over the legacy spec gate; a failure here also fails `npm test`.
+  const harnessFailures = await runHarnessTests();
+  if (harnessFailures > 0) {
+    console.log(picocolors.red(`\n❌ ${harnessFailures} harness check(s) FAILED.`));
+    process.exit(1);
+  }
+  console.log(picocolors.cyan("\n🎉 All harness checks passed.\n"));
 }
 
 main().catch((err) => {
