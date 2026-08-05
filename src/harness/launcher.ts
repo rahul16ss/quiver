@@ -161,9 +161,14 @@ export async function runLauncherCli(args: string[]): Promise<number> {
   }
 }
 
-// CLI entry point.
+// CLI entry point. For long-running subcommands (start/harness) the daemon's
+// HTTP server keeps the process alive — do not force-exit on success. Short
+// commands (status/open/diagnostics/register-workspace) have no server handle,
+// so the event loop drains and the process exits naturally.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runLauncherCli(process.argv.slice(2)).then((code) => process.exit(code)).catch((err) => {
+  runLauncherCli(process.argv.slice(2)).then((code) => {
+    if (code !== 0) process.exit(code);
+  }).catch((err) => {
     console.error(err);
     process.exit(1);
   });
