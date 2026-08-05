@@ -260,6 +260,13 @@ function codeOnly(rel: string): string {
 /** Harness browser-UI code (Phase 8, ADR-009): the loopback-served UI. */
 function harnessUiFiles(): string[] {
   const files = ["src/harness/ui/app.js", "src/harness/ui/index.html", "src/harness/ui/styles.css"];
+  // Include the renderer JS modules (the restored three-plane workspace).
+  const jsDir = path.join(ROOT, "src", "harness", "ui", "js");
+  if (existsSync(jsDir)) {
+    for (const f of readdirSync(jsDir).filter((n) => n.endsWith(".js")).sort()) {
+      files.push(path.join("src", "harness", "ui", "js", f));
+    }
+  }
   return files;
 }
 function harnessUiCode(): string {
@@ -675,13 +682,14 @@ async function guiWiringContract() {
     () => {
       const missing: string[] = [];
       const html = srcText("src/harness/ui/index.html");
+      const uiDir = path.join(ROOT, "src", "harness", "ui");
       for (const m of html.matchAll(/(?:href|src)=["']([^"']+)["']/g)) {
         const href = m[1];
-        if (href.startsWith("http") || href.startsWith("#")) continue;
-        // /ui/styles.css → src/harness/ui/styles.css
-        const rel = href.replace(/^\//, "");
-        const local = rel.startsWith("ui/") ? `src/harness/${rel}` : rel;
-        if (!existsSync(path.join(ROOT, local))) missing.push(`index.html: ${href}`);
+        if (href.startsWith("http") || href.startsWith("#") || href.startsWith("data:")) continue;
+        // Relative refs (styles.css, app.js, assets/logo.png, js/dom.js) resolve
+        // inside src/harness/ui/; /ui/* refs resolve there too.
+        const rel = href.replace(/^\//, "").replace(/^ui\//, "");
+        if (!existsSync(path.join(uiDir, rel))) missing.push(`index.html: ${href}`);
       }
       if (missing.length > 0)
         throw new Error(`unresolved harness UI refs: ${missing.join(", ")}`);
@@ -4048,8 +4056,9 @@ async function checkerAuditAddendumContract(tmpWs: string) {
     "US-17.7",
     "the browser UI must use business-user language (not developer jargon like 'OLLAMA_API_KEY', 'harness', 'adapter')",
     () => {
-      const ui = srcText("src/harness/ui/index.html");
-      const combined = ui.toLowerCase();
+      const html = srcText("src/harness/ui/index.html");
+      const onb = srcText("src/harness/ui/onboarding.html");
+      const combined = (html + "\n" + onb).toLowerCase();
       const hasBizLang = /api.*key|model.*key|project.*folder|web.*research.*key|approval.*settings|full.*auto/i.test(combined);
       if (!hasBizLang)
         throw new Error("browser UI does not use business-user language — US-17.7 requires plain language");
@@ -5349,10 +5358,10 @@ async function specGapCoverageContract() {
   await check(
     "GUI-PREVIEW-PANEL",
     "US-17.8",
-    "the browser UI must have a change-set panel to inspect files (docx/xlsx/pptx/code/markdown/images) before commit",
+    "the browser UI must have a slide-in preview panel for files (docx/xlsx/pptx/code/markdown/images)",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      return /change.?set|changeset|preview|changes/i.test(html) && /step/i.test(html);
+      return /preview-panel|previewPanel|preview-overlay/i.test(html) && /preview/i.test(html);
     },
   );
 
@@ -7432,11 +7441,12 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-SEND-ENABLED-AT-LAUNCH",
     "S1 / Epic-2 §2.2",
-    "The browser UI must be ready to start a run the moment the page opens (idle state); the Start affordance must NOT ship disabled (SPEC Epic-2 §2.2 / user-stories S1)",
+    "The Send button must be enabled the moment the page opens — launch state is idle, 'Working' is a per-task state. The Send button must NOT ship with a disabled attribute (SPEC Epic-2 §2.2 / user-stories S1)",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      // The workflow <select> + change→startRun wiring is the start affordance; no disabled attribute on it.
-      return /workflow-select/i.test(html) && !/<select[^>]*disabled/i.test(html);
+      const m = html.match(/<button[^>]*id="sendBtn"[^>]*>/);
+      if (!m) return false;
+      return !/\bdisabled\b/.test(m[0]);
     },
   );
 
@@ -7445,8 +7455,8 @@ async function extendedCapabilitiesContract() {
     "S7 / Epic-2 §2.4",
     "The deliverable moment must surface a document card with Open, Show in Folder, and Preview actions — the demo climax (SPEC Epic-2 §2.4 / user-stories S7)",
     () => {
-      const html = srcText("src/harness/ui/index.html");
-      return /showInFolder|show-in-folder|revealInFolder/i.test(html) && /preview|Preview/.test(html) && /openFile|openInApp|open-in-app|openDoc/i.test(html);
+      const cards = codeOnly("src/harness/ui/js/cards.js");
+      return /showInFolder|show-in-folder|revealInFolder/i.test(cards) && /preview|Preview/.test(cards) && /openFile|openInApp|open-in-app|openDoc/i.test(cards);
     },
   );
 
@@ -7456,7 +7466,7 @@ async function extendedCapabilitiesContract() {
     "The context rail must be a CONTROL, not a display: the user can exclude a memory file or source from the next run in one click, and the exclusion is recorded. SPEC §6: 'Nothing enters the AI that the user cannot see, edit, approve' — user-stories S2.",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(exclude|veto|excludeFromRun|toggleMemory|removeFromContext)/i.test(html + app) && /(exclude|veto)/i.test(html);
     },
   );
@@ -7467,7 +7477,7 @@ async function extendedCapabilitiesContract() {
     "Above the activity feed there must be a single current-status line a preparer can glance at ('Reading RevenueBuild sheet…') — never a stack trace, with checker verification surfaced in plain language. user-stories S5.",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(currentStatus|current-status|statusLine|status-line|currentTask)/i.test(html + app);
     },
   );
@@ -7477,9 +7487,9 @@ async function extendedCapabilitiesContract() {
     "S8 / S9 / SPEC §8.1",
     "Drafted figures must render as lineage chips in the browser UI (clickable, showing source/confidence). SPEC §8.1: 'Rendered as a clickable chip in the GUI preview.' user-stories S9.",
     () => {
+      const lin = codeOnly("src/harness/ui/js/lineage.js");
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
-      return /(lineage|lineageChip|lineage-chip|claimChip|renderClaim|sourceChip)/i.test(html + app);
+      return /(lineage|lineageChip|lineage-chip|claimChip|renderClaim|sourceChip)/i.test(lin) || /(lineage|lineage-chip|claim-chip)/i.test(html);
     },
   );
 
@@ -7489,7 +7499,7 @@ async function extendedCapabilitiesContract() {
     "Clicking a figure must open its source in a right-hand verification panel (Excel cell with formula, filing excerpt, or web page). SPEC §8.3: 'The reviewer's verification view.'",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(verificationRail|verification-rail|sourcePanel|source-panel|openSource|verifyClaim|figureSource|figure-source)/i.test(html + app);
     },
   );
@@ -7500,7 +7510,7 @@ async function extendedCapabilitiesContract() {
     "Marcus must be able to mark each figure verified / flagged / needs-analyst, and the memo cannot be marked final while flags are open (an override is logged). SPEC §8.3: 'A flagged figure blocks the document from being marked final until resolved or explicitly overridden (override is logged).'",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(needs_analyst|markVerified|markFlagged|markNeedsAnalyst|reviewStatus|verifyFigure)/i.test(html + app) && /(blockFinal|markFinal|finalDisabled|cannotFinal|openFlags|overrideLogged|review-status)/i.test(html + app);
     },
   );
@@ -7511,7 +7521,7 @@ async function extendedCapabilitiesContract() {
     "For each deliverable, a reviewer can see in one click what informed THIS document — files, sources, excluded material, where prompts went. SPEC §6 / user-stories S11: a per-deliverable 'context used for THIS document' view.",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(contextUsed|context-used|deliverableContext|contextForDocument|runRecord|run_record|context-rail|context-summary)/i.test(html + app);
     },
   );
@@ -7522,7 +7532,7 @@ async function extendedCapabilitiesContract() {
     "The consent gate must surface in the browser UI (the one buyer surface), not only as CLI text. SPEC §6 / Epic-2 §2.3: 'No blind approvals, ever' applies to the GUI.",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /(consentGate|consent-gate|ConsentGate|consentSummary|consent-allow|consent-deny)/i.test(html + app);
     },
   );
@@ -7595,21 +7605,23 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-SENSITIVITY-REFUSED-SURFACED",
     "S15 / SPEC §11.2 / Epic-2 §2.6",
-    "When a high-sensitivity turn is refused (no local model endpoint), the browser UI must surface the reason — not render a blank 'Done'. The UI must honor a refused status from the daemon. Empty states are product; silent failure is the anti-pattern.",
+    "When a high-sensitivity turn is refused (no local model endpoint), the browser UI must surface the reason — not render a blank 'Done'. The UI must handle the sensitivity_refused event and/or honor done{refused:true}.",
     () => {
-      const app = srcText("src/harness/ui/app.js");
-      // The status line / commit-status surfaces the daemon's status (incl. refused).
-      return /setStatus|commit-status|current-status|refused/i.test(app);
+      const chat = codeOnly("src/harness/ui/js/chat.js");
+      const handlesRefusedEvent = /case\s+"sensitivity_refused"/.test(chat) || /sensitivity_refused/.test(chat);
+      const doneHonorsRefused = /case\s+"done"[\s\S]{0,400}?refused/.test(chat) || /refused/.test(chat);
+      return handlesRefusedEvent && doneHonorsRefused;
     },
   );
 
   await check(
     "GUI-QUEUED-TYPING-STEERING",
     "S5",
-    "The browser UI must support queued-typing steering — the user can type while the agent is running, and the message is queued and applied (not dropped). The CLI has Esc-steering; the browser UI must have parity.",
+    "The browser UI must support queued-typing steering — the user can type while the agent is running, hit Enter, and the message is queued and sent (not dropped). The CLI has Esc-steering; the browser UI must have parity.",
     () => {
-      const app = srcText("src/harness/ui/app.js");
-      return /queuedSteering|queued.*steer|steer.*queue/i.test(app);
+      const chat = codeOnly("src/harness/ui/js/chat.js");
+      const state = codeOnly("src/harness/ui/js/state.js");
+      return /queuedSteer|steer.*queue|queue.*steer/i.test(chat + state);
     },
   );
 
@@ -7619,7 +7631,7 @@ async function extendedCapabilitiesContract() {
     "The browser UI must have a 'run workflow again' affordance so Dana can re-run the flagship workflow from the UI without the CLI. user-stories S12.",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       // Re-selecting a workflow (or a rerun affordance) starts a fresh run.
       return /workflow-select|startRun|rerun|run-workflow|workflow.*demo/i.test(html + app);
     },
@@ -7870,10 +7882,13 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-APP-JS-PARSES",
     "Epic-2 / SPEC §16",
-    "The browser UI is the ONE buyer surface. src/harness/ui/app.js must be syntactically valid JavaScript that node can parse — a green gate over UI code that throws a SyntaxError at load ships a blank page. Regression guard.",
+    "The browser UI is the ONE buyer surface. src/harness/ui/app.js and js/*.js must be syntactically valid JavaScript that node can parse — a green gate over UI code that throws a SyntaxError at load ships a blank page. Regression guard.",
     () => {
       try {
-        execSync(`node --check ${path.join(ROOT, "src/harness/ui/app.js")}`, { stdio: "pipe" });
+        for (const f of harnessUiFiles().filter((f) => f.endsWith(".js"))) {
+          // ES modules: --check with --input-type=module so `import` parses.
+          execSync(`node --input-type=module --check < ${path.join(ROOT, f)}`, { stdio: "pipe", shell: "/bin/bash" });
+        }
         return true;
       } catch {
         return false;
@@ -7884,10 +7899,11 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-CONSENT-GATE-INVOKED",
     "S2 / S4 / SPEC §6",
-    "The consent gate must actually be SHOWN before a commit, not merely defined. showConsent must be called from a run path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
+    "The consent gate must actually be SHOWN before a run, not merely defined. showConsentGate must be called from a run path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
     () => {
-      const app = srcText("src/harness/ui/app.js");
-      const calls = (app.match(/\bshowConsent\s*\(/g) || []).length;
+      const consent = codeOnly("src/harness/ui/js/consent.js");
+      const chat = codeOnly("src/harness/ui/js/chat.js");
+      const calls = ((consent + chat).match(/\bshowConsentGate\s*\(/g) || []).length;
       return calls >= 2; // one definition + at least one invocation
     },
   );
@@ -7991,12 +8007,13 @@ async function extendedCapabilitiesContract() {
   await check(
     "CONSENT-DECISION-REACHES-AGENT",
     "S2 / S4 / SPEC §6",
-    "The browser UI's Approve/Decline buttons must route the decision to the harness daemon API, which drives the engine run (so the agent does not block forever).",
+    "The browser UI's Approve/Decline buttons must route the decision to the daemon, which forwards it to the agent (so the agent does not block forever).",
     () => {
-      const app = srcText("src/harness/ui/app.js");
-      const hd = codeOnly("src/harness/harness-daemon.ts");
-      const guiWired = /approve/i.test(app) && /reject/i.test(app) && /apiCall|fetch/i.test(app);
-      const daemonForwards = /approve|reject/.test(hd) && /engine|approveNode|rejectNode/i.test(hd);
+      const consent = codeOnly("src/harness/ui/js/consent.js");
+      const wire = codeOnly("src/harness/ui/js/wire.js");
+      const guiWired = /consentRespond|consentApprove|consentDecline/i.test(consent + wire);
+      const daemon = codeOnly("src/harness/browser-bridge.ts");
+      const daemonForwards = /consentRespond|resolvePrompt/.test(daemon);
       return guiWired && daemonForwards;
     },
   );
@@ -8006,11 +8023,10 @@ async function extendedCapabilitiesContract() {
     "S9 / SPEC §8.3",
     "The §8.3 verification rail must render the ACTUAL source in place — an Excel cell (sheet/cell/value), a filing excerpt, or a web URL — pulled from the evidence sources the engine emits, not a placeholder.",
     () => {
-      const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const chat = codeOnly("src/harness/ui/js/chat.js");
+      const lin = codeOnly("src/harness/ui/js/lineage.js");
       const tracker = codeOnly("src/evidence/tracker.ts");
-      // The rail exists in the UI; the evidence tracker carries real source locations.
-      const rail = /verification-rail|figure-source|lineage/i.test(html + app);
+      const rail = /verificationRail|verification-rail|sourcePanel|source-panel|openSource|verifyClaim|figureSource|figure-source/i.test(chat + lin);
       const sources = /source|extracted_value|excerpt|url|sheet|cell/i.test(tracker);
       return rail && sources;
     },
@@ -8022,7 +8038,7 @@ async function extendedCapabilitiesContract() {
     "The review flow must be enforced on a REAL deliverable: mark-final is blocked while a document has open flags (flagged/needs-analyst) and the reviewer has not overridden; the override + final decision + per-figure statuses are appended to a tamper-evident AuditChain on disk (the review record that goes with the memo).",
     () => {
       const html = srcText("src/harness/ui/index.html");
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       const chain = codeOnly("src/audit_chain.ts");
       // The UI surfaces verify/flag/needs-analyst + review-status.
       const blocks = /markVerified|markFlagged|markNeedsAnalyst|review-status/i.test(html + app);
@@ -8477,7 +8493,7 @@ async function extendedCapabilitiesContract() {
     "US-17.23",
     "the browser UI app.js must load evidence when a deliverable becomes ready (reads the artifact-repository result via the daemon)",
     () => {
-      const app = srcText("src/harness/ui/app.js");
+      const app = harnessUiCode();
       return /deliverable|loadEvidence|evidence|lineage|pollState|state/i.test(app);
     },
   );
@@ -8485,11 +8501,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-EVIDENCE-LOAD-CALLSITE",
     "US-17.23",
-    "the browser UI must show progress/lineage only after the run state is fetched (no ready flash before evidence is loaded — north-star honesty)",
+    "handleOfficeDocResult must enter evidence-pending then call loadEvidenceFromDisk (no ready flash before validation — north-star honesty)",
     () => {
-      const app = srcText("src/harness/ui/app.js");
-      // pollState renders lineage only after fetching run state.
-      return /pollState/.test(app) && /lineage|render|status/i.test(app);
+      const cards = codeOnly("src/harness/ui/js/cards.js");
+      return /handleOfficeDocResult/.test(cards) && /loadEvidenceFromDisk|loadEvidence/.test(cards);
     },
   );
 
@@ -9030,7 +9045,7 @@ async function extendedCapabilitiesContract() {
       if (!/askQuestionRaw/.test(slice)) {
         throw new Error("compaction must wait via askQuestionRaw outside quiet mode");
       }
-      const chat = readFileSync(path.join(ROOT, "src/harness/ui/app.js"), "utf8");
+      const chat = harnessUiCode();
       if (!/consent|compaction/i.test(chat)) {
         throw new Error("browser UI must surface consent (incl. compaction)");
       }
@@ -9099,7 +9114,7 @@ async function extendedCapabilitiesContract() {
       if (!/evidence_consent_proposed/.test(ev)) {
         throw new Error("evidence consent must emit evidence_consent_proposed for GUI");
       }
-      const chat = readFileSync(path.join(ROOT, "src/harness/ui/app.js"), "utf8");
+      const chat = harnessUiCode();
       if (!/consent|evidence/i.test(chat)) {
         throw new Error("browser UI must surface consent (incl. evidence)");
       }

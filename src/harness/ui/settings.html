@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <title>Settings — Quiver</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="settings-page">
+  <header id="topbar">
+    <div class="brand">
+      <img src="assets/logo.png" alt="Quiver" class="brand-mark" />
+      <div class="brand-copy">
+        <span class="brand-name">Settings</span>
+        <span class="brand-subtitle">Workspace controls</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="cancelBtn" class="ghost-btn">Back</button>
+      <button id="saveBtn" class="primary-btn">Save</button>
+    </div>
+  </header>
+
+  <div class="settings-scroll">
+    <div class="settings-intro">
+      <span class="settings-kicker">CONTROL CENTER</span>
+      <h1>Workspace settings</h1>
+      <p>Set the model, workspace, approvals, and memory behavior for this engagement. Quiver keeps the safe defaults visible.</p>
+    </div>
+    <!-- Model Provider -->
+    <section class="settings-section">
+      <h2>Model Provider</h2>
+      <p class="settings-help">The AI engine Quiver uses. Most people can leave this as is.</p>
+      <label>Model <input id="modelName" class="field" placeholder="Model name from your provider" /></label>
+      <label>Provider address <input id="baseUrl" class="field" placeholder="Leave empty when using Google Cloud (Vertex) below" /></label>
+      <label>Checker model (optional) <input id="checkerModelName" class="field" placeholder="Optional different model for the checker" /></label>
+      <label>Workspace folder
+        <span class="field-row">
+          <input id="workspacePath" class="field" placeholder="Where Quiver does its work" />
+          <button id="browseWorkspaceBtn" class="ghost-btn">Choose…</button>
+        </span>
+      </label>
+      <label>Working memory (tokens)
+        <input id="maxContextTokens" class="field" type="number" />
+        <span class="field-hint">How much conversation and source material Quiver keeps in mind at once. The default suits most work.</span>
+      </label>
+    </section>
+
+    <!-- Google Cloud (Vertex) — customer pays their own bill -->
+    <section class="settings-section">
+      <h2>Google Cloud (Vertex AI)</h2>
+      <p class="settings-help">Connect Quiver to your organization’s Google Cloud project. Model usage is billed on that project. Enter only the path to a service-account file if you use one — never paste the file contents here.</p>
+      <label>Google Cloud project ID <input id="vertexProjectId" class="field" placeholder="your-gcp-project-id" /></label>
+      <label>Region <input id="vertexLocation" class="field" placeholder="global" /></label>
+      <label>Service account file path <input id="googleApplicationCredentials" class="field" placeholder="/absolute/path/to/service-account.json" /></label>
+    </section>
+
+    <!-- Model credentials -->
+    <section class="settings-section">
+      <h2>Model credentials</h2>
+      <p class="settings-help">For non-Google providers, store the API key in your computer's keychain. For Vertex, leave this empty and use the Google Cloud section above. A configured remote provider may receive the context you approve.</p>
+      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your model provider key (not needed for Vertex)" /></label>
+      <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
+    </section>
+
+    <!-- Approvals -->
+    <section class="settings-section">
+      <h2>Approvals</h2>
+      <p class="settings-help">How much Quiver does before asking you. “Ask before acting” is the safe default.</p>
+      <label>Approval level
+        <select id="autonomyMode" class="field">
+          <option value="">Ask before acting (recommended)</option>
+          <option value="tier:propose">Draft only — write drafts and notes, ask for everything else</option>
+          <option value="tier:build">Draft and research — also run web research and safe commands</option>
+          <option value="tier:operate">Assisted — handle most actions, approval at key boundaries</option>
+          <option value="yolo" hidden>Full access — developer mode</option>
+        </select>
+      </label>
+      <div class="toggle-row">
+        <button id="browserVisible" class="toggle">Show the browser window</button>
+      </div>
+      <div class="toggle-row">
+        <button id="consentGateEnabled" class="toggle">Consent gate — review what Quiver sees before each run</button>
+      </div>
+    </section>
+
+    <!-- Memory -->
+    <section class="settings-section">
+      <h2>Memory</h2>
+      <p class="settings-help">What Quiver remembers across sessions — you can edit or delete any of it.</p>
+      <div class="toggle-row">
+        <button id="sessionLogEnabled" class="toggle">Keep a session log</button>
+      </div>
+      <label>Session log length <input id="sessionLogMaxChars" class="field" type="number" /><span class="field-hint">How much of each message Quiver keeps in the session log. The default suits most work.</span></label>
+      <div class="memory-stats" id="memoryStats">
+        <span class="memory-stats-label">Learned facts:</span>
+        <span id="memPending">Pending: 0</span>
+        <span id="memReviewed">Reviewed: 0</span>
+        <span id="memTotal">Total: 0</span>
+      </div>
+    </section>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

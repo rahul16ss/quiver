@@ -28,6 +28,11 @@ export interface DaemonOptions {
   /** Optional injectable API handler for /api/* routes (e.g. the harness API).
    *  Receives the parsed request (method, pathname, body, secret-verified). */
   apiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
+  /** Optional SSE handler for a streaming route (e.g. /api/agent/events).
+   *  Receives the raw req/res so it can hold the connection open. */
+  sseHandler?: (req: IncomingMessage, res: ServerResponse) => void;
+  /** The pathname the SSE handler is mounted at. */
+  ssePath?: string;
 }
 
 export class QuiverDaemon {
@@ -35,11 +40,15 @@ export class QuiverDaemon {
   private server: ReturnType<typeof createServer> | null = null;
   private roots: string[];
   private apiHandler?: DaemonOptions["apiHandler"];
+  private sseHandler?: DaemonOptions["sseHandler"];
+  private ssePath?: string;
 
   constructor(private opts: DaemonOptions = {}) {
     this.secret = opts.secret ?? randomBytes(32).toString("hex");
     this.roots = (opts.roots ?? []).map((r) => path.resolve(r));
     this.apiHandler = opts.apiHandler;
+    this.sseHandler = opts.sseHandler;
+    this.ssePath = opts.ssePath;
   }
 
   /** The loopback origin the browser should open. */
@@ -107,8 +116,17 @@ export class QuiverDaemon {
     if (req.method === "GET" && pathname.startsWith("/ui/")) {
       return this.serveUi(res, pathname.slice("/ui/".length));
     }
+    // Relative UI assets (styles.css, app.js, assets/*, js/*) — the renderer
+    // uses root-relative paths; serve them from the UI dir (path-traversal guarded).
+    if (req.method === "GET" && !pathname.startsWith("/api/")) {
+      return this.serveUi(res, pathname.replace(/^\//, ""));
+    }
+    // SSE streaming route (secret-gated above) — the browser event stream.
+    if (this.sseHandler && this.ssePath && pathname === this.ssePath && req.method === "GET") {
+      return this.sseHandler(req, res);
+    }
     // Harness API routes (secret-gated above).
-    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/"))) {
+    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow"))) {
       let body: unknown = undefined;
       if (req.method !== "GET" && req.method !== "HEAD") {
         body = await this.readBody(req);
@@ -124,9 +142,16 @@ export class QuiverDaemon {
   }
 
   private checkSecret(req: IncomingMessage): boolean {
-    const provided = req.headers["x-quiver-secret"];
+    // Header (preferred) — works for fetch. EventSource cannot set headers,
+    // so also accept ?token=... on the URL (timing-safe compare either way).
+    let provided: string | undefined =
+      (Array.isArray(req.headers["x-quiver-secret"]) ? req.headers["x-quiver-secret"][0] : req.headers["x-quiver-secret"]) as string | undefined;
+    if (!provided) {
+      const url = new URL(req.url ?? "/", `http://127.0.0.1`);
+      provided = url.searchParams.get("token") ?? undefined;
+    }
     if (!provided) return false;
-    const a = Buffer.from(Array.isArray(provided) ? provided[0] : provided);
+    const a = Buffer.from(provided);
     const b = Buffer.from(this.secret);
     if (a.length !== b.length) return false;
     return timingSafeEqual(a, b);

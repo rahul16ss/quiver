@@ -1,128 +1,74 @@
-// Quiver browser UI — drives the harness over the loopback, secret-gated daemon.
-// The per-install secret is injected by the launcher into the URL fragment (#token=...).
-const SECRET = window.__QUIVER_SECRET__ || new URLSearchParams(location.hash.slice(1)).get("token") || "";
-const headers = () => ({ "X-Quiver-Secret": SECRET, "Content-Type": "application/json" });
+// ─── Quiver Desktop — renderer entry (ES modules) ───────────────────────
+// Three planes: Context | Conversation | Activity. The renderer is a thin
+// view over the Quiver CLI (run in --json mode by the main process). It
+// speaks only the allowlisted window.quiver IPC API exposed by preload.js.
+// No framework, no build step, no inline scripts (CSP script-src 'self').
 
-async function api(path, init = {}) {
-  const res = await fetch(path, { ...init, headers: { ...headers(), ...(init.headers || {}) } });
-  return res.json();
-}
-
-let currentRunId = null;
-let pollTimer = null;
-let queuedSteering = null; // queued user typing while a run is in progress
-
-function render(items, listId, fmt) {
-  const ul = document.getElementById(listId);
-  ul.innerHTML = "";
-  for (const it of items) {
-    const li = document.createElement("li");
-    li.textContent = fmt(it);
-    ul.appendChild(li);
-  }
-}
-
-function setStatus(text) {
-  document.getElementById("current-status").textContent = text || "Working…";
-}
-
-function showConsent(summary) {
-  document.getElementById("consent-summary").textContent = summary || "Approve this action?";
-  document.getElementById("consent-gate").hidden = false;
-}
-function hideConsent() {
-  document.getElementById("consent-gate").hidden = true;
-}
+import { $ } from "./js/dom.js";
+import { api, initDom, state } from "./js/state.js";
+import { addActivity } from "./js/activity.js";
+import { loadContextSurfaces } from "./js/context.js";
+import {
+  setWorking,
+  syncDrawerControls,
+  wireImageDrop,
+  wireKeyboard,
+  wireAgentEvents,
+} from "./js/chat.js";
+import { wireButtons, wireNewButtons } from "./js/wire.js";
 
 async function init() {
-  const wf = document.getElementById("workflow-select");
-  const workflows = await api("/api/workflows");
-  for (const w of workflows) {
-    const opt = document.createElement("option");
-    opt.value = w.id; opt.textContent = `${w.number}. ${w.name} (${w.family})`;
-    wf.appendChild(opt);
+  wireButtons();
+  wireImageDrop();
+  wireKeyboard();
+  try {
+    state.configured = await api.isConfigured();
+  } catch {
+    state.configured = false;
   }
-  document.getElementById("context-summary").textContent =
-    "Select a workflow, then approve context, sources, model profile and the data boundary (public / confidential-internal / restricted-MNPI).";
-  document.getElementById("goal-summary").textContent =
-    "Confirm the objective, deliverable, reviewer and cost/depth mode before execution begins.";
-  // The Send/Start affordance is enabled at launch (idle state) — never disabled.
-  wf.addEventListener("change", () => startRun(wf.value));
-  document.getElementById("approve").addEventListener("click", () => decide(true));
-  document.getElementById("reject").addEventListener("click", () => decide(false));
-  document.getElementById("consent-allow").addEventListener("click", () => { hideConsent(); decide(true); });
-  document.getElementById("consent-deny").addEventListener("click", () => { hideConsent(); decide(false); });
-  // Verification rail: clicking a lineage chip opens the source.
-  document.getElementById("lineage-chips").addEventListener("click", (e) => {
-    const li = e.target.closest("li[data-source]");
-    if (!li) return;
-    document.getElementById("verification-rail").hidden = false;
-    document.getElementById("figure-source").textContent = li.dataset.source || "";
+  if (!state.configured) {
+    api.loadOnboarding();
+    return;
+  }
+  const config = await api.loadConfig();
+  // Launch state is idle (Epic 2 §2.2): spawning the agent process is NOT
+  // "working". Send stays visible/enabled; the dot goes amber only when a
+  // prompt is dispatched or the agent reports activity.
+  setWorking(false);
+  try {
+    await api.startAgent(config, false);
+    state.agentAvailable = true;
+  } catch (e) {
+    state.agentAvailable = false;
+    state.turnRunning = false;
+    addActivity("Could not start the agent: " + (e?.message || e), "err");
+  }
+  // A failed/errored startup must never leave the working state stuck.
+  setWorking(false);
+  maybeShowWorkspaceWarning(config);
+  loadContextSurfaces(config);
+  syncDrawerControls();
+}
+
+// One-time, non-blocking banner when the configured workspace is Quiver's own
+// app/source folder (Epic 2 §2.5). The path-policy hard block applies anyway;
+// this just nudges the user toward a real documents folder.
+function maybeShowWorkspaceWarning(config) {
+  if (!config?.workspaceIsAppSource) return;
+  const DISMISS_KEY = "quiver.workspaceWarningDismissed";
+  try {
+    if (localStorage.getItem(DISMISS_KEY) === "1") return;
+  } catch {}
+  const banner = $("workspaceWarning");
+  if (!banner) return;
+  banner.hidden = false;
+  $("workspaceWarningDismiss")?.addEventListener("click", () => {
+    banner.hidden = true;
+    try { localStorage.setItem(DISMISS_KEY, "1"); } catch {}
   });
-  // Queued typing steering: while a run is in progress, the user can type to
-  // steer; the input is queued and applied on the next pause.
-  const steer = document.getElementById("current-status");
-  steer.addEventListener("input", () => {
-    if (currentRunId) queuedSteering = steer.textContent;
-  });
-  // Workflow rerun: re-selecting a workflow starts a fresh run.
-  wf.addEventListener("change", () => startRun(wf.value));
 }
 
-async function startRun(workflowId) {
-  if (!workflowId) return;
-  setStatus("Starting run…");
-  const started = await api("/api/run/start", { method: "POST", body: JSON.stringify({ workflowId }) });
-  currentRunId = started.runId;
-  document.getElementById("goal-summary").textContent = `Objective: ${started.runId} — ${started.status}`;
-  if (started.status === "paused") {
-    showConsent("All acceptance checks passed. Approve the change set to commit.");
-  }
-  pollState();
-}
-
-async function pollState() {
-  if (pollTimer) clearTimeout(pollTimer);
-  if (!currentRunId) return;
-  const state = await api("/api/run/state", { method: "POST", body: JSON.stringify({ runId: currentRunId }) });
-  setStatus(state.currentStatus || state.status);
-  render(state.gapLedger || [], "gap-ledger", (g) => `[${g.status}] ${g.description}${g.blocker ? " (blocked: " + g.blocker + ")" : ""}`);
-  render(state.pendingApprovals || [], "pending-approvals", (p) => p.summary);
-  // Context rail: each item with an exclude/veto affordance.
-  render(state.context || [], "context-rail", (c) => `${c.label} [exclude]`);
-  // Lineage chips: drafted figures as clickable chips (source/confidence).
-  render(state.lineage || [], "lineage-chips", (l) => `chip: ${l.figure} ← ${l.source} (${l.confidence})`);
-  // Deliverable card.
-  if (state.deliverable) {
-    document.getElementById("deliverable-card").hidden = false;
-    document.getElementById("deliverable-name").textContent = state.deliverable.name;
-  }
-  // Apply any queued steering at the next pause.
-  if (state.status === "paused" && queuedSteering) {
-    queuedSteering = null;
-  }
-  if (state.status === "paused" || state.status === "running") {
-    pollTimer = setTimeout(pollState, 1000);
-  }
-}
-
-async function decide(approved) {
-  if (!currentRunId) return;
-  const path = approved ? "/api/run/approve" : "/api/run/reject";
-  const outcome = await api(path, { method: "POST", body: JSON.stringify({ runId: currentRunId }) });
-  setStatus(approved ? `Approved — committed. Status: ${outcome.status}.` : `Rejected — no commit. Status: ${outcome.status}.`);
-  render(outcome.unresolved || [], "changes", (u) => u);
-  currentRunId = null;
-  if (pollTimer) clearTimeout(pollTimer);
-}
-
-// Image drag-and-drop onto the context area (EXIF redacted server-side by file_encoder).
-window.handleDrop = (e) => { e.preventDefault(); /* TODO: wire to daemon upload + EXIF redaction */ };
-
-// Drag-and-drop onto the context area (EXIF redacted server-side by file_encoder).
-const ctx = document.getElementById("step-context");
-if (ctx) {
-  ctx.addEventListener("dragover", (e) => e.preventDefault());
-  ctx.addEventListener("drop", (e) => { e.preventDefault(); /* TODO: wire to daemon upload + EXIF redaction */ });
-}
+initDom();
+wireAgentEvents();
+wireNewButtons();
 init();

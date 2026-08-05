@@ -44,7 +44,9 @@ export class QuiverLauncher {
   async startHarness(engine: import("./interfaces.js").ExecutionEngine, opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
     const secret = loadOrCreateSecret();
     const uiDir = opts.uiDir ?? path.join(path.dirname(new URL(import.meta.url).pathname), "ui");
-    const hd = new HarnessDaemon({ engine, secret, uiDir });
+    // The browser-UI bridge: the chatbot/context/sessions surface (ADR-009).
+    const { browserApiHandler, browserSseHandler } = await import("./browser-bridge.js");
+    const hd = new HarnessDaemon({ engine, secret, uiDir, browserApiHandler, sseHandler: browserSseHandler, ssePath: "/api/agent/events" });
     const { port, origin } = await hd.listen(opts.port);
     const state: LauncherState = { pid: process.pid, port, origin, startedAt: new Date().toISOString() };
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });

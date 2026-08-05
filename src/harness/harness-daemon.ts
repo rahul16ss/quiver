@@ -22,6 +22,11 @@ export interface HarnessDaemonOptions {
   uiDir?: string;
   port?: number;
   engine: ExecutionEngine;
+  /** Optional browser-UI API handler (the chat/context/sessions surface). */
+  browserApiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
+  /** Optional SSE handler + path (the agent event stream). */
+  sseHandler?: (req: import("http").IncomingMessage, res: import("http").ServerResponse) => void;
+  ssePath?: string;
 }
 
 export class HarnessDaemon {
@@ -32,19 +37,24 @@ export class HarnessDaemon {
   constructor(private opts: HarnessDaemonOptions) {
     this.engine = opts.engine;
     const api = this.api();
+    const browserApi = opts.browserApiHandler;
     this.daemon = new QuiverDaemon({
       secret: opts.secret,
       uiDir: opts.uiDir,
-      apiHandler: async (req) => this.route(req, api),
+      apiHandler: async (req) => this.route(req, api, browserApi),
+      sseHandler: opts.sseHandler,
+      ssePath: opts.ssePath,
     });
   }
 
-  private async route(req: { method: string; pathname: string; body: any }, api: ReturnType<HarnessDaemon["api"]>): Promise<unknown> {
+  private async route(req: { method: string; pathname: string; body: any }, api: ReturnType<HarnessDaemon["api"]>, browserApi?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>): Promise<unknown> {
     if (req.method === "GET" && req.pathname === "/api/workflows") return api.listWorkflows();
     if (req.method === "POST" && req.pathname === "/api/run/start") return api.startRun(req.body ?? {});
     if (req.method === "POST" && req.pathname === "/api/run/state") return api.state((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/approve") return api.approve((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/reject") return api.reject((req.body as any)?.runId ?? "");
+    // Fall through to the browser-UI API (chat/context/sessions/memory/…).
+    if (browserApi) return browserApi(req);
     throw new Error(`unknown harness route: ${req.method} ${req.pathname}`);
   }
 
