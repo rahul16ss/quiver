@@ -5,7 +5,6 @@
   "author": "rahul16ss",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "ui/main-loader.ts",
   "bin": {
     "quiver": "./bin/quiver.js"
   },
@@ -25,11 +24,11 @@
     "evidence",
     "lineage",
     "open-source",
-    "electron"
+    "browser-ui",
+    "loopback-daemon"
   ],
   "scripts": {
     "start": "npx tsx src/cli.ts",
-    "gui": "npx electron .",
     "test": "npx tsx tests/run_tests.ts",
     "test:e2e": "npx tsx tests/e2e/run_e2e.ts --tier=a,b",
     "test:e2e:all": "npx tsx tests/e2e/run_e2e.ts --tier=all",
@@ -41,137 +40,8 @@
     "demo:post-earnings": "npx tsx workflow-packs/research/post-earnings-evidence-pack/scripts/run-demo.ts",
     "demo:portfolio-review": "npx tsx workflow-packs/wealth/portfolio-review-pack/scripts/run-demo.ts",
     "export:website-demo": "npx tsx examples/investment-committee-memo/scripts/export-website-demo.ts",
-    "build": "electron-builder --mac --win",
-    "dist": "npm run build",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "update-formula": "node scripts/update_formula.js"
-  },
-  "build": {
-    "appId": "com.quiver.app",
-    "productName": "Quiver",
-    "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "ui/**/*",
-      "src/**/*",
-      "bin/**/*",
-      "node_modules/tsx/**/*",
-      "node_modules/esbuild/**/*",
-      "package.json",
-      "package-lock.json",
-      "tsconfig.json",
-      ".env.example"
-    ],
-    "extraResources": [
-      {
-        "from": "src",
-        "to": "src"
-      },
-      {
-        "from": "bin",
-        "to": "bin"
-      },
-      {
-        "from": "node_modules/tsx",
-        "to": "node_modules/tsx"
-      },
-      {
-        "from": "node_modules/esbuild",
-        "to": "node_modules/esbuild"
-      },
-      {
-        "from": "node_modules/picocolors",
-        "to": "node_modules/picocolors"
-      },
-      {
-        "from": "node_modules/zod",
-        "to": "node_modules/zod"
-      },
-      {
-        "from": "node_modules/dotenv",
-        "to": "node_modules/dotenv"
-      },
-      {
-        "from": "node_modules/fastest-levenshtein",
-        "to": "node_modules/fastest-levenshtein"
-      },
-      {
-        "from": "node_modules/puppeteer",
-        "to": "node_modules/puppeteer"
-      },
-      {
-        "from": "node_modules/puppeteer-core",
-        "to": "node_modules/puppeteer-core"
-      },
-      {
-        "from": "node_modules/@puppeteer/browsers",
-        "to": "node_modules/@puppeteer/browsers"
-      },
-      {
-        "from": "node_modules/chromium-bidi",
-        "to": "node_modules/chromium-bidi"
-      },
-      {
-        "from": "node_modules/devtools-protocol",
-        "to": "node_modules/devtools-protocol"
-      },
-      {
-        "from": "node_modules/lilconfig",
-        "to": "node_modules/lilconfig"
-      },
-      {
-        "from": "node_modules/typed-query-selector",
-        "to": "node_modules/typed-query-selector"
-      },
-      {
-        "from": "node_modules/ws",
-        "to": "node_modules/ws"
-      },
-      {
-        "from": "examples",
-        "to": "quiver-demo/examples"
-      },
-      {
-        "from": "workflow-packs",
-        "to": "quiver-demo/workflow-packs"
-      },
-      {
-        "from": "src",
-        "to": "quiver-demo/src"
-      },
-      {
-        "from": "demo-package.json",
-        "to": "quiver-demo/package.json"
-      },
-      {
-        "from": "tsconfig.json",
-        "to": "tsconfig.json"
-      },
-      {
-        "from": ".env.example",
-        "to": ".env.example"
-      },
-      {
-        "from": "node_modules/sharp",
-        "to": "node_modules/sharp"
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "ui/renderer/icon.icns"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "ui/renderer/icon.png"
-    }
+    "update-formula": "node scripts/update_formula.js",
+    "harness": "npx tsx src/harness/launcher.ts harness"
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
@@ -191,8 +61,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "electron": "^42.5.0",
-    "electron-builder": "^26.15.3",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

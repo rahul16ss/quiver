@@ -2937,7 +2937,7 @@ async function missingSpecContract(tmpWs: string) {
         { pattern: "symlink", label: "symlink escape" },
         { pattern: "secret", label: "secret exfiltration" },
         { pattern: "exfiltrat", label: "exfiltration" },
-        { pattern: "electron", label: "Electron main process ACE" },
+        { pattern: "loopback", label: "loopback daemon ACE" },
         { pattern: "memory", label: "memory poisoning" },
         { pattern: "session", label: "session log retention" },
         { pattern: "shell", label: "shell command injection" },

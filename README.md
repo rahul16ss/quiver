@@ -19,7 +19,7 @@ For commercial engagements, custom workflow packs, and team training, see [Convi
 > **twelve** Conviction Studio reference scenarios (see
 > [docs/refactor/](docs/refactor/)) are the harness acceptance boundary — not
 > twelve hard-coded agents. Until the experience-plane phase lands, the shipped
-> Electron app and "13" pack manifests below describe the *current* code, not
+> Browser UI and pack manifests below describe the *current* code, not
 > the final target.
 
 ---
@@ -146,7 +146,7 @@ See [profiles/finance-client/README.md](profiles/finance-client/README.md) for d
 | **Evidence & Lineage** | Tracks Excel-sourced figures to cell coordinates; other evidence remains file/page/section/URL scoped |
 | **Reviewer Sign-off** | Blocks mark-final status while open flags remain; logs overrides |
 | **Data Handling** | Operator-configured endpoints; local models supported; no product telemetry |
-| **Desktop App** | Electron GUI for chat, context inspection, and reviewer sign-off |
+| **Browser UI** | Responsive browser app served by the loopback daemon (no Electron): workflow select, live progress, change-set approval, commit |
 | **Reference Workflows** | Executable demo pipelines for dealmaking, research, and wealth |
 
 For the governing principles, see [docs/principles.md](docs/principles.md). For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](docs/capabilities.md).

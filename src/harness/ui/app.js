@@ -119,4 +119,10 @@ async function decide(approved) {
 // Image drag-and-drop onto the context area (EXIF redacted server-side by file_encoder).
 window.handleDrop = (e) => { e.preventDefault(); /* TODO: wire to daemon upload + EXIF redaction */ };
 
+// Drag-and-drop onto the context area (EXIF redacted server-side by file_encoder).
+const ctx = document.getElementById("step-context");
+if (ctx) {
+  ctx.addEventListener("dragover", (e) => e.preventDefault());
+  ctx.addEventListener("drop", (e) => { e.preventDefault(); /* TODO: wire to daemon upload + EXIF redaction */ });
+}
 init();

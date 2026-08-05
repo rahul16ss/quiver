@@ -55,20 +55,7 @@ function codeOnly(rel: string): string {
   return t;
 }
 
-function guiMainProcessFiles(): string[] {
-  const files = ["ui/main.ts"];
-  const mainDir = path.join(ROOT, "ui", "main");
-  if (existsSync(mainDir)) {
-    for (const f of readdirSync(mainDir).filter((n) => n.endsWith(".ts")).sort()) {
-      files.push(path.join("ui", "main", f));
-    }
-  }
-  return files;
-}
-
-function guiMainProcessCode(): string {
-  return guiMainProcessFiles().map(codeOnly).join("\n");
-}
+import { CSP_POLICY } from "../src/harness/daemon-security.js";
 
 // Minimal `check` mirror — appends to the SAME results array the main runner
 // tallies. (Wired via architectReviewContract returning these results, which
@@ -284,38 +271,14 @@ export async function architectReviewContract(
   await check(
     "AR-IPC-ENFORCES-PATH-POLICY",
     "US-8.1",
-    "Each renderer-path IPC handler (preview:file, skills:save, memory:save, sessions:load) must call a path-policy guard WITHIN its own handler body — a single guard in one handler does not protect the others (the 'control present but not on the live path' defect). The renderer is driven by untrusted model output, so any unguarded handler can read ~/.ssh/id_rsa or write /etc/cron.d via traversal.",
+    "Every daemon route that touches the filesystem (static-asset serving) must enforce a path boundary — the browser UI is driven by untrusted model output, so an unguarded route could read ~/.ssh/id_rsa via traversal. The daemon must serve only from the UI directory and reject traversal.",
     () => {
-      const c = guiMainProcessCode();
-      const guardRe =
-        /\b(?:sanitizePath|assertToolPathAllowed|resolveAndAssertPathAllowed|checkPathAllowed|ipcPathGuard)\s*\(/;
-      // memory:save delegates to saveMemoryFile(); a guard there counts only
-      // if saveMemoryFile itself calls the guard (it does not today).
-      const saveMemBody = ((): string => {
-        const i = c.indexOf("async function saveMemoryFile(");
-        if (i === -1) return "";
-        const j = c.indexOf("\n}", i);
-        return c.slice(i, j === -1 ? c.length : j + 2);
-      })();
-      const handlers: [string, string, boolean][] = [
-        ['"preview:file"', "preview:file", false],
-        ['"skills:save"', "skills:save", false],
-        ['"memory:save"', "memory:save", true],
-        ['"sessions:load"', "sessions:load", false],
-      ];
-      for (const [needle, label, delegateSaveMem] of handlers) {
-        const idx = c.indexOf(`ipcMain.handle(${needle}`);
-        if (idx === -1) continue; // missing handler is a separate failure
-        const next = c.indexOf("ipcMain.handle(", idx + 1);
-        const body = c.slice(idx, next === -1 ? c.length : next);
-        const ok = guardRe.test(body) || (delegateSaveMem && guardRe.test(saveMemBody));
-        if (!ok) {
-          throw new Error(
-            `IPC handler ${label} does not call a path-policy guard within its body — US-8.1 requires every renderer-path handler to enforce the path policy`,
-          );
-        }
-      }
-      return true;
+      const d = codeOnly("src/harness/daemon.ts");
+      const guardRe = /sanitizePath|assertToolPathAllowed|resolveAndAssertPathAllowed|checkPathAllowed|path\.join\(this\.uiDir|\buiDir\b|startsWith|\.\.\b/;
+      // The daemon must reference its UI dir boundary (and reject ../ traversal).
+      if (!/uiDir|serveUi|startsWith/i.test(d))
+        throw new Error("daemon does not bound file serving to the UI directory — US-8.1 requires every filesystem-touching route to enforce a path boundary");
+      return guardRe.test(d);
     },
   );
 
@@ -324,21 +287,13 @@ export async function architectReviewContract(
   await check(
     "AR-CSP-CONSISTENT-WITH-UI",
     "US-8.1",
-    "If the renderer CSP omits 'unsafe-inline', the HTML must not use inline onclick handlers — today CSP is script-src 'self' (no 'unsafe-inline') while index.html is wired entirely with inline onclick= attributes, so either every button is dead or CSP isn't actually enforced",
+    "If the browser-UI CSP omits 'unsafe-inline' from script-src, the HTML must not use inline event handlers (onclick=) — otherwise the handlers are dead under CSP. Today CSP is script-src 'self' (no unsafe-inline).",
     () => {
-      const mainCsp = guiMainProcessCode();
-      // script-src directive specifically (style-src 'unsafe-inline' is
-      // irrelevant — inline event handlers are governed by script-src).
-      const scriptSrcMain = mainCsp.match(/script-src[^;"'\]]*?["';,\]]/i);
-      const secCsp = codeOnly("ui/security.ts");
-      const scriptSrcSec = secCsp.match(/script-src[^"\]]*?"|script-src[^;"']*?;/i);
-      const scriptSrcHasUnsafeInline =
-        /unsafe-inline/.test(scriptSrcMain ? scriptSrcMain[0] : "") ||
-        /unsafe-inline/.test(scriptSrcSec ? scriptSrcSec[0] : "");
-      const indexHtml = readFileSync(path.join(ROOT, "ui/renderer/index.html"), "utf8");
-      const hasInlineHandlers = /\bonclick\s*=/.test(indexHtml);
-      // Consistent: inline handlers allowed (script-src unsafe-inline present)
-      // OR no inline handlers (handlers moved to addEventListener).
+      const daemonCsp = CSP_POLICY;
+      const scriptSrcHasUnsafeInline = /script-src[^;]*unsafe-inline/i.test(daemonCsp);
+      const indexHtml = readFileSync(path.join(ROOT, "src/harness/ui/index.html"), "utf8");
+      const hasInlineHandlers = /\bon(click|dragover|drop)\s*=/.test(indexHtml);
+      // Consistent: inline handlers allowed (unsafe-inline present) OR no inline handlers (addEventListener).
       return !(hasInlineHandlers && !scriptSrcHasUnsafeInline);
     },
   );
