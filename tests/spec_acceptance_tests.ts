@@ -772,7 +772,7 @@ async function configStartupUXContract() {
   // Core (7): LLM_API_BASE_URL, LLM_MODEL_NAME, LLM_API_KEY,
   //   QUIVER_AUTONOMY, QUIVER_MAX_CONTEXT_TOKENS, QUIVER_SESSION_LOG,
   //   QUIVER_SESSION_LOG_MAX_CHARS.
-  // Optional: PARALLEL_API_KEY, Vertex BYOK (customer GCP), checker overrides.
+  // Optional: PARALLEL_API_KEY, checker overrides, local-endpoint escape hatch.
   // Retired from the user-facing surface: OLLAMA_API_KEY, VISION_MODEL_NAME,
   //   VISION_MODEL_BASE_URL, VISION_MODEL_API_KEY, CONTEXT7_API_KEY,
   //   BROWSER_HEADLESS, REQUIRE_APPROVAL_FOR (replaced by QUIVER_AUTONOMY).
@@ -791,9 +791,6 @@ async function configStartupUXContract() {
     "LLM_REASONING_EFFORT",
     "CHECKER_LLM_MODEL_NAME",
     "CHECKER_LLM_API_BASE_URL",
-    "VERTEX_PROJECT_ID",
-    "VERTEX_LOCATION",
-    "GOOGLE_APPLICATION_CREDENTIALS",
     "QUIVER_CHECKER_REMOTE_APPROVED",
     "QUIVER_AUTONOMY",
     "QUIVER_MAX_CONTEXT_TOKENS",
@@ -941,19 +938,15 @@ async function configStartupUXContract() {
         llmBaseUrl: config.llmBaseUrl,
         llmModelName: config.llmModelName,
         llmApiKey: config.llmApiKey,
-        vertexProjectId: config.vertexProjectId,
-        googleApplicationCredentials: config.googleApplicationCredentials,
       };
       try {
         config.llmBaseUrl = "";
         config.llmModelName = "";
         config.llmApiKey = "";
-        config.vertexProjectId = "";
-        config.googleApplicationCredentials = "";
         const missing = validateRuntimeConfig();
         if (
           missing.valid ||
-          !missing.errors.some((e) => /LLM_API_BASE_URL|VERTEX_PROJECT_ID/.test(e)) ||
+          !missing.errors.some((e) => /LLM_API_BASE_URL/.test(e)) ||
           !missing.errors.some((e) => /LLM_MODEL_NAME/.test(e))
         ) {
           return false;
@@ -975,76 +968,12 @@ async function configStartupUXContract() {
         config.llmBaseUrl = saved.llmBaseUrl;
         config.llmModelName = saved.llmModelName;
         config.llmApiKey = saved.llmApiKey;
-        config.vertexProjectId = saved.vertexProjectId;
-        config.googleApplicationCredentials = saved.googleApplicationCredentials;
       }
     },
   );
 
-  await check(
-    "VERTEX-BYOK-URL-AND-BILLING",
-    "US-1.3",
-    "Vertex OpenAI-compat URLs must be built from VERTEX_PROJECT_ID; auth must require the engagement's own GCP credentials (no shared vendor project fallback)",
-    async () => {
-      const {
-        buildVertexOpenAiBaseUrl,
-        clearVertexTokenCache,
-      } = await import("../src/providers/vertex_auth.js");
-      const globalUrl = buildVertexOpenAiBaseUrl("cust-proj-123", "global");
-      const regional = buildVertexOpenAiBaseUrl("cust-proj-123", "us-central1");
-      if (
-        globalUrl !==
-        "https://aiplatform.googleapis.com/v1/projects/cust-proj-123/locations/global/endpoints/openapi"
-      ) {
-        throw new Error(`unexpected global Vertex URL: ${globalUrl}`);
-      }
-      if (
-        regional !==
-        "https://us-central1-aiplatform.googleapis.com/v1/projects/cust-proj-123/locations/us-central1/endpoints/openapi"
-      ) {
-        throw new Error(`unexpected regional Vertex URL: ${regional}`);
-      }
-
-      const authSrc = codeOnly("src/providers/vertex_auth.ts");
-      if (!/does not provide a shared Google Cloud project/i.test(authSrc)) {
-        throw new Error("vertex_auth must refuse shared vendor GCP billing");
-      }
-      if (!/customer's own GCP project/i.test(authSrc)) {
-        throw new Error("vertex_auth must require customer-owned credentials");
-      }
-
-      const saved = {
-        llmBaseUrl: config.llmBaseUrl,
-        llmModelName: config.llmModelName,
-        llmApiKey: config.llmApiKey,
-        vertexProjectId: config.vertexProjectId,
-        googleApplicationCredentials: config.googleApplicationCredentials,
-      };
-      try {
-        clearVertexTokenCache();
-        config.llmBaseUrl = "";
-        config.llmApiKey = "";
-        config.llmModelName = "google/gemini-2.5-pro";
-        config.vertexProjectId = "customer-byok-project";
-        config.googleApplicationCredentials = "";
-        const pf = validateRuntimeConfig();
-        if (!pf.valid) {
-          throw new Error(`Vertex BYOK preflight should be valid: ${pf.errors.join("; ")}`);
-        }
-        // Startup must stay quiet — BYOK is enforced in auth, not as a scare warning.
-        if (pf.warnings.some((w) => /Conviction Studio/i.test(w))) {
-          throw new Error("preflight must not show vendor legal copy on every launch");
-        }
-        return true;
-      } finally {
-        config.llmBaseUrl = saved.llmBaseUrl;
-        config.llmModelName = saved.llmModelName;
-        config.llmApiKey = saved.llmApiKey;
-        config.vertexProjectId = saved.vertexProjectId;
-        config.googleApplicationCredentials = saved.googleApplicationCredentials;
-      }
-    },
-  );
+  // VERTEX-BYOK-URL-AND-BILLING retired — Vertex AI removed (ADR-001: OpenRouter
+  // is the sole cloud gateway). Gemini is reached via OpenRouter with ZDR.
 
   await check(
     "WEB-TOOLS-PARALLEL-FIRST-NOT-VERTEX-AS-OLLAMA",
@@ -1067,27 +996,8 @@ async function configStartupUXContract() {
     },
   );
 
-  await check(
-    "VERTEX-GUI-BYOK-SETTINGS",
-    "US-1.3",
-    "BYOK settings must collect the customer's Vertex project/location/credentials path via config (not the Electron settings UI) and must not invite pasting service-account JSON into config",
-    () => {
-      const schema = codeOnly("src/config/schema.ts");
-      const auth = codeOnly("src/providers/vertex_auth.ts");
-      const subagent = codeOnly("src/subagents/isolation.ts");
-      // The config schema recognises a customer Vertex project id.
-      if (!/vertexProjectId/.test(schema))
-        throw new Error("config schema missing vertexProjectId (BYOK project field)");
-      // Vertex auth derives the endpoint from VERTEX_PROJECT_ID and reads the
-      // credentials path from GOOGLE_APPLICATION_CREDENTIALS (a file path, not
-      // pasted JSON).
-      if (!/VERTEX_PROJECT_ID/.test(auth))
-        throw new Error("vertex auth must read VERTEX_PROJECT_ID");
-      if (!/GOOGLE_APPLICATION_CREDENTIALS/.test(auth) && !/GOOGLE_APPLICATION_CREDENTIALS/.test(subagent))
-        throw new Error("Vertex BYOK must use a credentials FILE PATH (GOOGLE_APPLICATION_CREDENTIALS), not pasted JSON");
-      return true;
-    },
-  );
+  // VERTEX-GUI-BYOK-SETTINGS retired — Vertex AI removed (ADR-001: OpenRouter
+  // is the sole cloud gateway).
 
   await check(
     "KEYCHAIN-WINDOWS-ARGUMENT-SAFE",
@@ -8648,23 +8558,17 @@ async function extendedCapabilitiesContract() {
   );
 
   await check(
-    "SUBAGENT-VERTEX-ENV-PASSTHROUGH",
+    "SUBAGENT-CHECKER-ENV-PASSTHROUGH",
     "US-5.3 / Phase 2",
-    "subagent isolated env allowlist must include Vertex BYOK + checker vars",
+    "subagent isolated env allowlist must include checker vars",
     () => {
       const c = codeOnly("src/tools/subagent.ts");
       for (const key of [
-        "VERTEX_PROJECT_ID",
-        "VERTEX_LOCATION",
-        "GOOGLE_APPLICATION_CREDENTIALS",
         "QUIVER_CHECKER_REMOTE_APPROVED",
         "CHECKER_LLM_MODEL_NAME",
       ]) {
-        if (!c.includes(`"${key}"`) && !c.includes(`"${key}",`)) {
-          // allow either quoted form in the array
-          if (!new RegExp(`["']${key}["']`).test(c)) {
-            throw new Error(`subagent ALLOWED_ENV_KEYS missing ${key}`);
-          }
+        if (!new RegExp(`["']${key}["']`).test(c)) {
+          throw new Error(`subagent ALLOWED_ENV_KEYS missing ${key}`);
         }
       }
       return true;
@@ -8826,21 +8730,8 @@ async function extendedCapabilitiesContract() {
     },
   );
 
-  await check(
-    "GAUNTLET-ISOLATION-PRESERVES-ADC",
-    "US-5.3 / Phase 2",
-    "createIsolatedEnv must preserve Vertex ADC path when remapping HOME",
-    () => {
-      const iso = codeOnly("src/subagents/isolation.ts");
-      if (!/GOOGLE_APPLICATION_CREDENTIALS/.test(iso)) {
-        throw new Error("isolation must set GOOGLE_APPLICATION_CREDENTIALS from real-home ADC");
-      }
-      if (!/application_default_credentials/.test(iso)) {
-        throw new Error("isolation must look for application_default_credentials.json");
-      }
-      return true;
-    },
-  );
+  // GAUNTLET-ISOLATION-PRESERVES-ADC retired — Vertex AI removed (ADR-001).
+  // No GOOGLE_APPLICATION_CREDENTIALS / ADC path to preserve.
 
   await check(
     "GAUNTLET-ACCEPTANCE-MD-NO-RUBBER-STAMP",

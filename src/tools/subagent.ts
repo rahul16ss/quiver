@@ -131,9 +131,6 @@ async function runSubagent(
     "PATH", "HOME", "USER", "LANG", "TERM", "TZ",
     "LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL_NAME",
     "LLM_TEMPERATURE", "LLM_TOP_P", "LLM_TOP_K", "LLM_REASONING_EFFORT",
-    // Vertex AI BYOK — child must bill the same customer project as parent.
-    "VERTEX_PROJECT_ID", "VERTEX_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS",
-    "GOOGLE_CLOUD_PROJECT", "CLOUDSDK_CORE_PROJECT",
     // Checker route (maker-checker children / nested verify).
     "CHECKER_LLM_MODEL_NAME", "CHECKER_LLM_API_BASE_URL", "CHECKER_LLM_API_KEY",
     "QUIVER_CHECKER_REMOTE_APPROVED",

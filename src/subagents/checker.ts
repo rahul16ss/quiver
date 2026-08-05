@@ -36,11 +36,7 @@ import {
 import { validateEvidenceFile } from "../evidence/tracker.js";
 import { compare as compareBenchmark } from "../document/bar_critic.js";
 import { config } from "../config.js";
-import {
-  isVertexConfigured,
-  resolveCheckerBaseUrl,
-  resolveLlmBearerToken,
-} from "../providers/vertex_auth.js";
+import { resolveCheckerBaseUrl } from "../providers/vertex_auth.js";
 import { createIsolatedEnv, spawnIsolatedProcess } from "./isolation.js";
 import { buildCheckerVisionContent } from "./checker_vision.js";
 import type { FileContent } from "../file_encoder.js";
@@ -495,7 +491,7 @@ export async function runChecker(
   const checkerBaseUrl = resolveCheckerBaseUrl() || config.checkerBaseUrl;
   const checkerConfigured = Boolean(checkerModel && checkerBaseUrl);
   const checkerRemoteApproved =
-    process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1" || isVertexConfigured();
+    process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1";
   let checkerModelUnavailable = false;
   let checkerIsLocal = false;
   try {
@@ -513,9 +509,7 @@ export async function runChecker(
     try {
       const deliverablePath = toolArgs?.file || toolArgs?.filePath || "";
       const deliverableContent = deliverablePath ? await readDeliverable(deliverablePath) : "";
-      const checkerApiKey = await resolveLlmBearerToken({
-        forceVertex: /aiplatform\.googleapis\.com/i.test(checkerBaseUrl),
-      });
+      const checkerApiKey = config.llmApiKey;
       const modelResult = await runModelEvaluation({
         model: checkerModel,
         baseUrl: checkerBaseUrl,

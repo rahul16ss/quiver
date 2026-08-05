@@ -103,7 +103,7 @@ export async function loadConfig(): Promise<any> {
 
 export async function isConfigured(): Promise<boolean> {
   const { config } = await import("../config.js");
-  return Boolean(config.llmApiKey || config.llmBaseUrl || config.vertexProjectId);
+  return Boolean(config.llmApiKey || config.llmBaseUrl);
 }
 
 export async function startAgent(_config: any, _resumeLatest: boolean): Promise<void> {

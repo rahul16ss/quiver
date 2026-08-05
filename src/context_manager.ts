@@ -308,7 +308,7 @@ export async function proposeCompaction(
     "You can read it with view_file if you need specific details from earlier in the conversation.\n\n" +
     "SUMMARY OF PREVIOUS CONVERSATION:\n" + summary;
   // Merge the summary into the FIRST system message rather than pushing a
-  // second one. Many OpenAI-compatible endpoints (incl. Vertex/Gemini) reject
+  // second one. Many OpenAI-compatible endpoints reject
   // requests with multiple system messages or a system message after user
   // turns — this was the root cause of the "Invalid count value: -7" crash.
   const newMessages: Message[] = [];

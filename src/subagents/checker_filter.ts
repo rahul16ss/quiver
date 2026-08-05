@@ -302,11 +302,9 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   "docs/index.html": ["LANDING-PAGE-HERO"],
   // Homebrew
   "Formula/quiver.rb": ["HOMEBREW-REAL-SHA256"],
-  // Vertex / provider BYOK
+  // Provider URL/auth helpers (local OpenAI-compatible endpoint).
   "src/providers/vertex_auth.ts": [
-    "VERTEX-BYOK-URL-AND-BILLING",
-    "VERTEX-GUI-BYOK-SETTINGS",
-    "CONFIG-RUNTIME-PREFLIGHT",
+    "WIRE-PROVIDER-ADAPTER",
   ],
   "src/providers/tool_call_passthrough.ts": [
     "WIRE-PROVIDER-ADAPTER",
@@ -370,7 +368,6 @@ const PREFIX_TO_CHECKS: Array<{ prefix: string; checks: string[] }> = [
       "ADAPTER-PROMPT-ORDER",
       "ADAPTER-TOOL-FORMAT",
       "ADAPTER-ERROR-RECOVERY",
-      "VERTEX-BYOK-URL-AND-BILLING",
     ],
   },
   {
@@ -407,7 +404,6 @@ const PREFIX_TO_CHECKS: Array<{ prefix: string; checks: string[] }> = [
       "GUI-SETTINGS-SECTIONS",
       "GUI-SETTINGS-IPC-WIRED",
       "GUI-CHECKER-APPROVAL-NOT-PERSISTED",
-      "VERTEX-GUI-BYOK-SETTINGS",
     ],
   },
   {

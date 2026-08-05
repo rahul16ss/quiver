@@ -5,10 +5,6 @@
 export * from "./types.js";
 export { getActiveProvider, getLocalProvider, OpenAICompatibleProvider } from "./types.js";
 export {
-  buildVertexOpenAiBaseUrl,
-  isOllamaHost,
-  isVertexConfigured,
-  isVertexHost,
   resolveCheckerBaseUrl,
   resolveLlmBearerToken,
   resolveMakerBaseUrl,

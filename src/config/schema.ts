@@ -47,9 +47,8 @@ export function getDefaultConfig(): ConfigSchema {
   return {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: {
-      provider: config.vertexProjectId ? "vertex" : "custom",
+      provider: "custom",
       model_name: config.llmModelName,
-      // Vertex BYOK may leave LLM_API_BASE_URL empty; surface the derived URL.
       base_url: resolveMakerBaseUrl() || config.llmBaseUrl,
       api_key_ref: "LLM_API_KEY",
       max_context_tokens: config.maxContextTokens,
@@ -94,14 +93,8 @@ export function validateConfig(config: any): ValidationResult {
     errors.push("Missing model config section");
   } else {
     if (!config.model.model_name) errors.push("model.model_name is required");
-    // Vertex BYOK can omit base_url when VERTEX_PROJECT_ID derives the endpoint.
-    const hasVertexProject =
-      (typeof config.model.vertex_project_id === "string" &&
-        config.model.vertex_project_id.trim().length > 0) ||
-      config.model.provider === "vertex";
-    if (!config.model.base_url && !hasVertexProject) {
-      errors.push("model.base_url is required");
-    }
+    // base_url (local endpoint) is optional — cloud inference goes through
+    // OpenRouter (OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE).
     if (typeof config.model.max_context_tokens !== "number" || config.model.max_context_tokens <= 0) {
       errors.push("model.max_context_tokens must be a positive number");
     }

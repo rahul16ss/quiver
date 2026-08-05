@@ -142,40 +142,31 @@ export function describeUnknownChunk(chunk: unknown): string {
 // ─── Provider Registry ───────────────────────────────────────────────
 
 import { config } from "../config.js";
-import {
-  clearVertexTokenCache,
-  isVertexHost,
-  resolveLlmBearerToken,
-  resolveMakerBaseUrl,
-} from "./vertex_auth.js";
+import { resolveMakerBaseUrl } from "./vertex_auth.js";
 import { extractToolCallPassthrough } from "./tool_call_passthrough.js";
 import { QuiverOpenRouterProvider } from "../harness/provider-bridge.js";
 import { ModelProfileRegistry, starterCatalog } from "../harness/model-profile.js";
 
 /**
- * OpenAI-compatible provider (works with Ollama, OpenRouter, Vertex OpenAI-compat, etc.)
+ * OpenAI-compatible provider (local/private endpoints: Ollama, vLLM, llama.cpp,
+ * LM Studio, etc. Cloud inference goes through the OpenRouter bridge.)
  */
 export class OpenAICompatibleProvider implements ModelProvider {
   id: string;
   private baseUrl: string;
   private apiKey: string;
-  /** Optional async resolver for short-lived tokens (Vertex OAuth). */
-  private resolveApiKey?: () => Promise<string>;
 
   constructor(
     id: string,
     baseUrl: string,
     apiKey: string,
-    resolveApiKey?: () => Promise<string>,
   ) {
     this.id = id;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
-    this.resolveApiKey = resolveApiKey;
   }
 
   private async bearerToken(): Promise<string> {
-    if (this.resolveApiKey) return (await this.resolveApiKey()) || "";
     return this.apiKey || "";
   }
 
@@ -295,7 +286,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (stallTimer) clearTimeout(stallTimer);
       signal.removeEventListener("abort", onExternalAbort);
       if (response.status === 401) {
-        clearVertexTokenCache();
+        // No Vertex token cache to clear anymore; surface the auth error.
       }
       const errorText = await response.text();
       yield {
@@ -517,25 +508,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 /**
  * Get the active model provider based on config.
- * Vertex BYOK: builds the customer project URL and refreshes OAuth tokens.
+ * OpenRouter is the sole cloud model gateway (ADR-001). When an OpenRouter
+ * key + a certified profile are configured, use the QuiverOpenRouterProvider
+ * bridge (ZDR-enforcing). Otherwise fall back to the OpenAI-compatible
+ * provider for a local/private endpoint (LLM_API_BASE_URL).
  */
 export function getActiveProvider(): ModelProvider {
-  // OpenRouter is the sole cloud model gateway (ADR-001). When an OpenRouter
-  // key + a certified profile are configured, prefer the QuiverOpenRouterProvider
-  // bridge (ZDR-enforcing). Otherwise fall back to the legacy OpenAI-compatible
-  // provider for local/private/Vertex configs. The final removal of the legacy
-  // cloud path is gated on spec updates.
   const or = tryOpenRouterProvider();
   if (or) return or;
   const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
-  const apiKey = config.llmApiKey;
-  const vertex = isVertexHost(baseUrl);
-  return new OpenAICompatibleProvider(
-    vertex ? "vertex" : "default",
-    baseUrl,
-    apiKey,
-    vertex ? () => resolveLlmBearerToken({ forceVertex: true }) : undefined,
-  );
+  return new OpenAICompatibleProvider("default", baseUrl, config.llmApiKey);
 }
 
 function tryOpenRouterProvider(): ModelProvider | null {

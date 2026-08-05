@@ -50,7 +50,6 @@
     "@langchain/openrouter": "0.4.5",
     "dotenv": "^16.4.7",
     "fastest-levenshtein": "^1.0.16",
-    "google-auth-library": "^11.0.0",
     "parallel-web": "1.1.0",
     "picocolors": "^1.1.1",
     "puppeteer": "^25.2.1",
