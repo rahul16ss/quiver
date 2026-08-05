@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Spec acceptance gate (checker-owned)
+        run: npm test
+      - name: Offline + OfficeCLI e2e
+        run: npm run test:e2e -- --tier=a,b
+  # Opt-in live contract tests (OpenRouter, Parallel, Graph, Drive, OfficeCLI)
+  # are NOT run in CI — they require credentials and are skipped by default
+  # (QUIVER_LIVE_CONTRACT=1). Run them manually in a credentialed environment.
