@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, copyFileSync, mkdirSync } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
@@ -236,6 +236,12 @@ export const tool: Tool = {
       .string()
       .optional()
       .describe("Working directory. Defaults to current directory."),
+    stage: z
+      .boolean()
+      .optional()
+      .describe(
+        "When true, operate on a staged working copy (ArtifactRepository) rather than the original — never mutate the source directly. Returns the staged copy path + source hash. Default false (legacy direct-write behavior).",
+      ),
   }),
 
   execute: async (args: any) => {
@@ -294,7 +300,38 @@ export const tool: Tool = {
 
     // Use the resolved path (honors scratch-area redirect) if available;
     // otherwise fall back to the raw file argument.
-    const file = _resolvedFile ?? _rawFile;
+    let file = _resolvedFile ?? _rawFile;
+    // ── Staged working copy (ADR-005 / ADR-006): when stage=true and this is a
+    //    write action, snapshot the source and operate on an isolated working
+    //    copy so the original is never mutated directly. Additive: default
+    //    (stage unset) is the legacy direct-write behavior.
+    let stagedSourceHash: string | undefined;
+    let staged = false;
+    if (args.stage === true && _writeActions.has(action) && file) {
+      try {
+        const { LocalArtifactRepository } = await import("../harness/artifact-repository.js");
+        const { createHash } = await import("crypto");
+        const stagingRoot = path.join(args.cwd || process.cwd(), ".quiver", "office-staging");
+        const repo = new LocalArtifactRepository(stagingRoot);
+        const srcData = existsSync(file) ? readFileSync(file) : Buffer.alloc(0);
+        const mime = extToMimeOffice(file);
+        const stagedArt = await repo.stage(
+          { identity: { id: file, path: file }, data: srcData, mimeType: mime, path: file },
+          `office-${Date.now()}`,
+        );
+        stagedSourceHash = stagedArt.sourceHash;
+        // Operate on the working copy for edits; for create/merge (new file),
+        // write the output into the staging area alongside the snapshot.
+        if (existsSync(file)) {
+          file = stagedArt.workingCopyPath;
+        } else {
+          file = path.join(path.dirname(stagedArt.snapshotPath), path.basename(file));
+        }
+        staged = true;
+      } catch (e: any) {
+        return `Error: staging failed: ${e.message}`;
+      }
+    }
 
     // ─── Help action (no file needed) ────────────────────────────────
     if (action === "help") {
@@ -470,10 +507,13 @@ export const tool: Tool = {
 
     // ─── Format output ───────────────────────────────────────────────
     if (result.success) {
+      const stagedNote = staged
+        ? `\n[staged] workingCopy=${file} sourceHash=${stagedSourceHash ?? ""}`
+        : "";
       if (result.json) {
-        return JSON.stringify(result.json, null, 2);
+        return JSON.stringify({ ...result.json, ...(staged ? { staged: true, workingCopy: file, sourceHash: stagedSourceHash } : {}) }, null, 2);
       }
-      return result.stdout || "Operation completed successfully.";
+      return (result.stdout || "Operation completed successfully.") + stagedNote;
     }
 
     // Error case
@@ -484,3 +524,15 @@ export const tool: Tool = {
     return parts.join("\n\n");
   },
 };
+
+function extToMimeOffice(p: string): string {
+  const ext = path.extname(p).toLowerCase();
+  switch (ext) {
+    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".pdf": return "application/pdf";
+    default: return "application/octet-stream";
+  }
+}
+
