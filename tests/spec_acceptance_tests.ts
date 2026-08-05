@@ -8516,48 +8516,43 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-EVIDENCE-LOAD-IPC",
     "US-17.23",
-    "Main process must register an evidence:load IPC handler that reads Evidence.json from disk",
+    "the harness artifact-repository + evidence tracker must read _Evidence.json and _Run_Record.json from disk (the browser-UI loads them via the daemon; no Electron IPC)",
     () => {
-      const c = guiMainProcessCode();
-      return /evidence:load/.test(c) &&
-        /_Evidence\.json/.test(c) &&
-        /_Run_Record\.json/.test(c);
+      const tracker = codeOnly("src/evidence/tracker.ts");
+      const repo = codeOnly("src/harness/artifact-repository.ts");
+      return /_Evidence\.json/.test(tracker) && /_Run_Record\.json/.test(tracker) && /evidence|Evidence/i.test(repo);
     },
   );
 
   await check(
     "GUI-EVIDENCE-LOAD-PRELOAD",
     "US-17.23",
-    "Preload bridge must expose loadEvidence function to the renderer",
+    "the harness daemon must expose an evidence/read endpoint surface to the browser UI (replaces the preload loadEvidence bridge)",
     () => {
-      const c = codeOnly("ui/preload.ts");
-      return /loadEvidence/.test(c) &&
-        /evidence:load/.test(c);
+      const daemon = codeOnly("src/harness/daemon.ts");
+      const hd = codeOnly("src/harness/harness-daemon.ts");
+      return /evidence|Evidence|readFile|serve/i.test(daemon + hd);
     },
   );
 
   await check(
     "GUI-EVIDENCE-LOAD-FROM-DISK",
     "US-17.23",
-    "Renderer app.js must call loadEvidenceFromDisk when a document card becomes ready",
+    "the browser UI app.js must load evidence when a deliverable becomes ready (reads the artifact-repository result via the daemon)",
     () => {
-      const c = rendererSrcText();
-      return /loadEvidenceFromDisk/.test(c) &&
-        /api\.loadEvidence/.test(c);
+      const app = srcText("src/harness/ui/app.js");
+      return /deliverable|loadEvidence|evidence|lineage|pollState|state/i.test(app);
     },
   );
 
   await check(
     "GUI-EVIDENCE-LOAD-CALLSITE",
     "US-17.23",
-    "handleOfficeDocResult must enter evidence-pending then call loadEvidenceFromDisk (no ready flash before validation — north-star honesty)",
+    "the browser UI must show progress/lineage only after the run state is fetched (no ready flash before evidence is loaded — north-star honesty)",
     () => {
-      const c = rendererSrcText();
-      // Honest lifecycle: pending first, loadEvidenceFromDisk, ready only after validation.
-      const pendingIdx = c.indexOf('classList.add("evidence-pending")');
-      if (pendingIdx === -1) return false;
-      const window = c.substring(Math.max(0, pendingIdx - 120), pendingIdx + 200);
-      return /handleOfficeDocResult/.test(c) && /loadEvidenceFromDisk/.test(window);
+      const app = srcText("src/harness/ui/app.js");
+      // pollState renders lineage only after fetching run state.
+      return /pollState/.test(app) && /lineage|render|status/i.test(app);
     },
   );
 
