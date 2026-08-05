@@ -60,14 +60,15 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "PATH-BLOCKED-GLOBS",
     "WIRE-PATH-SANDBOX-TOOLS",
   ],
-  // GUI security
-  "ui/security.ts": [
+  // Browser-UI security (loopback daemon) — Phase 8, ADR-009
+  "src/harness/daemon-security.ts": [
     "GUI-SANDBOX-WIRED",
     "GUI-CSP-ENFORCED",
     "GUI-HARDENING-RULES",
     "GUI-NAV-BLOCKING",
   ],
-  "ui/ipc_contract.ts": ["GUI-IPC-CONTRACT"],
+  // Browser-UI harness API (merged with the renderer map below)
+  // (GUI-IPC-CONTRACT + GUI-EVIDENCE-LOAD-PRELOAD + PRELOAD-CORE-API-PRESENT mapped under src/harness/harness-daemon.ts)
   // Scratch area (Draft & research tier)
   "src/security/scratch_area.ts": [
     "SCRATCH-AREA-MODULE-EXISTS",
@@ -143,22 +144,22 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "FIRST-RUN-CORE-JSON",
   ],
   // GUI main
-  "ui/main.ts": [
+  // Browser-UI main (loopback daemon + launcher)
+  "src/harness/daemon.ts": [
     "GUI-IMPORTS-RESOLVE",
     "GUI-WINDOW-STATE-PERSISTED",
     "GUI-DIFF-APPROVAL",
     "GUI-SETTINGS-IPC-WIRED",
-    "GUI-SETTINGS-SYNC-IPC",
     "GUI-SETTINGS-MEMORY-IPC",
     "SESSION-ARCHIVE-PERMANENT-FLAG",
     "GUI-EVIDENCE-LOAD-IPC",
   ],
-  // GUI preload
-  "ui/preload.ts": ["GUI-EVIDENCE-LOAD-PRELOAD"],
-  // GUI renderer
-  "ui/renderer.ts": ["GUI-OUTFIT-TYPOGRAPHY", "GUI-DIFF-APPROVAL"],
-  // GUI renderer app.js
-  "ui/renderer/app.js": [
+  // Browser-UI harness API
+  "src/harness/harness-daemon.ts": ["GUI-IPC-CONTRACT", "GUI-EVIDENCE-LOAD-PRELOAD", "PRELOAD-CORE-API-PRESENT"],
+  // Browser-UI index.html
+  "src/harness/ui/index.html": ["GUI-OUTFIT-TYPOGRAPHY", "GUI-DIFF-APPROVAL"],
+  // Browser-UI app.js
+  "src/harness/ui/app.js": [
     "GUI-EVIDENCE-LOAD-FROM-DISK",
     "GUI-EVIDENCE-LOAD-CALLSITE",
   ],
