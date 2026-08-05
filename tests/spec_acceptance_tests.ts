@@ -8825,15 +8825,15 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-CHECKER-APPROVAL-NOT-PERSISTED",
     "US-1.3 / Phase 2",
-    "GUI must not write QUIVER_CHECKER_REMOTE_APPROVED into shared .env (session env only)",
+    "the config must not write QUIVER_CHECKER_REMOTE_APPROVED into shared .env (session env only); the subagent passes it as a child env var",
     () => {
-      const cfg = codeOnly("ui/main/config.ts");
+      const cfg = codeOnly("src/config.ts");
       if (/replacements\.QUIVER_CHECKER_REMOTE_APPROVED\s*=\s*["']1["']/.test(cfg)) {
         throw new Error("config.ts still persists QUIVER_CHECKER_REMOTE_APPROVED into .env");
       }
-      const bridge = codeOnly("ui/main/agent-bridge.ts");
-      if (!/QUIVER_CHECKER_REMOTE_APPROVED/.test(bridge)) {
-        throw new Error("agent-bridge should still set checker approval in child env");
+      const subagent = codeOnly("src/tools/subagent.ts");
+      if (!/QUIVER_CHECKER_REMOTE_APPROVED/.test(subagent)) {
+        throw new Error("subagent should pass the checker approval flag in the child env");
       }
       return true;
     },
