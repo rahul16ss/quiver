@@ -22,6 +22,7 @@ import { SECURITY_PREAMBLE } from "../prompts/security.js";
 import { readReviewedMemoryFacts } from "../memory/schema.js";
 import { filterByPrivacy } from "../memory/privacy.js";
 import { config } from "../config.js";
+import { compileCustomerPackLayers } from "../harness/prompt-compiler.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -88,6 +89,28 @@ export function assemblePrompt(
     tokenEstimate: adapter.estimateTokensFallback(input.identity),
     included: !!input.identity,
   });
+
+  // 1a. Customer pack + capital-markets domain policy (ADR-004 seam). Additive:
+  // only when a CustomerPack is bound; preserves all legacy sections.
+  if (input.customerPack) {
+    const layers = compileCustomerPackLayers(input.customerPack);
+    if (layers.domainPolicy) {
+      sections.push({
+        name: "Capital-markets domain policy",
+        content: layers.domainPolicy,
+        tokenEstimate: adapter.estimateTokensFallback(layers.domainPolicy),
+        included: true,
+      });
+    }
+    if (layers.customerPack) {
+      sections.push({
+        name: "Customer pack",
+        content: layers.customerPack,
+        tokenEstimate: adapter.estimateTokensFallback(layers.customerPack),
+        included: true,
+      });
+    }
+  }
 
   // 2. Safety policy (includes prompt injection defense)
   const safetyContent = [input.safetyPolicy, SECURITY_PREAMBLE].filter(Boolean).join("\n\n");

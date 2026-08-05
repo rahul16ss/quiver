@@ -84,6 +84,10 @@ export interface PromptAssemblyInput {
   conversationSummary: string;
   recentMessages: any[];
   currentUserRequest: string;
+  /** Optional bound CustomerPack (ADR-004 seam): when set, the assembler inserts
+   *  the customer-pack + capital-markets domain-policy layers. Additive; when
+   *  unset the legacy 9-section assembly is unchanged. */
+  customerPack?: import("../harness/customer-pack.js").CustomerPack;
 }
 
 // ─── Harness Adapter Interface ───────────────────────────────────────

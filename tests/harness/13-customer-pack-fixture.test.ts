@@ -15,6 +15,8 @@ import { QuiverPromptCompiler } from "../../src/harness/prompt-compiler.js";
 import { QuiverPolicyEngine } from "../../src/harness/policy-engine.js";
 import { TWELVE_WORKFLOW_SPECS } from "../../src/harness/workflow-spec.js";
 import { ALL_SOURCE_CATEGORIES } from "../../src/harness/interfaces.js";
+import { assemblePrompt } from "../../src/prompt/assembler.js";
+import { getAdapter } from "../../src/adapters/types.js";
 
 let passed = 0, failed = 0;
 const failures: string[] = [];
@@ -75,6 +77,25 @@ async function run() {
   check("PROMPT-INCLUDES-BANNED-PHRASES", /guaranteed return|sure thing/i.test(compiled.systemPrompt));
   check("PROMPT-NO-DEVELOPER-ADDRESSING", !/you are a software developer/i.test(compiled.systemPrompt));
   check("PROMPT-PACK-REF-ID", compiler.pack().id === "conviction-studio-default");
+
+  // ── Assembler pack-injection seam (ADR-004) ──────────────────────────
+  const assembled = assemblePrompt(
+    { identity: "You are Quiver.", safetyPolicy: "Be safe.", adapterInstructions: "i", toolInstructions: "t", memoryContext: "m", projectContext: "p", conversationSummary: "", recentMessages: [], currentUserRequest: "", customerPack: pack },
+    getAdapter("default"),
+    { id: "t", displayName: "T", providerId: "t", contextWindowTokens: 120000, supportsTools: true, supportsParallelToolCalls: true, supportsImages: false, supportsStreaming: true, supportsReasoningSummaries: false } as any,
+  );
+  check("ASSEMBLER-INSERTS-CUSTOMER-PACK-SECTION", assembled.sections.some((s) => s.name === "Customer pack" && s.included));
+  check("ASSEMBLER-INSERTS-DOMAIN-POLICY-SECTION", assembled.sections.some((s) => s.name === "Capital-markets domain policy" && s.included));
+  check("ASSEMBLER-PRESERVES-SAFETY-POLICY", assembled.sections.some((s) => s.name === "Safety Policy" && s.included));
+  check("ASSEMBLER-PACK-CONTENT-HAS-TERMINOLOGY", /Investment Committee|IC/.test(assembled.sections.find((s) => s.name === "Customer pack")?.content ?? ""));
+
+  // Without a pack, the legacy 9-section assembly is unchanged.
+  const noPack = assemblePrompt(
+    { identity: "You are Quiver.", safetyPolicy: "Be safe.", adapterInstructions: "i", toolInstructions: "t", memoryContext: "m", projectContext: "p", conversationSummary: "", recentMessages: [], currentUserRequest: "" },
+    getAdapter("default"),
+    { id: "t", displayName: "T", providerId: "t", contextWindowTokens: 120000, supportsTools: true, supportsParallelToolCalls: true, supportsImages: false, supportsStreaming: true, supportsReasoningSummaries: false } as any,
+  );
+  check("ASSEMBLER-NO-PACK-NO-CUSTOMER-SECTION", !noPack.sections.some((s) => s.name === "Customer pack"));
 
   // ── PolicyEngine bound to the pack enforces the three profiles ──────
   const policy = new QuiverPolicyEngine(pack);

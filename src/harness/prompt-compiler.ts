@@ -125,6 +125,39 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+
+
+/**
+ * Compile the customer-pack and capital-markets domain-policy layer strings
+ * for injection into the legacy prompt assembler (ADR-004 seam). Used when a
+ * CustomerPack is bound to an agent run so the legacy 9-section assembler gains
+ * the customer-pack + domain-policy layers without losing its existing sections.
+ */
+export function compileCustomerPackLayers(pack: import("./customer-pack.js").CustomerPack): {
+  customerPack: string;
+  domainPolicy: string;
+} {
+  const compiler = new QuiverPromptCompiler(pack);
+  // compilePackLayer is private; re-implement via a role-less compile and
+  // slice the relevant layers.
+  const compiled = compiler.compile({ role: "maker" });
+  const cpLayer = compiled.layers.find((l) => l.name === "Customer pack");
+  const dpLayer = compiled.layers.find((l) => l.name === "Capital-markets domain policy");
+  return {
+    customerPack: cpLayer?.included ? extractLayerContent(compiled.systemPrompt, "Customer pack") : "",
+    domainPolicy: dpLayer?.included ? extractLayerContent(compiled.systemPrompt, "Capital-markets domain policy") : "",
+  };
+}
+
+function extractLayerContent(systemPrompt: string, layerName: string): string {
+  // Layers are joined by "\n\n---\n\n"; find the layer by its leading header.
+  const parts = systemPrompt.split("\n\n---\n\n");
+  // The customer-pack layer begins with "Customer:" and the domain-policy layer
+  // begins with "Capital-markets domain policy:".
+  const marker = layerName === "Customer pack" ? "Customer:" : "Capital-markets domain policy:";
+  return parts.find((p) => p.startsWith(marker)) ?? "";
+}
+
 const CAPITAL_MARKETS_DOMAIN_POLICY = `Capital-markets domain policy:
 - Separate fact, derived value, assumption, interpretation and recommendation.
 - Every material figure carries: value, unit/currency, as-of date/fiscal period, source identity/locator, source category, retrieved-at, transformation, status, reviewer.
