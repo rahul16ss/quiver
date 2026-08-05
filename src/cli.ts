@@ -683,7 +683,22 @@ async function main() {
     }
   }
 
-  // ── Interactive session loop ──
+  // ── Interactive default → browser UI (Phase 8, ADR-009) ──
+  // The interactive TUI REPL is retired; the experience plane is the
+  // responsive browser application served by the loopback daemon. Running
+  // `quiver` on a TTY (no --single-turn/--json/subcommand) launches the
+  // daemon and opens the browser. --single-turn/--json (automation) and
+  // subcommands (--list-sessions, --init, --signin, --daemon) are unaffected.
+  if (isInteractive && !cliOpts.singleTurn && !isJson) {
+    const { QuiverLauncher } = await import("./harness/launcher.js");
+    const launcher = new QuiverLauncher();
+    const state = await launcher.startBrowserUI({ open: true });
+    console.log(t.cyan(`\n  Quiver is running in your browser:  ${state.origin}`));
+    console.log(t.gray(`  The interactive workspace is the browser UI. Press Ctrl+C to stop.\n`));
+    return; // the daemon keeps the process alive
+  }
+
+  // ── Interactive session loop (legacy scrolling REPL — retained for --repl / non-browser fallback) ──
   // @clack/prompts handles all stdin/stdout management internally.
   // We keep a minimal readline interface only for the intervention keypress
   // listener (Esc-to-steer during agent runs). The main REPL input goes

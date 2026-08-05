@@ -20,6 +20,21 @@ export interface LauncherState {
   startedAt: string;
 }
 
+/** Build a demo workflow-run engine (mock model + tools). A real deployment wires the OpenRouter bridge + tool registry. */
+async function buildDemoEngine(): Promise<import("./interfaces.js").ExecutionEngine> {
+  const { QuiverExecutionEngine } = await import("./execution-engine.js");
+  const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
+  const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
+  const { LocalModelClient } = await import("./model-client.js");
+  const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
+  const profiles = new ModelProfileRegistry();
+  for (const pp of starterCatalog()) profiles.register(pp);
+  const mockTransport = { async invoke() { return { content: "OK all met", route: "local", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } }; } };
+  const model = new LocalModelClient(mockTransport, profiles);
+  const tools = { available: () => ["office_doc", "evidence", "deep_research"], async call(n: string, a: Record<string, unknown>) { return { ok: true, output: `${n}:${a.step}`, evidenceRefs: [`e-${a.step}`] }; } };
+  return new QuiverExecutionEngine(saver, model, tools as any, { maxIterations: 20 });
+}
+
 export class QuiverLauncher {
   constructor(private statePath: string = path.join(os.homedir(), ".quiver", "daemon-state.json")) {}
 
@@ -60,6 +75,17 @@ export class QuiverLauncher {
       try { spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref(); } catch {}
     }
     return state;
+  }
+
+  /**
+   * Start the browser UI as the interactive experience plane (ADR-009).
+   * Builds a demo workflow-run engine (so /api/workflows + /api/run/* work)
+   * + the browser bridge (the chatbot/context/sessions surface). `quiver` on
+   * a TTY calls this instead of entering the legacy REPL.
+   */
+  async startBrowserUI(opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
+    const engine = await buildDemoEngine();
+    return this.startHarness(engine, opts);
   }
 
   status(): LauncherState | null {
@@ -117,18 +143,7 @@ export async function runLauncherCli(args: string[]): Promise<number> {
     case "harness": {
       // Demo harness daemon with a mock engine. A real deployment wires the
       // OpenRouter bridge + tool registry before calling startHarness.
-      const { QuiverExecutionEngine } = await import("./execution-engine.js");
-      const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
-      const { LocalTraceSink } = await import("./trace-sink.js");
-      const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
-      const { LocalModelClient } = await import("./model-client.js");
-      const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
-      const profiles = new ModelProfileRegistry();
-      for (const pp of starterCatalog()) profiles.register(pp);
-      const mockTransport = { async invoke() { return { content: "OK all met", route: "local", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } }; } };
-      const model = new LocalModelClient(mockTransport, profiles);
-      const tools = { available: () => ["office_doc", "evidence", "deep_research"], async call(n: string, a: Record<string, unknown>) { return { ok: true, output: `${n}:${a.step}`, evidenceRefs: [`e-${a.step}`] }; } };
-      const engine = new QuiverExecutionEngine(saver, model, tools as any, { maxIterations: 20 });
+      const engine = await buildDemoEngine();
       const state = await launcher.startHarness(engine, { open: true });
       console.log(`Quiver harness daemon on ${state.origin} (pid ${state.pid}) — opening browser…`);
       return 0;
