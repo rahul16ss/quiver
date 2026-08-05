@@ -8,15 +8,15 @@ path. **Remove** = delete legacy only after equivalence passes.
 | Phase | Deliverable | New tests | Legacy touched | Removal (gated) |
 | :--- | :--- | :--- | :--- | :--- |
 | 0 | Audit, ADRs, test inventory, migration map | — | none | — |
-| 1 | Narrow interfaces, `CustomerPack` schema, `PolicyEngine`/sensitivity, `ArtifactRepository` | `tests/harness/01-interfaces.test.ts`, `02-customer-pack.test.ts`, `03-policy-engine.test.ts`, `04-artifact-repository.test.ts` | none (additive) | — |
-| 2 | `ModelClient` + `QuiverOpenRouterClient` + `LocalModelClient` + `ModelProfile` + native-doc contract-test scaffolding | `05-model-client.test.ts`, `06-model-profile.test.ts`, opt-in `live/openrouter-native-pdf.test.ts` | none yet | Remove `OpenAICompatibleProvider` cloud path + Ollama cloud route after equivalence |
-| 3 | `ResearchGateway` + `ParallelResearchGateway` typed ops; remove regex fallback | `07-research-gateway.test.ts` | `src/tools/{web_search,scrape_url,deep_research}.ts` migrated to gateway | Remove `htmlToText` regex + `direct` fallback + Ollama cloud web routes |
-| 4 | `ExecutionEngine` (LangGraph), `GoalContract`, gap ledger, checkpoints, approvals | `08-goal-contract.test.ts`, `09-execution-engine.test.ts` | wrap existing tools as nodes | — |
-| 5 | `PromptCompiler` + modular capital-markets prompt packs | `10-prompt-compiler.test.ts` | `src/prompt/assembler.ts` delegates to compiler | Remove scattered prompts after equivalence |
-| 6 | Pinned OfficeCLI `OfficeEngine`, staging lifecycle, semantic/visual diffs, conformance corpus | `11-office-engine.test.ts`, `12-conformance-corpus.test.ts` | `src/tools/office_doc.ts` delegates to `OfficeEngine` | Remove direct source mutation |
-| 7 | `LocalStorageProvider`, `MicrosoftGraphStorageProvider`, `GoogleDriveStorageProvider` | `13-storage-local.test.ts`, opt-in `live/graph.test.ts`, `live/gdrive.test.ts` | storage ops via `StorageProvider` | — |
-| 8 | Browser UI + minimal launcher/CLI | `14-browser-ui.test.ts`, `15-launcher-cli.test.ts` | daemon serves UI | Remove `ui/` Electron + `src/tui.ts`/`multiline.ts`/`cli_ui.ts` after equivalence |
-| 9 | 12 workflow capability scenarios, security hardening, packaging, docs, migration cleanup | `16-workflow-scenarios.test.ts`, `17-security-threats.test.ts` | — | Final legacy removal |
+| 1 | Narrow interfaces, `CustomerPack` schema, `PolicyEngine`/sensitivity, `ArtifactRepository` | `01-interfaces.test.ts` (40) | none (additive) | — ✅ done |
+| 2 | `ModelClient` + `QuiverOpenRouterClient` + `LocalModelClient` + `ModelProfile` + native-doc contract-test scaffolding | `02-model-client.test.ts` (21) + opt-in `live/run.ts` | none yet | Remove `OpenAICompatibleProvider` cloud path + Ollama cloud route after caller migration | ✅ adapter done, caller migration pending |
+| 3 | `ResearchGateway` + `ParallelResearchGateway` typed ops; remove regex fallback | `03-research-gateway.test.ts` (16) | `src/tools/{web_search,scrape_url,deep_research}.ts` migrated to gateway | Remove `htmlToText` regex + `direct` fallback + Ollama cloud web routes | ✅ gateway done, tool migration pending |
+| 4 | `ExecutionEngine` (LangGraph), `GoalContract`, gap ledger, checkpoints, approvals | `04-goal-contract.test.ts` (7), `05-execution-engine.test.ts` (12) | wrap existing tools as nodes | — | ✅ done |
+| 5 | `PromptCompiler` + modular capital-markets prompt packs | `01-interfaces.test.ts` (PromptCompiler checks) | `src/prompt/assembler.ts` delegates to compiler | Remove scattered prompts after equivalence | ✅ compiler scaffold done, full packs + assembler delegation pending |
+| 6 | Pinned OfficeCLI `OfficeEngine`, staging lifecycle, semantic/visual diffs, conformance corpus | `06-office-engine.test.ts` (17) | `src/tools/office_doc.ts` delegates to `OfficeEngine` | Remove direct source mutation | ✅ engine done, tool delegation pending |
+| 7 | `LocalStorageProvider`, `MicrosoftGraphStorageProvider`, `GoogleDriveStorageProvider` | `07-storage-providers.test.ts` (18), opt-in `live/*` | storage ops via `StorageProvider` | — | ✅ providers done, caller wiring pending |
+| 8 | Browser UI + minimal launcher/CLI | (pending) | daemon serves UI | Remove `ui/` Electron + `src/tui.ts`/`multiline.ts`/`cli_ui.ts` after equivalence | pending |
+| 9 | 12 workflow capability scenarios, security hardening, packaging, docs, migration cleanup | `08-workflow-scenarios.test.ts` (97), `09-security-threats.test.ts` (17) | — | Final legacy removal | ✅ scenarios + security done; packaging/docs cleanup ongoing |
 
 ## 2. Existing test inventory (baseline, must stay green)
 

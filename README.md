@@ -6,6 +6,22 @@ Quiver provides an open-source engine for running source-backed, audit-logged do
 
 For commercial engagements, custom workflow packs, and team training, see [Conviction Studio](https://convictionstudio.com).
 
+> **Refactor status (in progress).** Quiver is being refactored into a thin,
+> customer-configurable capital-markets workflow harness. The work is additive:
+> a new `src/harness/` core implements the ten narrow interfaces and four planes
+> (control / knowledge / work-product / experience) behind audited gates, while
+> the legacy runtime remains in place and green until each phase migrates callers
+> and removes the old path. Target changes: **OpenRouter as the sole cloud model
+> gateway** (ZDR, no fallback), **Parallel as the sole public-web research
+> gateway** (no regex scraping), **pinned bundled OfficeCLI**, staged source
+> snapshots (no direct mutation), honest Microsoft Graph / Google Drive
+> conflict behavior, and a **local browser UI replacing Electron**. The
+> **twelve** Conviction Studio reference scenarios (see
+> [docs/refactor/](docs/refactor/)) are the harness acceptance boundary — not
+> twelve hard-coded agents. Until the experience-plane phase lands, the shipped
+> Electron app and "13" pack manifests below describe the *current* code, not
+> the final target.
+
 ---
 
 ## 1. What Quiver is
