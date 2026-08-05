@@ -76,7 +76,7 @@ export interface OfficeCliRunResult {
 // ─── High-risk detection ──────────────────────────────────────────────
 
 const HIGH_RISK_EXTENSIONS = new Set([".xlsm", ".xlsb", ".docm", ".pptm", ".xltm"]);
-const HIGH_RISK_MARKERS = [/macro/i, /encrypt/i, /IRM/i, /sensitivity/i, /protected/i];
+const HIGH_RISK_MARKERS = [/macro/i, /encrypt/i, /IRM/i, /sensitivity/i, /protected/i, /DDE/i, /external link/i];
 
 /** Detect high-risk Office files (macro-enabled/encrypted/IRM/sensitivity-labelled). */
 export function detectHighRisk(filePath: string, warnings: string[] = []): { highRisk: boolean; reasons: string[] } {

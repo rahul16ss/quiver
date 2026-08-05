@@ -103,7 +103,7 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
         .get(threadId, ns, checkpointId);
     } else {
       row = this.db
-        .prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY created_at DESC LIMIT 1")
+        .prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC LIMIT 1")
         .get(threadId, ns);
     }
     if (!row) return undefined;
@@ -135,7 +135,7 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
     const beforeId = options?.before?.configurable?.checkpoint_id;
     const rows = beforeId
       ? this.db.prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND created_at < (SELECT created_at FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?) ORDER BY created_at DESC").all(threadId, ns, threadId, ns, beforeId)
-      : this.db.prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY created_at DESC").all(threadId, ns);
+      : this.db.prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC").all(threadId, ns);
     for (const row of rows as Array<any>) {
       const checkpoint = (await this.serde.loadsTyped("json", row.checkpoint as Uint8Array)) as Checkpoint;
       const metadata = (await this.serde.loadsTyped("json", row.metadata as Uint8Array)) as CheckpointMetadata;

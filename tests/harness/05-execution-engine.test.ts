@@ -14,7 +14,6 @@ import { QuiverExecutionEngine, type ToolExecutor, type ToolResult } from "../..
 import { LocalTraceSink } from "../../src/harness/trace-sink.js";
 import type { ModelClient, ModelMessage, ModelResult, ModelProfileRef } from "../../src/harness/interfaces.js";
 import type { GoalContract } from "../../src/harness/goal-contract.js";
-import type { RunOutcome } from "../../src/harness/interfaces.js";
 
 let passed = 0, failed = 0;
 const failures: string[] = [];
@@ -72,25 +71,13 @@ function newSaver(): SqliteCheckpointSaver {
   return new SqliteCheckpointSaver(path.join(dir, "checkpoints.db"));
 }
 
-/** Run until the engine pauses at the approval gate (its correct behavior). */
-async function runUntilPaused(engine: QuiverExecutionEngine, c: GoalContract, trace: LocalTraceSink, attempts = 5): Promise<RunOutcome> {
-  for (let i = 0; i < attempts; i++) {
-    const r = await engine.run(c, { trace } as any);
-    if (r.status === "paused") return r;
-    // Rare LangGraph checkpoint timing flake: re-run on a fresh runId (mutate
-    // in place so the caller's contract reflects the run that actually paused).
-    c.runId = "RUN-" + Math.random().toString(36).slice(2, 8);
-  }
-  throw new Error("Engine did not pause at approval gate after retries (last status not paused).");
-}
-
 async function run() {
   // ── A completed run pauses at the human approval interrupt ─────────
   const saver = newSaver();
   const engine = new QuiverExecutionEngine(saver, new MockModel(true), new MockTools(), { maxIterations: 6 });
   const c = contract();
   const trace = new LocalTraceSink();
-  const outcome = await runUntilPaused(engine, c, trace);
+  const outcome = await engine.run(c, { trace } as any);
   // Because tools resolve every step and checker passes, the run reaches the
   // approval interrupt and pauses (no auto-commit).
   check("ENGINE-COMPLETED-PAUSES-AT-APPROVAL", outcome.status === "paused", `status=${outcome.status}`);
@@ -108,7 +95,7 @@ async function run() {
   // ── Resume with rejection → partial (never committed) ──────────────
   const c2 = contract();
   const engine2 = new QuiverExecutionEngine(newSaver(), new MockModel(true), new MockTools(), { maxIterations: 6 });
-  const r2run = await runUntilPaused(engine2, c2, new LocalTraceSink());
+  await engine2.run(c2, { trace: new LocalTraceSink() } as any);
   const rejected = await engine2.resume(c2.runId, { approved: false });
   check("ENGINE-RESUME-REJECTED-IS-PARTIAL", rejected.status === "partial", `status=${rejected.status}`);
   check("ENGINE-RESUME-REJECTED-STOP-REASON", /rejected/i.test(rejected.stopReason));
@@ -128,7 +115,7 @@ async function run() {
   const c4 = contract();
   const saver4 = newSaver();
   const engine4 = new QuiverExecutionEngine(saver4, new MockModel(true), new MockTools(), { maxIterations: 6 });
-  await runUntilPaused(engine4, c4, new LocalTraceSink());
+  await engine4.run(c4, { trace: new LocalTraceSink() } as any);
   // A fresh engine instance on the SAME saver can resume the paused run.
   const engine4b = new QuiverExecutionEngine(saver4, new MockModel(true), new MockTools(), { maxIterations: 6 });
   const resumed = await engine4b.resume(c4.runId, { approved: true });
