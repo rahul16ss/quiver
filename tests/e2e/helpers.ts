@@ -6,11 +6,20 @@ import * as os from "os";
 import * as path from "path";
 import { spawn, ChildProcess } from "child_process";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 
 export const ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+
+/** Resolve the repo's local tsx bin to avoid `npx tsx` cold-cache installs in
+ *  spawned subprocesses (a source of tier-A e2e flake). Falls back to npx. */
+function tsxSpawn(): { cmd: string; args: string[] } {
+  const bin = path.join(ROOT, "node_modules", ".bin", "tsx");
+  if (existsSync(bin)) return { cmd: bin, args: [] };
+  return { cmd: "npx", args: ["tsx"] };
+}
 
 export interface CheckResult {
   id: string;
@@ -134,7 +143,8 @@ export async function runSingleTurn(opts: RunAgentOpts): Promise<RunAgentResult>
     if (env[k] === undefined) delete env[k];
   }
 
-  const child: ChildProcess = spawn("npx", args, {
+  const tsx = tsxSpawn();
+  const child: ChildProcess = spawn(tsx.cmd, [...tsx.args, ...args.slice(1)], {
     cwd: opts.cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"],

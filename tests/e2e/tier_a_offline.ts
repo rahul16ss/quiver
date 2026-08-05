@@ -441,7 +441,7 @@ async function testEpisodicHarvester(): Promise<void> {
 async function testDaemonSmoke(): Promise<void> {
   const smoke = path.join(ROOT, "scripts/daemon_smoke.ts");
   await new Promise<void>((resolve) => {
-    const child = spawn("npx", ["tsx", smoke], {
+    const child = spawn(path.join(ROOT, "node_modules", ".bin", "tsx"), [smoke], {
       cwd: ROOT,
       stdio: ["ignore", "pipe", "pipe"],
     });
