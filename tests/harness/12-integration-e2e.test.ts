@@ -65,6 +65,9 @@ async function run() {
     async monitor() { return { monitor_id: "m1" }; },
     async monitorStop() {},
     async findEntities() { return { results: [{ url: "https://example.com/e", excerpts: ["e"] }] }; },
+    async findAllCreate() { return { findall_id: "fa-1" }; },
+    async findAllRetrieve() { return { status: { is_active: false } }; },
+    async findAllResult() { return { candidates: [{ name: "Acme", matched: true }] }; },
   };
   const research = new ParallelResearchGateway(mockParallel, policy);
 

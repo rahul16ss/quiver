@@ -27,6 +27,9 @@ class MockParallel implements ParallelTransport {
   async monitor(p: any) { this.lastMonitor = p; return { monitor_id: "mon-1" }; }
   async monitorStop() {}
   async findEntities(p: any) { this.lastFind = p; return this.searchResults; }
+  async findAllCreate() { return { findall_id: "fa-1" }; }
+  async findAllRetrieve() { return { status: { is_active: false } }; }
+  async findAllResult() { return { candidates: [{ name: "Acme", matched: true, confidence: 0.9, citations: [{ url: "https://example.com/a", title: "A", excerpts: ["ex"] }] }] }; }
 }
 
 const pack = emptyPack({ id: "acme" });
@@ -63,6 +66,11 @@ async function run() {
   // ── findEntities ────────────────────────────────────────────────────
   const ents = await gw.findEntities("fintech startups", { sensitivity: "public" });
   check("RESEARCH-FIND-ENTITIES", ents.length === 1);
+
+  // ── findAll (discover + verify entities) ───────────────────────────
+  const fa = await gw.findAll({ objective: "AI startups raising Series A in 2026", entityType: "companies", generator: "base" }, { sensitivity: "public" });
+  check("RESEARCH-FINDALL-CANDIDATES", fa.candidates.length === 1 && fa.candidates[0].matched === true);
+  check("RESEARCH-FINDALL-CITATIONS", fa.candidates[0].citations?.length === 1);
 
   // ── confidential-internal sanitizes the query ──────────────────────
   const t2 = new MockParallel();

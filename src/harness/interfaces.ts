@@ -206,6 +206,27 @@ export interface ResearchGateway {
   research(input: string, opts?: ResearchTaskOpts): Promise<ResearchTaskResult>;
   monitor(spec: MonitorSpec): Promise<MonitorHandle>;
   findEntities(query: string, opts?: ResearchOpts): Promise<ResearchSearchResult[]>;
+  /** Discover + verify entities matching natural-language criteria (FindAll). */
+  findAll(input: FindAllInput, opts?: ResearchOpts): Promise<FindAllResult>;
+}
+
+export interface FindAllInput {
+  objective: string;
+  entityType: "companies" | "people";
+  matchConditions?: Array<{ name: string; description: string }>;
+  generator?: "preview" | "base" | "core" | "pro";
+  matchLimit?: number;
+}
+
+export interface FindAllResult {
+  candidates: Array<{
+    name: string;
+    matched: boolean;
+    reasoning?: string;
+    citations?: Array<{ url: string; title?: string; excerpts?: string[] }>;
+    confidence?: number;
+  }>;
+  cost?: { usd?: number; latencyMs: number };
 }
 
 export interface ResearchOpts {

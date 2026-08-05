@@ -33,6 +33,8 @@ import type {
   MonitorHandle,
   SensitivityProfile,
   SourceCategory,
+  FindAllInput,
+  FindAllResult,
 } from "./interfaces.js";
 import type { PolicyEngine } from "./interfaces.js";
 
@@ -70,6 +72,9 @@ export interface ParallelTransport {
   monitor(params: { query: string; cadence?: string }): Promise<{ monitor_id: string }>;
   monitorStop(id: string): Promise<void>;
   findEntities(params: { search_queries: string[]; objective?: string }): Promise<{ results: Array<{ url: string; title?: string | null; excerpts: string[] }> }>;
+  findAllCreate(params: { objective: string; entity_type: "companies" | "people"; generator?: string; match_conditions?: Array<{ name: string; description: string }>; match_limit?: number }): Promise<{ findall_id: string }>;
+  findAllRetrieve(id: string): Promise<{ status: { is_active: boolean } }>;
+  findAllResult(id: string): Promise<{ candidates?: Array<{ name?: string; matched?: boolean; reasoning?: string; confidence?: number; citations?: Array<{ url: string; title?: string; excerpts?: string[] }> }> }>;
 }
 
 // ─── ParallelResearchGateway ──────────────────────────────────────────
@@ -131,6 +136,33 @@ export class ParallelResearchGateway implements ResearchGateway {
     return (res.results || []).map((r) => toSearchResult(r, retrievedAt, undefined));
   }
 
+  async findAll(input: FindAllInput, opts: ResearchOpts = {}): Promise<FindAllResult> {
+    this.assertAllowed(opts.sensitivity);
+    const run = await this.transport.findAllCreate({
+      objective: sanitizeQuery(input.objective, opts.sensitivity),
+      entity_type: input.entityType,
+      generator: input.generator,
+      match_conditions: input.matchConditions,
+      match_limit: input.matchLimit,
+    });
+    // Poll until inactive (bounded).
+    for (let i = 0; i < 60; i++) {
+      const st = await this.transport.findAllRetrieve(run.findall_id);
+      if (!st.status?.is_active) break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    const res = await this.transport.findAllResult(run.findall_id);
+    return {
+      candidates: (res.candidates || []).map((c) => ({
+        name: c.name ?? "",
+        matched: !!c.matched,
+        reasoning: c.reasoning,
+        citations: c.citations,
+        confidence: c.confidence,
+      })),
+    };
+  }
+
   private assertAllowed(sensitivity?: SensitivityProfile): void {
     const s = sensitivity ?? "public";
     const decision = this.policy.decide({ kind: "research", sensitivity: s });
@@ -179,7 +211,19 @@ export class ParallelWebTransport implements ParallelTransport {
   }
   async findEntities(params: any): Promise<any> {
     const c = await this.client();
-    return c.beta?.findAll?.(params) ?? c.search(params);
+    return c.beta?.findAll?.entitySearch?.(params) ?? c.search(params);
+  }
+  async findAllCreate(params: any): Promise<any> {
+    const c = await this.client();
+    return c.beta.findall.create(params);
+  }
+  async findAllRetrieve(id: string): Promise<any> {
+    const c = await this.client();
+    return c.beta.findall.retrieve(id);
+  }
+  async findAllResult(id: string): Promise<any> {
+    const c = await this.client();
+    return c.beta.findall.result(id);
   }
 }
 
