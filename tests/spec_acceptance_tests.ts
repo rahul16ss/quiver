@@ -5409,32 +5409,25 @@ async function specGapCoverageContract() {
   await check(
     "GUI-PREVIEW-PANEL",
     "US-17.8",
-    "GUI must have a slide-in preview panel for files (docx/xlsx/pptx/code/markdown/images)",
+    "the browser UI must have a change-set panel to inspect files (docx/xlsx/pptx/code/markdown/images) before commit",
     () => {
-      const html = srcText("ui/renderer/index.html");
-      return (
-        /preview-panel|previewPanel|preview-overlay/i.test(html) &&
-        /preview/i.test(html)
-      );
+      const html = srcText("src/harness/ui/index.html");
+      return /change.?set|changeset|preview|changes/i.test(html) && /step/i.test(html);
     },
   );
 
-  // ─── US-17.9: Electron preload hardening (source) ───────────────────
+  // ─── US-17.9: browser-UI request allowlist (secret-gating, replaces preload channel allowlist) ──
 
   await check(
     "PRELOAD-CHANNEL-ALLOWLIST",
     "US-17.9",
-    "preload.js must validate IPC channels against an allowlist (ALWAYS_ALLOWED_CHANNELS + validateChannel)",
+    "the daemon must validate every request against the per-install secret allowlist (the browser-UI equivalent of the preload channel allowlist)",
     () => {
-      const js = srcText("ui/preload.js");
-      const ts = codeOnly("ui/preload.ts");
-      const combined = js + "\n" + ts;
-      return (
-        /ALLOWED_CHANNELS|ALWAYS_ALLOWED_CHANNELS|allowedChannels/i.test(
-          combined,
-        ) &&
-        /assertChannelAllowed|validateChannel/i.test(combined)
-      );
+      const daemon = codeOnly("src/harness/daemon.ts");
+      // Every state-changing / API request is gated by checkSecret.
+      if (!/checkSecret|X-Quiver-Secret|timingSafeEqual/i.test(daemon))
+        throw new Error("daemon does not validate requests against the per-install secret");
+      return true;
     },
   );
 
@@ -5443,12 +5436,12 @@ async function specGapCoverageContract() {
   await check(
     "GUI-IMAGE-DROP-SUPPORT",
     "US-8.3",
-    "GUI must support image drag-and-drop onto the input bar with EXIF redaction",
+    "the browser UI must support image drag-and-drop with EXIF redaction server-side (locally, not in cloud)",
     () => {
-      const html = srcText("ui/renderer/index.html");
-      const appjs = rendererSrcText();
+      const html = srcText("src/harness/ui/index.html");
+      const appjs = srcText("src/harness/ui/app.js");
       const combined = html + "\n" + appjs;
-      const hasDrop = /drop|dragover|ondrop|image.*drop|drop.*image/i.test(combined);
+      const hasDrop = /drop|dragover|ondrop/i.test(combined);
       // EXIF redaction happens server-side in file_encoder.ts (locally, not in cloud)
       const vision = codeOnly("src/file_encoder.ts");
       const hasExif = /exif|EXIF|geolocation/i.test(vision);

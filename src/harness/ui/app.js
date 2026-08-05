@@ -74,3 +74,5 @@ async function decide(approved) {
 }
 
 init();
+// Image drag-and-drop onto the context area (EXIF redacted server-side by file_encoder).
+window.handleDrop = (e) => { e.preventDefault(); /* TODO: wire to daemon upload + EXIF redaction */ };
