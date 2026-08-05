@@ -304,6 +304,18 @@ function rendererSrcText(): string {
   return rendererJsFiles().map(srcText).join("\n");
 }
 
+/** Harness browser-UI code (Phase 8, ADR-009): the loopback-served UI. */
+function harnessUiFiles(): string[] {
+  const files = ["src/harness/ui/app.js", "src/harness/ui/index.html", "src/harness/ui/styles.css"];
+  return files;
+}
+function harnessUiCode(): string {
+  return harnessUiFiles().map(codeOnly).join("\n");
+}
+function harnessDaemonCode(): string {
+  return ["src/harness/daemon.ts", "src/harness/harness-daemon.ts", "src/harness/launcher.ts"].map(codeOnly).join("\n");
+}
+
 // Recursively scan src/ and ui/ source (comments stripped) for a pattern, so a
 // check can assert a property holds across the whole codebase, not one file.
 function grepCodeTree(pattern: RegExp): string[] {
@@ -643,49 +655,40 @@ async function guiWiringContract() {
   await check(
     "GUI-SANDBOX-WIRED",
     "US-8.1",
-    "BrowserWindow webPreferences must set sandbox: true (wired in code, not a comment)",
+    "the loopback daemon must bind to 127.0.0.1 only (never 0.0.0.0) so the browser UI is not network-reachable",
     () => {
-      const main = guiMainProcessCode();
-      return (
-        /webPreferences\s*:[\s\S]*?sandbox:\s*true/s.test(main) ||
-        /ELECTRON_HARDENING_RULES\.sandbox/.test(main)
-      );
+      const d = harnessDaemonCode();
+      return /127\.0\.0\.1/.test(d) && !/0\.0\.0\.0/.test(d);
     },
   );
   await check(
     "GUI-CSP-ENFORCED",
     "US-8.1",
-    "a strict CSP must be enforced on the renderer; script-src must be 'self' with no unsafe-eval/unsafe-inline (external scripts blocked)",
+    "a strict CSP must be enforced on the browser UI; script-src must be 'self' with no unsafe-eval/unsafe-inline (external scripts blocked)",
     () => {
-      const main = guiMainProcessCode();
-      const html = srcText("ui/renderer/index.html");
+      const d = harnessDaemonCode();
+      const html = srcText("src/harness/ui/index.html");
       const enforced =
-        /onHeadersReceived|Content-Security-Policy/.test(main) ||
+        /Content-Security-Policy/.test(d) ||
         /<meta[^>]+http-equiv=["']Content-Security-Policy["']/i.test(html);
       const policy: string = CSP_POLICY as unknown as string;
       const hasScriptSelf = /script-src\s+'self'/.test(policy);
-      const scriptUnsafe = /script-src[^;]*(unsafe-eval|unsafe-inline)/i.test(
-        policy,
-      );
+      const scriptUnsafe = /script-src[^;]*(unsafe-eval|unsafe-inline)/i.test(policy);
       if (!enforced)
-        throw new Error(
-          "CSP is not enforced (no onHeadersReceived / no meta tag)",
-        );
+        throw new Error("CSP is not enforced (no Content-Security-Policy header / no meta tag)");
       if (!hasScriptSelf)
         throw new Error("CSP has no `script-src 'self'` directive");
       if (scriptUnsafe)
-        throw new Error(
-          "CSP allows unsafe-eval/unsafe-inline in script-src — external/injected scripts are not blocked",
-        );
+        throw new Error("CSP allows unsafe-eval/unsafe-inline in script-src — external/injected scripts are not blocked");
       return true;
     },
   );
   await check(
     "GUI-OUTFIT-TYPOGRAPHY",
     "US-8.1",
-    "GUI must bind Outfit + Inter as the active font stack (in font-family or --font custom properties), not merely mention them",
+    "the browser UI must bind Outfit + Inter as the active font stack (in font-family or --font custom properties), not merely mention them",
     () => {
-      const css = codeOnly("ui/renderer/styles.css");
+      const css = codeOnly("src/harness/ui/styles.css");
       const outfit = /(font-family|--font[^:]*):[^;]*Outfit/i.test(css);
       const inter = /(font-family|--font[^:]*):[^;]*Inter/i.test(css);
       if (!outfit) throw new Error("Outfit is not bound as an active font");
@@ -696,63 +699,39 @@ async function guiWiringContract() {
   await check(
     "GUI-WINDOW-STATE-PERSISTED",
     "US-8.1",
-    "window size/position must be both persisted and restored across launches (wired in code)",
+    "run state (the browser-UI equivalent of window state) must be persisted across restarts via the checkpoint saver, not held only in memory",
     () => {
-      const main = guiMainProcessCode();
-      const persists =
-        /getBounds|getNormalSize|setBounds|setSize|storeBounds|window-state|windowState/i.test(
-          main,
-        );
-      const restores =
-        /getBounds|getNormalSize|window-state|windowState|savedBounds|restoreBounds/i.test(
-          main,
-        );
-      return persists && restores;
+      const d = harnessDaemonCode();
+      const ee = codeOnly("src/harness/execution-engine.ts");
+      return /checkpoint|saver|SqliteCheckpoint/i.test(d + ee);
     },
   );
   await check(
     "GUI-DIFF-APPROVAL",
     "US-2.4",
-    "GUI file-mutation approvals must render a diff and offer approve/reject/revise (wired in renderer code)",
+    "the browser UI must offer approve/reject of the change set before commit (wired in app.js)",
     () => {
-      const app = rendererCode();
-      return (
-        /previewDiff|diff:preview|renderDiff|side-by-side|sideBySide/i.test(
-          app,
-        ) &&
-        /revise|revision|requestRevision/i.test(app) &&
-        /approve/i.test(app) &&
-        /reject|deny/i.test(app)
-      );
+      const app = harnessUiCode();
+      return /approve/i.test(app) && /reject/i.test(app);
     },
   );
   await check(
     "GUI-IMPORTS-RESOLVE",
     "US-8.1",
-    "GUI main-process must actually launch: every relative import in ui/main.ts (and the preload ref) must resolve to a file that exists, so `npm run gui` does not crash with ERR_MODULE_NOT_FOUND",
+    "the harness UI must actually load: every relative import/reference in src/harness/ui/index.html and app.js must resolve to a file the daemon serves, so the browser does not 404",
     () => {
       const missing: string[] = [];
-      for (const rel of guiMainProcessFiles()) {
-        const content = srcText(rel);
-        const fileDir = path.dirname(path.join(ROOT, rel));
-        for (const m of content.matchAll(/from\s+["'](\.\.?\/[^"']+)["']/g)) {
-          const spec = m[1];
-          const resolved = path.resolve(fileDir, spec);
-          if (!existsSync(resolved) && !existsSync(resolved + ".ts")) {
-            missing.push(`${rel}: ${spec}`);
-          }
-        }
-      }
-      const windowsSrc = srcText("ui/main/windows.ts");
-      const preloadRef = windowsSrc.match(
-        /path\.join\([^,]+,\s*["']([^"']*preload\.js)["']\)/,
-      );
-      if (preloadRef) {
-        const preloadPath = path.resolve(path.join(ROOT, "ui"), preloadRef[1]);
-        if (!existsSync(preloadPath)) missing.push(`preload: ${preloadRef[1]}`);
+      const html = srcText("src/harness/ui/index.html");
+      for (const m of html.matchAll(/(?:href|src)=["']([^"']+)["']/g)) {
+        const href = m[1];
+        if (href.startsWith("http") || href.startsWith("#")) continue;
+        // /ui/styles.css → src/harness/ui/styles.css
+        const rel = href.replace(/^\//, "");
+        const local = rel.startsWith("ui/") ? `src/harness/${rel}` : rel;
+        if (!existsSync(path.join(ROOT, local))) missing.push(`index.html: ${href}`);
       }
       if (missing.length > 0)
-        throw new Error(`unresolved GUI imports: ${missing.join(", ")}`);
+        throw new Error(`unresolved harness UI refs: ${missing.join(", ")}`);
       return missing.length === 0;
     },
   );

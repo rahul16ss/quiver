@@ -15,6 +15,7 @@ import { randomBytes, timingSafeEqual } from "crypto";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import { CSP_POLICY } from "./daemon-security.js";
 
 export interface DaemonOptions {
   /** Per-install secret; if omitted a random one is generated per start. */
@@ -67,7 +68,8 @@ export class QuiverDaemon {
   // ── Request handling ────────────────────────────────────────────────
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    // Secure headers.
+    // Secure headers (CSP + browser hardening — see daemon-security.ts).
+    res.setHeader("Content-Security-Policy", CSP_POLICY);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
