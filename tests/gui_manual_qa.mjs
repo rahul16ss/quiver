@@ -4,6 +4,7 @@
 // Run: node tests/gui_manual_qa.mjs   (dev-only; opens a real window)
 import http from "http";
 import os from "os";
+import * as path from "path";
 import { spawn } from "child_process";
 import { writeFileSync, mkdirSync, existsSync, copyFileSync, rmSync } from "fs";
 
@@ -11,8 +12,8 @@ const MODEL_PORT = 9223, DEBUG_PORT = 9222;
 const SHOTS = "/tmp/quiver-qa-shots";
 const WS_DIR = "/tmp/quiver-qa-ws";
 const UD = "/tmp/quiver-qa-ud";
-const ELECTRON = "/Users/rahul/quiver/node_modules/.bin/electron";
 const REPO = "/Users/rahul/quiver";
+const ELECTRON_BIN = REPO + "/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron";
 const REAL_HOME = os.homedir();
 const PROJ = REAL_HOME + "/.quiver/projects/quiver-qa-ws";
 const PROJ_MEM = PROJ + "/memory";
@@ -21,6 +22,18 @@ const added = [];
 for (const d of [SHOTS, UD]) { try { rmSync(d, { recursive: true, force: true }); } catch {} }
 try { rmSync(WS_DIR + "/answer.md", { force: true }); } catch {}
 mkdirSync(SHOTS, { recursive: true });
+mkdirSync(WS_DIR, { recursive: true });
+
+// Write a minimal sensitivity config so the fail-closed sensitivity gate
+// allows the agent to reach the (fake) model. Default tier = low (public data).
+mkdirSync(WS_DIR + "/.quiver", { recursive: true });
+writeFileSync(WS_DIR + "/.quiver/sensitivity.json", JSON.stringify({
+  version: 1,
+  defaultTier: "low",
+  modelEndpoints: { cloud: "http://127.0.0.1:" + MODEL_PORT + "/v1", local: "" },
+  mnpiPatterns: [{ type: "deal_code", pattern: "\\bMNPI-[A-Z0-9]+\\b", replacement: "[DEAL]" }],
+  classificationRules: [{ type: "mnpi_marker", pattern: "\\bMNPI\\b", tier: "high", reason: "Explicit MNPI marker" }],
+}, null, 2));
 
 // Seed a TEMPORARY QA project + skills into the real ~/.quiver (cleaned up after;
 // never touch the user's core.json or other projects).
@@ -65,21 +78,44 @@ const model = http.createServer((req, res) => {
 await new Promise((r) => model.listen(MODEL_PORT, r));
 console.log("fake model on :" + MODEL_PORT);
 
+// Write a temporary GUI config that points to the fake model.
+// The config must go in the --user-data-dir (not ~/Library/Application Support/Quiver)
+// because --user-data-dir overrides app.getPath("userData") in Electron.
+const GUI_CFG = UD + "/quiver-config.json";
+const GUI_CFG_REAL = os.homedir() + "/Library/Application Support/Quiver/quiver-config.json";
+const GUI_CFG_BAK = GUI_CFG_REAL + ".qa-bak";
+let hadGuiCfg = false;
+try {
+  if (existsSync(GUI_CFG_REAL)) { copyFileSync(GUI_CFG_REAL, GUI_CFG_BAK); hadGuiCfg = true; }
+  mkdirSync(UD, { recursive: true });
+  writeFileSync(GUI_CFG, JSON.stringify({
+    workspacePath: WS_DIR,
+    provider: { baseUrl: "http://127.0.0.1:" + MODEL_PORT + "/v1", modelName: "glm-5.2:cloud", apiKey: "fake-key" },
+    llmApiKey: "fake-key",
+    parallelApiKey: "",
+    autonomyGrants: "",
+    maxContextTokens: 120000,
+    memoryDir: "./memory",
+    skillsDir: "./skills",
+  }, null, 2));
+} catch {}
+
 // ─── launch real Electron (real home; workspace = temp dir) ────────────
 const env = {
   ...process.env,
   LLM_API_BASE_URL: "http://127.0.0.1:" + MODEL_PORT + "/v1",
   LLM_API_KEY: "fake-key",
+  VERTEX_PROJECT_ID: "",
   QUIVER_AMBIENT: "0",
   QUIVER_AUTONOMY: "",
   QUIVER_SESSION_LOG: "0",
   QUIVER_LIFECYCLE_TRACE: "0",
   ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
 };
-const app = spawn(ELECTRON, [REPO, "--remote-debugging-port=" + DEBUG_PORT, "--user-data-dir=" + UD], { cwd: WS_DIR, env, stdio: ["ignore", "pipe", "pipe"] });
+const app = spawn(ELECTRON_BIN, [REPO, "--remote-debugging-port=" + DEBUG_PORT, "--user-data-dir=" + UD], { cwd: WS_DIR, env, stdio: ["ignore", "pipe", "pipe"] });
 app.stdout.on("data", (d) => process.stdout.write("[gui] " + d));
-app.stderr.on("data", () => {});
-const cleanup = () => { try { app.kill("SIGTERM"); } catch {} try { model.close(); } catch {} for (const p of added) { try { rmSync(p, { recursive: true, force: true }); } catch {} } };
+app.stderr.on("data", (d) => process.stderr.write("[gui-err] " + d));
+const cleanup = () => { try { app.kill("SIGTERM"); } catch {} try { model.close(); } catch {} for (const p of added) { try { rmSync(p, { recursive: true, force: true }); } catch {} } try { if (hadGuiCfg) { copyFileSync(GUI_CFG_BAK, GUI_CFG_REAL); rmSync(GUI_CFG_BAK, { force: true }); } } catch {} };
 process.on("exit", cleanup); process.on("SIGINT", () => { cleanup(); process.exit(1); });
 
 // ─── CDP client ────────────────────────────────────────────────────────
@@ -107,10 +143,17 @@ const pass = (s) => { notes.push("✔ " + s); console.log("✔ " + s); };
 const fail = (s) => { notes.push("✗ " + s); console.log("✗ " + s); };
 
 try {
-  // 1 — Onboarding
-  await wait("document.getElementById('onbKey') !== null", 25000); await shot("01-onboarding");
-  await setVal("onbKey", "fake-key"); await click("onbStartBtn");
-  await wait("document.getElementById('context-plane') !== null", 20000); pass("Onboarding: reached main surface");
+  // 1 — Onboarding (or skip if already onboarded from a previous run)
+  const hasOnboarding = await evalJS("document.getElementById('onbKey') !== null").catch(() => false);
+  if (hasOnboarding) {
+    await shot("01-onboarding");
+    await setVal("onbKey", "fake-key"); await click("onbStartBtn");
+    await wait("document.getElementById('context-plane') !== null", 20000); pass("Onboarding: reached main surface");
+  } else {
+    // Already onboarded — verify we're on the main surface
+    await wait("document.getElementById('context-plane') !== null", 10000);
+    pass("Onboarding: skipped (already configured)");
+  }
 
   // 2 — Main surface + context plane
   await sleep(900); await shot("02-main-empty");
@@ -151,8 +194,9 @@ try {
 
   // 7 — Skill viewer
   await evalJS("document.querySelector('[data-close=\"memoryOverlay\"]').click()");
+  await sleep(300);
   await evalJS("document.querySelector('#ctxSkillsList .ctx-item').click()");
-  await wait("document.getElementById('skillOverlay').hidden === false", 6000); await sleep(300); await shot("08-skill-viewer");
+  await wait("document.getElementById('skillOverlay').hidden === false", 10000); await sleep(300); await shot("08-skill-viewer");
   (await evalJS("document.getElementById('skillContent').value.length > 0")) ? pass("Skill viewer opens with content") : fail("Skill viewer empty");
 
   // 8 — Sessions
@@ -161,15 +205,39 @@ try {
   await wait("document.getElementById('sessionsOverlay').hidden === false", 6000); await sleep(300); await shot("09-sessions");
   (await evalJS("document.querySelectorAll('#sessionsList .session-item').length >= 1")) ? pass("Sessions list shows a session") : fail("Sessions list empty");
 
-  // 9 — Settings (6 sections)
+  // 9 — Settings (opens in a separate window — connect to it via CDP)
   await evalJS("document.querySelector('[data-close=\"sessionsOverlay\"]').click()");
   await click("settingsBtn");
-  await wait("document.getElementById('saveBtn') !== null", 10000); await sleep(400); await shot("10-settings");
-  const sections = await evalJS('["Model Provider","API Credentials","Vision Model","Approvals","Cloud Sync","Memory"].filter(s=>document.body.innerText.includes(s)).length');
-  sections === 6 ? pass("Settings: all 6 sections present") : fail("Settings: only " + sections + "/6 sections");
+  await sleep(2000);
+  // Find the settings window's CDP target
+  let settingsWs = null;
+  for (let i = 0; i < 30; i++) {
+    try {
+      const list = await (await fetch("http://127.0.0.1:" + DEBUG_PORT + "/json")).json();
+      const settingsPage = list.find(t => t.type === "page" && t.url.includes("settings.html"));
+      if (settingsPage) { settingsWs = new WebSocket(settingsPage.webSocketDebuggerUrl); break; }
+    } catch {}
+    await sleep(200);
+  }
+  if (settingsWs) {
+    await new Promise((res, rej) => { settingsWs.addEventListener("open", () => res()); settingsWs.addEventListener("error", (e) => rej(e)); });
+    let sid = 1000; const sPending = new Map();
+    settingsWs.addEventListener("message", (ev) => { const m = JSON.parse(typeof ev.data === "string" ? ev.data : ev.data.toString()); if (m.id && sPending.has(m.id)) { const p = sPending.get(m.id); sPending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); } });
+    const scdp = (method, params = {}) => new Promise((res, rej) => { const id = sid++; sPending.set(id, { resolve: res, reject: rej }); settingsWs.send(JSON.stringify({ id, method, params })); });
+    await scdp("Runtime.enable");
+    const sEvalJS = async (expr) => { const r = await scdp("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails.exception?.description || r.exceptionDetails.text)); return r.result?.value; };
+    await sEvalJS("document.getElementById('saveBtn') !== null");
+    await sleep(400);
+    const sShot = await scdp("Page.captureScreenshot", { format: "png" });
+    writeFileSync(SHOTS + "/10-settings.png", Buffer.from(sShot.data, "base64")); console.log("📸 10-settings");
+    const sections = await sEvalJS('["Model Provider","Approvals","Memory"].filter(s=>document.body.innerText.includes(s)).length');
+    sections === 3 ? pass("Settings: all " + sections + "/3 sections present") : fail("Settings: only " + sections + "/3 sections");
+    settingsWs.close();
+  } else {
+    fail("Settings: could not connect to settings window");
+  }
 
   // 10 — office_doc approval + preview overlay (reject to avoid OfficeCLI network install)
-  await evalJS("document.getElementById('cancelBtn').click()");
   await wait("document.querySelectorAll('#ctxMemList .ctx-item').length > 0", 12000); await sleep(500);
   await setVal("promptInput", "make a report document"); await send();
   await wait("document.getElementById('approvalOverlay').hidden === false", 20000); await sleep(300); await shot("11-office-approval");

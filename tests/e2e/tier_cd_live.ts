@@ -37,34 +37,48 @@ function liveConfig(): {
   parallelKey: string;
 } {
   loadDotEnv();
+  // When VERTEX_PROJECT_ID is set, the Vertex endpoint is built at runtime
+  // from it — don't let a stale GUI config override with a non-Vertex URL.
+  const vertexProject = process.env.VERTEX_PROJECT_ID || "";
   // Also try Electron config provider block without logging secrets.
-  try {
-    const cfgPath = path.join(
-      process.env.HOME || "",
-      "Library/Application Support/Quiver/quiver-config.json",
-    );
-    if (fs.existsSync(cfgPath)) {
-      const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-      if (cfg?.provider?.baseUrl && !process.env.LLM_API_BASE_URL) {
-        process.env.LLM_API_BASE_URL = cfg.provider.baseUrl;
+  // Only use it when .env didn't already provide a config AND Vertex is not
+  // configured (the GUI config can be stale from a previous setup).
+  if (!vertexProject) {
+    try {
+      const cfgPath = path.join(
+        process.env.HOME || "",
+        "Library/Application Support/Quiver/quiver-config.json",
+      );
+      if (fs.existsSync(cfgPath)) {
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+        if (cfg?.provider?.baseUrl && !process.env.LLM_API_BASE_URL?.trim()) {
+          process.env.LLM_API_BASE_URL = cfg.provider.baseUrl;
+        }
+        if (cfg?.provider?.modelName && !process.env.LLM_MODEL_NAME?.trim()) {
+          process.env.LLM_MODEL_NAME = cfg.provider.modelName;
+        }
+        if (cfg?.provider?.apiKey && !process.env.LLM_API_KEY?.trim()) {
+          process.env.LLM_API_KEY = cfg.provider.apiKey;
+        }
       }
-      if (cfg?.provider?.modelName && !process.env.LLM_MODEL_NAME) {
-        process.env.LLM_MODEL_NAME = cfg.provider.modelName;
-      }
-      if (cfg?.provider?.apiKey && !process.env.LLM_API_KEY) {
-        process.env.LLM_API_KEY = cfg.provider.apiKey;
-      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
   const baseUrl = process.env.LLM_API_BASE_URL || "";
   const model = process.env.LLM_MODEL_NAME || "";
   const apiKey = process.env.LLM_API_KEY || "";
   const parallelKey = process.env.PARALLEL_API_KEY || "";
+  // Vertex auth: baseUrl and apiKey are legitimately empty — Quiver builds
+  // the endpoint from VERTEX_PROJECT_ID and obtains an OAuth bearer token.
+  // "ready" is true when either (baseUrl + model + apiKey) for a standard
+  // OpenAI-compatible endpoint, OR (vertexProject + model) for Vertex.
+  const ready = Boolean(
+    model && ((baseUrl && apiKey) || vertexProject),
+  );
   return {
-    ready: Boolean(baseUrl && model && apiKey),
+    ready,
     baseUrl,
     model,
     apiKey,

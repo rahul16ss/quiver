@@ -143,6 +143,7 @@ export function describeUnknownChunk(chunk: unknown): string {
 
 import { config } from "../config.js";
 import {
+  clearVertexTokenCache,
   isVertexHost,
   resolveLlmBearerToken,
   resolveMakerBaseUrl,
@@ -291,6 +292,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (!response.ok) {
       if (stallTimer) clearTimeout(stallTimer);
       signal.removeEventListener("abort", onExternalAbort);
+      if (response.status === 401) {
+        clearVertexTokenCache();
+      }
       const errorText = await response.text();
       yield {
         type: "error",

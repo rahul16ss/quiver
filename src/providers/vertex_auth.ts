@@ -54,11 +54,12 @@ export function buildVertexOpenAiBaseUrl(
 
 /** True when the active maker/checker transport is Vertex (customer GCP). */
 export function isVertexConfigured(): boolean {
+  if (config.llmApiKey && (config.llmApiKey.startsWith("AIzaSy") || config.llmApiKey.startsWith("sk-"))) return false;
   const maker = resolveMakerBaseUrl();
   if (maker && isVertexHost(maker)) return true;
   if (config.checkerBaseUrl && isVertexHost(config.checkerBaseUrl)) return true;
   // Project id alone counts only when no overriding non-Vertex base URL is set.
-  if (config.vertexProjectId && !config.llmBaseUrl) return true;
+  if (config.vertexProjectId && !config.llmBaseUrl && !config.llmApiKey) return true;
   return false;
 }
 
@@ -68,6 +69,9 @@ export function isVertexConfigured(): boolean {
  */
 export function resolveMakerBaseUrl(): string {
   if (config.llmBaseUrl) return config.llmBaseUrl.replace(/\/$/, "");
+  if (config.llmApiKey && config.llmApiKey.startsWith("AIzaSy")) {
+    return "https://generativelanguage.googleapis.com/v1beta/openai";
+  }
   if (config.vertexProjectId) {
     return buildVertexOpenAiBaseUrl(
       config.vertexProjectId,
@@ -149,8 +153,20 @@ export async function resolveLlmBearerToken(opts?: {
     cachedToken = { value: token, expiresAtMs };
     return token;
   } catch (err: any) {
-    // Last-resort: if the operator pasted a fresh `gcloud auth print-access-token`
-    // into LLM_API_KEY, allow it — still their GCP identity, not ours.
+    // Fallback: try gcloud CLI if installed and authenticated
+    try {
+      const { execSync } = await import("child_process");
+      const token = execSync(
+        "gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token 2>/dev/null",
+        { encoding: "utf8", timeout: 5000 },
+      ).trim();
+      if (token && token.length > 20 && !token.includes(" ")) {
+        cachedToken = { value: token, expiresAtMs: now + 45 * 60 * 1000 };
+        return token;
+      }
+    } catch {}
+
+    cachedToken = null;
     if (config.llmApiKey && config.llmApiKey.length > 20) {
       return config.llmApiKey;
     }

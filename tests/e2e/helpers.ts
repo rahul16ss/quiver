@@ -112,16 +112,23 @@ export async function runSingleTurn(opts: RunAgentOpts): Promise<RunAgentResult>
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...opts.env,
-    LLM_API_BASE_URL: opts.baseUrl,
     LLM_MODEL_NAME: opts.model || "mock-model",
-    LLM_API_KEY: opts.apiKey || "mock-key",
     QUIVER_OUTPUT_MODE: "json",
-    // Keep e2e isolated from the developer's live home state where possible.
-    HOME: opts.env?.HOME || opts.cwd,
     // Disable consent by default unless the test enables it.
     QUIVER_CONSENT_GATE: opts.env?.QUIVER_CONSENT_GATE ?? "0",
     QUIVER_EVIDENCE_REQUIRED: opts.env?.QUIVER_EVIDENCE_REQUIRED ?? "1",
   };
+  // Only override endpoint/key when the caller provides non-empty values.
+  // For Vertex configs (baseUrl and apiKey are empty; Quiver builds the
+  // endpoint from VERTEX_PROJECT_ID and uses OAuth), inheriting from
+  // process.env is correct — overriding with "" / "mock-key" breaks auth.
+  if (opts.baseUrl) env.LLM_API_BASE_URL = opts.baseUrl;
+  if (opts.apiKey) env.LLM_API_KEY = opts.apiKey;
+  // Isolate HOME to the temp workspace for mock/offline tests, but preserve
+  // the real HOME for Vertex auth (Google ADC lives in ~/.config/gcloud/).
+  if (opts.apiKey || opts.env?.HOME) {
+    env.HOME = opts.env?.HOME || opts.cwd;
+  }
   // Remove undefined
   for (const k of Object.keys(env)) {
     if (env[k] === undefined) delete env[k];

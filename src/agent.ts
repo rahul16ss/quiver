@@ -148,8 +148,10 @@ function isRetrySafe(toolName: string): boolean {
  */
 function classifyModelError(msg: string): string {
   const m = msg || "";
+  if (/gcloud|reauth|invalid_grant|invalid_rapt|ACCESS_TOKEN_TYPE_UNSUPPORTED/i.test(m))
+    return "Google Cloud session expired — run 'gcloud auth application-default login'";
   if (/Provider error 401|invalid.*api.*key|unauthor/i.test(m))
-    return "Auth failed (check API key / signin)";
+    return "Auth failed (check API key or run 'gcloud auth application-default login')";
   if (/429|RESOURCE_EXHAUSTED|resource exhausted|rate.?limit/i.test(m))
     return "Model provider is rate-limiting — wait a moment and try again";
   if (/thought_signature|INVALID_ARGUMENT|invalid argument/i.test(m))
@@ -1279,7 +1281,7 @@ export class Agent {
           content:
             typeof m.content === "string" && m.content.length === 0
               ? null
-              : this.flattenContentForProvider(m.content),
+              : this.flattenContentForProvider(m.content) ?? null,
           tool_calls: m.tool_calls.map((tc) => shapeOutboundToolCall(tc)),
         };
       }
@@ -2883,7 +2885,8 @@ export class Agent {
               continue;
             }
             retries++;
-            if (retries > maxRetries) {
+            // Fail fast on auth failures — retrying an expired session will not succeed and wastes time
+            if (retries > maxRetries || /401|unauthenticated|ACCESS_TOKEN_TYPE_UNSUPPORTED|gcloud auth|invalid_grant|invalid_rapt/i.test(msg)) {
               throw err;
             }
             const delay = Math.min(1000 * Math.pow(2, retries), 8000);
@@ -2919,7 +2922,7 @@ export class Agent {
         const label = classifyModelError(String(err?.message || ""));
         console.error(
           picocolors.red(
-            `\n${label} after retries: ${err.message}`,
+            `\n[ERROR] ${label}:\n  ${err.message}`,
           ),
         );
         await this.logger.logEvent("api_error", { error: err.message });

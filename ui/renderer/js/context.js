@@ -40,16 +40,22 @@ async function loadContextSurfaces(config) {
   const endpointEl = $("ctxEndpoint");
   if (endpointEl) {
     const baseUrl = config?.provider?.baseUrl || "";
-    let where = "Not state.configured";
-    try {
-      const host = new URL(baseUrl).hostname;
-      where =
-        host === "localhost" || host === "127.0.0.1"
-          ? "Local — prompts stay on this machine"
-          : `Cloud — prompts go to ${host}`;
-    } catch {}
+    let where = "Cloud — default provider endpoint";
+    if (config?.vertexProjectId) {
+      where = `Cloud (Vertex AI) — ${config.vertexProjectId}`;
+    } else if (baseUrl) {
+      try {
+        const host = new URL(baseUrl).hostname;
+        where =
+          host === "localhost" || host === "127.0.0.1"
+            ? "Local — prompts stay on this machine"
+            : `Cloud — prompts go to ${host}`;
+      } catch {
+        where = `Cloud — ${baseUrl}`;
+      }
+    }
     endpointEl.textContent = where;
-    endpointEl.title = baseUrl;
+    endpointEl.title = baseUrl || config?.vertexProjectId || "Default provider endpoint";
   }
   const wsEl = $("ctxWorkspace");
   if (wsEl) {
@@ -255,11 +261,15 @@ async function refreshReviewCount() {
   try {
     const pending = await api.memoryReviewList();
     const n = (pending || []).length;
-    $("ctxReviewCount").textContent = n ? `${n} waiting` : "Nothing pending";
-    $("openReviewBtn").hidden = n === 0;
+    const countEl = $("ctxReviewCount");
+    if (countEl) countEl.textContent = n ? `${n} pending` : "0 pending";
+    const btn = $("openReviewBtn");
+    if (btn) btn.hidden = false;
   } catch {
-    $("ctxReviewCount").textContent = "Not available";
-    $("openReviewBtn").hidden = true;
+    const countEl = $("ctxReviewCount");
+    if (countEl) countEl.textContent = "0 pending";
+    const btn = $("openReviewBtn");
+    if (btn) btn.hidden = false;
   }
 }
 
@@ -309,7 +319,7 @@ async function openSkillViewer(name) {
   let version = "1.0.0";
   let purpose = "";
   
-  const match = content.match(/^---([\s\S]*?)---\r?\n?/);
+  const match = body.match(/^---([\s\S]*?)---\r?\n?/);
   if (match) {
     frontmatter = match[0];
     body = content.slice(match[0].length);

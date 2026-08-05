@@ -469,6 +469,10 @@ export async function purgeOldLogs(olderThanDays: number): Promise<number> {
       path.join(sessionsDir, "checkpoints"),
       (f) => f.endsWith(".json"),
     );
+    purged += await purgeInDir(
+      path.join(sessionsDir, "offloaded"),
+      (f) => f.endsWith(".txt") || f.endsWith(".json"),
+    );
     return purged;
   } catch {
     return 0;

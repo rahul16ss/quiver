@@ -27,11 +27,9 @@ async function loadSettings() {
     : "Optional provider key";
 
   const grants = currentConfig.autonomyGrants || "";
-  $("autonomyMode").value = grants.includes("yolo")
-    ? "yolo"
-    : grants.startsWith("tier:")
-      ? grants
-      : grants;
+  const parts = grants.split(",");
+  const tierGrant = parts.find((g) => g.startsWith("tier:") || g === "yolo") || "";
+  $("autonomyMode").value = tierGrant;
   setToggle("browserVisible", grants.includes("browser:visible"));
   setToggle("consentGateEnabled", currentConfig.consentGateEnabled === true);
   setToggle("sessionLogEnabled", currentConfig.sessionLogEnabled !== false);

@@ -180,8 +180,8 @@ export async function compactWithSummarization(
   }
 
   // Split into old (to summarize) and recent (to keep)
-  const oldMessages = nonSystemMessages.slice(0, -keepRecent);
-  let recentMessages = nonSystemMessages.slice(-keepRecent);
+  const oldMessages = nonSystemMessages.slice(0, nonSystemMessages.length - keepRecent);
+  let recentMessages = nonSystemMessages.slice(nonSystemMessages.length - keepRecent);
 
   // Don't start recent messages with orphaned tool messages
   while (
@@ -196,20 +196,42 @@ export async function compactWithSummarization(
     recentMessages = recentMessages.slice(1);
   }
 
+  // Safety net: orphan-tool trim consumed everything — decline.
+  if (recentMessages.length === 0) {
+    return {
+      removedCount: 0,
+      summary: "",
+      savedTo: "",
+      tokensBefore,
+      tokensAfter: tokensBefore,
+    };
+  }
+
   // 1. Save original conversation to file
   const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
 
   // 2. Generate a local structural summary. Do not make an auxiliary model
-  // call here: the next turn's sensitivity and consent gates have not run yet.
+  //    call here: the next turn's sensitivity and consent gates have not run yet.
   const summary = generateFallbackSummary(oldMessages);
 
-  // 3. Rebuild messages: system + summary + recent
+  // 3. Rebuild messages: merge summary into the first system message (avoid
+  //    doubling system messages — many providers reject multiple system
+  //    messages, which was the root cause of the "Invalid count value: -7"
+  //    crash on the post-compaction turn).
   messages.length = 0;
-  messages.push(...systemMessages);
-  messages.push({
-    role: "system",
-    content: `[Context Compacted — ${oldMessages.length} messages summarized]\n\nThe full conversation was saved to: ${savedTo}\n\nYou can read it with view_file if you need specific details from earlier in the conversation.\n\nSUMMARY OF PREVIOUS CONVERSATION:\n${summary}`,
-  });
+  const summaryContent = `[Context Compacted — ${oldMessages.length} messages summarized]\n\nThe full conversation was saved to: ${savedTo}\n\nYou can read it with view_file if you need specific details from earlier in the conversation.\n\nSUMMARY OF PREVIOUS CONVERSATION:\n${summary}`;
+  if (systemMessages.length > 0) {
+    messages.push({
+      role: "system",
+      content:
+        (typeof systemMessages[0].content === "string"
+          ? systemMessages[0].content
+          : getMessageText(systemMessages[0])) +
+        "\n\n" + summaryContent,
+    });
+  } else {
+    messages.push({ role: "system", content: summaryContent });
+  }
   messages.push(...recentMessages);
 
   const tokensAfter = estimateConversationTokens(messages);
@@ -254,11 +276,15 @@ export async function proposeCompaction(
   const tokensBefore = estimateConversationTokens(messages);
   const systemMessages = messages.filter((m) => m.role === "system");
   const nonSystemMessages = messages.filter((m) => m.role !== "system");
+  // Guard: if there aren't enough non-system messages to both summarize and
+  // keep, compaction is a no-op. Without this, slice(0, -keepRecent) returns
+  // [] and we'd emit a "0 messages summarized" system message — inconsistent
+  // state that can corrupt the next model call.
   if (nonSystemMessages.length <= keepRecent) {
     return { ...empty, tokensBefore, tokensAfter: tokensBefore };
   }
-  const oldMessages = nonSystemMessages.slice(0, -keepRecent);
-  let recentMessages = nonSystemMessages.slice(-keepRecent);
+  const oldMessages = nonSystemMessages.slice(0, nonSystemMessages.length - keepRecent);
+  let recentMessages = nonSystemMessages.slice(nonSystemMessages.length - keepRecent);
   while (
     recentMessages.length > 0 &&
     recentMessages[0].role === "tool" &&
@@ -269,6 +295,11 @@ export async function proposeCompaction(
   ) {
     recentMessages = recentMessages.slice(1);
   }
+  // Safety net: if the orphan-tool trim consumed all recent messages, there
+  // is nothing left to keep — decline rather than emit a summary-only result.
+  if (recentMessages.length === 0) {
+    return { ...empty, tokensBefore, tokensAfter: tokensBefore };
+  }
   const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
   const summary = generateFallbackSummary(oldMessages);
   const summaryContent =
@@ -276,11 +307,27 @@ export async function proposeCompaction(
     "The full conversation was saved to: " + savedTo + "\n\n" +
     "You can read it with view_file if you need specific details from earlier in the conversation.\n\n" +
     "SUMMARY OF PREVIOUS CONVERSATION:\n" + summary;
-  const newMessages: Message[] = [
-    ...systemMessages,
-    { role: "system", content: summaryContent },
-    ...recentMessages,
-  ];
+  // Merge the summary into the FIRST system message rather than pushing a
+  // second one. Many OpenAI-compatible endpoints (incl. Vertex/Gemini) reject
+  // requests with multiple system messages or a system message after user
+  // turns — this was the root cause of the "Invalid count value: -7" crash.
+  const newMessages: Message[] = [];
+  if (systemMessages.length > 0) {
+    const mergedSystem: Message = {
+      role: "system",
+      content:
+        (typeof systemMessages[0].content === "string"
+          ? systemMessages[0].content
+          : getMessageText(systemMessages[0])) +
+        "\n\n" + summaryContent,
+    };
+    newMessages.push(mergedSystem);
+    // Drop any additional original system messages (rare; they were likely
+    // already concatenated by the prompt assembler).
+  } else {
+    newMessages.push({ role: "system", content: summaryContent });
+  }
+  newMessages.push(...recentMessages);
   return {
     needed: true, summary, removedCount: oldMessages.length, savedTo,
     tokensBefore, tokensAfter: estimateConversationTokens(newMessages),

@@ -2500,6 +2500,11 @@ async function main() {
             await agent.prompt(cleanInput, onToken);
           } catch (err: any) {
             statusLine("ERROR", `Agent loop failed: ${err.message}`);
+            agent.logEvent("cli_api_error", {
+              error: err?.message || String(err),
+              stack: err?.stack,
+              prompt: cleanInput.slice(0, 200),
+            });
           } finally {
             if (md) md.flush();
             const state = live.stop();
@@ -2518,6 +2523,11 @@ async function main() {
             await agent.prompt(cleanInput, onToken);
           } catch (err: any) {
             statusLine("ERROR", `Agent loop failed: ${err.message}`);
+            agent.logEvent("cli_api_error", {
+              error: err?.message || String(err),
+              stack: err?.stack,
+              prompt: cleanInput.slice(0, 200),
+            });
           } finally {
             detachIntervention();
             try {

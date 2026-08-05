@@ -7,6 +7,8 @@
  *   npx tsx tests/e2e/run_e2e.ts --tier=a,b
  *   npx tsx tests/e2e/run_e2e.ts --tier=all
  */
+import dotenv from "dotenv";
+dotenv.config();
 import { runTierA } from "./tier_a_offline.js";
 import { runTierB } from "./tier_b_officecli.js";
 import { runTierCD } from "./tier_cd_live.js";

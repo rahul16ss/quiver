@@ -1,4 +1,30 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import * as fs from "fs";
+// Load .env but do NOT override env vars already set by the parent process
+// (e.g. the GUI agent-bridge sets LLM_API_BASE_URL to the fake model for QA,
+// or a user may pre-export a different endpoint). Without override:false,
+// dotenv silently replaces the parent-provided value with the .env file's
+// value (which may be empty for Vertex configs).
+//
+// Try CWD first (the CLI's workspace), then walk up to find a repo .env
+// (for the Electron main process whose CWD is the workspace, not the repo,
+// and for tsx where __dirname is CWD not the source file location).
+dotenv.config({ override: false });
+try {
+  let dir = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    const candidate = path.join(dir, ".env");
+    if (fs.existsSync(candidate)) {
+      dotenv.config({ path: candidate, override: false });
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+} catch {
+  // Non-critical — CWD .env is the primary source.
+}
 import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
