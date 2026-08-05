@@ -11,47 +11,27 @@
  * The strict Content Security Policy for the Electron renderer.
  * Blocks external scripts and unsanctioned network endpoints.
  */
-export const CSP_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  "connect-src 'self'",
-  "frame-src 'none'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join("; ");
+// Browser-UI security helpers are owned by the harness (ADR-009) and re-exported
+// here so legacy imports keep working during the experience-plane migration.
+export {
+  CSP_POLICY,
+  getCspHeader,
+  isTrustedOrigin,
+  shouldBlockUrl,
+  getSecurityHeaders,
+  sanitizePath,
+} from "../src/harness/daemon-security.js";
 
-/**
- * Get the CSP header value for the session.
- */
-export function getCspHeader(): string {
-  return CSP_POLICY;
-}
-
-// ─── Navigation Blocking ─────────────────────────────────────────────
-
-/**
- * Check if a URL is a trusted origin that the main frame or child frames
- * are allowed to navigate to.
- */
-export function isTrustedOrigin(url: string): boolean {
-  // Only allow local file:// protocol and about:blank
+// Re-declare as local consts for the Electron-specific checks below.
+import { CSP_POLICY as _CSP } from "../src/harness/daemon-security.js";
+const CSP_POLICY = _CSP;
+function getCspHeader(): string { return CSP_POLICY; }
+function isTrustedOrigin(url: string): boolean {
   if (url.startsWith("file://")) return true;
-  if (url === "about:blank") return true;
-  if (url === "about:blank#blocked") return true;
-
-  // Block everything else (http, https, data, blob, etc. in main frame)
+  if (url === "about:blank" || url === "about:blank#blocked") return true;
   return false;
 }
-
-/**
- * Check if a URL should be blocked from loading in any context.
- */
-export function shouldBlockUrl(url: string): boolean {
-  // Block known dangerous protocols
+function shouldBlockUrl(url: string): boolean {
   const blockedProtocols = ["javascript:", "vbscript:", "data:text/html"];
   return blockedProtocols.some((p) => url.toLowerCase().startsWith(p));
 }
@@ -102,31 +82,4 @@ export function validateWindowConfig(webPreferences: any): string[] {
   return violations;
 }
 
-/**
- * Get the security headers to set on the session.
- */
-export function getSecurityHeaders(): Record<string, string> {
-  return {
-    "Content-Security-Policy": CSP_POLICY,
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "X-XSS-Protection": "1; mode=block",
-    "Referrer-Policy": "no-referrer",
-  };
-}
-
-/**
- * Sanitize a file path to prevent path traversal in the renderer.
- * Removes .. and ensures the path stays within the allowed directory.
- */
-export function sanitizePath(inputPath: string, allowedBase: string): string | null {
-  const path = require("path");
-  const resolved = path.resolve(allowedBase, inputPath);
-  const relative = path.relative(allowedBase, resolved);
-
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    return null; // Path traversal attempt
-  }
-
-  return resolved;
-}
+// getSecurityHeaders + sanitizePath are re-exported from the harness above.
