@@ -35,11 +35,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   { name: "/resume", aliases: ["/rs"], desc: "Resume a previous session" },
   {
-    name: "/signin",
-    aliases: ["/si"],
-    desc: "Sign in via Ollama (cloud models, web search)",
-  },
-  {
     name: "/logs",
     aliases: ["/log"],
     desc: "Manage session logs (list, purge, export)",

@@ -71,9 +71,7 @@ export function printHelp(): void {
     `    quiver init                     Set up .env (first-run wizard)`,
   );
   console.log(
-    `    quiver signin                   Sign in via Ollama (cloud models, web search)`,
-  );
-  console.log(
+    `    quiver daemon                  Install/uninstall the loopback daemon autostart`,
     `    quiver workflow <action> …      Run Ambient Workflow Engine (list|run|schedule|watch|…)`,
   );
   console.log(
@@ -166,7 +164,6 @@ export function printInSessionHelp(): void {
         { name: "/rollback", desc: "Rollback to a previous backup (e.g. /rollback last)", aliases: ["/rb"] },
         { name: "/dry-run", desc: "Toggle dry-run mode (preview actions without executing)", aliases: ["/dry"] },
         { name: "/editor", desc: "Open $EDITOR to compose a multi-line prompt", aliases: ["/ed"] },
-        { name: "/signin", desc: "Sign in via Ollama (cloud models, web search)", aliases: ["/si"] },
       ],
     },
   ];

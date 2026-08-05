@@ -938,11 +938,15 @@ async function configStartupUXContract() {
         llmBaseUrl: config.llmBaseUrl,
         llmModelName: config.llmModelName,
         llmApiKey: config.llmApiKey,
+        openRouterApiKey: config.openRouterApiKey,
+        openRouterModelProfile: config.openRouterModelProfile,
       };
       try {
         config.llmBaseUrl = "";
         config.llmModelName = "";
         config.llmApiKey = "";
+        config.openRouterApiKey = "";
+        config.openRouterModelProfile = "";
         const missing = validateRuntimeConfig();
         if (
           missing.valid ||
@@ -968,6 +972,8 @@ async function configStartupUXContract() {
         config.llmBaseUrl = saved.llmBaseUrl;
         config.llmModelName = saved.llmModelName;
         config.llmApiKey = saved.llmApiKey;
+        config.openRouterApiKey = saved.openRouterApiKey;
+        config.openRouterModelProfile = saved.openRouterModelProfile;
       }
     },
   );

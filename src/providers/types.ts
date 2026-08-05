@@ -508,15 +508,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 /**
  * Get the active model provider based on config.
- * OpenRouter is the sole cloud model gateway (ADR-001). When an OpenRouter
- * key + a certified profile are configured, use the QuiverOpenRouterProvider
- * bridge (ZDR-enforcing). Otherwise fall back to the OpenAI-compatible
- * provider for a local/private endpoint (LLM_API_BASE_URL).
+ * OpenRouter is the sole cloud model gateway (ADR-001). A local/private
+ * endpoint (LLM_API_BASE_URL) takes precedence when explicitly configured
+ * (mock tests, air-gapped/MNPI work). Otherwise, when an OpenRouter key +
+ * a certified profile are configured, use the QuiverOpenRouterProvider
+ * bridge (ZDR-enforcing).
  */
 export function getActiveProvider(): ModelProvider {
+  const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
+  if (baseUrl) {
+    return new OpenAICompatibleProvider("default", baseUrl, config.llmApiKey);
+  }
   const or = tryOpenRouterProvider();
   if (or) return or;
-  const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
   return new OpenAICompatibleProvider("default", baseUrl, config.llmApiKey);
 }
 

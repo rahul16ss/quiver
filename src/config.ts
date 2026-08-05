@@ -627,12 +627,20 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
   const errors: string[] = [];
   const warnings: string[] = [];
   const endpoint = config.llmBaseUrl.trim();
+  const hasOpenRouter = Boolean(
+    config.openRouterApiKey && config.openRouterModelProfile,
+  );
   let remoteEndpoint = true;
 
   if (!endpoint) {
-    errors.push(
-      "LLM_API_BASE_URL is not configured (point at a local OpenAI-compatible endpoint, or set OPENROUTER_API_KEY for cloud inference).",
-    );
+    if (!hasOpenRouter) {
+      errors.push(
+        "LLM_API_BASE_URL is not configured (point at a local OpenAI-compatible endpoint, or set OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE for cloud inference).",
+      );
+    } else {
+      // OpenRouter (cloud) is configured — no local endpoint needed.
+      remoteEndpoint = false;
+    }
   } else {
     try {
       const parsed = new URL(endpoint);
@@ -647,11 +655,11 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
     }
   }
 
-  if (!config.llmModelName.trim()) {
+  if (!config.llmModelName.trim() && !hasOpenRouter) {
     errors.push("LLM_MODEL_NAME is not configured.");
   }
 
-  if (remoteEndpoint && !config.llmApiKey.trim()) {
+  if (remoteEndpoint && !config.llmApiKey.trim() && !hasOpenRouter) {
     errors.push(
       "LLM_API_KEY is required for a remote endpoint (store it in the OS keychain or .env).",
     );

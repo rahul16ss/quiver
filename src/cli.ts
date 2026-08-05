@@ -47,10 +47,6 @@ import {
 } from "./session/checkpoint.js";
 import { exportToAgentFile } from "./state.js";
 import {
-  detectOllamaIdentity,
-  formatOllamaIdentity,
-} from "./ollama_identity.js";
-import {
   SLASH_COMMANDS,
   resolveSlashCommand,
   suggestSlashCommand,
@@ -62,7 +58,6 @@ import { LiveInput } from "./live_input.js";
 // @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
 // (import { Tui } removed — full-screen interactive TUI retired, Phase 8 / ADR-009)
-import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
 import {
   getProjectName,
@@ -203,11 +198,6 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
-  if (cliOpts.signin) {
-    await runSignin();
-    process.exit(EXIT.OK);
-  }
-
   if (cliOpts.daemon) {
     const sub = cliOpts.daemon;
     const repoRoot = path.resolve(import.meta.dirname ?? ".", "..");
@@ -259,7 +249,6 @@ async function main() {
     !!cliOpts.singleTurn ||
     !!cliOpts.listSessions ||
     cliOpts.init ||
-    cliOpts.signin ||
     !!cliOpts.daemon ||
     !!cliOpts.workflowArgs ||
     cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
@@ -343,17 +332,6 @@ async function main() {
   if (isInteractive) {
     const { silentUpdateCheck } = await import("./updates.js");
     silentUpdateCheck(); // fire-and-forget (async, non-blocking)
-  }
-
-  // Connectivity check — only show on failure
-  if (isInteractive) {
-    const isOllamaConnected = await checkOllamaConnectivity();
-    if (!isOllamaConnected) {
-      statusBlock("WARN", "Ollama server appears offline", [
-        `Endpoint: ${config.llmBaseUrl}`,
-        "Run 'ollama serve' or update LLM_API_BASE_URL in .env",
-      ]);
-    }
   }
 
   // Load tools — silent

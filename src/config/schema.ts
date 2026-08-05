@@ -139,7 +139,7 @@ export function getSettingsSections(): { id: string; label: string; fields: Sett
       id: "model",
       label: "Model Provider",
       fields: [
-        { key: "provider", label: "Provider", type: "select", options: ["custom", "openrouter", "openai", "ollama"] },
+        { key: "provider", label: "Provider", type: "select", options: ["custom", "openrouter", "openai"] },
         { key: "model_name", label: "Model Name", type: "text" },
         { key: "base_url", label: "Base URL", type: "text" },
         { key: "api_key_ref", label: "API Key", type: "secret" },

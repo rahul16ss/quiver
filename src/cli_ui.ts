@@ -25,7 +25,6 @@ const KNOWN_FLAGS = [
   "-n",
   "--single-turn",
   "init",
-  "signin",
   "workflow",
   "--continue",
   "-c",
@@ -46,7 +45,6 @@ export interface CliOptions {
   quiet: boolean;
   dryRun: boolean;
   init: boolean;
-  signin: boolean;
   daemon?: string; // 'install' | 'uninstall' | 'status'
   /** Remaining argv after `quiver workflow` (e.g. ["run","investment-committee-memo"]). */
   workflowArgs?: string[];
@@ -243,7 +241,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     quiet: false,
     dryRun: false,
     init: false,
-    signin: false,
     daemon: undefined,
     workflowArgs: undefined,
     continue: false,
@@ -301,10 +298,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     }
     if (arg === "init") {
       opts.init = true;
-      continue;
-    }
-    if (arg === "signin") {
-      opts.signin = true;
       continue;
     }
     if (arg === "daemon" || arg === "--daemon") {
