@@ -1,6 +1,6 @@
 # Reproducible Test Report — refactor checkpoint
 
-> Commit: `99d5c19` (on top of audit baseline `061d56e`).
+> Commit: `6cfc89c` (on top of audit baseline `061d56e`).
 > Reproduce on Node v22 (tsx, no build step).
 
 ## Commands
@@ -9,7 +9,7 @@
 | :--- | :--- | :--- |
 | Type check | `npx tsc --noEmit -p tsconfig.json` | clean (exit 0) |
 | Spec acceptance (checker-owned) | `npm test` | **447 / 447** pass |
-| Harness gate (refactor) | `npm test` (runs after spec gate) | **327 / 327** pass |
+| Harness gate (refactor) | `npm test` (runs after spec gate) | **350 / 350** pass |
 | Offline + OfficeCLI e2e | `npm run test:e2e -- --tier=a,b` | **34 / 34** pass |
 | Live contract (opt-in) | `QUIVER_LIVE_CONTRACT=1 npx tsx tests/harness/live/run.ts` | skipped by default |
 
