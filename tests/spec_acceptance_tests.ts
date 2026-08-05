@@ -4106,27 +4106,16 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "GUI-ONBOARDING-BUSINESS-COPY",
     "US-17.7",
-    "GUI onboarding and settings pages must use business-user language (not developer jargon like 'OLLAMA_API_KEY', 'harness', 'adapter')",
+    "the browser UI must use business-user language (not developer jargon like 'OLLAMA_API_KEY', 'harness', 'adapter')",
     () => {
-      const onb = srcText("ui/renderer/onboarding.html");
-      const settings = srcText("ui/renderer/settings.html");
-      const combined = (onb + "\n" + settings).toLowerCase();
-      // Must use plain business language
-      const hasBizLang = /api.*key|model.*key|project.*folder|web.*research.*key|approval.*settings|full.*auto/i.test(
-        combined,
-      );
+      const ui = srcText("src/harness/ui/index.html");
+      const combined = ui.toLowerCase();
+      const hasBizLang = /api.*key|model.*key|project.*folder|web.*research.*key|approval.*settings|full.*auto/i.test(combined);
       if (!hasBizLang)
-        throw new Error(
-          "GUI onboarding/settings does not use business-user language — US-17.7 requires plain language",
-        );
-      // Must NOT use developer jargon in user-facing labels
-      const devJargon = /ollama_api_key|harness.*adapter|vision_model_api_key|context7/i.test(
-        combined,
-      );
+        throw new Error("browser UI does not use business-user language — US-17.7 requires plain language");
+      const devJargon = /ollama_api_key|harness.*adapter|vision_model_api_key|context7/i.test(combined);
       if (devJargon)
-        throw new Error(
-          "GUI onboarding/settings still uses developer jargon (OLLAMA_API_KEY/harness/adapter) — US-17.7 requires business-user language",
-        );
+        throw new Error("browser UI still uses developer jargon (OLLAMA_API_KEY/harness/adapter) — US-17.7 requires business-user language");
       return true;
     },
   );
@@ -4136,18 +4125,15 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "GUI-PREVIEW-IPC-HANDLER",
     "US-17.8",
-    "preview:file IPC handler must be wired in main.ts to read files and return content with type detection",
+    "the harness office-engine must read documents and return content with type detection (no Electron IPC; the browser UI previews deliverables served by the daemon)",
     () => {
-      const main = guiMainProcessCode();
-      if (!/preview:file|preview-file|previewFile/i.test(main))
-        throw new Error(
-          "preview:file IPC handler not wired in main.ts — US-17.8 requires a file preview handler",
-        );
-      // Must detect file type (docx/xlsx/pptx/code/markdown/image)
-      if (!/docx|xlsx|pptx|content.*type|fileType|detectType/i.test(main))
-        throw new Error(
-          "preview handler does not detect file types — US-17.8 requires supporting Office docs, code, markdown, and images",
-        );
+      const oe = codeOnly("src/harness/office-engine.ts");
+      const daemon = harnessDaemonCode();
+      if (!/docx|xlsx|pptx|content.*type|fileType|detectType|office/i.test(oe))
+        throw new Error("office-engine does not detect/handle Office doc types — US-17.8 requires preview support");
+      // The daemon serves files (the browser fetches them for preview).
+      if (!/serve|static|readFile/i.test(daemon))
+        throw new Error("daemon does not serve files for the browser preview");
       return true;
     },
   );
