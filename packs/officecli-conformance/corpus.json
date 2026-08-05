@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "description": "OfficeCLI conformance corpus — realistic but synthetic/sanitized analyst files used to test preservation of formulas, named ranges, hidden/protected sheets, charts, pivots, conditional formatting, external links, comments, tracked changes, fonts, themes, layouts, embedded objects, signs, units, currencies, repair warnings, and Word/PowerPoint round trips. No real client data. Macros are never executed; macro-enabled/encrypted/IRM/sensitivity-labelled files are high-risk, read-only/copy-on-write.",
+  "fixtures": [
+    {
+      "id": "fx-formulas",
+      "file": "fixtures/formulas.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["formulas", "calculated values", "cross-sheet references"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-named-ranges",
+      "file": "fixtures/named_ranges.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["named ranges", "scoped names"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-hidden-protected",
+      "file": "fixtures/hidden_protected.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["hidden sheets", "protected sheets", "cell protection"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-charts-pivots",
+      "file": "fixtures/charts_pivots.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["charts", "pivots", "conditional formatting"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-external-links",
+      "file": "fixtures/external_links.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["external links", "data connections"],
+      "highRisk": true,
+      "riskReasons": ["DDE/external links — high-risk treatment"]
+    },
+    {
+      "id": "fx-comments-tracked",
+      "file": "fixtures/comments_tracked.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["comments", "tracked changes"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-themes-layout",
+      "file": "fixtures/themes_layout.docx",
+      "type": "docx",
+      "synthetic": true,
+      "mustPreserve": ["fonts", "themes", "layouts", "styles"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-round-trip-pptx",
+      "file": "fixtures/round_trip.pptx",
+      "type": "pptx",
+      "synthetic": true,
+      "mustPreserve": ["slide layouts", "master", "embedded objects", "PowerPoint round trip"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-units-currencies",
+      "file": "fixtures/units_currencies.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": ["currency formats", "number units", "sign conventions"],
+      "highRisk": false
+    },
+    {
+      "id": "fx-macro-enabled",
+      "file": "fixtures/macro_enabled.xlsm",
+      "type": "xlsm",
+      "synthetic": true,
+      "mustPreserve": ["structure (read-only)"],
+      "highRisk": true,
+      "riskReasons": ["macro-enabled — read-only/copy-on-write, macros never executed"]
+    },
+    {
+      "id": "fx-repair-warning",
+      "file": "fixtures/repair_warning.xlsx",
+      "type": "xlsx",
+      "synthetic": true,
+      "mustPreserve": [],
+      "mustSurface": ["workbook repair warning"],
+      "highRisk": false
+    }
+  ],
+  "acceptance": "Every fixture is read, edited on a working copy, validated, rendered, and round-tripped by OfficeCliEngine. A fixture passes when every mustPreserve item is preserved and every mustSurface item is surfaced honestly. Live conformance runs the pinned bundled binary; CI runs the mock-runner scaffold in tests/harness/06-office-engine.test.ts."
+}
