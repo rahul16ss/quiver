@@ -232,7 +232,10 @@ function scanForSecrets(obj: unknown, prefix: string): string[] {
   if (typeof obj !== "object") return found;
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     const path = prefix ? `${prefix}.${key}` : key;
-    if (SECRET_KEY_PATTERNS.some((re) => re.test(key))) {
+    // A *Ref/*Reference field is a POINTER to a credential in the OS store,
+    // not the secret itself — allow it.
+    const isReference = /Ref$|Reference$/i.test(key);
+    if (!isReference && SECRET_KEY_PATTERNS.some((re) => re.test(key))) {
       found.push(path);
     }
     if (value && typeof value === "object") {

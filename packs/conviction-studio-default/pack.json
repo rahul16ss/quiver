@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "conviction-studio-default",
+  "version": "1.0.0",
+  "label": "Conviction Studio — default capital-markets pack",
+  "description": "A reference CustomerPack demonstrating the harness configured around a capital-markets services process. Data, not a code fork. Contains no secrets.",
+  "terminology": {
+    "IC": "Investment Committee",
+    "VDR": "Virtual Data Room",
+    "MNPI": "Material Non-Public Information",
+    "IPS": "Investment Policy Statement",
+    "BPS": "Basis Points",
+    "EV/EBITDA": "Enterprise Value to EBITDA multiple"
+  },
+  "style": {
+    "voice": "Analytical, measured. Separate fact, derived value, assumption, interpretation and recommendation.",
+    "bannedPhrases": [
+      "guaranteed return",
+      "sure thing",
+      "can't lose",
+      "strong buy (without a sourced basis)"
+    ],
+    "currency": "USD",
+    "units": "millions unless stated"
+  },
+  "templates": [
+    { "id": "ic-memo-template", "name": "IC Memo Template", "path": "templates/ic-memo-template.docx" },
+    { "id": "diligence-tracker-template", "name": "Diligence Tracker Template", "path": "templates/diligence-tracker-template.xlsx" },
+    { "id": "portfolio-review-template", "name": "Portfolio Review Template", "path": "templates/portfolio-review-template.xlsx" }
+  ],
+  "examples": [
+    { "id": "project-alder", "name": "Project Alder (synthetic IC memo)", "path": "examples/project-alder" }
+  ],
+  "sourcePrecedence": [
+    { "category": "filings-ir", "rank": 90, "note": "Primary: SEC filings and issuer IR." },
+    { "category": "market-data-estimates", "rank": 80, "note": "Licensed consensus/estimates/prices." },
+    { "category": "transcripts-events", "rank": 70, "note": "Earnings calls and events." },
+    { "category": "portfolio-models-trackers", "rank": 60, "note": "Internal models and trackers." },
+    { "category": "internal-research-notes", "rank": 50, "note": "Internal research and notes." },
+    { "category": "public-web-research", "rank": 10, "note": "Open web only — never a substitute for licensed data." }
+  ],
+  "approvedModels": [
+    { "profileSlug": "openai-gpt-4o", "roles": ["planner", "maker"], "providerOrder": ["OpenAI"] },
+    { "profileSlug": "anthropic-claude-sonnet", "roles": ["checker", "reviewer"], "providerOrder": ["Anthropic"] },
+    { "profileSlug": "local-private-default", "roles": ["planner", "maker", "checker", "reviewer"], "providerOrder": ["Local"] }
+  ],
+  "sensitivityProfiles": [
+    { "name": "public", "parallelAllowed": true, "cloudInferenceAllowed": true },
+    { "name": "confidential-internal", "parallelAllowed": true, "parallelSanitizedOnly": true, "cloudInferenceAllowed": true },
+    { "name": "restricted-mnpi", "parallelAllowed": false, "cloudInferenceAllowed": false, "localRouteSlug": "local-private-default" }
+  ],
+  "storageConnectors": [
+    { "providerId": "local-workspace", "kind": "local", "configRef": "workspace-roots.json", "roots": ["./workspace"] },
+    { "providerId": "sharepoint", "kind": "microsoft-graph", "configRef": "graph-connector.json" },
+    { "providerId": "gdrive", "kind": "google-drive", "configRef": "drive-connector.json" }
+  ],
+  "dataVendorEntitlements": [
+    { "connector": "edgar", "datasets": ["filings-ir"], "redistributionAllowed": false, "cacheExpirySeconds": 86400 },
+    { "connector": "refinitiv", "datasets": ["market-data-estimates", "transcripts-events"], "redistributionAllowed": true, "cacheExpirySeconds": 900 }
+  ],
+  "allowedTools": [
+    "office_doc", "evidence", "deep_research", "web_search", "scrape_url",
+    "data_query", "entity_search", "find_all", "browser_control", "run_command"
+  ],
+  "allowedDomains": [
+    "sec.gov", "investorrelations.example", "parallel.ai", "openrouter.ai"
+  ],
+  "reviewers": [
+    { "role": "analyst", "approvalThreshold": "single", "canCommit": false },
+    { "role": "senior_analyst", "approvalThreshold": "single", "canCommit": false },
+    { "role": "vp", "approvalThreshold": "single", "canCommit": true },
+    { "role": "ic_member", "approvalThreshold": "committee", "canCommit": true },
+    { "role": "partner", "approvalThreshold": "dual", "canCommit": true },
+    { "role": "cio", "approvalThreshold": "committee", "canCommit": true },
+    { "role": "advisor", "approvalThreshold": "single", "canCommit": false }
+  ],
+  "promptModules": {
+    "domain-policy": "Capital-markets domain policy: separate fact/derived/assumption/interpretation/recommendation. Every material figure carries value, unit/currency, as-of date, source locator, source category, retrieved-at, transformation, status, reviewer. Point-in-time semantics; honor fiscal calendars, ticker changes, dual listings, share classes, corporate actions, restatements. Distinguish actual vs estimate vs guidance, reported vs adjusted. Open-web research is never a silent substitute for consensus, estimates, prices, holdings, risk data or licensed research. No autonomous portfolio decisions; drafts are not investment advice.",
+    "evidence-policy": "Every material claim must be sourced or explicitly marked assumed/unresolved/conflicting. Unsourced claims are rejected by the checker. Evidence companions are required before an Office deliverable is marked final.",
+    "office-policy": "Edit working copies only, never the original. Validate, render and inspect (render–look–fix). Preserve formulas, named ranges, hidden/protected sheets, charts, pivots, conditional formatting, external links, comments, tracked changes, themes and layouts. Macro-enabled/encrypted/IRM/sensitivity-labelled files are high-risk, read-only/copy-on-write; macros are never executed.",
+    "review-policy": "Reviewer accepts/rejects individual changes, claims, cells, paragraphs or slides — not only the whole run. A deliverable is never marked complete when mandatory evidence, validation or save-back failed."
+  },
+  "workflowSpecs": [
+    "earnings-update", "transcript-review", "company-primer", "thesis-tracker",
+    "ic-memo", "diligence-tracker", "market-map", "pitchbook-materials",
+    "portfolio-review", "investment-proposal", "manager-research-note", "client-commentary"
+  ],
+  "evaluationFixtures": [
+    { "id": "earnings-fixture", "path": "fixtures/earnings" },
+    { "id": "ic-memo-fixture", "path": "fixtures/ic-memo" },
+    { "id": "portfolio-fixture", "path": "fixtures/portfolio" }
+  ],
+  "memory": {
+    "scopes": ["customer", "team", "user", "project", "workflow"],
+    "retentionDays": 90,
+    "autoPromote": false
+  },
+  "localPrivateRoute": {
+    "modelSlug": "local/private-default",
+    "endpoint": "http://127.0.0.1:11434",
+    "credentialRef": "keychain:QUIVER_LOCAL_LLM_API_KEY"
+  }
+}
