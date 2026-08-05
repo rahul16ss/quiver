@@ -12,6 +12,8 @@ import { QuiverOpenRouterProvider, type ChatModelLike } from "../../src/harness/
 import type { ChatRequest } from "../../src/providers/types.js";
 import { getOpenRouterProvider, getActiveProvider } from "../../src/providers/types.js";
 import { config } from "../../src/config.js";
+import { readFileSync } from "fs";
+import * as path from "path";
 
 let passed = 0, failed = 0;
 const failures: string[] = [];
@@ -101,6 +103,12 @@ async function run() {
   check("ACCESSOR-NULL-FOR-UNKNOWN-PROFILE", (await getOpenRouterProvider()) === null);
   config.openRouterApiKey = savedKey;
   config.openRouterModelProfile = savedProfile;
+
+  // ── Docs honestly present OpenRouter as the cloud gateway (ADR-001) ────
+  const envEx = readFileSync(path.resolve(".env.example"), "utf8");
+  const cfgSrc = readFileSync(path.resolve("src/config.ts"), "utf8");
+  check("DOCS-ENV-EXAMPLE-MENTIONS-OPENROUTER", /OPENROUTER_API_KEY/.test(envEx) && /sole cloud gateway/i.test(envEx));
+  check("DOCS-ONBOARDING-MENTIONS-OPENROUTER", /OpenRouter as the sole cloud model gateway/i.test(cfgSrc));
 
   // ── getActiveProvider flip (ADR-001) ──────────────────────────────────
   // When OpenRouter is configured, getActiveProvider() returns the bridge;

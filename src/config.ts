@@ -533,7 +533,7 @@ export async function runOnboardingHandshake(): Promise<void> {
   );
   console.log(
     picocolors.gray(
-      "  Quiver is provider-agnostic — set LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point at any OpenAI-compatible endpoint.\n",
+      "  Quiver uses OpenRouter as the sole cloud model gateway (set OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE), or a local/private endpoint via LLM_API_BASE_URL for the high-sensitivity escape hatch.\n",
     ),
   );
   console.log(
