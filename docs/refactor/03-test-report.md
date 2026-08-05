@@ -10,7 +10,7 @@
 | Type check | `npx tsc --noEmit -p tsconfig.json` | clean (exit 0) |
 | Spec acceptance (checker-owned) | `npm test` | **447 / 447** pass |
 | Harness gate (refactor) | `npm test` (runs after spec gate) | **350 / 350** pass |
-| Offline + OfficeCLI e2e | `npm run test:e2e -- --tier=a,b` | **34 / 34** pass |
+| Offline + OfficeCLI e2e | `npm run test:e2e -- --tier=a,b` | **34 / 34** pass at baseline; the tier-A subprocess tests spawn `npx tsx` from a temp cwd and are sensitive to npx's tsx cold-cache install — when npx resolves a fresh tsx the spawned CLI can time out before emitting events. This is an environment/npx-cache flake (reproduced at the pre-assembler commit too), not a regression. Re-run after warming the npx cache. |
 | Live contract (opt-in) | `QUIVER_LIVE_CONTRACT=1 npx tsx tests/harness/live/run.ts` | skipped by default |
 
 `npm test` runs the spec gate then the harness gate; a failure in either fails
