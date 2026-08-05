@@ -16,3 +16,5 @@ export * from "./model-profile.js";
 export * from "./model-client.js";
 export * from "./research-gateway.js";
 export * from "./goal-contract.js";
+export * from "./sqlite-checkpoint.js";
+export * from "./execution-engine.js";

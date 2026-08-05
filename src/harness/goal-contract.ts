@@ -51,6 +51,19 @@ export class GapLedger {
   private entries: GapLedgerEntry[] = [];
   private nextId = 1;
 
+  /** Reconstruct a ledger from serialized state (checkpoint-safe). */
+  static from(entries: GapLedgerEntry[], nextId = 1): GapLedger {
+    const l = new GapLedger();
+    l.entries = entries.map((e) => ({ ...e }));
+    l.nextId = nextId;
+    return l;
+  }
+
+  /** Serialize for checkpoint storage (plain data, no methods). */
+  snapshot(): { entries: GapLedgerEntry[]; nextId: number } {
+    return { entries: this.entries.map((e) => ({ ...e })), nextId: this.nextId };
+  }
+
   add(description: string, category: GapLedgerEntry["category"], waitingOn?: string): GapLedgerEntry {
     const entry: GapLedgerEntry = {
       id: `gap-${this.nextId++}`,

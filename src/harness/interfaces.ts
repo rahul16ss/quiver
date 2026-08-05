@@ -25,6 +25,8 @@
 
 // ─── Shared primitives ────────────────────────────────────────────────
 
+import type { GoalContract } from "./goal-contract.js";
+
 /** A content part for a model request (text, image, or native file). */
 export type ContentPart =
   | { type: "text"; text: string }
@@ -99,6 +101,8 @@ export interface ModelClient {
       budget?: RequestBudget;
       /** Strict JSON schema output, if the certified profile supports it. */
       strictOutput?: Record<string, unknown>;
+      /** Sensitivity profile for policy routing (cloud vs local). */
+      sensitivity?: SensitivityProfile;
     },
   ): Promise<ModelResult>;
   /** List certified profiles this client can serve. */
@@ -124,7 +128,7 @@ export interface ModelProfileRef {
  */
 export interface ExecutionEngine {
   /** Start (or resume) a goal-seeking run for a contract. */
-  run(contract: GoalContractHandle, options: RunOptions): Promise<RunOutcome>;
+  run(contract: GoalContract, options: RunOptions): Promise<RunOutcome>;
   /** Resume a paused/interrupted run from its checkpoint. */
   resume(runId: string, humanInput: unknown, options?: RunOptions): Promise<RunOutcome>;
   /** Read the current state of a run (for the experience plane). */
@@ -177,7 +181,7 @@ export interface PendingApproval {
 
 export interface RunOutcome {
   runId: string;
-  status: "completed" | "blocked" | "partial" | "failed" | "cancelled";
+  status: "completed" | "blocked" | "partial" | "failed" | "paused" | "cancelled";
   stopReason: string;
   unresolved: string[];
   artifacts: string[];
