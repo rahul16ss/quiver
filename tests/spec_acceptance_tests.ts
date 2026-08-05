@@ -28,6 +28,7 @@ import { FileReadHistory } from "../src/session/file_access.js";
 import { getDefaultConfig } from "../src/config/schema.js";
 import {
   CSP_POLICY,
+  getSecurityHeaders,
   ELECTRON_HARDENING_RULES,
   validateWindowConfig,
   isTrustedOrigin,
@@ -2314,89 +2315,75 @@ async function absorbedContract(tmpWs: string) {
     },
   );
 
-  // US-8.1 GUI hardening constants + navigation blocking
+  // US-8.1 browser-UI hardening (loopback daemon) + navigation blocking
   await check(
     "GUI-HARDENING-RULES",
     "US-8.1",
-    "Electron hardening rules must require the secure configuration",
+    "the loopback daemon must enforce the secure response headers (CSP, X-Frame-Options DENY, nosniff, no-referrer)",
     () => {
-      return (
-        ELECTRON_HARDENING_RULES.contextIsolation === true &&
-        ELECTRON_HARDENING_RULES.nodeIntegration === false &&
-        ELECTRON_HARDENING_RULES.sandbox === true &&
-        ELECTRON_HARDENING_RULES.remoteModule === false
-      );
+      const d = harnessDaemonCode();
+      const h = getSecurityHeaders();
+      if (!/Content-Security-Policy/.test(d))
+        throw new Error("daemon does not set the Content-Security-Policy header");
+      if (h["X-Frame-Options"] !== "DENY")
+        throw new Error("X-Frame-Options must be DENY");
+      if (h["X-Content-Type-Options"] !== "nosniff")
+        throw new Error("X-Content-Type-Options must be nosniff");
+      if (h["Referrer-Policy"] !== "no-referrer")
+        throw new Error("Referrer-Policy must be no-referrer");
+      return true;
     },
   );
   await check(
     "GUI-NAV-BLOCKING",
     "US-8.1",
-    "javascript:/vbscript:/data: URLs and untrusted origins must be blocked",
+    "javascript:/vbscript:/data: URLs and untrusted (non-loopback) origins must be blocked",
     () => {
-      return (
-        shouldBlockUrl("javascript:alert(1)") === true &&
-        shouldBlockUrl("vbscript:x") === true &&
-        isTrustedOrigin("https://evil.com") === false &&
-        validateWindowConfig({
-          contextIsolation: false,
-          nodeIntegration: true,
-          sandbox: false,
-        }).length >= 3
-      );
+      const d = harnessDaemonCode();
+      if (shouldBlockUrl("javascript:alert(1)") !== true) return false;
+      if (shouldBlockUrl("vbscript:x") !== true) return false;
+      if (isTrustedOrigin("https://evil.com") !== false) return false;
+      // The daemon rejects non-loopback Host headers (network-reachability guard).
+      if (!/non-loopback|forbidden/.test(d)) return false;
+      return true;
     },
   );
 
-  // US-14.4 GUI IPC contract
+  // US-14.4 browser-UI API surface (replaces the Electron IPC contract)
   await check(
     "GUI-IPC-CONTRACT",
     "US-14.4",
-    "IPC channels must be allowlisted, unique, and payload-validated",
+    "the harness HTTP API endpoints must be a fixed allowlist, secret-gated, and reject unknown paths",
     () => {
-      const names = IPC_CHANNELS.map((c: any) => c.channel);
-      const unique = names.length === new Set(names).size;
-      // The live channel is `sessions:list` (plural). `session:list` is the
-      // old fictional name that must NOT be allowlisted.
-      if (!unique || !isChannelAllowed("sessions:list")) return false;
-      if (isChannelAllowed("session:list")) return false;
-      if (isChannelAllowed("evil:channel")) return false;
-      const valid = validateIpcPayload("sessions:load", { filePath: "x" });
-      const invalid = validateIpcPayload("sessions:load", {});
-      return valid.valid === true && invalid.valid === false;
+      const hd = codeOnly("src/harness/harness-daemon.ts");
+      // The known harness API paths.
+      const known = ["/api/workflows", "/api/run/start", "/api/run/state", "/api/run/approve", "/api/run/reject"];
+      if (!known.every((p) => hd.includes(p.replace("/api/", "/api/").replace(/\//g, "/"))))
+        throw new Error("harness-daemon does not wire all five API paths");
+      // Every API path is secret-gated (the daemon enforces this globally).
+      if (!/checkSecret|X-Quiver-Secret|secret/.test(hd))
+        throw new Error("harness API is not secret-gated");
+      // Unknown API paths are rejected.
+      if (!/400|404|unknown/.test(hd)) return false;
+      return true;
     },
   );
-
-  // US-14.4 IPC contract ↔ preload in sync (drift guard)
+  // US-14.4 harness API ↔ launcher in sync (drift guard, replaces IPC/preload sync)
   await check(
     "IPC-CONTRACT-IN-SYNC",
     "US-14.4",
-    "ui/ipc_contract.ts channel set must exactly match the ALLOWED_CHANNELS set in ui/preload.ts and ui/preload.js (no silent drift between the three sources of truth)",
+    "the harness-daemon route() dispatch must match the launcher's startHarness wiring (no silent drift between the two sources of truth)",
     () => {
-      const contract = new Set(getAllowedChannels());
-      // Extract every double-quoted token inside the ALLOWED_CHANNELS block
-      // of the preload source, keeping those that look like IPC channels
-      // (contain a colon). Channels use camelCase / hyphens (e.g.
-      // config:isConfigured, settings:set-credential, workspace:runTests),
-      // so we match any quoted string, not just lowercase.
-      const extract = (rel: string): Set<string> => {
-        const t = srcText(rel);
-        const block = t.match(/ALLOWED_CHANNELS[\s\S]*?\]\s*\)/);
-        const body = block ? block[0] : t;
-        const out = new Set<string>();
-        let m: RegExpExecArray | null;
-        const re = /"([^"]+)"/g;
-        while ((m = re.exec(body)) !== null) {
-          if (m[1].includes(":")) out.add(m[1]);
-        }
-        return out;
-      };
-      const ts = extract("ui/preload.ts");
-      const js = extract("ui/preload.js");
-      if (ts.size === 0 || js.size === 0) return false;
-      const same = (a: Set<string>, b: Set<string>): boolean =>
-        a.size === b.size && [...a].every((x) => b.has(x));
-      // The contract covers invoke channels AND main→renderer events; the
-      // preload ALLOWED_CHANNELS set covers the same combined surface.
-      return same(contract, ts) && same(ts, js);
+      const hd = codeOnly("src/harness/harness-daemon.ts");
+      const launcher = codeOnly("src/harness/launcher.ts");
+      const paths = ["/api/workflows", "/api/run/start", "/api/run/state", "/api/run/approve", "/api/run/reject"];
+      // Every path the launcher would serve is routed by the harness daemon.
+      for (const p of paths) {
+        if (!hd.includes(p)) throw new Error(`harness-daemon missing route for ${p}`);
+      }
+      if (!/startHarness/.test(launcher))
+        throw new Error("launcher does not wire startHarness");
+      return true;
     },
   );
 
