@@ -61,7 +61,7 @@ import { promptUser } from "./multiline.js";
 import { LiveInput } from "./live_input.js";
 // @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
-import { Tui } from "./tui.js";
+// (import { Tui } removed — full-screen interactive TUI retired, Phase 8 / ADR-009)
 import { runSignin, checkOllamaConnectivity } from "./signin.js";
 import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
 import {
@@ -797,47 +797,9 @@ async function main() {
     process.exit(EXIT.ERROR);
   });
 
-  // ── Full-screen TUI (interactive TTY only) ──
-  // When the terminal supports it, enter a persistent full-screen layout:
-  // a scrolling transcript region + a pinned input box + a status bar.
-  // The existing scrolling-REPL path (LiveInput + promptUser) is the fallback
-  // for non-TTY / JSON / single-turn. The TUI captures stdout writes and
-  // routes them to the transcript; the input box replaces promptUser.
-  const useTui = isInteractive && !cliOpts.singleTurn && !cliOpts.json
-    // Warp uses a non-standard block-based input model that doesn't deliver
-    // raw-mode keystrokes to child processes. The TUI's stdin.on("data")
-    // never fires in Warp. Fall back to the scrolling REPL (promptUser +
-    // @clack/prompts) which Warp handles fine. opencode works in Warp because
-    // it's a single native binary with a controlling terminal — our process
-    // chain (npm → node → tsx → cli.ts) loses the controlling terminal.
-    && process.env.TERM_PROGRAM !== "WarpTerminal";
-  let tui: Tui | null = null;
+  // (full-screen TUI retired — Phase 8, ADR-009; the browser UI is the interactive surface.)
   let originalWrite: typeof process.stdout.write | null = null;
-  if (useTui) {
-    // Pause the readline interface so it stops consuming stdin — the TUI's
-    // own raw-mode handler takes over. rl is resumed on TUI leave.
-    try {
-      rl.pause();
-      // Remove readline's data listeners from stdin so the TUI gets every byte.
-      process.stdin.removeAllListeners("data");
-    } catch { /* ignore */ }
-    tui = new Tui({
-      model: config.llmModelName,
-      modeSuffix: config.autonomyGrants.has("yolo")
-        ? t.red(` · yolo`)
-        : config.autonomyGrants.size > 0
-          ? t.cyan(` · auto`)
-          : "",
-    });
-    // Intercept stdout writes → transcript
-    originalWrite = process.stdout.write.bind(process.stdout);
-    const tr = tui;
-    process.stdout.write = ((data: any, ...args: any[]) => {
-      tr.write(typeof data === "string" ? data : data.toString("utf8"));
-      return true;
-    }) as any;
-    tui.enter();
-  }
+  // (full-screen TUI retired — Phase 8, ADR-009; the browser UI is the interactive surface.)
 
   try {
 
@@ -847,25 +809,8 @@ async function main() {
     const pendingFollowUps: string[] = [];
     let nextPrefill: string | null = null;
 
-    /** Read user input — TUI pinned box when active, promptUser fallback otherwise. */
+    /** Read user input — the full-screen TUI is retired (ADR-009); always uses the scrolling promptUser. */
     const readInput = async (promptSymbol: string): Promise<string | null> => {
-      if (tui) {
-        // TUI mode: the input box is already pinned at the bottom; wait for
-        // the user to press Enter (onSend callback fires). Return null on
-        // halt/Esc/Ctrl+C/Ctrl+D (onHalt fires).
-        return new Promise<string | null>((resolve) => {
-          let resolved = false;
-          const finish = (v: string | null) => {
-            if (resolved) return;
-            resolved = true;
-            resolve(v);
-          };
-          tui!.setHandlers(
-            (text: string) => finish(text),
-            () => finish(null),
-          );
-        });
-      }
       return promptUser(null, promptSymbol, nextPrefill ?? undefined);
     };
 
@@ -2542,7 +2487,6 @@ async function main() {
       }
     }
   } finally {
-    if (tui) tui.leave();
     if (originalWrite) process.stdout.write = originalWrite as any;
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     try { rl.resume(); } catch { /* ignore */ }
