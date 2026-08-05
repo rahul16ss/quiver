@@ -2,7 +2,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { Tool } from "../registry.js";
 import { isOllamaHost, resolveMakerBaseUrl } from "../providers/vertex_auth.js";
-import { isPrivateUrl, fetchPublicUrl } from "../security/private_url.js";
+import { isPrivateUrl } from "../security/private_url.js";
 
 function defaultScrapeProvider(): "ollama" | "parallel" | "direct" {
   if (config.parallelApiKey) return "parallel";
@@ -88,73 +88,20 @@ export const tool: Tool = {
             return result.content;
           }
         }
-        // Parallel failed — fall through to direct
+        // Parallel failed — fail closed (no regex HTML-scraping fallback).
       } catch {
-        // Network error — fall through to direct
+        // Network error — fail closed (no regex HTML-scraping fallback).
       }
     }
 
-    // ── Direct HTTP fetch (fallback) ──
-    // Works for any URL — fetches HTML and strips tags. No API key needed.
-    // This handles SPA/Next.js routes that the Ollama API can't fetch.
-    // Redirect hops are re-checked against the SSRF guard (no open redirect
-    // into private/internal addresses).
-    try {
-      const response = await fetchPublicUrl(url, {
-        headers: {
-          "User-Agent": "Quiver/1.0 (AI document workflow agent)",
-          "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
-        },
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!response.ok) {
-        return `Error: HTTP ${response.status} fetching ${url}`;
-      }
-      const contentType = response.headers.get("content-type") || "";
-      const html = await response.text();
-
-      // If it's plain text or JSON, return as-is
-      if (contentType.includes("text/plain") || contentType.includes("application/json")) {
-        return html;
-      }
-
-      // Strip HTML tags for a readable text version
-      const text = htmlToText(html);
-      return text || `Webpage fetched but no readable content found at ${url}`;
-    } catch (error: any) {
-      return `Error fetching ${url}: ${error.message}`;
+    // No silent regex/HTTP scraping fallback. Fail closed when Parallel is
+    // unavailable and the Ollama Pro path is not applicable — the
+    // ResearchGateway (Parallel) is the sole public-web fetch path. Direct
+    // fetches for authenticated/interactive sites go through browser_control,
+    // never this tool.
+    if (!config.parallelApiKey) {
+      return "Error: PARALLEL_API_KEY is not set. scrape_url uses Parallel Extract as the sole public-web fetch path (no regex fallback). Set PARALLEL_API_KEY or use browser_control for authenticated/interactive sites.";
     }
+    return `Error: Parallel Extract failed for ${url} and no silent fallback is permitted. Retry, or use browser_control for authenticated/interactive sites.`;
   },
 };
-
-/**
- * Minimal HTML-to-text converter (no dependencies).
- * Strips tags, decodes entities, preserves line breaks.
- */
-function htmlToText(html: string): string {
-  return html
-    // Remove script and style blocks
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-    // Convert block elements to line breaks
-    .replace(/<\/(p|div|h[1-6]|li|tr|br|hr)>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "\n- ")
-    // Strip all remaining tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    // Clean up whitespace
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/^[ \t]+/gm, "")
-    .trim();
-}

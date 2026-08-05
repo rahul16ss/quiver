@@ -9232,8 +9232,13 @@ async function extendedCapabilitiesContract() {
         throw new Error("fetchPublicUrl must follow redirects manually");
       }
       const scrape = codeOnly("src/tools/scrape_url.ts");
-      if (!/fetchPublicUrl/.test(scrape)) {
-        throw new Error("scrape_url must use fetchPublicUrl");
+      // Regex HTML scraping was removed (ADR-003): scrape_url now uses Parallel
+      // Extract as the sole public-web fetch path and fails closed when Parallel
+      // is unavailable. The SSRF redirect re-check still lives in private_url.ts
+      // (used by browser_control), so assert the guard still re-checks redirects
+      // and that scrape_url no longer contains the regex html-to-text scraper.
+      if (/htmlToText/.test(scrape)) {
+        throw new Error("scrape_url must not contain regex htmlToText (regex scraping removed)");
       }
       const browser = codeOnly("src/tools/browser_control.ts");
       if (!/setRequestInterception/.test(browser)) {
