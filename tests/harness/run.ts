@@ -16,7 +16,7 @@ export async function runHarnessTests(): Promise<number> {
   // Each harness test file is a self-contained script that exits non-zero on
   // failure, so we run them as child processes to isolate failures and capture
   // exit codes.
-  const files = ["01-interfaces.test.ts", "02-model-client.test.ts", "03-research-gateway.test.ts", "04-goal-contract.test.ts", "05-execution-engine.test.ts"];
+  const files = ["01-interfaces.test.ts", "02-model-client.test.ts", "03-research-gateway.test.ts", "04-goal-contract.test.ts", "05-execution-engine.test.ts", "06-office-engine.test.ts", "07-storage-providers.test.ts"];
 
   let totalFailures = 0;
   for (const file of files) {
