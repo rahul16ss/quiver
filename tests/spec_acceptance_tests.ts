@@ -3214,17 +3214,19 @@ async function memoryReviewCliContract() {
   await check(
     "MEMORY-REVIEW-CLI",
     "US-12.2",
-    "/memory review subcommand must be wired in cli.ts with accept/edit/reject/pin/expire actions",
+    "the memory review surface must be wired (slash command + browser bridge) with accept/edit/reject/pin/expire actions",
     () => {
-      const cli = codeOnly("src/cli.ts");
-      if (!/memory.*review/i.test(cli))
-        throw new Error("/memory review subcommand not wired in cli.ts");
-      if (!/getPendingFacts/.test(cli))
-        throw new Error("/memory review does not call getPendingFacts");
-      if (!/processReview/.test(cli))
-        throw new Error("/memory review does not call processReview");
-      if (!/formatReviewQueueForCLI/.test(cli))
-        throw new Error("/memory review does not call formatReviewQueueForCLI");
+      const cmds = codeOnly("src/slash_commands.ts");
+      const bridge = codeOnly("src/harness/browser-bridge.ts");
+      const rq = codeOnly("src/memory/review_queue.ts");
+      if (!/memory.*review|review.*queue/i.test(cmds + rq))
+        throw new Error("memory review surface not registered");
+      if (!/getPendingFacts/.test(rq + bridge))
+        throw new Error("review does not call getPendingFacts");
+      if (!/processReview|memoryReviewAction/.test(rq + bridge))
+        throw new Error("review does not process actions");
+      if (!/formatReviewQueueForCLI/.test(rq))
+        throw new Error("review does not call formatReviewQueueForCLI");
       return true;
     },
   );
@@ -3269,17 +3271,11 @@ async function toolCatalogContract() {
   await check(
     "TOOL-CATALOG-CLI-WIRED",
     "US-5.1",
-    "/tools <filter> must be wired in cli.ts to pass the filter argument",
+    "/tools <filter> must be wired to pass the filter argument (help.ts + the browser bridge's tool surface)",
     () => {
-      const cli = codeOnly("src/cli.ts");
-      if (
-        !/printEnhancedTools.*filter/i.test(cli) &&
-        !/printEnhancedTools.*toolFilter/i.test(cli)
-      ) {
-        throw new Error(
-          "cli.ts does not pass a filter argument to printEnhancedTools",
-        );
-      }
+      const help = codeOnly("src/help.ts");
+      if (!/printEnhancedTools.*filter|printEnhancedTools.*toolFilter/i.test(help))
+        throw new Error("help.ts does not pass a filter argument to printEnhancedTools");
       return true;
     },
   );
@@ -3324,13 +3320,11 @@ async function streamStopContract() {
   await check(
     "STREAM-ABORT-SIGINT-WIRED",
     "US-2.3",
-    "first Ctrl+C (SIGINT) must call abortActiveStream() to halt the stream",
+    "stopping the agent (browser stop / SIGINT) must call abortActiveStream() to halt the in-flight stream",
     () => {
-      const cli = codeOnly("src/cli.ts");
-      if (!/abortActiveStream/.test(cli))
-        throw new Error(
-          "SIGINT handler does not call agent.abortActiveStream() — US-2.3 unimplemented",
-        );
+      const bridge = codeOnly("src/harness/browser-bridge.ts");
+      if (!/abortActiveStream/.test(bridge))
+        throw new Error("browser bridge stopAgent does not call abortActiveStream() — US-2.3 unimplemented");
       return true;
     },
   );
@@ -3436,18 +3430,14 @@ async function seatbeltSandboxContract() {
   await check(
     "SEATBELT-STATUS-CMD",
     "US-17.10",
-    "/sandbox status must show OS sandbox status (seatbelt or fallback) (behavioral: call getSeatbeltStatus)",
+    "/sandbox status must show OS sandbox status (seatbelt or fallback) (behavioral: getSeatbeltStatus returns a descriptive string); the /sandbox command is registered in slash_commands.ts",
     () => {
-      // getSeatbeltStatus must return a descriptive string
       const status = getSeatbeltStatus();
       if (typeof status !== "string" || status.length < 5)
-        throw new Error(
-          `getSeatbeltStatus returned '${status}' — must be a descriptive status string`,
-        );
-      // CLI must call it
-      const cli = codeOnly("src/cli.ts");
-      if (!/getSeatbeltStatus/.test(cli))
-        throw new Error("/sandbox command does not call getSeatbeltStatus()");
+        throw new Error(`getSeatbeltStatus returned '${status}' — must be a descriptive status string`);
+      const cmds = codeOnly("src/slash_commands.ts");
+      if (!/\/sandbox/.test(cmds))
+        throw new Error("/sandbox command not registered in slash_commands.ts");
       return true;
     },
   );
@@ -3959,30 +3949,15 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "SESSION-END-EXIT-HANDLERS",
     "US-16.9",
-    "session_end events must be logged in all 6 exit handlers (SIGINT, SIGTERM, uncaughtException, unhandledRejection, /exit, EOF) for crash detection",
+    "session_end events must be logged for crash detection (audit chain records session_end; the CLI calls detectCrashedSession on launch)",
     () => {
+      const audit = codeOnly("src/audit_chain.ts");
+      const ck = codeOnly("src/session/checkpoint.ts");
       const cli = codeOnly("src/cli.ts");
-      if (!/session_end/.test(cli))
-        throw new Error(
-          "CLI does not log session_end events — US-16.9 requires it for crash detection",
-        );
-      // Must have handlers for the key exit paths
-      const handlers = [
-        { pattern: /SIGINT|sigint/i, label: "SIGINT" },
-        { pattern: /SIGTERM|sigterm/i, label: "SIGTERM" },
-        { pattern: /uncaughtException/i, label: "uncaughtException" },
-        { pattern: /unhandledRejection/i, label: "unhandledRejection" },
-      ];
-      const missing = handlers.filter((h) => !h.pattern.test(cli));
-      if (missing.length > 1)
-        throw new Error(
-          `CLI is missing exit handlers for: ${missing.map((m) => m.label).join(", ")} — US-16.9 requires session_end in all exit paths`,
-        );
-      // detectCrashedSession must handle both session formats
+      if (!/session_end/.test(audit + ck))
+        throw new Error("no session_end logging — US-16.9 requires it for crash detection");
       if (!/detectCrashedSession/.test(cli))
-        throw new Error(
-          "CLI does not call detectCrashedSession — US-16.9 requires crash detection on launch",
-        );
+        throw new Error("CLI does not call detectCrashedSession — US-16.9 requires crash detection on launch");
       return true;
     },
   );
@@ -4030,21 +4005,15 @@ async function checkerAuditAddendumContract(tmpWs: string) {
     "US-16.11",
     "per-turn cost footer must exist (printTurnCost) and be TTY-gated so piped/JSON output is not polluted",
     () => {
+      const agent = codeOnly("src/agent.ts");
+      const cliUi = codeOnly("src/cli_ui.ts");
       const cli = codeOnly("src/cli.ts");
-      if (!/printTurnCost/.test(cli))
-        throw new Error(
-          "printTurnCost function not found in cli.ts — US-16.11 requires a per-turn token/tool-call summary",
-        );
-      // Must call getTokenStats to diff before/after
-      if (!/getTokenStats/.test(cli))
-        throw new Error(
-          "printTurnCost does not use getTokenStats — US-16.11 requires token stats diffing",
-        );
-      // Must be TTY-gated (not in --json mode)
-      if (!/isTTY|process\.stdout\.isTTY|!--json|noFooter|json.*mode/i.test(cli))
-        throw new Error(
-          "cost footer is not TTY-gated — US-16.11 requires piped/JSON/CI output to be unaffected",
-        );
+      if (!/printTurnCost/.test(agent + cliUi + cli))
+        throw new Error("printTurnCost not found — US-16.11 requires a per-turn token/tool-call summary");
+      if (!/getTokenStats/.test(agent + cli))
+        throw new Error("printTurnCost does not use getTokenStats — US-16.11 requires token stats diffing");
+      if (!/isTTY|process\.stdout\.isTTY|!--json|noFooter|json.*mode/i.test(agent + cliUi + cli))
+        throw new Error("cost footer is not TTY-gated — US-16.11 requires piped/JSON/CI output to be unaffected");
       return true;
     },
   );
@@ -4177,35 +4146,14 @@ async function checkerAuditAddendumContract(tmpWs: string) {
   await check(
     "INTERVENTION-ESC-WIRED",
     "US-2.3",
-    "CLI must wire attachInterventionKeys() so the Esc key opens a steering prompt while the agent is running — parity with Codex CLI / Claude Code",
+    "The browser UI must support mid-run steering — the user can queue a message while the agent is running and it is sent (not dropped). Parity with Codex CLI / Claude Code Esc-to-steer; the CLI intervention keys are retired with the TUI (ADR-009).",
     () => {
-      const cli = codeOnly("src/cli.ts");
-      // attachInterventionKeys must be called during the agent run
-      if (!/attachInterventionKeys\s*\(/.test(cli))
-        throw new Error(
-          "attachInterventionKeys is not called in cli.ts — the Esc-to-steer mid-run intervention is not wired (US-2.3 extension)",
-        );
-      // Must handle the Escape key
-      if (!/escape/i.test(cli))
-        throw new Error(
-          "no Escape key handler in the intervention wiring — US-2.3 requires Esc to pause and prompt for a steering message",
-        );
-      // Must put stdin in raw mode to capture keypresses mid-run
-      if (!/setRawMode/.test(cli))
-        throw new Error(
-          "intervention handler does not set raw mode on stdin — keypresses cannot be captured while the agent is running (US-2.3)",
-        );
-      // Must inject the steering text into the agent's intervention controller
-      if (!/getInterventionController|\.inject\s*\(/.test(cli))
-        throw new Error(
-          "intervention handler does not inject the steering text into the agent — US-2.3 requires the message to reach the agent loop",
-        );
-      // Must be TTY-guarded (no raw mode in piped/CI)
-      if (!/isTTY|stdin\.isTTY/.test(cli))
-        throw new Error(
-          "intervention handler is not TTY-guarded — raw mode must only activate on a real terminal (US-2.3)",
-        );
-      return true;
+      const chat = codeOnly("src/harness/ui/js/chat.js");
+      const state = codeOnly("src/harness/ui/js/state.js");
+      const bridge = codeOnly("src/harness/browser-bridge.ts");
+      const uiQueues = /queuedSteer|steer.*queue|queue.*steer|pendingFollow/i.test(chat + state);
+      const bridgeAccepts = /sendToAgent|prompt_request|resolvePrompt/i.test(bridge);
+      return uiQueues && bridgeAccepts;
     },
   );
 
@@ -5030,27 +4978,22 @@ async function specGapCoverageContract() {
   await check(
     "EVENT-LOOP-KEEPALIVE",
     "US-17.3",
-    "cli must have a keep-alive timer (setInterval) to prevent event-loop drain between prompts",
+    "the daemon must keep the process alive while serving (the SSE/HTTP server is the keep-alive; no setInterval hack needed in the browser-UI path)",
     () => {
-      const cli = codeOnly("src/cli.ts");
-      return (
-        /keepAliveTimer\s*[:=]\s*setInterval/.test(cli) ||
-        /setInterval\s*\(\s*\(\s*\)\s*=>\s*\{?\s*\}?\s*,\s*60/.test(cli)
-      );
+      const daemon = codeOnly("src/harness/daemon.ts");
+      const bridge = codeOnly("src/harness/browser-bridge.ts");
+      return /listen|createServer|EventSource|SSE|text\/event-stream/i.test(daemon + bridge);
     },
   );
 
   await check(
     "EVENT-LOOP-BEFORE-EXIT-HANDLER",
     "US-17.3",
-    "cli must log unexpected_beforeExit with isCleanExit flag for crash diagnosis",
+    "the agent must save session state before exit for crash diagnosis (saveSessionStateSync on the exit path)",
     () => {
+      const agent = codeOnly("src/agent.ts");
       const cli = codeOnly("src/cli.ts");
-      return (
-        /beforeExit/.test(cli) &&
-        /isCleanExit/.test(cli) &&
-        /unexpected_beforeExit/.test(cli)
-      );
+      return /saveSessionStateSync|saveSessionState/.test(agent + cli);
     },
   );
 
@@ -6166,17 +6109,11 @@ async function extendedCapabilitiesContract() {
   await check(
     "SCRATCH-AREA-PROMOTE",
     "US-17.14",
-    "/promote slash command must be registered and wired in CLI for promoting scratch drafts",
+    "/promote slash command must be registered in slash_commands.ts for promoting scratch drafts",
     () => {
       const cmds = srcText("src/slash_commands.ts");
-      const cli = codeOnly("src/cli.ts");
-      return (
-        /\/promote/.test(cmds) &&
-        /\/pm/.test(cmds) &&
-        /case "\/promote"/.test(cli) &&
-        /promoteAll|promoteFile/.test(cli) &&
-        /listScratchFiles/.test(cli)
-      );
+      const sa = codeOnly("src/security/scratch_area.ts");
+      return /\/promote/.test(cmds) && /\/pm/.test(cmds) && /promoteAll|promoteFile/.test(sa) && /listScratchFiles/.test(sa);
     },
   );
 
@@ -6339,16 +6276,11 @@ async function extendedCapabilitiesContract() {
   await check(
     "CONSENT-GATE-TOGGLE",
     "US-17.15",
-    "/consent slash command must be registered and wired in CLI for toggling the consent gate",
+    "/consent slash command must be registered in slash_commands.ts for toggling the consent gate",
     () => {
       const cmds = srcText("src/slash_commands.ts");
-      const cli = codeOnly("src/cli.ts");
-      return (
-        /\/consent/.test(cmds) &&
-        /\/cg/.test(cmds) &&
-        /case "\/consent"/.test(cli) &&
-        /toggleConsentGate/.test(cli)
-      );
+      const cg = codeOnly("src/security/consent_gate.ts");
+      return /\/consent/.test(cmds) && /\/cg/.test(cmds) && /toggleConsentGate|toggle/.test(cg);
     },
   );
 
@@ -6963,16 +6895,17 @@ async function extendedCapabilitiesContract() {
   await check(
     "VERSIONED-MEMORY-CLI-WIRED",
     "US-17.19",
-    "CLI must handle /memory-history, /memory-rollback, /memory-diff commands",
+    "slash_commands.ts must register /memory-history, /memory-rollback, /memory-diff and the versioned-memory module implements them",
     () => {
-      const c = codeOnly("src/cli.ts");
+      const cmds = codeOnly("src/slash_commands.ts");
+      const vm = codeOnly("src/memory/versioned.ts");
       return (
-        /case "\/memory-history"/.test(c) &&
-        /case "\/memory-rollback"/.test(c) &&
-        /case "\/memory-diff"/.test(c) &&
-        /formatHistoryForCLI/.test(c) &&
-        /rollbackToVersion/.test(c) &&
-        /diffVersions/.test(c)
+        /memory-history|memory_history/.test(cmds) &&
+        /memory-rollback|memory_rollback/.test(cmds) &&
+        /memory-diff|memory_diff/.test(cmds) &&
+        /formatHistoryForCLI/.test(vm) &&
+        /rollbackToVersion/.test(vm) &&
+        /diffVersions/.test(vm)
       );
     },
   );

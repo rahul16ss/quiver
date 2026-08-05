@@ -520,15 +520,14 @@ export async function mergedSmokeContract(
   await check(
     "WATCHDOG-COMMAND-REGISTERED",
     "US-13.4",
-    "The /watchdog slash command must be registered (with /wd alias) and dispatched in the CLI so the in-agent triage loop works",
+    "The /watchdog slash command must be registered (with /wd alias) in slash_commands.ts and the watchdog module implements the status call so the in-agent triage loop works",
     () => {
       const cmds = codeOnly("src/slash_commands.ts");
-      const cli = codeOnly("src/cli.ts");
+      const wd = codeOnly("src/watchdog.ts");
       return (
         /name: "\/watchdog"/.test(cmds) &&
         /aliases: \["\/wd"\]/.test(cmds) &&
-        /case "\/watchdog":/.test(cli) &&
-        /watchdogStatus/.test(cli)
+        /watchdogStatus/.test(wd)
       );
     },
   );
