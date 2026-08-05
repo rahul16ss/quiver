@@ -8,6 +8,7 @@
  */
 
 import { QuiverDaemon, loadOrCreateSecret } from "./daemon.js";
+import { HarnessDaemon } from "./harness-daemon.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -30,6 +31,32 @@ export class QuiverLauncher {
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
     // Keep the process alive serving; the caller controls lifecycle.
+    return state;
+  }
+
+  /**
+   * Start the harness daemon (browser UI + harness API) for interactive use.
+   * The engine is injected by the caller (a real deployment wires the
+   * QuiverOpenRouterProvider bridge + tool registry; a demo wires mocks).
+   * Opens the browser with the per-install secret in the URL fragment (never
+   * sent to the server). Keeps the process alive serving.
+   */
+  async startHarness(engine: import("./interfaces.js").ExecutionEngine, opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
+    const secret = loadOrCreateSecret();
+    const uiDir = opts.uiDir ?? path.join(path.dirname(new URL(import.meta.url).pathname), "ui");
+    const hd = new HarnessDaemon({ engine, secret, uiDir });
+    const { port, origin } = await hd.listen(opts.port);
+    const state: LauncherState = { pid: process.pid, port, origin, startedAt: new Date().toISOString() };
+    fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
+    fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+    if (opts.open !== false) {
+      // Secret in the fragment so the browser has it for API calls but it is
+      // never transmitted to the server in the request.
+      const { spawn } = await import("child_process");
+      const url = `${origin}/#token=${encodeURIComponent(secret)}`;
+      const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+      try { spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref(); } catch {}
+    }
     return state;
   }
 
@@ -85,6 +112,25 @@ export async function runLauncherCli(args: string[]): Promise<number> {
       console.log(`Quiver daemon on ${state.origin} (pid ${state.pid})`);
       return 0;
     }
+    case "harness": {
+      // Demo harness daemon with a mock engine. A real deployment wires the
+      // OpenRouter bridge + tool registry before calling startHarness.
+      const { QuiverExecutionEngine } = await import("./execution-engine.js");
+      const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
+      const { LocalTraceSink } = await import("./trace-sink.js");
+      const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
+      const { LocalModelClient } = await import("./model-client.js");
+      const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
+      const profiles = new ModelProfileRegistry();
+      for (const pp of starterCatalog()) profiles.register(pp);
+      const mockTransport = { async invoke() { return { content: "OK all met", route: "local", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } }; } };
+      const model = new LocalModelClient(mockTransport, profiles);
+      const tools = { available: () => ["office_doc", "evidence", "deep_research"], async call(n: string, a: Record<string, unknown>) { return { ok: true, output: `${n}:${a.step}`, evidenceRefs: [`e-${a.step}`] }; } };
+      const engine = new QuiverExecutionEngine(saver, model, tools as any, { maxIterations: 20 });
+      const state = await launcher.startHarness(engine, { open: true });
+      console.log(`Quiver harness daemon on ${state.origin} (pid ${state.pid}) — opening browser…`);
+      return 0;
+    }
     case "status": {
       const st = launcher.status();
       console.log(st ? `running on ${st.origin} (pid ${st.pid}, since ${st.startedAt})` : "not running");
@@ -107,7 +153,7 @@ export async function runLauncherCli(args: string[]): Promise<number> {
     }
     case "help":
     case undefined:
-      console.log("quiver-daemon [start|status|open|diagnostics|register-workspace <path>]");
+      console.log("quiver-daemon [start|harness|status|open|diagnostics|register-workspace <path>]");
       return 0;
     default:
       console.error(`unknown command: ${cmd}`);

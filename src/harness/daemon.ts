@@ -24,16 +24,21 @@ export interface DaemonOptions {
   /** UI directory to serve. */
   uiDir?: string;
   port?: number;
+  /** Optional injectable API handler for /api/* routes (e.g. the harness API).
+   *  Receives the parsed request (method, pathname, body, secret-verified). */
+  apiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
 }
 
 export class QuiverDaemon {
   readonly secret: string;
   private server: ReturnType<typeof createServer> | null = null;
   private roots: string[];
+  private apiHandler?: DaemonOptions["apiHandler"];
 
   constructor(private opts: DaemonOptions = {}) {
     this.secret = opts.secret ?? randomBytes(32).toString("hex");
     this.roots = (opts.roots ?? []).map((r) => path.resolve(r));
+    this.apiHandler = opts.apiHandler;
   }
 
   /** The loopback origin the browser should open. */
@@ -100,6 +105,19 @@ export class QuiverDaemon {
     if (req.method === "GET" && pathname.startsWith("/ui/")) {
       return this.serveUi(res, pathname.slice("/ui/".length));
     }
+    // Harness API routes (secret-gated above).
+    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/"))) {
+      let body: unknown = undefined;
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        body = await this.readBody(req);
+      }
+      try {
+        const result = await this.apiHandler!({ method: req.method ?? "GET", pathname, body });
+        return this.send(res, 200, result);
+      } catch (err: any) {
+        return this.send(res, 400, { error: err.message });
+      }
+    }
     return this.send(res, 404, { error: "not found" });
   }
 
@@ -127,6 +145,15 @@ export class QuiverDaemon {
     const type = ext === ".html" ? "text/html" : ext === ".js" ? "text/javascript" : ext === ".css" ? "text/css" : "application/octet-stream";
     res.setHeader("Content-Type", `${type}; charset=utf-8`);
     fs.createReadStream(full).pipe(res);
+  }
+
+  private readBody(req: IncomingMessage): Promise<unknown> {
+    return new Promise((resolve) => {
+      let buf = "";
+      req.on("data", (d) => (buf += d.toString()));
+      req.on("end", () => { try { resolve(buf ? JSON.parse(buf) : undefined); } catch { resolve(buf); } });
+      req.on("error", () => resolve(undefined));
+    });
   }
 
   private send(res: ServerResponse, code: number, body: unknown): void {
