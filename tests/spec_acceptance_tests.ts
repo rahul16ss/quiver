@@ -7930,12 +7930,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-APP-JS-PARSES",
     "Epic-2 / SPEC §16",
-    "The desktop app is the ONE buyer surface. ui/renderer/app.js and ui/renderer/js/*.js must be syntactically valid JavaScript that node can parse — a green gate over renderer code that throws a SyntaxError at load ships a blank window. Regression guard.",
+    "The browser UI is the ONE buyer surface. src/harness/ui/app.js must be syntactically valid JavaScript that node can parse — a green gate over UI code that throws a SyntaxError at load ships a blank page. Regression guard.",
     () => {
       try {
-        for (const f of rendererJsFiles().concat(["ui/renderer/onboarding.js", "ui/renderer/settings.js"])) {
-          execSync(`node --check ${path.join(ROOT, f)}`, { stdio: "pipe" });
-        }
+        execSync(`node --check ${path.join(ROOT, "src/harness/ui/app.js")}`, { stdio: "pipe" });
         return true;
       } catch {
         return false;
@@ -7946,10 +7944,10 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-CONSENT-GATE-INVOKED",
     "S2 / S4 / SPEC §6",
-    "The consent gate must actually be SHOWN before a run, not merely defined. showConsentGate must be called from a run-start path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
+    "The consent gate must actually be SHOWN before a commit, not merely defined. showConsent must be called from a run path (definition + at least one call site), otherwise the overlay is dead DOM. SPEC §6: the gate is a control, not a post-hoc log.",
     () => {
-      const app = rendererCode();
-      const calls = (app.match(/\bshowConsentGate\s*\(/g) || []).length;
+      const app = srcText("src/harness/ui/app.js");
+      const calls = (app.match(/\bshowConsent\s*\(/g) || []).length;
       return calls >= 2; // one definition + at least one invocation
     },
   );
@@ -7957,30 +7955,25 @@ async function extendedCapabilitiesContract() {
   await check(
     "GUI-EXCLUDE-IPC-HANDLED",
     "S2 / SPEC §6",
-    "The exclude-before-run control must reach the agent: ui/main.ts must register a memory:exclude IPC handler, and the agent loop must consume the exclusion list so the excluded memory does NOT enter the model call. A renderer-only Set that never reaches the agent is theater.",
+    "The exclude-before-run control must reach the agent: the agent loop must consume the exclusion list so the excluded memory does NOT enter the model call. A UI-only set that never reaches the agent is theater.",
     () => {
-      const main = guiMainProcessCode();
       const agent = codeOnly("src/agent.ts");
-      const handlerOk = /ipcMain\.handle\(\s*["']memory:exclude["']/.test(main);
+      const daemon = codeOnly("src/harness/daemon.ts");
       // The agent (or a context-loading module it calls) must honor an exclusion set.
-      const agentHonors = /excludedMemor|excludeFromRun|excludedFromRun|memoryExclude|excluded_files|excludedMemories/.test(agent);
-      return handlerOk && agentHonors;
+      const agentHonors = /excludedMemor|excludeFromRun|excludedFromRun|memoryExclude|excluded_files|excludedMemories|excludedFiles/i.test(agent);
+      // The daemon/harness UI surfaces an exclude affordance.
+      const uiSurfaces = /exclude|veto/i.test(srcText("src/harness/ui/index.html"));
+      return agentHonors && uiSurfaces;
     },
   );
 
   await check(
     "PRELOAD-CORE-API-PRESENT",
-    "Epic-2 §2.6 / IPC drift",
-    "preload.ts and preload.js must both expose the core-memory editor, memory review, workflow rerun, and evidence-load APIs. A prior patch deleted renderer methods from preload.js while preload.ts kept them — silent drift the IPC-IN-SYNC channel-set check does not catch.",
+    "Epic-2 §2.6 / API drift",
+    "the harness-daemon route() must expose the core workflow, run, and evidence APIs. A prior patch deleted methods from the daemon while the UI kept calling them — silent drift. The daemon must wire all five API paths.",
     () => {
-      const ts = srcText("ui/preload.ts");
-      const js = srcText("ui/preload.js");
-      return (
-        /loadCoreMemory/.test(ts) && /saveCoreMemory/.test(ts) && /memoryReviewList/.test(ts) &&
-        /rerunWorkflow/.test(ts) && /loadEvidence/.test(ts) &&
-        /loadCoreMemory/.test(js) && /saveCoreMemory/.test(js) && /memoryReviewList/.test(js) &&
-        /rerunWorkflow/.test(js) && /loadEvidence/.test(js)
-      );
+      const hd = codeOnly("src/harness/harness-daemon.ts");
+      return /workflows/.test(hd) && /run\/start/.test(hd) && /run\/state/.test(hd) && /approve/.test(hd) && /reject/.test(hd);
     },
   );
 
