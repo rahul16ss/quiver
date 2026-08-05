@@ -41,7 +41,9 @@ Opt-in suites in `tests/harness/live/run.ts`, skipped in CI:
 
 - `LIVE-OPENROUTER-NATIVE-PDF` — requires `OPENROUTER_API_KEY` + `QUIVER_LIVE_PDF`.
 - `LIVE-PARALLEL-SEARCH` — requires `PARALLEL_API_KEY`.
-- SharePoint/OneDrive, Google Drive, OfficeCLI live suites — stubbed for a later live pass.
+- `LIVE-GRAPH-*` (OneDrive/SharePoint) — requires `QUIVER_LIVE_GRAPH_ITEM_ID` + `QUIVER_LIVE_GRAPH_TOKEN`.
+- `LIVE-DRIVE-*` — requires `QUIVER_LIVE_DRIVE_FILE_ID` + `QUIVER_LIVE_DRIVE_TOKEN`.
+- `LIVE-OFFICECLI-*` — requires `QUIVER_LIVE_OFFICECLI_PATH` + `QUIVER_LIVE_OFFICECLI_FIXTURE` (+ optional `QUIVER_LIVE_OFFICECLI_CHECKSUM`).
 
 ## Version pins
 
