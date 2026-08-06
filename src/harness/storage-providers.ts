@@ -23,6 +23,7 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { atomicWriteSync } from "../fs/atomic_write.js";
+import { DurableCursorStore, cursorPoll } from "./cursor-store.js";
 import type {
   StorageProvider,
   StorageCapabilities,
@@ -170,7 +171,8 @@ export interface GraphClient {
   getMetadata(itemId: string): Promise<GraphItemMetadata>;
   download(itemId: string): Promise<Buffer>;
   uploadSession(itemId: string, data: Buffer): Promise<GraphItemMetadata>;
-  delta(sku?: string): Promise<GraphItemMetadata[]>;
+  /** Delta change feed. Returns the changed items and the `nextToken` to resume from. */
+  delta(sku?: string): Promise<{ items: GraphItemMetadata[]; nextToken?: string }>;
 }
 
 export interface GraphItemMetadata {
@@ -260,8 +262,23 @@ export class MicrosoftGraphStorageProvider implements StorageProvider {
   }
 
   async poll(opts?: StoragePollOpts): Promise<StorageChange[]> {
-    const items = await this.client.delta(opts?.since);
-    return items.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified", version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified }));
+    const res = await this.client.delta(opts?.since);
+    return res.items.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified", version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified }));
+  }
+
+  /**
+   * Durable, replay-safe change poll backed by a DurableCursorStore. Uses the
+   * Graph delta `returnNextToken` (via the client seam) so an interrupted poll
+   * resumes exactly where it stopped — no missed windows, no re-apply.
+   */
+  async pollDurable(store: DurableCursorStore, scope: string): Promise<StorageChange[]> {
+    return cursorPoll(store, scope, async (since) => {
+      const res = await this.client.delta(since ?? undefined);
+      return {
+        changes: res.items.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified })),
+        nextCursor: res.nextToken ?? since ?? undefined,
+      };
+    });
   }
 }
 
@@ -365,6 +382,21 @@ export class GoogleDriveStorageProvider implements StorageProvider {
   async poll(opts?: StoragePollOpts): Promise<StorageChange[]> {
     const res = await this.client.listChanges(opts?.since);
     return res.changes.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified", version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime }));
+  }
+
+  /**
+   * Durable, replay-safe change poll backed by a DurableCursorStore. Uses the
+   * Drive `nextPageToken` so an interrupted poll resumes exactly where it
+   * stopped — no missed windows, no re-apply.
+   */
+  async pollDurable(store: DurableCursorStore, scope: string): Promise<StorageChange[]> {
+    return cursorPoll(store, scope, async (since) => {
+      const res = await this.client.listChanges(since ?? undefined);
+      return {
+        changes: res.changes.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime })),
+        nextCursor: res.nextPageToken ?? since ?? undefined,
+      };
+    });
   }
 }
 

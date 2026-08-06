@@ -11,7 +11,7 @@
  * skipping silently) so a misconfigured "live" run is visible.
  */
 import picocolors from "picocolors";
-import type { GraphClient, DriveClient } from "../../../src/harness/storage-providers.js";
+import type { GraphClient, GraphItemMetadata, DriveClient } from "../../../src/harness/storage-providers.js";
 
 const LIVE = process.env.QUIVER_LIVE_CONTRACT === "1";
 
@@ -92,7 +92,7 @@ async function microsoftGraph() {
       if (!r.ok) throw new Error(`Graph upload ${r.status}`);
       return await r.json();
     },
-    async delta() { return []; },
+    async delta(): Promise<{ items: GraphItemMetadata[]; nextToken?: string }> { return { items: [], nextToken: undefined }; },
   };
   const provider = new MicrosoftGraphStorageProvider("live-graph", client);
   void new QuiverPolicyEngine(emptyPack({ id: "live" }));

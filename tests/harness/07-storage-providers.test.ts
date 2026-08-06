@@ -20,6 +20,7 @@ import {
   type DriveClient,
   type DriveItemMetadata,
 } from "../../src/harness/storage-providers.js";
+import { DurableCursorStore, InMemoryCursorKV } from "../../src/harness/cursor-store.js";
 
 let passed = 0, failed = 0;
 const failures: string[] = [];
@@ -72,7 +73,7 @@ async function run() {
     async getMetadata(id: string): Promise<GraphItemMetadata> { return { id, name: "memo.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", eTag: this.etag, version: this.version, webUrl: "https://graph", size: 10, lastModified: new Date().toISOString() }; }
     async download(): Promise<Buffer> { return Buffer.from("graph-bytes"); }
     async uploadSession(id: string): Promise<GraphItemMetadata> { return { id, name: "memo.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", eTag: "etag-v2", version: "v2", webUrl: "https://graph", size: 12, lastModified: new Date().toISOString() }; }
-    async delta(): Promise<GraphItemMetadata[]> { return [{ id: "i2", name: "x", mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }]; }
+    async delta(): Promise<{ items: GraphItemMetadata[]; nextToken?: string }> { return { items: [{ id: "i2", name: "x", mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }], nextToken: "tok-2" }; }
   }
   const graph = new MicrosoftGraphStorageProvider("graph1", new MockGraph());
   check("GRAPH-CAPS-VERSIONING-ETAG", graph.capabilities().versioning && graph.capabilities().conflictDetection === "etag" && graph.capabilities().uploadSessions);
@@ -88,6 +89,17 @@ async function run() {
   const changes = await graph.poll();
   check("GRAPH-DELTA-CHANGES", changes.length === 1);
 
+  // ── Durable delta poll persists the next token; a re-poll resumes from it ──
+  const graphCursor = new DurableCursorStore(new InMemoryCursorKV());
+  const gsc = "graph:" + graph.id;
+  const gPoll1 = await graph.pollDurable(graphCursor, gsc);
+  check("GRAPH-DURABLE-POLL-1-CHANGES", gPoll1.length === 1);
+  check("GRAPH-DURABLE-CURSOR-PERSISTED", (await graphCursor.get(gsc)) === "tok-2", (await graphCursor.get(gsc)) ?? "null");
+  // Second poll: durable store holds tok-2; mock always returns the same item,
+  // but the cursor is now durable → poll resumes from the persisted token.
+  const gPoll2 = await graph.pollDurable(graphCursor, gsc);
+  check("GRAPH-DURABLE-RESUMES", (await graphCursor.get(gsc)) === "tok-2");
+
   // ── Google Drive: revisionId conflict → sibling; no silent conversion ──
   class MockDrive implements DriveClient {
     rev = "rev-1";
@@ -95,7 +107,7 @@ async function run() {
     async getMetadata(id: string): Promise<DriveItemMetadata> { return { id, name: "model.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headRevisionId: this.rev, version: this.rev, webUrl: "https://drive", size: 10, modifiedTime: new Date().toISOString(), isGoogleNative: this.isGoogleNative }; }
     async download(): Promise<Buffer> { return Buffer.from("drive-bytes"); }
     async upload(id: string): Promise<DriveItemMetadata> { return { id, name: "model.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headRevisionId: "rev-2", version: "rev-2", webUrl: "https://drive", size: 12, modifiedTime: new Date().toISOString(), isGoogleNative: false }; }
-    async listChanges(): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }> { return { changes: [{ id: "f2", name: "x", mimeType: "text/plain", headRevisionId: "r", version: "r", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }] }; }
+    async listChanges(): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }> { return { changes: [{ id: "f2", name: "x", mimeType: "text/plain", headRevisionId: "r", version: "r", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }], nextPageToken: "dtok-1" }; }
   }
   const drive = new GoogleDriveStorageProvider("drive1", new MockDrive());
   check("DRIVE-CAPS-REVISIONID-SHAREDDRIVES", drive.capabilities().conflictDetection === "revisionId" && drive.capabilities().sharedDrives);
@@ -119,6 +131,13 @@ async function run() {
   let refusedConversion = false;
   try { await native.commit(dco, { path: "g.docx", data: Buffer.from("x") }, { reviewer: "jane", approvalRef: "a", baseVersion: "rev-1" }); } catch { refusedConversion = true; }
   check("DRIVE-NO-SILENT-CONVERSION", refusedConversion);
+
+  // ── Durable Drive change poll persists nextPageToken; resumes from it ──
+  const driveCursor = new DurableCursorStore(new InMemoryCursorKV());
+  const dsc = "drive:" + driveConflict.id;
+  const dp1 = await driveConflict.pollDurable(driveCursor, dsc);
+  check("DRIVE-DURABLE-POLL-1", dp1.length === 1);
+  check("DRIVE-DURABLE-CURSOR-PERSISTED", (await driveCursor.get(dsc)) === "dtok-1", (await driveCursor.get(dsc)) ?? "null");
 }
 
 await run();

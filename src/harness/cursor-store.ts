@@ -122,3 +122,25 @@ export class DurableCursorStore {
 		return { applied: true, nextCursor: applied };
 	}
 }
+
+/**
+ * Tie a durable cursor store to a provider's raw change poll.
+ *
+ * `rawPoll(since)` returns the changes plus (optionally) the provider's
+ * next-cursor token. The helper loads the persisted cursor for `scope`, runs
+ * the poll from it, applies the changes, then persists the returned
+ * next-cursor (first-writer-wins) so a restart resumes exactly here — no
+ * missed window, no re-apply.
+ */
+export async function cursorPoll<R>(
+	store: DurableCursorStore,
+	scope: string,
+	rawPoll: (since: string | null) => Promise<{ changes: R[]; nextCursor?: string }>,
+): Promise<R[]> {
+	const held = await store.get(scope);
+	const res = await rawPoll(held);
+	if (res.nextCursor) {
+		await store.advance(scope, res.nextCursor);
+	}
+	return res.changes;
+}
