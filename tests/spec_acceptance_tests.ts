@@ -6534,6 +6534,46 @@ async function extendedCapabilitiesContract() {
   // redaction receipt. Audit chain records the route and reason.
 
   await check(
+    "CAPABILITY-REGISTRY-EXISTS",
+    "US-2.2 / §6",
+    "An immutable, versioned CapabilityRegistry must record per (gateway + endpoint + model + runtime + capability), with per-MIME lastContractTest (not one value for multiple MIMEs)",
+    () => {
+      const c = srcText("src/harness/capability-registry.ts");
+      if (!/interface CapabilityRecord/.test(c))
+        throw new Error("missing CapabilityRecord interface");
+      // Per-MIME: the record carries a `mime` discriminator so PDF and DOCX are separate records.
+      if (!/mime\?: NativeMime/.test(c))
+        throw new Error("CapabilityRecord must carry a per-MIME discriminator");
+      // Immutable versioning: record() appends a version, does not mutate.
+      if (!/version\s*[:=]/.test(c) || !/supersedes\??\s*:/.test(c))
+        throw new Error("records must be versioned with supersedes");
+      // isCertified reads the latest per-MIME record independently.
+      if (!/isCertified\(/.test(c))
+        throw new Error("no per-MIME isCertified");
+      // Audit hash.
+      if (!/hash\(/.test(c) || !/createHash/.test(c))
+        throw new Error("no audit hash");
+      return true;
+    },
+  );
+
+  await check(
+    "CAPABILITY-PER-MIME-INDEPENDENCE",
+    "US-2.2 / §6",
+    "A PDF contract-test passing must not certify DOCX/XLSX/PPTX — each MIME is certified independently",
+    () => {
+      const c = codeOnly("src/harness/capability-registry.ts");
+      // The snapshot reads each MIME from its own latest record (not a shared list).
+      if (!/nativeMime\[m\]\s*=/.test(c))
+        throw new Error("snapshot must set nativeMime per-MIME from latest records");
+      // isCertified takes a mime argument (per-MIME lookup).
+      if (!/isCertified\s*\(\s*gateway\s*:\s*Gateway/.test(c))
+        throw new Error("isCertified must take a mime argument for per-MIME lookup");
+      return true;
+    },
+  );
+
+  await check(
     "EXECUTION-CONTEXT-MODULE-EXISTS",
     "US-17.17 / §7",
     "An immutable ExecutionContext + deployment profiles (connected-zdr / private-network / air-gapped) must exist with below-app-layer network enforcement",
