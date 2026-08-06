@@ -46,13 +46,23 @@ export async function buildProductionEngine(pack?: import("./customer-pack.js").
   const profile = resolveDeploymentProfile();
   installNetworkGuard(profile);
   const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
+  // Resolve a customer pack: an explicit `pack` arg, else the QUIVER_PACK env
+  // path. Without either, the shipped starter catalog runs as-is. A pack's
+  // approvedModels DRIVE the router (unapproved profiles removed → fail
+  // closed) and override provider orders.
+  let resolvedPack = pack;
+  if (!resolvedPack) {
+    const packPathArg = process.env.QUIVER_PACK;
+    if (packPathArg) {
+      const { CustomerPackRegistry } = await import("./customer-pack.js");
+      const reg = new CustomerPackRegistry();
+      resolvedPack = reg.loadFromFile(packPathArg).pack;
+    }
+  }
   const base = new ModelProfileRegistry();
   for (const pp of starterCatalog()) base.register(pp);
-  // A customer pack's approvedModels DRIVE the router: unapproved profiles are
-  // removed (fail closed), pack provider orders are applied. With no pack, the
-  // shipped catalog is used as-is.
-  const profiles = pack ? applyApprovedModels(base, pack.approvedModels) : base;
-  const enginePack = pack ?? emptyPack();
+  const profiles = resolvedPack ? applyApprovedModels(base, resolvedPack.approvedModels) : base;
+  const enginePack = resolvedPack ?? emptyPack();
   const policy = new QuiverPolicyEngine(enginePack);
 
   // ── Real model gateway: OpenRouter (cloud) or local OpenAI-compatible ──

@@ -11,6 +11,7 @@ import picocolors from "picocolors";
 import * as path from "path";
 import * as fs from "fs";
 import { CustomerPackRegistry, validateCustomerPack, packHash, type CustomerPack } from "../../src/harness/customer-pack.js";
+import { ModelProfileRegistry, starterCatalog, applyApprovedModels } from "../../src/harness/model-profile.js";
 import { QuiverPromptCompiler } from "../../src/harness/prompt-compiler.js";
 import { QuiverPolicyEngine } from "../../src/harness/policy-engine.js";
 import { TWELVE_WORKFLOW_SPECS } from "../../src/harness/workflow-spec.js";
@@ -44,6 +45,15 @@ async function run() {
   const reg = new CustomerPackRegistry();
   const rec = reg.loadFromFile(packPath);
   check("PACK-REGISTRY-LOADS-FILE", rec.pack.id === "conviction-studio-default");
+  // Every approved-model slug in the shipped pack must resolve in the current
+  // starter catalog — otherwise applyApprovedModels would silently drop it,
+  // failing the pack's routing closed to nothing. (This caught the pack still
+  // referencing removed pre-tier slugs.)
+  const baseReg = new ModelProfileRegistry();
+  for (const p of starterCatalog()) baseReg.register(p);
+  const applied = applyApprovedModels(baseReg, rec.pack.approvedModels);
+  check("PACK-APPROVED-ALL-RESOLVE", rec.pack.approvedModels.every((a) => !!baseReg.get(a.profileSlug)), JSON.stringify(rec.pack.approvedModels.map((a) => a.profileSlug)));
+  check("PACK-APPROVED-APPLIED-NONEMPTY", rec.pack.approvedModels.length >= 3 && applied.list().length === rec.pack.approvedModels.length, `applied=${applied.list().length} expected=${rec.pack.approvedModels.length}`);
   const exported = reg.exportPack(rec.pack.id);
   check("PACK-EXPORT-ROUNDTRIPS", JSON.parse(exported).id === rec.pack.id);
 

@@ -40,8 +40,9 @@
     { "category": "public-web-research", "rank": 10, "note": "Open web only — never a substitute for licensed data." }
   ],
   "approvedModels": [
-    { "profileSlug": "openai-gpt-4o", "roles": ["planner", "maker"], "providerOrder": ["OpenAI"] },
-    { "profileSlug": "anthropic-claude-sonnet", "roles": ["checker", "reviewer"], "providerOrder": ["Anthropic"] },
+    { "profileSlug": "text-maker", "roles": ["planner", "maker"], "providerOrder": ["DeepSeek"] },
+    { "profileSlug": "native-doc-primary", "roles": ["maker", "checker", "reviewer"], "providerOrder": ["Anthropic"] },
+    { "profileSlug": "text-checker", "roles": ["checker", "reviewer"], "providerOrder": ["Z-Ai"] },
     { "profileSlug": "local-private-default", "roles": ["planner", "maker", "checker", "reviewer"], "providerOrder": ["Local"] }
   ],
   "sensitivityProfiles": [
