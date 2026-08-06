@@ -9,7 +9,8 @@ import picocolors from "picocolors";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
-import { DurableJobScheduler, AlertAggregator } from "../../src/harness/durable-job.js";
+import { DurableJobScheduler, AlertAggregator, DurableIdempotencyLedger } from "../../src/harness/durable-job.js";
+import { InMemoryCursorKV } from "../../src/harness/cursor-store.js";
 
 let passed = 0;
 let failed = 0;
@@ -112,6 +113,15 @@ async function run() {	// ── Interval due scheduling ───────�
 	// Different fingerprints/scopes do not collapse.
 	agg.signal("monitor", "other", 1500);
 	check("ALERT-SCOPED-INDEPENDENT", agg.open(45_000).filter((a) => a.scope === "monitor").length >= 2, JSON.stringify(agg.open(45_000).map((a) => a.fingerprint)));
+
+	// ── Durable idempotency: webhook redelivery is not processed twice ──
+	const ledger = new DurableIdempotencyLedger(new InMemoryCursorKV());
+	const firstTouch = await ledger.touch("wh_1");
+	check("IDEMPOTENCY-FIRST-PROCESSED", firstTouch === true);
+	check("IDEMPOTENCY-ALREADY-SEEN", (await ledger.alreadyProcessed("wh_1")) === true);
+	// A redelivered (duplicate) webhook is a no-op.
+	check("IDEMPOTENCY-REDELIVERY-DEDUPED", (await ledger.touch("wh_1")) === false);
+	check("IDEMPOTENCY-DISTINCT-NOT-COLLAPSED", (await ledger.touch("wh_2")) === true && (await ledger.alreadyProcessed("wh_2")));
 }
 
 await run();

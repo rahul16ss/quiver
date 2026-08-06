@@ -306,3 +306,42 @@ export interface AlertAggregate {
 	lastSeenAt: number;
 	refireAt: number;
 }
+
+/**
+ * Durable idempotency ledger — deduplicates event/delivery processing across
+ * restarts (webhook replay / redelivery guard).
+ *
+ * `alreadyProcessed(id)` is true only if this exact id was previously
+ * recorded; `markProcessed(id)` records it durably. Backed by a CursorKV
+ * (SQLite in production) so a redelivered event after a process restart is
+ * still recognized and not processed twice.
+ */
+export class DurableIdempotencyLedger {
+	constructor(private kv: import("./cursor-store.js").CursorKV, private prefix = "quiver:seen:") {}
+
+	private key(id: string): string {
+		return this.prefix + id;
+	}
+
+	/** True if `id` was already processed (recorded durably). */
+	async alreadyProcessed(id: string): Promise<boolean> {
+		return (await this.kv.get(this.key(id))) !== null;
+	}
+
+	/** Record `id` as processed. Returns true on first-time mark (no pre-existing). */
+	async markProcessed(id: string): Promise<boolean> {
+		const existed = await this.alreadyProcessed(id);
+		if (!existed) await this.kv.set(this.key(id), "1");
+		return !existed;
+	}
+
+	/**
+	 * Idempotent touch: returns true (and records) only if `id` was NOT yet
+	 * processed. Use as a guard wrapping an effect so a redelivered webhook
+	 * never runs the effect twice.
+	 */
+	async touch(id: string): Promise<boolean> {
+		return this.markProcessed(id);
+	}
+}
+
