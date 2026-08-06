@@ -1424,3 +1424,21 @@ body.settings-page .brand-copy { flex: 0 0 auto; }
 }
 .model-badge-label { font-weight: 500; }
 
+
+/* Workflow picker (engagement pack) + run review pending */
+.chips-workflows {
+  margin-top: 14px;
+  max-height: 180px;
+  overflow-y: auto;
+  align-content: flex-start;
+}
+.chips-label {
+  flex-basis: 100%;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #8a8a8a);
+  margin-bottom: 2px;
+}
+.chip-workflow { font-weight: 500; }
+#pendingReviewBtn { color: var(--warn, #b8860b); font-weight: 500; }

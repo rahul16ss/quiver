@@ -40,6 +40,7 @@ import {
   evidenceConsentApprove,
   evidenceConsentDecline,
 } from "./consent.js";
+import { dismissRunApproval, reopenRunApproval } from "./runs.js";
 
 function wireButtons() {
   state.sendBtn.addEventListener("click", sendPrompt);
@@ -212,6 +213,10 @@ function wireNewButtons() {
   if (mf2) mf2.addEventListener("click", () => markFinalForCurrentDocument());
   const ov = $("overrideBtn");
   if (ov) ov.addEventListener("click", () => overrideFinalForCurrentDocument());
+  const snooze = $("runApprovalSnooze");
+  if (snooze) snooze.addEventListener("click", dismissRunApproval);
+  const prb = $("pendingReviewBtn");
+  if (prb) prb.addEventListener("click", reopenRunApproval);
 }
 
 export { wireButtons, wireNewButtons };

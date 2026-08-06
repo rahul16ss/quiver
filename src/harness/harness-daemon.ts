@@ -40,7 +40,7 @@ export interface HarnessDaemonOptions {
 export class HarnessDaemon {
   private daemon: QuiverDaemon;
   private engine: ExecutionEngine;
-  private runs = new Map<string, { contract: GoalContract; outcome?: RunOutcome }>();
+  private runs = new Map<string, { contract: GoalContract; outcome?: RunOutcome | null }>();
 
   constructor(private opts: HarnessDaemonOptions) {
     this.engine = opts.engine;
@@ -58,6 +58,7 @@ export class HarnessDaemon {
   private async route(req: { method: string; pathname: string; body: any }, api: ReturnType<HarnessDaemon["api"]>, browserApi?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>): Promise<unknown> {
     if (req.method === "GET" && req.pathname === "/api/workflows") return api.listWorkflows();
     if (req.method === "POST" && req.pathname === "/api/run/start") return api.startRun(req.body ?? {});
+    if (req.method === "GET" && req.pathname === "/api/run/active") return { runs: api.active() };
     if (req.method === "POST" && req.pathname === "/api/run/state") return api.state((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/approve") return api.approve((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/reject") return api.reject((req.body as any)?.runId ?? "");
@@ -107,6 +108,7 @@ export class HarnessDaemon {
   api(): {
     listWorkflows: () => WorkflowSpec[];
     startRun: (req: { workflowId: string; reviewer?: string; sensitivity?: GoalContract["dataSensitivity"] }) => Promise<RunOutcome>;
+    active: () => string[];
     state: (runId: string) => Promise<RunSnapshot | null>;
     approve: (runId: string) => Promise<RunOutcome>;
     reject: (runId: string) => Promise<RunOutcome>;
@@ -129,10 +131,16 @@ export class HarnessDaemon {
           stopConditions: [],
           createdAt: new Date().toISOString(),
         };
+        // Register the in-flight run BEFORE it starts so the UI can discover
+        // and follow it live (and re-attach after a browser reload — the
+        // daemon keeps working while the window is closed).
+        this.runs.set(runId, { contract, outcome: null });
         const outcome = await this.engine.run(contract, {});
         this.runs.set(runId, { contract, outcome });
         return outcome;
       },
+      // Run ids still executing (registered at start, outcome not yet settled).
+      active: () => [...this.runs.entries()].filter(([, v]) => v.outcome === null).map(([id]) => id),
       state: (runId) => this.engine.inspect(runId),
       approve: async (runId) => {
         const entry = this.runs.get(runId);

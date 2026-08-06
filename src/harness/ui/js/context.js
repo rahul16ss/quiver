@@ -41,18 +41,20 @@ async function loadContextSurfaces(config) {
   if (endpointEl) {
     const baseUrl = config?.provider?.baseUrl || "";
     let where = "Cloud — default provider endpoint";
-    if (config?.vertexProjectId) {
-      where = `Cloud (Vertex AI) — ${config.vertexProjectId}`;
-    } else if (baseUrl) {
+    if (baseUrl) {
       try {
         const host = new URL(baseUrl).hostname;
         where =
           host === "localhost" || host === "127.0.0.1"
             ? "Local — prompts stay on this machine"
-            : `Cloud — prompts go to ${host}`;
+            : host === "openrouter.ai"
+              ? "Cloud (OpenRouter) — prompts go to openrouter.ai"
+              : `Cloud — prompts go to ${host}`;
       } catch {
         where = `Cloud — ${baseUrl}`;
       }
+    } else if (config?.vertexProjectId) {
+      where = `Cloud (Vertex AI) — ${config.vertexProjectId}`;
     }
     endpointEl.textContent = where;
     endpointEl.title = baseUrl || config?.vertexProjectId || "Default provider endpoint";

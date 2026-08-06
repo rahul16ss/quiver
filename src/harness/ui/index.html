@@ -101,17 +101,17 @@
           <div class="ctx-bar-wrap">
             <div id="ctxTokenBar" class="ctx-bar"></div>
           </div>
-          <div id="ctxTokenLabel" class="ctx-tokens-label">120,000 max tokens</div>
+          <div id="ctxTokenLabel" class="ctx-tokens-label">Token usage appears once a run starts</div>
         </div>
       </div>
 
       <!-- §6 layer F: Operational -->
       <div class="ctx-section">
         <div class="ctx-label">Where it runs</div>
-        <div id="ctxModel" class="ctx-value">Gemini 3.6 Flash</div>
-        <div id="ctxEndpoint" class="ctx-value muted">Cloud (Vertex AI) — quiver-vertex-f4fabe</div>
+        <div id="ctxModel" class="ctx-value">Chosen per task by the engagement pack</div>
+        <div id="ctxEndpoint" class="ctx-value muted">Checking where this runs…</div>
         <div id="ctxTrust" class="ctx-value muted">Approvals: Ask before acting</div>
-        <div id="ctxWorkspace" class="ctx-value muted">Workspace: ~/quiver</div>
+        <div id="ctxWorkspace" class="ctx-value muted"></div>
       </div>
     </aside>
 
@@ -151,6 +151,7 @@
             <button type="button" class="chip" data-suggestion="Review a company's latest earnings and draft the evidence pack">Review a company's latest earnings and draft the evidence pack</button>
             <button type="button" class="chip" data-suggestion="Build a portfolio review from the approved workspace sources">Build a portfolio review from the approved workspace sources</button>
           </div>
+          <div id="workflowChips" class="chips chips-workflows" hidden></div>
           <div class="empty-actions">
             <button id="runWorkflowBtn" class="ghost-btn" title="Re-run the flagship IC memo workflow (deterministic, no network)">Run workflow demo</button>
           </div>
@@ -187,6 +188,7 @@
           <h2>What Quiver is doing</h2>
         </div>
         <div id="currentStatus" class="current-status-line" hidden></div>
+        <button id="pendingReviewBtn" class="link-btn" title="A workflow is waiting for your decision" hidden>Review pending</button>
         <button id="activityClearBtn" class="link-btn" title="Clear the activity stream" hidden>Clear</button>
       </div>
       <p class="audit-caption">Tamper-evident — every decision is hash-chained on this machine.</p>
@@ -194,6 +196,21 @@
         <div id="activityEmpty" class="activity-empty">Activity will appear here when Quiver starts working.</div>
       </div>
     </aside>
+  </div>
+
+  <!-- ─── Workflow run approval (harness engine, S7) ─────────────────── -->
+  <div id="runApprovalOverlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="overlay-head">
+        <h3 id="runApprovalTitle">Workflow ready for your review</h3>
+        <button class="close-btn" id="runApprovalSnooze" title="Decide later — the workflow waits">×</button>
+      </div>
+      <p id="runApprovalSummary" class="overlay-sub"></p>
+      <div class="overlay-actions">
+        <button id="runApproveBtn" class="primary-btn">Approve &amp; commit</button>
+        <button id="runRejectBtn" class="danger-btn">Send back</button>
+      </div>
+    </div>
   </div>
 
   <!-- ─── Verification rail (S9 / SPEC §8.3) ─────────────────────────── -->

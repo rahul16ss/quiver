@@ -114,6 +114,20 @@ function wireAgentEvents() {
   api.onAgentStderr((d) => {
     if (d?.data) addActivity(d.data.trim(), "warn");
   });
+  // Daemon connection state drives the ambient ribbon: honest connectivity,
+  // and credit for work that continued while the window was disconnected.
+  api.onConnectionChange((s) => {
+    if (s === "reconnecting") {
+      setCurrentStatus("Reconnecting to Quiver's daemon…");
+      return;
+    }
+    if (state.turnRunning || state.liveRunActive) {
+      setCurrentStatus("Reconnected — Quiver kept working");
+      addActivity("Reconnected to the daemon — work continued while you were away.", "tool");
+    } else {
+      setCurrentStatus("");
+    }
+  });
 }
 
 function handleAgentEvent(ev) {

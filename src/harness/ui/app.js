@@ -16,6 +16,7 @@ import {
   wireAgentEvents,
 } from "./js/chat.js";
 import { wireButtons, wireNewButtons } from "./js/wire.js";
+import { initWorkflows } from "./js/runs.js";
 
 async function init() {
   wireButtons();
@@ -48,6 +49,8 @@ async function init() {
   maybeShowWorkspaceWarning(config);
   loadContextSurfaces(config);
   syncDrawerControls();
+  // Engagement-pack workflow picker + reattach to any run still going (ADR-009).
+  initWorkflows();
 }
 
 // One-time, non-blocking banner when the configured workspace is Quiver's own

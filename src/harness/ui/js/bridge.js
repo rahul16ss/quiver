@@ -70,6 +70,20 @@ export const api = {
   // Workflow
   rerunWorkflow: () => post("/api/workflow/rerun", {}),
 
+  // Harness workflow runs (engagement-pack workflows on the goal-seeking engine)
+  listWorkflows: () => get("/api/workflows"),
+  startWorkflowRun: (workflowId) => post("/api/run/start", { workflowId }),
+  listActiveRuns: async () => (await get("/api/run/active")).runs ?? [],
+  runState: (runId) => post("/api/run/state", { runId }),
+  approveRun: (runId) => post("/api/run/approve", { runId }),
+  rejectRun: (runId) => post("/api/run/reject", { runId }),
+
+  // Connection state of the daemon event stream ("live" | "reconnecting")
+  onConnectionChange: (cb) => {
+    connSubs.add(cb);
+    return () => connSubs.delete(cb);
+  },
+
   // Navigation (no-ops in the browser — all one page)
   loadMain: () => {},
   loadSettings: () => {},
@@ -89,6 +103,13 @@ export const api = {
 // header — the secret never goes in a URL query param, per §16).
 let streamController = null;
 const subs = new Map(); // kind -> Set<callback>
+const connSubs = new Set(); // connection-state listeners
+let connState = "live";
+function setConnState(next) {
+  if (next === connState) return;
+  connState = next;
+  for (const fn of connSubs) fn(next);
+}
 function subscribe(kind, cb) {
   if (!subs.has(kind)) subs.set(kind, new Set());
   subs.get(kind).add(cb);
@@ -103,7 +124,8 @@ async function startEventStream() {
     const res = await fetch(`/api/agent/events`, {
       headers: { "x-quiver-secret": SECRET },
     });
-    if (!res.ok || !res.body) { setTimeout(startEventStream, 3000); return; }
+    if (!res.ok || !res.body) { setConnState("reconnecting"); setTimeout(startEventStream, 3000); return; }
+    setConnState("live");
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -129,6 +151,7 @@ async function startEventStream() {
     }
   } catch { /* reconnect */ }
   // Reconnect after a delay (the daemon may have restarted).
+  setConnState("reconnecting");
   setTimeout(startEventStream, 3000);
 }
 
