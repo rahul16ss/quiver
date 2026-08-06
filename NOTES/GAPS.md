@@ -21,3 +21,36 @@ Classification uses the requested A–E categories. This table is evidence-first
 | Chat routing | Browser chat should use intended role/model routing | `browser-bridge.ts` starts legacy `agent.ts`; provider-bridge dirty edit contains `require_router()` and `chatModelFor()` returns the existing model, not the selected profile | E/B | Revert the incomplete experiment or replace with a tested, real per-request model construction. Do not claim chat routing until an HTTP/browser-path test proves model diversity |
 | Plan execution | A planner-produced plan reaches maker steps | External code adds planner/checker gate, but needs branch and live-engine receipts | B | Add a trace assertion that the planner output advances to a produce step and invokes maker with `hintMime`; fix if not |
 | UI copy | Current model/provider language matches external catalog and truth table | External UI changed endpoint/model display; stale context/settings files still mention Vertex | D | Reconcile user-visible config copy with current gateway/catalog, then run visual QA |
+
+## Progress notes (goal-seeking loop)
+
+- AC-7 (per-step maker/checker/planner gate): NOW PROVEN. New test
+  `tests/harness/32-engine-maker-checker-planner.test.ts` (11 checks) drives the
+  engine with scripted models: planner advances to a produce step, maker fires
+  with the deliverable hintMime, per-step checker verifies, a rejection feeds
+  feedback to the maker, and a legitimately-stuck step terminates honestly.
+  Confirmed by trace: a reject-then-OK on an otherwise-clean contract yields
+  ~2 maker calls and a `paused` terminal; an unresolvable mandatory source
+  category loops honestly to the iteration budget (not an engine defect).
+- AC-15 (docs): README OpenRouter claim fixed; model-router.md reconciled to the
+  external catalog. Slugs verified against the live OpenRouter API (all exist;
+  pricing matches). Committed as 8df027a.
+- AC-17 (residue): incomplete provider-bridge chat-routing experiment reverted
+  to HEAD (its `chatModelFor` returned the same client — not a real switch, and
+  used a CJS require in ESM). This reverts the dirty edit; chat routing stays
+  single-model by design until a real, tested per-request model is built.
+- AC-11 `/api/run/active` (browser live-run poll surface): VERIFIED BY INSPECTION
+  — `HarnessDaemon.startRun` registers the run with `outcome:null` BEFORE
+  `engine.run`, and `active()` filters `outcome === null`, so in-flight runs are
+  discoverable and the UI can reattach after reload. A wall-clock HTTP poll is
+  NOT deterministic (mock engine completes in microseconds, so the in-flight
+  window is unobservable over the boundary); adding it as a timing assertion
+  would be flaky. Decision: do NOT put a timing race into the deterministic
+  suite; keep the mechanism verified by code inspection and note it here. If
+  needed later, prove it with a deliberately-slow mock engine in an opt-in
+  (non-CI) harness rather than a wall-clock race.
+- Tooling gap: `npm run lint` and `npm run build` are absent scripts. No build
+  is defined; `npx tsc --noEmit` is the type gate (passes). This matches the
+  project's current layout; a lint script would need an added linter dependency
+  and is not required by the committed acceptance contract. Recorded, not
+  fabricated.
