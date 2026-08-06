@@ -2481,6 +2481,43 @@ async function integrationWiringContract() {
   );
 
   await check(
+    "TEMPORAL-RESEARCH-STATE-EXISTS",
+    "US-17 / §13",
+    "a vendor-neutral ResearchStateStore with claim versions (validTime + recordedTime + kind + supersession) and point-in-time queries must exist",
+    () => {
+      const c = srcText("src/harness/research-state-store.ts");
+      if (!/class ResearchStateStore/.test(c))
+        throw new Error("missing ResearchStateStore");
+      if (!/interface ClaimVersion/.test(c))
+        throw new Error("missing ClaimVersion");
+      if (!/validTime/.test(c) || !/recordedTime/.test(c) || !/sourcePublicationTime/.test(c))
+        throw new Error("claim version must distinguish validTime / recordedTime / sourcePublicationTime");
+      for (const k of ["actual", "estimate", "guidance", "assumption", "derived"]) {
+        if (!new RegExp(`"${k}"`).test(c)) throw new Error(`missing claim kind: ${k}`);
+      }
+      if (!/supersedes/.test(c) || !/contradictedBy/.test(c))
+        throw new Error("no supersession/contradiction tracking");
+      return true;
+    },
+  );
+
+  await check(
+    "TEMPORAL-NO-FUTURE-LEAKAGE",
+    "US-17 / §13",
+    "point-in-time as-of queries must not leak future-recorded versions (recordedTime after as-of excluded even if validTime is before)",
+    () => {
+      const c = codeOnly("src/harness/research-state-store.ts");
+      if (!/recordedTime\s*<=\s*asOfDate/.test(c))
+        throw new Error("asOf does not filter by recordedTime <= asOfDate (future leakage possible)");
+      if (!/basedOnAvailableEvidence/.test(c))
+        throw new Error("no based-on-available-evidence check");
+      if (!/hypotheses\(\)/.test(c) || !/verified/.test(c))
+        throw new Error("unverified edges not isolated as hypotheses");
+      return true;
+    },
+  );
+
+  await check(
     "ENTITLEMENT-BROKER-CONDITIONS",
     "US-17 / §9",
     "the integration broker must decide() permission only when all policy conditions resolve; invoke() must re-run decide() and refuse on unresolved conditions (a caller that ignores decide() cannot invoke)",
