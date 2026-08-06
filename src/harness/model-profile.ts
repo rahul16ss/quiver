@@ -201,7 +201,46 @@ export function starterCatalog(): ModelProfile[] {
       lastContractTest: { date: "", result: "not-run" },
       pdfEngine: "native",
     },
+    {
+      // Independent native-doc checker: Moonshot family ≠ Anthropic maker.
+      // CorpFin v2 #3 (71.56%), EMB scratch 68.2% — strong document auditor.
+      slug: "native-doc-checker",
+      modelSlug: "moonshotai/kimi-k3",
+      providerOrder: ["MoonshotAI"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_048_576,
+      maxFileBytes: 32 * 1024 * 1024,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: true,
+      routerRole: "checker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
     // ── Text-only tier (input_modalities = [text]) ───────────────────
+    {
+      // The planner (both tiers): GPT-5.6 Sol — EMB #3 (72.3%), Terminal-Bench
+      // leader. Plans from text digests; file-capable so a native-file planning
+      // call never fails closed.
+      slug: "text-planner",
+      modelSlug: "openai/gpt-5.6-sol",
+      providerOrder: ["OpenAI"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_050_000,
+      maxFileBytes: 32 * 1024 * 1024,
+      zdrEligible: true,
+      checkerEligible: false,
+      nativeFileInput: true,
+      routerRole: "planner",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
     {
       slug: "text-failsafe",
       modelSlug: "openai/gpt-5.6-sol",
@@ -220,9 +259,11 @@ export function starterCatalog(): ModelProfile[] {
       pdfEngine: "native",
     },
     {
+      // Independent text-tier checker: Google family ≠ OpenAI maker.
+      // FAB v2 #2 (57.86%) — frontier-grade analyst audit at mid-tier cost.
       slug: "text-checker",
-      modelSlug: "z-ai/glm-5.2",
-      providerOrder: ["Z-Ai"],
+      modelSlug: "google/gemini-3.5-flash",
+      providerOrder: ["Google"],
       testedNativeMimeTypes: [],
       supportsToolCalling: true,
       supportsStrictOutput: true,
@@ -237,9 +278,10 @@ export function starterCatalog(): ModelProfile[] {
       pdfEngine: "native",
     },
     {
+      // High-volume text maker: GPT-5.6 Luna (xHigh) — II 51 at $0.10/$0.60.
       slug: "text-maker",
-      modelSlug: "deepseek/deepseek-v4-flash-0731",
-      providerOrder: ["DeepSeek"],
+      modelSlug: "openai/gpt-5.6-luna",
+      providerOrder: ["OpenAI"],
       testedNativeMimeTypes: [],
       supportsToolCalling: true,
       supportsStrictOutput: true,

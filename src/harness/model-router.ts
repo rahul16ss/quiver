@@ -18,14 +18,16 @@
  * proposes, certification disposes. Fail closed, never silently substitute OCR.
  *
  * Selection (ZDR endpoints, live OpenRouter data Aug 2026 — see
- * docs/refactor/model-router.md):
- *   native-doc-frontier : anthropic/claude-opus-5   $5/$25  intel 60.7 (reviewer)
- *   native-doc-primary  : anthropic/claude-sonnet-5  $2/$10  intel 53.4 (maker)
- *   native-doc-budget   : google/gemini-3.6-flash    $1.5/$7.5 intel 50.1 (budget)
- *   text-failsafe       : openai/gpt-5.6-sol         $5/$30  intel 58.9 (failsafe)
- *   text-checker        : z-ai/glm-5.2               $0.76/$2.42 intel 51.1 (checker)
- *   text-maker          : deepseek/deepseek-v4-flash-0731 $0.09/$0.18 intel 49.9 (maker)
- *   text-pro            : deepseek/deepseek-v4-pro   $0.44/$0.87 intel 44.3 (fallback)
+ * docs/refactor/model-router.md; FAB v2 / CorpFin v2 / EMB benchmarks):
+ *   native-doc-frontier : anthropic/claude-opus-5   $5/$25  (reviewer/failsafe)
+ *   native-doc-primary  : anthropic/claude-sonnet-5  $2/$10  (native-doc maker)
+ *   native-doc-checker  : moonshotai/kimi-k3         $3/$15  (native-doc checker — Moonshot ≠ Anthropic)
+ *   native-doc-budget   : google/gemini-3.6-flash    $1.5/$7.5 (budget)
+ *   text-planner        : openai/gpt-5.6-sol         $5/$30  (planner, both tiers)
+ *   text-failsafe       : openai/gpt-5.6-sol         $5/$30  (failsafe)
+ *   text-checker        : google/gemini-3.5-flash    $1.5/$9 (text checker — Google ≠ OpenAI)
+ *   text-maker          : openai/gpt-5.6-luna        $0.10/$0.60 (text maker)
+ *   text-pro            : deepseek/deepseek-v4-pro   $0.44/$0.87 (fallback)
  */
 
 import type { ModelMessage, ContentPart, SensitivityProfile } from "./interfaces.js";
@@ -140,29 +142,47 @@ export class ModalityRouter {
 	private pickNativeDoc(role: ModelRole): string | undefined {
 		// Reviewer / failsafe get the frontier native-doc model (Opus 5 is
 		// particularly strong at chart/document visual analysis + complex office
-		// deliverables). Maker/checker get the value native-doc model (Sonnet 5).
+		// deliverables). The maker gets the value native-doc model (Sonnet 5).
+		// The checker is a deliberately different family (Kimi K3, Moonshot) from
+		// the maker (Sonnet 5, Anthropic) — an independent second pair of eyes.
+		// The planner is Sol in every tier (plans from text digests).
 		const preferred =
-			role === "reviewer" || role === "failsafe" ? "native-doc-frontier" : "native-doc-primary";
+			role === "reviewer" || role === "failsafe"
+				? "native-doc-frontier"
+				: role === "checker"
+					? "native-doc-checker"
+					: role === "planner"
+						? "text-planner"
+						: "native-doc-primary";
 		if (this.servesRole(preferred, role)) return preferred;
 		// Fall back within the native-doc tier only — never to a text profile,
-		// and never to a profile the pack disallows for this role.
-		const order = ["native-doc-frontier", "native-doc-primary", "native-doc-budget"];
+		// and never to a profile the pack disallows for this role. (The planner
+		// falls back to the native-doc maker rather than fail closed.)
+		const order =
+			role === "checker"
+				? ["native-doc-checker", "native-doc-primary", "native-doc-frontier", "native-doc-budget"]
+				: role === "planner"
+					? ["text-planner", "native-doc-primary", "native-doc-frontier"]
+					: ["native-doc-frontier", "native-doc-primary", "native-doc-budget"];
 		return order.find((s) => this.servesRole(s, role));
 	}
 
 	// ─── text-only tier ────────────────────────────────────────────────
 
 	private pickText(role: ModelRole): string | undefined {
-		// Checker is a deliberately independent family (GLM) from the maker
-		// (DeepSeek) so the checker is a genuine second pair of eyes.
+		// Checker is a deliberately independent family (Gemini, Google) from the
+		// maker (Luna, OpenAI) so the checker is a genuine second pair of eyes.
+		// The planner is Sol (OpenAI) — it decomposes; it never audits the maker.
 		const preferred =
 			role === "checker"
 				? "text-checker"
 				: role === "reviewer" || role === "failsafe"
 					? "text-failsafe"
-					: "text-maker"; // planner + maker
+					: role === "planner"
+						? "text-planner"
+						: "text-maker"; // maker
 		if (this.servesRole(preferred, role)) return preferred;
-		const order = ["text-maker", "text-checker", "text-failsafe", "text-pro"];
+		const order = ["text-maker", "text-planner", "text-checker", "text-failsafe", "text-pro"];
 		return order.find((s) => this.servesRole(s, role));
 	}
 }

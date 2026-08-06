@@ -55,19 +55,21 @@ function run() {
   check("MODALITY-MIXED-PREFERS-NATIVE", classifyModality([textMsg, pdfMsg]) === "native-file");
 
   // ── Text-only routing by role ─────────────────────────────────────
-  // Maker + planner → text-maker (deepseek-v4-flash). Checker → text-checker
-  // (glm-5.2, independent family). Reviewer/failsafe → text-failsafe (gpt-5.6-sol).
+  // Maker → text-maker (gpt-5.6-luna). Planner → text-planner (gpt-5.6-sol).
+  // Checker → text-checker (gemini-3.5-flash, independent family).
+  // Reviewer/failsafe → text-failsafe (gpt-5.6-sol).
   check("TEXT-MAKER", router.route([textMsg], "maker", "public") === "text-maker");
-  check("TEXT-PLANNER-IS-MAKER", router.route([textMsg], "planner", "public") === "text-maker");
-  check("TEXT-CHECKER-IS-GLM", router.route([textMsg], "checker", "public") === "text-checker");
+  check("TEXT-PLANNER-IS-SOL", router.route([textMsg], "planner", "public") === "text-planner");
+  check("TEXT-CHECKER-IS-GEMINI", router.route([textMsg], "checker", "public") === "text-checker");
   check("TEXT-REVIEWER-IS-FAILSAFE", router.route([textMsg], "reviewer", "public") === "text-failsafe");
   check("TEXT-FAILSAFE", router.route([textMsg], "failsafe", "public") === "text-failsafe");
 
   // ── Native-file routing never falls back to a text profile ─────────
-  // Maker/checker with a file → native-doc-primary (sonnet-5).
-  // Reviewer/failsafe with a file → native-doc-frontier (opus-5).
+  // Maker with a file → native-doc-primary (sonnet-5). Checker with a file →
+  // native-doc-checker (kimi-k3, independent family). Reviewer/failsafe →
+  // native-doc-frontier (opus-5). Planner → text-planner (plans from digests).
   check("NATIVE-MAKER-IS-SONNET", router.route([pdfMsg], "maker", "public") === "native-doc-primary");
-  check("NATIVE-CHECKER-IS-SONNET", router.route([pdfMsg], "checker", "public") === "native-doc-primary");
+  check("NATIVE-CHECKER-IS-KIMI", router.route([pdfMsg], "checker", "public") === "native-doc-checker");
   check("NATIVE-REVIEWER-IS-OPUS", router.route([pdfMsg], "reviewer", "public") === "native-doc-frontier");
   check("NATIVE-FAILSAFE-IS-OPUS", router.route([pdfMsg], "failsafe", "public") === "native-doc-frontier");
   check("NATIVE-DOCX-ROUTES-NATIVE", router.route([docxMsg], "maker", "public") === "native-doc-primary");
@@ -86,8 +88,13 @@ function run() {
   const makerModel = profiles.get(router.route([textMsg], "maker", "public")!)!.modelSlug;
   const checkerModel = profiles.get(router.route([textMsg], "checker", "public")!)!.modelSlug;
   check("MAKER-CHECKER-DIFFERENT-FAMILY", makerModel !== checkerModel);
-  check("MAKER-IS-DEEPSEEK", makerModel === "deepseek/deepseek-v4-flash-0731");
-  check("CHECKER-IS-GLM", checkerModel === "z-ai/glm-5.2");
+  check("MAKER-IS-LUNA", makerModel === "openai/gpt-5.6-luna");
+  check("CHECKER-IS-GEMINI-FLASH", checkerModel === "google/gemini-3.5-flash");
+  // The native-doc tier separates families too: Sonnet 5 (Anthropic) makes,
+  // Kimi K3 (Moonshot) checks — document work never grades its own homework.
+  const nativeMakerModel = profiles.get(router.route([pdfMsg], "maker", "public")!)!.modelSlug;
+  const nativeCheckerModel = profiles.get(router.route([pdfMsg], "checker", "public")!)!.modelSlug;
+  check("NATIVE-MAKER-CHECKER-DIFFERENT-FAMILY", nativeMakerModel !== nativeCheckerModel);
 
   // ── Native-doc profiles are file-capable; text profiles are not ───
   const nativeMaker = profiles.get(router.route([pdfMsg], "maker", "public")!)!;

@@ -40,9 +40,11 @@
     { "category": "public-web-research", "rank": 10, "note": "Open web only — never a substitute for licensed data." }
   ],
   "approvedModels": [
-    { "profileSlug": "text-maker", "roles": ["planner", "maker"], "providerOrder": ["DeepSeek"] },
-    { "profileSlug": "native-doc-primary", "roles": ["maker", "checker", "reviewer"], "providerOrder": ["Anthropic"] },
-    { "profileSlug": "text-checker", "roles": ["checker", "reviewer"], "providerOrder": ["Z-Ai"] },
+    { "profileSlug": "text-maker", "roles": ["maker"], "providerOrder": ["OpenAI"] },
+    { "profileSlug": "text-planner", "roles": ["planner"], "providerOrder": ["OpenAI"] },
+    { "profileSlug": "native-doc-primary", "roles": ["maker", "reviewer"], "providerOrder": ["Anthropic"] },
+    { "profileSlug": "native-doc-checker", "roles": ["checker"], "providerOrder": ["MoonshotAI"] },
+    { "profileSlug": "text-checker", "roles": ["checker", "reviewer"], "providerOrder": ["Google"] },
     { "profileSlug": "local-private-default", "roles": ["planner", "maker", "checker", "reviewer"], "providerOrder": ["Local"] }
   ],
   "sensitivityProfiles": [
