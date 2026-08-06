@@ -41,6 +41,7 @@ export interface JobRecord {
 	enabled: boolean;
 	attempts: number;
 	nextDueAt: number;
+	maxAttempts: number;
 	lastError?: string;
 	leaseHolder?: string;
 	leaseUntil?: number;
@@ -63,6 +64,7 @@ export class DurableJobScheduler {
 				enabled INTEGER NOT NULL DEFAULT 1,
 				attempts INTEGER NOT NULL DEFAULT 0,
 				next_due_at INTEGER NOT NULL,
+				max_attempts INTEGER NOT NULL DEFAULT 3,
 				last_error TEXT,
 				lease_holder TEXT,
 				lease_until INTEGER,
@@ -75,14 +77,16 @@ export class DurableJobScheduler {
 	/** Register (or update) a job. */
 	upsert(spec: JobSpec): void {
 		const now = spec.createdAt ?? Date.now();
+		const maxAttempts = spec.maxAttempts ?? 3;
 		this.db
 			.prepare(
-				`INSERT INTO durable_jobs (job_id, kind, schedule, enabled, attempts, next_due_at, created_at)
-				 VALUES (?, ?, ?, 1, 0, ?, ?)
+				`INSERT INTO durable_jobs (job_id, kind, schedule, enabled, attempts, next_due_at, max_attempts, created_at)
+				 VALUES (?, ?, ?, 1, 0, ?, ?, ?)
 				 ON CONFLICT(job_id) DO UPDATE SET
-					kind=excluded.kind, schedule=excluded.schedule, enabled=1, next_due_at=excluded.next_due_at`,
+					kind=excluded.kind, schedule=excluded.schedule, enabled=1, next_due_at=excluded.next_due_at,
+					max_attempts=excluded.max_attempts`,
 			)
-			.run(spec.jobId, spec.kind, JSON.stringify(spec.schedule), now, now);
+			.run(spec.jobId, spec.kind, JSON.stringify(spec.schedule), now, maxAttempts, now);
 	}
 
 	/** Due + not dead-lettered jobs (for the scheduler to offer leases on). */
@@ -149,6 +153,64 @@ export class DurableJobScheduler {
 			.prepare("UPDATE durable_jobs SET dead_lettered=0, attempts=0, last_error=NULL, next_due_at=? WHERE job_id=?")
 			.run(at, jobId);
 	}
+
+	/**
+	 * Run all due jobs under lease and execute each via `handler`. On success,
+	 * reschedule per the interval; on failure, count the attempt (dead-letter
+	 * after maxAttempts). Returns a summary of executed / leased-lost / failed.
+	 * Safe to call from multiple workers: an already-leased job is skipped, so
+	 * racing workers never double-run a job.
+	 */
+	async runDue(
+		handler: (job: JobRecord) => Promise<void> | void,
+		worker: string,
+		opts: { now?: number; ttlMs?: number } = {},
+	): Promise<{ ran: number; leased: number; failed: number }> {
+		const now = opts.now ?? Date.now();
+		const ttlMs = opts.ttlMs ?? 60_000;
+		let ran = 0;
+		let leased = 0;
+		let failed = 0;
+		for (const job of this.dueNow(now)) {
+			const lease = this.acquire(job.jobId, worker, ttlMs, now);
+			if (!lease.ok) continue; // leased by another live worker
+			leased++;
+			const max = job.maxAttempts;
+			try {
+				await handler(job);
+				const next = this.nextDue(job, now);
+				this.complete(job.jobId, next);
+				ran++;
+			} catch (err) {
+				const dlq = this.fail(job.jobId, String((err as Error)?.message ?? err), max, now);
+				failed++;
+				// If dead-lettered, it is no longer enqueued; otherwise its current
+				// next_due_at is passed, so it is retried on the next runDue pass.
+				if (!dlq) {
+					this.db
+						.prepare("UPDATE durable_jobs SET next_due_at=? WHERE job_id=?")
+						.run(now + this.retryBackoffMs, job.jobId);
+				}
+			}
+		}
+		return { ran, leased, failed };
+	}
+
+	private get maxAttemptsDefault(): number {
+		return 3;
+	}
+
+	private get retryBackoffMs(): number {
+		return 5_000;
+	}
+
+	private nextDue(job: JobRecord, now: number): number {
+		const s = job.schedule;
+		if (s.type === "interval") return now + s.everyMs;
+		// For cron expressions the scheduler cannot estimate the next instant
+		// portably; fall back to a 1-minute re-check so a due job is revisited.
+		return now + 60_000;
+	}
 }
 
 interface Row {
@@ -158,6 +220,7 @@ interface Row {
 	enabled: number;
 	attempts: number;
 	next_due_at: number;
+	max_attempts: number;
 	last_error: string | null;
 	lease_holder: string | null;
 	lease_until: number | null;
@@ -173,6 +236,7 @@ function toRecord(r: Row): JobRecord {
 		enabled: r.enabled === 1,
 		attempts: r.attempts,
 		nextDueAt: r.next_due_at,
+		maxAttempts: r.max_attempts,
 		lastError: r.last_error ?? undefined,
 		leaseHolder: r.lease_holder ?? undefined,
 		leaseUntil: r.lease_until ?? undefined,

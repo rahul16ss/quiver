@@ -59,6 +59,33 @@ async function run() {	// ── Interval due scheduling ───────�
 	s2.recover("poison", 5_000);
 	check("RECOVER-REENABLES", s2.dueNow(6_000).some((j) => j.jobId === "poison") && s2.deadLettered().length === 0);
 
+	// ── runDue: leases + executes due jobs, reschedules on success ─────
+	const s3 = new DurableJobScheduler(":memory:");
+	s3.upsert({ jobId: "a", kind: "k", schedule: { type: "interval", everyMs: 10_000 }, createdAt: 0 });
+	s3.upsert({ jobId: "b", kind: "k", schedule: { type: "interval", everyMs: 10_000 }, createdAt: 0 });
+	const executed: string[] = [];
+	const r1 = await s3.runDue(async (j) => { executed.push(j.jobId); }, "w", { now: 0 });
+	check("RUNDUE-EXECUTES-ALL", r1.ran === 2 && executed.length === 2, JSON.stringify({ r1, executed }));
+	check("RUNDUE-RESCHEDULES", s3.dueNow(0).length === 0); // now due again only after interval
+	check("RUNDUE-NOT-DUE-AT-5K", s3.dueNow(5_000).length === 0);
+	check("RUNDUE-DUE-AFTER-INTERVAL", s3.dueNow(10_000 + 1).length === 2);
+
+	// ── runDue: a racing worker's already-leased job is skipped ─────────
+	// Worker-w holds a live lease on a new job; worker-2 must not run it.
+	s3.upsert({ jobId: "c", kind: "k", schedule: { type: "interval", everyMs: 10_000 }, createdAt: 0 });
+	s3.acquire("c", "worker-w", 60_000, 10); // live lease within TTL
+	const raced = await s3.runDue(async () => {}, "worker-2", { now: 20, ttlMs: 60_000 });
+	check("RUNDUE-RACING-SKIPPED", raced.ran === 0 && raced.leased === 0, JSON.stringify(raced));
+
+	// ── runDue: a throwing handler is counted, then dead-letters ────────
+	const s4 = new DurableJobScheduler(":memory:");
+	s4.upsert({ jobId: "p", kind: "bad", schedule: { type: "interval", everyMs: 10_000 }, createdAt: 0, maxAttempts: 2 });
+	const f1 = await s4.runDue(async () => { throw new Error("kaboom"); }, "w", { now: 0, ttlMs: 30_000 });
+	check("RUNDUE-FAILED-COUNTS", f1.failed === 1, JSON.stringify(f1));
+	check("RUNDUE-FAILED-NOT-DLQ-YET", s4.deadLettered().length === 0);
+	const f2 = await s4.runDue(async () => { throw new Error("kaboom2"); }, "w", { now: 5_000, ttlMs: 30_000 });
+	check("RUNDUE-DLQ-AFTER-MAXATTEMPTS", f2.failed === 1 && s4.deadLettered().length === 1, JSON.stringify({ f2, dlq: s4.deadLettered() }));
+
 	// ── SQLite durability: jobs survive a new scheduler instance ───────
 	const dbPath = path.join(os.tmpdir(), `quiver-jobs-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 	const d1 = new DurableJobScheduler(dbPath);
