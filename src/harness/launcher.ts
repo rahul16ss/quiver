@@ -41,6 +41,11 @@ export async function buildProductionEngine(): Promise<import("./interfaces.js")
   const { globalRegistry } = await import("../registry.js");
 
   await globalRegistry.loadAll();
+  // Install the network guard for air-gapped / private-network profiles (§7).
+  // Blocks public-internet egress below the app layer. No-op for connected-zdr.
+  const { resolveDeploymentProfile, installNetworkGuard } = await import("../security/execution_context.js");
+  const profile = resolveDeploymentProfile();
+  installNetworkGuard(profile);
   const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
   const profiles = new ModelProfileRegistry();
   for (const pp of starterCatalog()) profiles.register(pp);

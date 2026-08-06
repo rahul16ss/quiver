@@ -6534,6 +6534,45 @@ async function extendedCapabilitiesContract() {
   // redaction receipt. Audit chain records the route and reason.
 
   await check(
+    "EXECUTION-CONTEXT-MODULE-EXISTS",
+    "US-17.17 / §7",
+    "An immutable ExecutionContext + deployment profiles (connected-zdr / private-network / air-gapped) must exist with below-app-layer network enforcement",
+    () => {
+      const c = srcText("src/security/execution_context.ts");
+      if (!/type DeploymentProfile\s*=/.test(c))
+        throw new Error("missing DeploymentProfile type");
+      if (!/connected-zdr/.test(c) || !/private-network/.test(c) || !/air-gapped/.test(c))
+        throw new Error("missing the three deployment profiles");
+      if (!/interface ExecutionContext/.test(c))
+        throw new Error("missing ExecutionContext interface");
+      if (!/installNetworkGuard/.test(c) || !/globalThis\.fetch/.test(c))
+        throw new Error("no below-app-layer network guard (globalThis.fetch wrap)");
+      if (!/filterToolsByContext/.test(c))
+        throw new Error("no tool-registry filter by context");
+      return true;
+    },
+  );
+
+  await check(
+    "AIR-GAPPED-ENFORCED-BELOW-APP",
+    "US-17.17 / §7",
+    "air-gapped mode must block public-internet egress below the application layer (not a prompt) and remove external research/MCP/cloud tools from the registry",
+    () => {
+      const c = codeOnly("src/security/execution_context.ts");
+      const launcher = codeOnly("src/harness/launcher.ts");
+      if (!/removedTools.*web_search/.test(c) || !/removedTools.*deep_research/.test(c))
+        throw new Error("air-gapped does not remove external research tools");
+      if (!/Network blocked by deployment profile/.test(c))
+        throw new Error("guard does not throw on blocked hosts");
+      if (!/127\.0\.0\.1|localhost/.test(c))
+        throw new Error("guard does not whitelist loopback");
+      if (!/installNetworkGuard/.test(launcher))
+        throw new Error("launcher does not install the network guard at startup");
+      return true;
+    },
+  );
+
+  await check(
     "SENSITIVITY-MODULE-EXISTS",
     "US-17.17",
     "Sensitivity routing module must exist at src/security/sensitivity.ts with core types and functions",
