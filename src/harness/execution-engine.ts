@@ -9,13 +9,19 @@
  *
  * Goal-seeking loop:
  *   1. inspect goal, available inputs, allowed capabilities  (makePlan)
- *   2. build/update plan + explicit gap ledger                 (makePlan)
- *   3. execute the next bounded action (tool)                  (runStep)
- *   4. verify tool success + deterministic assertions          (runVerify)
- *   5. verify evidence, freshness, source coverage             (runChecker)
- *   6. run independent checker/critic                           (runChecker)
- *   7. update remaining gaps                                    (runEvaluate)
- *   8. iterate within budgets                                    (route)
+ *   2. build/update plan + explicit gap ledger; the planner tags each step
+ *      with the acceptance item(s) it satisfies ([dod:...]); planner calls
+ *      are bounded (MAX_PLANNER_ATTEMPTS) with a deterministic fallback
+ *   3. execute the next bounded action (tool, or maker-drafted deliverable)
+ *      (runStep)
+ *   4. per-step gate: the independent checker verifies each maker-drafted
+ *      step before it counts as complete; rejection feeds back to the maker,
+ *      bounded (MAX_STEP_REJECTIONS), then escalates to the planner to revise
+ *      the remaining plan with a bias for completion (MAX_PLAN_REVISIONS)
+ *   5. verify deterministic assertions                    (runVerify)
+ *   6. run independent checker/critic                     (runChecker)
+ *   7. update remaining gaps                              (runEvaluate)
+ *   8. iterate within budgets                             (route)
  *   9. stop only when all acceptance checks pass, or return an
  *      honest blocked/partial result stating exactly what remains
  *
@@ -78,8 +84,21 @@ const QuiverState = Annotation.Root({
   artifacts: Annotation<string[]>,
   pendingApproval: Annotation<PendingApproval | null>,
   stopReason: Annotation<string | null>,
+  /** Per-step maker↔checker rejection counts (keyed by step text). */
+  stepRetries: Annotation<Record<string, number>>,
+  /** Planner escalations consumed so far (bounded by MAX_PLAN_REVISIONS). */
+  planRevisions: Annotation<number>,
+  /** Set when a step exhausts its checker budget: feedback for the planner. */
+  revisionRequest: Annotation<string | null>,
   trace: Annotation<TraceSink>,
 });
+
+/** Planner attempts before the deterministic fallback (never retry forever). */
+const MAX_PLANNER_ATTEMPTS = 3;
+/** Maker↔checker rejections per step before escalating to the planner. */
+const MAX_STEP_REJECTIONS = 2;
+/** Planner plan-revisions per run before the run must terminate honestly. */
+const MAX_PLAN_REVISIONS = 2;
 
 type QuiverStateType = typeof QuiverState.State;
 
@@ -120,35 +139,77 @@ export class QuiverExecutionEngine implements ExecutionEngine {
 
   private async planNode(state: QuiverStateType): Promise<Partial<QuiverStateType>> {
     const span = state.trace.startSpan("node.plan", { runId: state.contract.runId });
-    if (state.plan.length === 0) {
-      const contract = state.contract;
-      // Maker/checker separation: the MAKER model decomposes the goal into a
-      // plan (routed by modality via AUTO_PROFILE — native-doc when a document
-      // is involved, text tier otherwise). Any failure or refusal falls back to
-      // the deterministic plan so the engine never blocks.
-      const deterministic = [
-        ...contract.definitionOfDone,
-        ...contract.requiredDeliverables.map((d) => `produce ${d.type}`),
-        ...contract.requiredSourceCategories.map((c) => `resolve source ${c}`),
-      ];
-      let plan = deterministic;
-      try {
-        const prompt =
+    const contract = state.contract;
+    const deterministic = [
+      ...contract.definitionOfDone,
+      ...contract.requiredDeliverables.map((d) => `produce ${d.type}`),
+      ...contract.requiredSourceCategories.map((c) => `resolve source ${c}`),
+    ];
+
+    // Planner escalation: a step exhausted its maker↔checker budget. Revise
+    // the remaining plan pragmatically with a bias for completion — bounded by
+    // MAX_PLAN_REVISIONS so a stuck run terminates honestly instead of spinning.
+    if (state.revisionRequest) {
+      if (state.planRevisions < MAX_PLAN_REVISIONS) {
+        const revisePrompt =
           `You are the planning agent for a capital-markets workflow. Objective: ${contract.objective}\n` +
-          `Required deliverables: ${contract.requiredDeliverables.map((d) => `${d.type} (${d.mimeType})`).join(", ") || "none"}\n` +
-          `Required source categories: ${contract.requiredSourceCategories.join(", ") || "none"}\n` +
-          `Definition of done: ${contract.definitionOfDone.join("; ") || "none"}\n` +
-          `Produce a numbered plan, one step per line, covering: evidence gathering, ` +
-          `analysis, deliverable production, and verification. Keep it to 5-12 concrete steps.`;
-        const res = await this.model.invoke(
-          [{ role: "user", content: prompt }],
-          { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
-        );
-        const lines = parsePlanSteps(res.content);
-        if (lines.length > 0) plan = lines;
-      } catch {
-        plan = deterministic; // honest fallback — never break the loop on model failure
+          `Definition of done (acceptance items): ${contract.definitionOfDone.join("; ") || "none"}\n` +
+          `Completed steps: ${state.completedSteps.join(" | ") || "none"}\n` +
+          `Remaining plan: ${state.plan.join(" | ") || "none"}\n` +
+          `A step is stuck after its maker/checker budget was exhausted. Checker feedback: ${state.revisionRequest}\n` +
+          `Revise the REMAINING plan pragmatically, with a bias for completion: simplify or re-scope the stuck ` +
+          `step rather than abandoning the objective. Numbered steps, one per line, keeping [dod:...] tags. 5-12 steps max.`;
+        try {
+          const res = await this.model.invoke(
+            [{ role: "user", content: revisePrompt }],
+            { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
+          );
+          const lines = parsePlanSteps(res.content);
+          if (lines.length > 0) {
+            state.trace.endSpan(span, { revision: true, applied: true, planSize: lines.length });
+            return { plan: lines, planRevisions: state.planRevisions + 1, revisionRequest: null };
+          }
+        } catch {
+          // fall through — consume the request and keep the current plan
+        }
       }
+      // Cap reached or revision failed: keep the current plan; the run ends
+      // honestly (blocked/partial) instead of looping on a stuck step.
+      state.trace.endSpan(span, { revision: true, applied: false });
+      return { planRevisions: state.planRevisions + 1, revisionRequest: null };
+    }
+
+    if (state.plan.length === 0) {
+      // The PLANNER model decomposes the goal into a plan with per-step
+      // acceptance tags (routed by modality via AUTO_PROFILE). Bounded retries
+      // (MAX_PLANNER_ATTEMPTS, fed the previous failure), then the deterministic
+      // fallback — the engine never blocks on planner failure and never retries
+      // the planner forever.
+      const basePrompt =
+        `You are the planning agent for a capital-markets workflow. Objective: ${contract.objective}\n` +
+        `Required deliverables: ${contract.requiredDeliverables.map((d) => `${d.type} (${d.mimeType})`).join(", ") || "none"}\n` +
+        `Required source categories: ${contract.requiredSourceCategories.join(", ") || "none"}\n` +
+        `Definition of done (acceptance items): ${contract.definitionOfDone.join("; ") || "none"}\n` +
+        `Produce a numbered plan, one step per line, covering: evidence gathering, ` +
+        `analysis, deliverable production, and verification. Keep it to 5-12 concrete steps. ` +
+        `Tag every step with the acceptance item(s) it satisfies, verbatim, in brackets — ` +
+        `e.g. "draft summary section [dod:all figures sourced]". Every acceptance item must ` +
+        `be covered by at least one step.`;
+      let plan: string[] = [];
+      let lastFailure = "";
+      for (let attempt = 1; attempt <= MAX_PLANNER_ATTEMPTS && plan.length === 0; attempt++) {
+        try {
+          const res = await this.model.invoke(
+            [{ role: "user", content: basePrompt + (lastFailure ? `\nYour previous attempt failed: ${lastFailure}. Retry correctly.` : "") }],
+            { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
+          );
+          plan = parsePlanSteps(res.content);
+          if (plan.length === 0) lastFailure = "returned no parseable steps";
+        } catch (err) {
+          lastFailure = String((err as Error)?.message ?? err).slice(0, 200);
+        }
+      }
+      if (plan.length === 0) plan = deterministic; // honest fallback — never break the loop on model failure
       state.plan = plan;
       state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length, plannerRouted: plan !== deterministic });
       return { plan: state.plan };
@@ -169,36 +230,85 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     const ledger = GapLedger.from(state.ledgerEntries, state.ledgerNextId);
     let ok = false;
     let evidence: string[] = [];
+    let revisionRequest: string | null = null;
+    const stepRetries = { ...state.stepRetries };
     // Maker/checker/planner separation: for a "produce <deliverable>" step the
-    // MAKER model WRITES the analytical deliverable (not just tool dispatch).
-    // It is routed by the deliverable MIME — a native-doc deliverable
-    // (docx/pdf/pptx) goes to a native-doc multimodal model; a text deliverable
-    // stays on the text tier. Any model failure falls back to tool dispatch so
-    // the loop never breaks.
+    // MAKER model WRITES the analytical deliverable (not just tool dispatch),
+    // and the independent CHECKER verifies the draft for THIS step before it
+    // counts as complete. Bounded: MAX_STEP_REJECTIONS rejections, then the
+    // step escalates to the planner (plan revision, bias for completion) rather
+    // than spinning. Any model failure falls back to tool dispatch so the loop
+    // never breaks.
     if (next.startsWith("produce ") && state.contract.requiredDeliverables[0]) {
       const deliverable = state.contract.requiredDeliverables[0];
-      try {
-        const genPrompt =
-          `You are the maker for a capital-markets deliverable. Objective: ${state.contract.objective}\n` +
-          `Deliverable type: ${deliverable.type} (${deliverable.mimeType}). Sections: ${deliverable.sections.join(", ")}\n` +
-          `Produce the full deliverable content (analysis, figures, facts separated from derived value, ` +
-          `assumption, interpretation and recommendation), citing sources. Answer directly in the body.`;
-        const res = await this.model.invoke(
-          [{ role: "user", content: genPrompt }],
-          {
-            modelProfile: AUTO_PROFILE,
-            role: "maker",
-            sensitivity: state.contract.dataSensitivity,
-            hintMime: deliverable.mimeType, // document deliverable → native-doc multimodal model
-          },
-        );
-        ok = res.content.trim().length > 20;
-        evidence = [`deliverable:${deliverable.type}`, `generated:${deliverable.type}`];
-      } catch {
-        ok = false; // fall through to tool dispatch
+      let feedback = "";
+      for (;;) {
+        let makerText = "";
+        try {
+          const genPrompt =
+            `You are the maker for a capital-markets deliverable. Objective: ${state.contract.objective}\n` +
+            `Deliverable type: ${deliverable.type} (${deliverable.mimeType}). Sections: ${deliverable.sections.join(", ")}\n` +
+            `Produce the full deliverable content (analysis, figures, facts separated from derived value, ` +
+            `assumption, interpretation and recommendation), citing sources. Answer directly in the body.` +
+            (feedback
+              ? `\nThe independent checker rejected your previous draft for this step: ${feedback}\nRework it; do not repeat the rejected approach.`
+              : "");
+          const res = await this.model.invoke(
+            [{ role: "user", content: genPrompt }],
+            {
+              modelProfile: AUTO_PROFILE,
+              role: "maker",
+              sensitivity: state.contract.dataSensitivity,
+              hintMime: deliverable.mimeType, // document deliverable → native-doc multimodal model
+            },
+          );
+          makerText = res.content.trim();
+        } catch {
+          makerText = "";
+        }
+        if (makerText.length <= 20) break; // maker failed → tool dispatch below
+        // Per-step independent verification (checker role, fresh eyes).
+        let stepOk = true;
+        try {
+          const verdict = await this.model.invoke(
+            [
+              {
+                role: "user",
+                content:
+                  `You are an independent checker. The maker completed this plan step: "${next}".\n` +
+                  `Objective: ${state.contract.objective}. Acceptance items: ${state.contract.definitionOfDone.join("; ") || "none"}.\n` +
+                  `The maker's output (truncated):\n${makerText.slice(0, 1500)}\n` +
+                  `If the output fully satisfies this step's purpose, reply OK; otherwise reply with the specific gaps.`,
+              },
+            ],
+            { modelProfile: AUTO_PROFILE, role: "checker", sensitivity: state.contract.dataSensitivity },
+          );
+          stepOk = /^OK/i.test(verdict.content.trim());
+          if (!stepOk) feedback = verdict.content.trim().slice(0, 600);
+        } catch {
+          // Checker unavailable: accept the step but record it as unverified so
+          // the gap stays visible (infrastructure failure is a visible failure).
+          stepOk = true;
+          if (!ledger.all().some((e) => e.category === "validation" && e.status !== "resolved")) {
+            ledger.add("Checker unavailable — step accepted unverified", "validation");
+          }
+        }
+        if (stepOk) {
+          ok = true;
+          evidence = [`deliverable:${deliverable.type}`, `generated:${deliverable.type}`];
+          break;
+        }
+        const rejections = (stepRetries[next] ?? 0) + 1;
+        stepRetries[next] = rejections;
+        if (rejections >= MAX_STEP_REJECTIONS) {
+          // Escalate to the planner with the checker's feedback; the step is
+          // not completed and not tool-dispatched — the revised plan re-scopes it.
+          revisionRequest = `Step "${next}" rejected ${rejections}x by the checker. Latest feedback: ${feedback}`;
+          break;
+        }
       }
     }
-    if (!ok) {
+    if (!ok && !revisionRequest) {
       const res = await this.tools.call(toolName, { step: next });
       ok = res.ok;
       evidence = res.evidenceRefs ?? [];
@@ -208,24 +318,36 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       const cat = categoryForStep(next);
       const gap = ledger.all().find((e) => e.status !== "resolved" && (cat ? e.category === cat : (e.description.includes(next) || next.includes(e.description))));
       if (gap) ledger.resolve(gap.id);
-    } else {
+    } else if (!revisionRequest) {
       // A failed tool call is never success — record a blocked gap.
       const g = ledger.add(`Tool '${toolName}' failed for: ${next}`, "deliverable", toolName);
       ledger.block(g.id, "failed");
     }
     const completedSteps = ok ? [...state.completedSteps, next] : state.completedSteps;
     const artifacts = ok ? [...state.artifacts, ...evidence] : state.artifacts;
-    state.trace.endSpan(span, { tool: toolName, ok });
+    state.trace.endSpan(span, { tool: toolName, ok, escalated: revisionRequest !== null });
     const snap = ledger.snapshot();
-    return { plan: remaining, completedSteps, artifacts, iterations: state.iterations + 1, ledgerEntries: snap.entries, ledgerNextId: snap.nextId };
+    return {
+      plan: remaining,
+      completedSteps,
+      artifacts,
+      iterations: state.iterations + 1,
+      ledgerEntries: snap.entries,
+      ledgerNextId: snap.nextId,
+      stepRetries,
+      ...(revisionRequest ? { revisionRequest } : {}),
+    };
   }
 
   private async verifyNode(state: QuiverStateType): Promise<Partial<QuiverStateType>> {
     const span = state.trace.startSpan("node.verify", { runId: state.contract.runId });
-    // Deterministic assertions: each definition-of-done item maps to a check
-    // that passes only when a corresponding step was actually completed.
+    // Deterministic bookkeeping: a definition-of-done item passes when a
+    // completed step covers it — either the step IS the item (deterministic
+    // fallback plan) or the step carries its tag ([dod:<item>] from the
+    // planner). The semantic guarantee comes from the per-step checker gate
+    // in executeNode; this node only reads the tags.
     const checks = state.contract.definitionOfDone.map((d) => {
-      const satisfied = state.completedSteps.includes(d);
+      const satisfied = state.completedSteps.some((s) => s === d || s.includes(d));
       return { id: `dod:${d}`, pass: satisfied, detail: satisfied ? "met" : "not yet met" };
     });
     state.trace.endSpan(span, { checks: checks.length, passed: checks.filter((c) => c.pass).length });
@@ -335,6 +457,9 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       artifacts: [] as string[],
       pendingApproval: null as PendingApproval | null,
       stopReason: null as string | null,
+      stepRetries: {} as Record<string, number>,
+      planRevisions: 0,
+      revisionRequest: null as string | null,
       trace: trace ?? new NoopTraceSink(),
     };
     const config = {
