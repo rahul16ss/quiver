@@ -269,15 +269,22 @@ export class MicrosoftGraphStorageProvider implements StorageProvider {
   /**
    * Durable, replay-safe change poll backed by a DurableCursorStore. Uses the
    * Graph delta `returnNextToken` (via the client seam) so an interrupted poll
-   * resumes exactly where it stopped — no missed windows, no re-apply.
+   * resumes exactly where it stopped — no missed windows, no re-apply. Follows
+   * the full paginated feed so no delta page is silently dropped.
    */
   async pollDurable(store: DurableCursorStore, scope: string): Promise<StorageChange[]> {
     return cursorPoll(store, scope, async (since) => {
-      const res = await this.client.delta(since ?? undefined);
-      return {
-        changes: res.items.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified })),
-        nextCursor: res.nextToken ?? since ?? undefined,
-      };
+      let token: string | undefined = since ?? undefined;
+      const all: StorageChange[] = [];
+      for (let guard = 0; guard < MAX_POLL_PAGES; guard++) {
+        const res = await this.client.delta(token);
+        for (const m of res.items) {
+          all.push({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified });
+        }
+        if (!res.nextToken) break; // last page
+        token = res.nextToken;
+      }
+      return { changes: all, nextCursor: token ?? undefined };
     });
   }
 }

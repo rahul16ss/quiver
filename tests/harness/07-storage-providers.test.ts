@@ -73,7 +73,7 @@ async function run() {
     async getMetadata(id: string): Promise<GraphItemMetadata> { return { id, name: "memo.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", eTag: this.etag, version: this.version, webUrl: "https://graph", size: 10, lastModified: new Date().toISOString() }; }
     async download(): Promise<Buffer> { return Buffer.from("graph-bytes"); }
     async uploadSession(id: string): Promise<GraphItemMetadata> { return { id, name: "memo.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", eTag: "etag-v2", version: "v2", webUrl: "https://graph", size: 12, lastModified: new Date().toISOString() }; }
-    async delta(): Promise<{ items: GraphItemMetadata[]; nextToken?: string }> { return { items: [{ id: "i2", name: "x", mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }], nextToken: "tok-2" }; }
+    async delta(token?: string): Promise<{ items: GraphItemMetadata[]; nextToken?: string }> { if (token) return { items: [], nextToken: undefined }; return { items: [{ id: "i2", name: "x", mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }], nextToken: "tok-2" }; }
   }
   const graph = new MicrosoftGraphStorageProvider("graph1", new MockGraph());
   check("GRAPH-CAPS-VERSIONING-ETAG", graph.capabilities().versioning && graph.capabilities().conflictDetection === "etag" && graph.capabilities().uploadSessions);
@@ -99,6 +99,24 @@ async function run() {
   // but the cursor is now durable → poll resumes from the persisted token.
   const gPoll2 = await graph.pollDurable(graphCursor, gsc);
   check("GRAPH-DURABLE-RESUMES", (await graphCursor.get(gsc)) === "tok-2");
+
+  // ── Multi-page Graph delta: ALL pages collected; final cursor persisted ──
+  class PagedGraph implements GraphClient {
+    async getMetadata(id: string): Promise<GraphItemMetadata> { return { id, name: "x", mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }; }
+    async download(): Promise<Buffer> { return Buffer.from("x"); }
+    async uploadSession(id: string): Promise<GraphItemMetadata> { return this.getMetadata(id); }
+    async delta(token?: string): Promise<{ items: GraphItemMetadata[]; nextToken?: string }> {
+      if (!token) return { items: [gmd("g1"), gmd("g2")], nextToken: "t2" };
+      if (token === "t2") return { items: [gmd("g3")], nextToken: "t3" };
+      return { items: [gmd("g4")] };
+    }
+  }
+  function gmd(id: string): GraphItemMetadata { return { id, name: id, mimeType: "text/plain", eTag: "e", version: "v", size: 1, lastModified: new Date().toISOString() }; }
+  const pagedGraph = new MicrosoftGraphStorageProvider("graph-paged", new PagedGraph());
+  const pgCursor = new DurableCursorStore(new InMemoryCursorKV());
+  const pgRes = await pagedGraph.pollDurable(pgCursor, "graph:paged");
+  check("GRAPH-PAGED-ALL-COLLECTED", pgRes.length === 4 && pgRes.map((c) => c.identity.id).sort().join(",") === "g1,g2,g3,g4", JSON.stringify(pgRes.map((c) => c.identity.id)));
+  check("GRAPH-PAGED-FINAL-CURSOR-PERSISTED", (await pgCursor.get("graph:paged")) === "t3", (await pgCursor.get("graph:paged")) ?? "null");
 
   // ── Google Drive: revisionId conflict → sibling; no silent conversion ──
   class MockDrive implements DriveClient {
