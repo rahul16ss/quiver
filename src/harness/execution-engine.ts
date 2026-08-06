@@ -121,12 +121,37 @@ export class QuiverExecutionEngine implements ExecutionEngine {
   private async planNode(state: QuiverStateType): Promise<Partial<QuiverStateType>> {
     const span = state.trace.startSpan("node.plan", { runId: state.contract.runId });
     if (state.plan.length === 0) {
-      // Initial plan: definition of done + deliverables + source resolution.
-      state.plan = [
-        ...state.contract.definitionOfDone,
-        ...state.contract.requiredDeliverables.map((d) => `produce ${d.type}`),
-        ...state.contract.requiredSourceCategories.map((c) => `resolve source ${c}`),
+      const contract = state.contract;
+      // Maker/checker separation: the MAKER model decomposes the goal into a
+      // plan (routed by modality via AUTO_PROFILE — native-doc when a document
+      // is involved, text tier otherwise). Any failure or refusal falls back to
+      // the deterministic plan so the engine never blocks.
+      const deterministic = [
+        ...contract.definitionOfDone,
+        ...contract.requiredDeliverables.map((d) => `produce ${d.type}`),
+        ...contract.requiredSourceCategories.map((c) => `resolve source ${c}`),
       ];
+      let plan = deterministic;
+      try {
+        const prompt =
+          `You are the planning agent for a capital-markets workflow. Objective: ${contract.objective}\n` +
+          `Required deliverables: ${contract.requiredDeliverables.map((d) => `${d.type} (${d.mimeType})`).join(", ") || "none"}\n` +
+          `Required source categories: ${contract.requiredSourceCategories.join(", ") || "none"}\n` +
+          `Definition of done: ${contract.definitionOfDone.join("; ") || "none"}\n` +
+          `Produce a numbered plan, one step per line, covering: evidence gathering, ` +
+          `analysis, deliverable production, and verification. Keep it to 5-12 concrete steps.`;
+        const res = await this.model.invoke(
+          [{ role: "user", content: prompt }],
+          { modelProfile: AUTO_PROFILE, role: "maker", sensitivity: contract.dataSensitivity },
+        );
+        const lines = parsePlanSteps(res.content);
+        if (lines.length > 0) plan = lines;
+      } catch {
+        plan = deterministic; // honest fallback — never break the loop on model failure
+      }
+      state.plan = plan;
+      state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length, makerRouted: plan !== deterministic });
+      return { plan: state.plan };
     }
     state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length });
     return { plan: state.plan };
@@ -390,6 +415,20 @@ function pickToolFor(step: string, available: string[]): string {
   if (/source|research|search/.test(lower) && available.includes("deep_research")) return "deep_research";
   if (/figure|evidence|sourced/.test(lower) && available.includes("evidence")) return "evidence";
   return available[0] ?? "noop";
+}
+
+/**
+ * Parse the maker model's numbered plan text into concrete step strings.
+ * Extracts lines that are non-empty, non-numeric-only, and not prose headers;
+ * guarantees at least one step or returns [] (caller then falls back).
+ */
+function parsePlanSteps(content: string): string[] {
+  if (!content) return [];
+  const steps = content
+    .split(/\n/)
+    .map((l) => l.replace(/^\s*\d+[.)]?\s*/, "").trim())
+    .filter((l) => l.length > 3 && !/^([A-Za-z\s:]+\d*[:.]?)$/.test(l) && !/^(objective|deliverables|sources|definition|plan|analysis|verification|step|the plan)/i.test(l));
+  return steps;
 }
 
 function pickCheckerProfile(model: ModelClient): string {

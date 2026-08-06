@@ -26,15 +26,23 @@ function check(name: string, cond: boolean, detail?: string) {
 class MockModel implements ModelClient {
   id = "mock"; kind = "local" as const;
   checkerShouldPass: boolean;
-  constructor(checkerShouldPass = true) { this.checkerShouldPass = checkerShouldPass; }
+  calls: Array<{ role?: string; modelProfile?: string; content: string }>;
+  constructor(checkerShouldPass = true, public planContent = "ack") {
+    this.checkerShouldPass = checkerShouldPass;
+    this.calls = [];
+  }
   listProfiles(): ModelProfileRef[] {
     return [{ slug: "local-private-default", label: "local", providerOrder: ["Local"], zdrEligible: true, checkerEligible: true }];
   }
-  async invoke(messages: ModelMessage[]): Promise<ModelResult> {
+  async invoke(messages: ModelMessage[], options?: { modelProfile?: string; role?: string }): Promise<ModelResult> {
     const last = messages[messages.length - 1];
     const content = typeof last.content === "string" ? last.content : "";
+    this.calls.push({ role: options?.role, modelProfile: options?.modelProfile, content });
     if (/independent checker/i.test(content)) {
       return { content: this.checkerShouldPass ? "OK all met" : "UNRESOLVED: missing consensus", modelProfile: "local-private-default", route: "local" };
+    }
+    if (/planning agent/i.test(content)) {
+      return { content: this.planContent, modelProfile: "local-private-default", route: "local" };
     }
     return { content: "ack", modelProfile: "local-private-default", route: "local" };
   }
@@ -129,6 +137,19 @@ async function run() {
   const sp = tSink.snapshot();
   check("ENGINE-TRACE-CAPTURES-PLAN-SPAN", sp.spans.some((s) => s.name === "node.plan"));
   check("ENGINE-TRACE-NO-PROMPT-CONTENT", sp.spans.every((s => s.attrs.prompt === undefined)));
+
+  // ── Maker routing fires: plan node calls model with role=maker + AUTO ──
+  const makerModel = new MockModel(true, "\n1. resolve source filings-ir\n2. produce memo\n3. run verification again\n");
+  const c6 = contract();
+  const engine6 = new QuiverExecutionEngine(newSaver(), makerModel, new MockTools(), { maxIterations: 6 });
+  await engine6.run(c6, { trace: new LocalTraceSink() } as any);
+  const makerCalls = makerModel.calls.filter((c) => c.role === "maker");
+  check("ENGINE-MAKER-ROLE-DISPATCHED", makerCalls.length >= 1, JSON.stringify(makerCalls));
+  check("ENGINE-MAKER-USES-AUTO-PROFILE", makerCalls.some((c) => c.modelProfile === "auto"), JSON.stringify(makerCalls));
+  check("ENGINE-MAKER-PLAN-CONSUMED", makerCalls.length >= 1 && /planning agent/i.test(makerCalls[0].content), JSON.stringify(makerCalls[0]?.content));
+  // Checker still routed separately (independent role), preserving maker/checker separation.
+  check("ENGINE-CHECKER-ROLE-DISPATCHED", makerModel.calls.some((c) => c.role === "checker"), JSON.stringify(makerModel.calls));
+  check("ENGINE-MAKER-CHECKER-ROLES-DIFFER", makerModel.calls.some((c) => c.role === "maker") && makerModel.calls.some((c) => c.role === "checker") && makerModel.calls.filter((c) => c.role === "maker").length >= 1);
 }
 
 await run();
