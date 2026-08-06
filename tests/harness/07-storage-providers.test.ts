@@ -107,7 +107,7 @@ async function run() {
     async getMetadata(id: string): Promise<DriveItemMetadata> { return { id, name: "model.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headRevisionId: this.rev, version: this.rev, webUrl: "https://drive", size: 10, modifiedTime: new Date().toISOString(), isGoogleNative: this.isGoogleNative }; }
     async download(): Promise<Buffer> { return Buffer.from("drive-bytes"); }
     async upload(id: string): Promise<DriveItemMetadata> { return { id, name: "model.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headRevisionId: "rev-2", version: "rev-2", webUrl: "https://drive", size: 12, modifiedTime: new Date().toISOString(), isGoogleNative: false }; }
-    async listChanges(): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }> { return { changes: [{ id: "f2", name: "x", mimeType: "text/plain", headRevisionId: "r", version: "r", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }], nextPageToken: "dtok-1" }; }
+    async listChanges(token?: string): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }> { if (token) return { changes: [], nextPageToken: undefined }; return { changes: [{ id: "f2", name: "x", mimeType: "text/plain", headRevisionId: "r", version: "r", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }], nextPageToken: "dtok-1" }; }
   }
   const drive = new GoogleDriveStorageProvider("drive1", new MockDrive());
   check("DRIVE-CAPS-REVISIONID-SHAREDDRIVES", drive.capabilities().conflictDetection === "revisionId" && drive.capabilities().sharedDrives);
@@ -138,6 +138,26 @@ async function run() {
   const dp1 = await driveConflict.pollDurable(driveCursor, dsc);
   check("DRIVE-DURABLE-POLL-1", dp1.length === 1);
   check("DRIVE-DURABLE-CURSOR-PERSISTED", (await driveCursor.get(dsc)) === "dtok-1", (await driveCursor.get(dsc)) ?? "null");
+
+  // ── Multi-page change feed: ALL pages collected; final cursor persisted ──
+  class PagedDrive implements DriveClient {
+    calls = 0;
+    async getMetadata(id: string): Promise<DriveItemMetadata> { return { id, name: "x", mimeType: "text/plain", headRevisionId: "r", version: "r", webUrl: "", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }; }
+    async download(): Promise<Buffer> { return Buffer.from("x"); }
+    async upload(): Promise<DriveItemMetadata> { return this.getMetadata("u"); }
+    async listChanges(token?: string): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }> {
+      this.calls++;
+      if (!token) return { changes: [md("a"), md("b")], nextPageToken: "p2" };
+      if (token === "p2") return { changes: [md("c")], nextPageToken: "p3" };
+      return { changes: [md("d")] };
+    }
+  }
+  function md(id: string): DriveItemMetadata { return { id, name: id, mimeType: "text/plain", headRevisionId: "rev-" + id, version: "rev-" + id, webUrl: "", size: 1, modifiedTime: new Date().toISOString(), isGoogleNative: false }; }
+  const pagedDrive = new GoogleDriveStorageProvider("drive-paged", new PagedDrive() as any);
+  const pagedCursor = new DurableCursorStore(new InMemoryCursorKV());
+  const pagedRes = await pagedDrive.pollDurable(pagedCursor, "drive:paged");
+  check("DRIVE-PAGED-ALL-COLLECTED", pagedRes.length === 4 && pagedRes.map((c) => c.identity.id).sort().join(",") === "a,b,c,d", JSON.stringify(pagedRes.map((c) => c.identity.id)));
+  check("DRIVE-PAGED-FINAL-CURSOR-PERSISTED", (await pagedCursor.get("drive:paged")) === "p3", (await pagedCursor.get("drive:paged")) ?? "null");
 }
 
 await run();

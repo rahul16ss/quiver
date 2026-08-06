@@ -391,14 +391,27 @@ export class GoogleDriveStorageProvider implements StorageProvider {
    */
   async pollDurable(store: DurableCursorStore, scope: string): Promise<StorageChange[]> {
     return cursorPoll(store, scope, async (since) => {
-      const res = await this.client.listChanges(since ?? undefined);
-      return {
-        changes: res.changes.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime })),
-        nextCursor: res.nextPageToken ?? since ?? undefined,
-      };
+      // Follow the full paginated change feed so NO page is silently dropped.
+      // The first call uses the persisted cursor; subsequent calls use the
+      // returned nextPageToken. We persist only the FINAL token — the stable
+      // cursor at the end of the complete sweep (replay resumes exactly there).
+      let token: string | undefined = since ?? undefined;
+      const all: StorageChange[] = [];
+      for (let guard = 0; guard < MAX_POLL_PAGES; guard++) {
+        const res = await this.client.listChanges(token);
+        for (const m of res.changes) {
+          all.push({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime });
+        }
+        if (!res.nextPageToken) break; // last page
+        token = res.nextPageToken;
+      }
+      return { changes: all, nextCursor: token ?? undefined };
     });
   }
 }
+
+/** Bound on pages followed per paginated change sweep (safety valve). */
+const MAX_POLL_PAGES = 100;
 
 // ─── helpers ──────────────────────────────────────────────────────────
 
