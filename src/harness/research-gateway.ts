@@ -20,7 +20,7 @@
  * denies Parallel — it never silently falls back to a regex HTTP scrape.
  */
 
-import { createHash } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import type {
   ResearchGateway,
   ResearchOpts,
@@ -69,8 +69,16 @@ export interface ParallelTransport {
     processor?: string;
     task_spec?: { output_schema?: { type: "json" | "text"; json_schema?: Record<string, unknown>; description?: string } };
   }): Promise<{ output?: { type: string; content: unknown; basis?: Array<any> }; run?: { status?: string } }>;
-  monitor(params: { query: string; cadence?: string }): Promise<{ monitor_id: string }>;
-  monitorStop(id: string): Promise<void>;
+  monitor(params: {
+    type: "event_stream" | "snapshot";
+    frequency: string;
+    settings: Record<string, unknown>;
+    processor?: "lite" | "base";
+    webhook?: { url: string; event_types?: string[] };
+    metadata?: Record<string, string>;
+  }): Promise<{ monitor_id: string; status: string }>;
+  monitorCancel(id: string): Promise<void>;
+  monitorEvents(id: string, opts?: { event_group_id?: string; include_completions?: boolean }): Promise<{ events: any[]; next_cursor?: string }>;
   findEntities(params: { search_queries: string[]; objective?: string }): Promise<{ results: Array<{ url: string; title?: string | null; excerpts: string[] }> }>;
   findAllCreate(params: { objective: string; entity_type: "companies" | "people"; generator?: string; match_conditions?: Array<{ name: string; description: string }>; match_limit?: number }): Promise<{ findall_id: string }>;
   findAllRetrieve(id: string): Promise<{ status: { is_active: boolean } }>;
@@ -125,8 +133,27 @@ export class ParallelResearchGateway implements ResearchGateway {
 
   async monitor(spec: MonitorSpec): Promise<MonitorHandle> {
     this.assertAllowed(spec.sensitivity);
-    const created = await this.transport.monitor({ query: sanitizeQuery(spec.query, spec.sensitivity), cadence: spec.cadence });
-    return { monitorId: created.monitor_id, stop: () => this.transport.monitorStop(created.monitor_id) };
+    const settings: Record<string, unknown> =
+      spec.type === "event_stream"
+        ? { query: sanitizeQuery(spec.settings.query ?? "", spec.sensitivity) }
+        : { task_run_id: spec.settings.task_run_id };
+    if (spec.settings.output_schema) settings.output_schema = spec.settings.output_schema;
+    if (spec.settings.include_backfill !== undefined) settings.include_backfill = spec.settings.include_backfill;
+    if (spec.settings.advanced_settings) settings.advanced_settings = spec.settings.advanced_settings;
+    const created = await this.transport.monitor({
+      type: spec.type,
+      frequency: spec.frequency,
+      settings,
+      processor: spec.processor,
+      webhook: spec.webhook ? { url: spec.webhook.url, event_types: spec.webhook.event_types } : undefined,
+      metadata: spec.metadata,
+    });
+    const id = created.monitor_id;
+    return {
+      monitorId: id,
+      cancel: () => this.transport.monitorCancel(id),
+      events: (opts) => this.transport.monitorEvents(id, opts).then((r) => (r.events || []).map(toMonitorEvent)),
+    };
   }
 
   async findEntities(query: string, opts: ResearchOpts = {}): Promise<ResearchSearchResult[]> {
@@ -205,9 +232,13 @@ export class ParallelWebTransport implements ParallelTransport {
     const c = await this.client();
     return c.monitor.create(params);
   }
-  async monitorStop(id: string): Promise<void> {
+  async monitorCancel(id: string): Promise<void> {
     const c = await this.client();
-    await c.monitor.delete(id);
+    await c.monitor.cancel(id);
+  }
+  async monitorEvents(id: string, opts?: any): Promise<any> {
+    const c = await this.client();
+    return c.monitor.events(id, opts);
   }
   async findEntities(params: any): Promise<any> {
     const c = await this.client();
@@ -273,6 +304,56 @@ function normalizeWarnings(w?: Array<{ message?: string } | string> | null): str
 function hashExcerpts(excerpts: string[]): string | undefined {
   if (!excerpts.length) return undefined;
   return createHash("sha256").update(excerpts.join("\n")).digest("hex").slice(0, 16);
+}
+
+// ─── Monitor event helpers (GA contract) ──────────────────────────────
+
+function toMonitorEvent(e: any): import("./interfaces.js").MonitorEvent {
+  return {
+    event_id: e.event_id,
+    event_group_id: e.event_group_id,
+    event_date: e.event_date ?? null,
+    event_type: e.event_type,
+    output: e.output,
+    changed_output: e.changed_output,
+    previous_output: e.previous_output,
+  };
+}
+
+/**
+ * Verify a Parallel webhook HMAC signature (timing-safe). Parallel signs the
+ * raw request body with the shared webhook secret. Returns false on any
+ * mismatch — callers must reject the delivery (never accept unverified).
+ */
+export function verifyParallelWebhook(
+  body: string | Buffer,
+  signature: string,
+  secret: string,
+): boolean {
+  if (!signature || !secret) return false;
+  const expected = createHash("sha256").update(body).update(secret).digest("hex");
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Deduplicate monitor events by stable event_id across pagination/retry. Returns
+ * events not already seen. The caller persists seen IDs in a durable store.
+ */
+export function dedupeMonitorEvents(
+  events: import("./interfaces.js").MonitorEvent[],
+  seen: Set<string>,
+): import("./interfaces.js").MonitorEvent[] {
+  const out: import("./interfaces.js").MonitorEvent[] = [];
+  for (const e of events) {
+    if (e.event_id && !seen.has(e.event_id)) {
+      seen.add(e.event_id);
+      out.push(e);
+    }
+  }
+  return out;
 }
 
 /**

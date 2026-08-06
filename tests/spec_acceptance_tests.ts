@@ -1002,6 +1002,33 @@ async function configStartupUXContract() {
     },
   );
 
+  await check(
+    "PARALLEL-MONITOR-GA-CONTRACT",
+    "US-16.3 / §8",
+    "Parallel monitor must use the GA typed contract (type + frequency + settings) and cancel (not delete); webhook HMAC verification + event dedup must exist",
+    () => {
+      const gw = codeOnly("src/harness/research-gateway.ts");
+      const iface = codeOnly("src/harness/interfaces.ts");
+      if (!/type:\s*"event_stream"\s*\|\s*"snapshot"/.test(iface))
+        throw new Error("MonitorSpec must use GA typed: type + frequency + settings");
+      if (/cadence/.test(iface))
+        throw new Error("MonitorSpec still uses retired 'cadence' field");
+      if (!/type:\s*spec\.type/.test(gw) || !/frequency:\s*spec\.frequency/.test(gw))
+        throw new Error("gateway does not send typed type+frequency to monitor.create");
+      if (/monitor\.delete|monitorStop/.test(gw))
+        throw new Error("gateway still calls monitor.delete/monitorStop — GA uses cancel");
+      if (!/monitorCancel|monitor\.cancel/.test(gw))
+        throw new Error("gateway does not call monitor.cancel (GA lifecycle)");
+      if (!/monitorEvents|monitor\.events/.test(gw))
+        throw new Error("gateway has no monitor.events retrieval");
+      if (!/verifyParallelWebhook/.test(gw) || !/timingSafeEqual/.test(gw))
+        throw new Error("no HMAC webhook verification (timingSafeEqual)");
+      if (!/dedupeMonitorEvents/.test(gw))
+        throw new Error("no event deduplication by event_id");
+      return true;
+    },
+  );
+
   // VERTEX-GUI-BYOK-SETTINGS retired — Vertex AI removed (ADR-001: OpenRouter
   // is the sole cloud gateway).
 

@@ -289,14 +289,53 @@ export interface ResearchTaskResult {
 }
 
 export interface MonitorSpec {
-  query: string;
-  cadence: "hourly" | "daily" | "weekly";
+  /** event_stream (search query) or snapshot (task run output). */
+  type: "event_stream" | "snapshot";
+  /** GA frequency: '<n><h|d|w>' between 1h and 30d. */
+  frequency: string;
+  /** Type-specific settings: { query } for event_stream, { task_run_id } for snapshot. */
+  settings: MonitorSettings;
+  /** lite (default) or base (thorough). */
+  processor?: "lite" | "base";
+  /** Optional webhook for push delivery. */
+  webhook?: MonitorWebhook;
+  /** User metadata echoed in events (keys ≤16 chars, values ≤512). */
+  metadata?: Record<string, string>;
   sensitivity?: SensitivityProfile;
+}
+
+export interface MonitorSettings {
+  query?: string;
+  task_run_id?: string;
+  output_schema?: { type: "json"; json_schema: Record<string, unknown> };
+  include_backfill?: boolean;
+  advanced_settings?: {
+    source_policy?: { include_domains?: string[]; exclude_domains?: string[]; after_date?: string };
+    location?: string;
+  };
+}
+
+export interface MonitorWebhook {
+  url: string;
+  event_types?: Array<"monitor.event.detected" | "monitor.execution.completed" | "monitor.execution.failed">;
+}
+
+export interface MonitorEvent {
+  event_id: string;
+  event_group_id: string;
+  event_date?: string | null;
+  event_type: "event_stream" | "snapshot" | "completion" | "error";
+  output?: { type: string; content: unknown; basis?: any[] };
+  changed_output?: unknown;
+  previous_output?: unknown;
 }
 
 export interface MonitorHandle {
   monitorId: string;
-  stop(): Promise<void>;
+  /** Cancel the monitor (GA lifecycle: status → cancelled; no delete op). */
+  cancel(): Promise<void>;
+  /** Retrieve events (newest first), paginated. */
+  events(opts?: { event_group_id?: string; include_completions?: boolean }): Promise<MonitorEvent[]>;
 }
 
 // ─── 4. StorageProvider (work-product + knowledge planes) ────────────

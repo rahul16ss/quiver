@@ -24,8 +24,9 @@ class MockParallel implements ParallelTransport {
   async search(p: any) { this.lastSearch = p; return this.searchResults; }
   async extract(p: any) { this.lastExtract = p; return this.extractResults; }
   async taskRun(p: any) { this.lastTask = p; return { output: { type: "text", content: "answer", basis: [{ citations: [{ url: "https://example.com/a", title: "A", excerpts: ["ex A"] }] }] } }; }
-  async monitor(p: any) { this.lastMonitor = p; return { monitor_id: "mon-1" }; }
-  async monitorStop() {}
+  async monitor(p: any) { this.lastMonitor = p; return { monitor_id: "mon-1", status: "active" }; }
+  async monitorCancel() {}
+  async monitorEvents() { return { events: [{ event_id: "mevt-1", event_group_id: "grp-1", event_type: "event_stream", output: { type: "text", content: "change" } }] }; }
   async findEntities(p: any) { this.lastFind = p; return this.searchResults; }
   async findAllCreate() { return { findall_id: "fa-1" }; }
   async findAllRetrieve() { return { status: { is_active: false } }; }
@@ -59,9 +60,13 @@ async function run() {
   check("RESEARCH-TASK-CONTENT", task.content === "answer");
   check("RESEARCH-TASK-CITATIONS", task.citations.length === 1 && task.citations[0].url === "https://example.com/a");
 
-  // ── monitor ─────────────────────────────────────────────────────────
-  const mon = await gw.monitor({ query: "competitor news", cadence: "daily", sensitivity: "public" });
+  // ── monitor (GA typed contract: type + frequency + settings, cancel not delete) ──
+  const mon = await gw.monitor({ type: "event_stream", frequency: "1d", settings: { query: "competitor news" }, sensitivity: "public" });
   check("RESEARCH-MONITOR-HANDLE", mon.monitorId === "mon-1");
+  check("RESEARCH-MONITOR-TYPED-CREATE", t.lastMonitor.type === "event_stream" && t.lastMonitor.frequency === "1d" && t.lastMonitor.settings.query === "competitor news");
+  check("RESEARCH-MONITOR-CANCEL", typeof mon.cancel === "function" && typeof mon.events === "function");
+  const evs = await mon.events();
+  check("RESEARCH-MONITOR-EVENTS", evs.length === 1 && evs[0].event_id === "mevt-1");
 
   // ── findEntities ────────────────────────────────────────────────────
   const ents = await gw.findEntities("fintech startups", { sensitivity: "public" });
