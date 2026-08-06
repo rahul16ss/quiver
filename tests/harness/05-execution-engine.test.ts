@@ -100,6 +100,13 @@ async function run() {
   check("ENGINE-RESUME-APPROVED-COMPLETES", approved.status === "completed", `status=${approved.status}`);
   check("ENGINE-RESUME-APPROVED-STOP-REASON", /approved by human/i.test(approved.stopReason));
 
+  // ── §12 idempotency: a duplicate/retried resume must NOT re-commit ────
+  // The run is already completed (no pending interrupt). Re-resuming with the
+  // same approval must return the identical completed outcome — no double-commit.
+  const approvedAgain = await engine.resume(c.runId, { approved: true });
+  check("ENGINE-RESUME-IDEMPOTENT-STATUS", approvedAgain.status === "completed", `status=${approvedAgain.status}`);
+  check("ENGINE-RESUME-IDEMPOTENT-SAME", approvedAgain.runId === approved.runId, `${approvedAgain.runId} vs ${approved.runId}`);
+
   // ── Resume with rejection → partial (never committed) ──────────────
   const c2 = contract();
   const engine2 = new QuiverExecutionEngine(newSaver(), new MockModel(true), new MockTools(), { maxIterations: 6 });

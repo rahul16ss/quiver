@@ -339,6 +339,17 @@ export class QuiverExecutionEngine implements ExecutionEngine {
   }
 
   async resume(runId: string, humanInput: unknown, _options?: RunOptions): Promise<RunOutcome> {
+    // §12 idempotency: if this thread has no pending interrupt (already
+    // resolved — completed or rejected/blocked), a re-invoked resume must NOT
+    // re-trigger the approval gate. Return the existing outcome unchanged so a
+    // duplicate/retried resume can never double-commit or double-reject.
+    const existing = await this.inspect(runId);
+    if (existing && existing.status !== "paused") {
+      const graph = await this.compiled;
+      const config = { configurable: { thread_id: runId }, recursionLimit: (this.opts.maxIterations ?? 5) * 8 + 16 };
+      const st = (await graph.getState(config)).values as QuiverStateType;
+      return this.toOutcome(st);
+    }
     const graph = await this.compiled;
     const maxIter = this.opts.maxIterations ?? 5;
     const config = { configurable: { thread_id: runId }, recursionLimit: maxIter * 8 + 16 };
