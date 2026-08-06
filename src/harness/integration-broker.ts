@@ -14,6 +14,8 @@ import type {
   Integration,
   IntegrationInvokeOpts,
   IntegrationResult,
+  PolicyDecisionResult,
+  PolicyCondition,
 } from "./interfaces.js";
 import { wrapUntrustedContent } from "../prompts/security.js";
 
@@ -42,28 +44,86 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
     };
   }
 
+  /**
+   * Policy decision (§9): returns permitted=true ONLY when every condition is
+   * resolved. A non-empty conditions list with any unresolved item is NOT
+   * permission — the caller must resolve each before invoke().
+   */
+  decide(name: string, opts: IntegrationInvokeOpts = {}): PolicyDecisionResult {
+    const h = this.handlers.get(name);
+    if (!h) return { permitted: false, conditions: [], reasons: [`integration '${name}' not registered`] };
+    const decl = h.declaration;
+    const conditions: PolicyCondition[] = [];
+    const reasons: string[] = [];
+
+    // Required approvals.
+    if (decl.requiredApprovals.length > 0) {
+      const supplied = new Set(opts.approvals ?? []);
+      const missing = decl.requiredApprovals.filter((a) => !supplied.has(a));
+      if (missing.length > 0) {
+        conditions.push({ id: "approval-required", reason: `missing approvals: ${missing.join(", ")}`, resolved: false });
+        reasons.push(`missing approvals: ${missing.join(", ")}`);
+      }
+    }
+
+    // Data classification: restricted-MNPI may not flow through a public integration.
+    const sensitivity = opts.sensitivity ?? decl.dataClassification;
+    if (sensitivity === "restricted-mnpi" && decl.dataClassification === "public") {
+      conditions.push({ id: "sensitivity-mismatch", reason: "restricted-mnpi may not flow through a public integration", resolved: false });
+      reasons.push("restricted-mnpi may not flow through a public integration");
+    }
+
+    // Rights: if the integration declares rights, the caller must have the
+    // 'llm-processing' right to send data to a model. (This is a static check
+    // against the declaration; a deployment resolves it via entitlement config.)
+    if (decl.rights && !decl.rights.rights.includes("llm-processing")) {
+      conditions.push({ id: "entitlement-llm-processing", reason: "integration is not entitled for LLM processing", resolved: false });
+      reasons.push("not entitled for LLM processing");
+    }
+
+    // Network zone: air-gapped/private-network must not permit public-internet integrations.
+    if (decl.networkZone === "public-internet" && opts.executionContext) {
+      const ctx = opts.executionContext;
+      if (ctx.deploymentProfile !== "connected-zdr") {
+        conditions.push({ id: "network-zone", reason: `integration requires public-internet but profile is ${ctx.deploymentProfile}`, resolved: false });
+        reasons.push(`integration requires public-internet but profile is ${ctx.deploymentProfile}`);
+      }
+    }
+
+    // Mark conditions the caller claims resolved.
+    const claimed = new Set(opts.resolvedConditions ?? []);
+    for (const c of conditions) if (claimed.has(c.id)) c.resolved = true;
+
+    const allResolved = conditions.every((c) => c.resolved);
+    return { permitted: allResolved, conditions, reasons };
+  }
+
   async invoke(name: string, input: unknown, opts: IntegrationInvokeOpts = {}): Promise<IntegrationResult> {
     const h = this.handlers.get(name);
     if (!h) {
       return { ok: false, error: `integration '${name}' not registered`, provenance: { vendor: name, dataset: "", apiRef: "", timestamp: new Date().toISOString() } };
     }
+    // §9: invoke() re-runs decide() and refuses if any condition is unresolved.
+    // A caller that ignores decide()'s output still cannot invoke.
+    const decision = this.decide(name, opts);
+    if (!decision.permitted) {
+      const open = decision.conditions.filter((c) => !c.resolved).map((c) => c.reason);
+      return { ok: false, error: `policy denied: ${open.join("; ") || "unresolved conditions"}`, provenance: { vendor: name, dataset: "", apiRef: h.declaration.name, timestamp: new Date().toISOString() } };
+    }
     const decl = h.declaration;
-    // Required approvals: refuse if the caller didn't supply them.
-    if (decl.requiredApprovals.length > 0) {
-      const supplied = new Set(opts.approvals ?? []);
-      const missing = decl.requiredApprovals.filter((a) => !supplied.has(a));
-      if (missing.length > 0) {
-        return { ok: false, error: `missing required approvals: ${missing.join(", ")}`, provenance: { vendor: name, dataset: "", apiRef: "", timestamp: new Date().toISOString() } };
-      }
-    }
-    // Data classification: refuse a restricted-MNPI call on a public-classified
-    // integration unless the caller explicitly overrides sensitivity.
-    const sensitivity = opts.sensitivity ?? decl.dataClassification;
-    if (sensitivity === "restricted-mnpi" && decl.dataClassification === "public") {
-      return { ok: false, error: "restricted-mnpi data may not flow through a public-classified integration", provenance: { vendor: name, dataset: "", apiRef: "", timestamp: new Date().toISOString() } };
-    }
     try {
-      const data = await h.invoke(input, opts);
+      // Timeout + output-size enforcement.
+      const timeoutMs = decl.timeoutMs ?? opts.budget?.timeoutMs ?? 30_000;
+      const maxBytes = decl.maxOutputBytes ?? Infinity;
+      const data = await Promise.race([
+        h.invoke(input, opts),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`integration '${name}' timed out after ${timeoutMs}ms`)), timeoutMs)),
+      ]);
+      // Output-size limit.
+      const serialized = typeof data === "string" ? Buffer.byteLength(data) : Buffer.byteLength(JSON.stringify(data));
+      if (serialized > maxBytes) {
+        return { ok: false, error: `output exceeds maxOutputBytes (${serialized} > ${maxBytes})`, provenance: { vendor: name, dataset: decl.capabilities.join(","), apiRef: decl.name, timestamp: new Date().toISOString() } };
+      }
       return {
         ok: true,
         data,
@@ -128,6 +188,13 @@ export function mcpIntegration(
       expectedCostUsd: opts.expectedCostUsd,
       health: opts.health ?? "unknown",
       freshness: opts.freshness,
+      rights: opts.rights,
+      networkZone: opts.networkZone,
+      timeoutMs: opts.timeoutMs,
+      maxOutputBytes: opts.maxOutputBytes,
+      redactFields: opts.redactFields,
+      inputSchema: opts.inputSchema,
+      outputSchema: opts.outputSchema,
     },
     async invoke(input) {
       const raw = await invoke(input);

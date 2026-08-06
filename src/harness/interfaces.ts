@@ -604,6 +604,40 @@ export interface IntegrationBroker {
     input: unknown,
     opts?: IntegrationInvokeOpts,
   ): Promise<IntegrationResult>;
+  /** Policy decision: permitted only when all conditions resolve (§9). */
+  decide(name: string, opts?: IntegrationInvokeOpts): PolicyDecisionResult;
+}
+
+export type EntitlementRight =
+  | "internal-use"
+  | "llm-processing"
+  | "storage-caching"
+  | "derived-data"
+  | "redistribution"
+  | "client-deliverable"
+  | "training-prohibition";
+
+export interface DataRights {
+  /** What the run may do with this integration's data. Empty = no rights granted. */
+  rights: EntitlementRight[];
+  /** Max cache duration in hours (0 = no caching). */
+  cacheDurationHours?: number;
+  /** Retention/deletion: days before the data must be deleted. */
+  retentionDays?: number;
+  /** Geography/jurisdiction constraint (e.g. "US-only", "EU-only"). */
+  geography?: string;
+  /** Permitted users or teams (empty = all authenticated). */
+  permittedUsers?: string[];
+}
+
+/** A policy condition that must be resolved BEFORE invocation is permitted. */
+export interface PolicyCondition {
+  /** Stable id, e.g. "entitlement-redistribution", "approval-human-signoff". */
+  id: string;
+  /** Human-readable reason the condition is unmet. */
+  reason: string;
+  /** Whether the condition has been resolved (true) or is still open (false). */
+  resolved: boolean;
 }
 
 export interface IntegrationDeclaration {
@@ -619,6 +653,27 @@ export interface IntegrationDeclaration {
   expectedCostUsd?: number;
   health: "healthy" | "degraded" | "unknown";
   freshness?: string;
+  // §9 entitlements + operational limits.
+  /** The rights matrix for data from this integration. */
+  rights?: DataRights;
+  /** Network zone required (loopback / private-network / public-internet). */
+  networkZone?: "loopback" | "private-network" | "public-internet";
+  /** Timeout (ms) and max output size (bytes) for the call. */
+  timeoutMs?: number;
+  maxOutputBytes?: number;
+  /** Audit/redaction rules: fields to redact from logs/traces. */
+  redactFields?: string[];
+  /** Input/output JSON schema (for validation before/after). */
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+}
+
+/** A policy decision from the broker: permitted only when all conditions resolve. */
+export interface PolicyDecisionResult {
+  permitted: boolean;
+  /** Unmet conditions — a non-empty list means NOT permitted (§9). */
+  conditions: PolicyCondition[];
+  reasons: string[];
 }
 
 export interface Integration {
@@ -630,6 +685,10 @@ export interface IntegrationInvokeOpts {
   budget?: RequestBudget;
   sensitivity?: SensitivityProfile;
   approvals?: string[];
+  /** Resolved conditions (ids that the caller has satisfied). */
+  resolvedConditions?: string[];
+  /** The execution context (entitlements, zone, actor). */
+  executionContext?: import("../security/execution_context.js").ExecutionContext;
 }
 
 export interface IntegrationResult {

@@ -2481,6 +2481,53 @@ async function integrationWiringContract() {
   );
 
   await check(
+    "ENTITLEMENT-BROKER-CONDITIONS",
+    "US-17 / §9",
+    "the integration broker must decide() permission only when all policy conditions resolve; invoke() must re-run decide() and refuse on unresolved conditions (a caller that ignores decide() cannot invoke)",
+    () => {
+      const b = codeOnly("src/harness/integration-broker.ts");
+      const i = codeOnly("src/harness/interfaces.ts");
+      if (!/decide\s*\(\s*name\s*:\s*string/.test(b))
+        throw new Error("no decide() policy method on the broker");
+      if (!/PolicyDecisionResult/.test(i) || !/PolicyCondition/.test(i))
+        throw new Error("no PolicyDecisionResult/PolicyCondition types");
+      // decide() returns permitted only when conditions resolve.
+      if (!/conditions\.every\s*\(\s*\(\s*c\s*\)\s*=>\s*c\.resolved/.test(b))
+        throw new Error("decide() does not require all conditions resolved");
+      // invoke() re-runs decide() and refuses.
+      if (!/const decision = this\.decide\(/.test(b) || !/policy denied/.test(b))
+        throw new Error("invoke() does not re-run decide() / refuse on unresolved conditions");
+      return true;
+    },
+  );
+
+  await check(
+    "ENTITLEMENT-RIGHTS-MATRIX",
+    "US-17 / §9",
+    "integration declarations must carry a rights matrix (internal-use/llm-processing/storage-caching/derived-data/redistribution/client-deliverable/training-prohibition) and the broker denies llm-processing when absent",
+    () => {
+      const i = codeOnly("src/harness/interfaces.ts");
+      if (!/EntitlementRight/.test(i))
+        throw new Error("no EntitlementRight type");
+      for (const r of ["internal-use", "llm-processing", "storage-caching", "derived-data", "redistribution", "client-deliverable", "training-prohibition"]) {
+        if (!new RegExp(`"${r}"`).test(i))
+          throw new Error(`missing right: ${r}`);
+      }
+      const b = codeOnly("src/harness/integration-broker.ts");
+      if (!/entitlement-llm-processing/.test(b))
+        throw new Error("broker does not deny when llm-processing right is absent");
+      // Network-zone + timeout + output-size.
+      if (!/networkZone/.test(i) || !/timeoutMs/.test(i) || !/maxOutputBytes/.test(i))
+        throw new Error("missing networkZone/timeoutMs/maxOutputBytes on declarations");
+      if (!/timed out after/.test(b))
+        throw new Error("no timeout enforcement");
+      if (!/exceeds maxOutputBytes/.test(b))
+        throw new Error("no output-size enforcement");
+      return true;
+    },
+  );
+
+  await check(
     "PROMPT-REGISTRY-EXISTS",
     "US-11.1 / §11",
     "A versioned PromptRegistry with the 6 deterministic layers (core/domain/customer/workflow/task/checker) must exist outside orchestration code, hashable, fail-closed on missing/unknown vars, with customer overrides only at permitted layers",
