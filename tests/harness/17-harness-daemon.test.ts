@@ -14,6 +14,7 @@ import { QuiverExecutionEngine, type ToolExecutor, type ToolResult } from "../..
 import { SqliteCheckpointSaver } from "../../src/harness/sqlite-checkpoint.js";
 import { LocalTraceSink } from "../../src/harness/trace-sink.js";
 import { DurableJobScheduler } from "../../src/harness/durable-job.js";
+import { emptyPack } from "../../src/harness/customer-pack.js";
 import type { ModelClient, ModelMessage, ModelResult, ModelProfileRef } from "../../src/harness/interfaces.js";
 
 let passed = 0, failed = 0;
@@ -108,6 +109,24 @@ async function run() {
   const rec = await apiCall(jorigin, jsecret, "/api/jobs/recover", "POST", { jobId: "bad-job" });
   check("HD-JOBS-RECOVER", rec.body.ok === "recovered");
   await hdJobs.close();
+
+  // ── Pack-driven workflow allowlist: a pack's workflowSpecs gate runnability ──
+  const restrictedPack = emptyPack({ id: "restricted", workflowSpecs: ["earnings-update", "ic-memo"] });
+  const hdPack = new HarnessDaemon({
+    engine,
+    uiDir: path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "src", "harness", "ui"),
+    pack: restrictedPack,
+  });
+  const { origin: porigin } = await hdPack.listen();
+  const psecret = (hdPack as any).opts.secret ?? (hdPack as any).daemon.secret;
+  const wfPack = await apiCall(porigin, psecret, "/api/workflows");
+  check("HD-PACK-LISTS-ONLY-ALLOWED", wfPack.body.length === 2 && wfPack.body.every((w: any) => ["earnings-update", "ic-memo"].includes(w.id)), JSON.stringify(wfPack.body.map((w: any) => w.id)));
+  const allowRun = await apiCall(porigin, psecret, "/api/run/start", "POST", { workflowId: "ic-memo" });
+  check("HD-PACK-ALLOWS-LISTED-WORKFLOW", allowRun.body.status === "paused", `status=${allowRun.body.status}`);
+  // A shipped workflow NOT in the pack is unrunnable (rejected, not started).
+  const disallowRun = await apiCall(porigin, psecret, "/api/run/start", "POST", { workflowId: "company-primer" });
+  check("HD-PACK-DISALLOWS-UNLISTED-WORKFLOW", disallowRun.status === 400 || /disallowed/.test(JSON.stringify(disallowRun.body)), JSON.stringify(disallowRun.body));
+  await hdPack.close();
 
   await hd.close();
   saver.close();

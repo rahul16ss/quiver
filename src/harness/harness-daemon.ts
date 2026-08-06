@@ -28,6 +28,8 @@ export interface HarnessDaemonOptions {
     /** Executes a due job; throw to mark the attempt failed / dead-letter. */
     handler: (job: import("./durable-job.js").JobRecord) => Promise<void> | void;
   };
+  /** Optional customer pack: its workflowSpecs allowlist which workflows run. */
+  pack?: import("./customer-pack.js").CustomerPack;
   /** Optional browser-UI API handler (the chat/context/sessions surface). */
   browserApiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
   /** Optional SSE handler + path (the agent event stream). */
@@ -84,6 +86,23 @@ export class HarnessDaemon {
     return this.daemon.close();
   }
 
+  /**
+   * Workflows the current pack allows (pack-driven allowlist). With no pack,
+   * all twelve shipped workflows are allowed. A pack that lists fewer ids
+   * makes the omitted workflows unrunnable — the customer controls scope.
+   */
+  private allowedWorkflows(): WorkflowSpec[] {
+    const pack = this.opts.pack;
+    if (!pack) return TWELVE_WORKFLOW_SPECS;
+    const allowed = new Set(pack.workflowSpecs);
+    return TWELVE_WORKFLOW_SPECS.filter((s) => allowed.has(s.id));
+  }
+
+  /** Resolve a workflow by id, honoring the pack's workflowSpecs allowlist. */
+  private resolveWorkflow(id: string): WorkflowSpec | undefined {
+    return this.allowedWorkflows().find((s) => s.id === id);
+  }
+
   /** The harness API the browser UI calls (over the loopback, secret-gated daemon). */
   api(): {
     listWorkflows: () => WorkflowSpec[];
@@ -93,10 +112,10 @@ export class HarnessDaemon {
     reject: (runId: string) => Promise<RunOutcome>;
   } {
     return {
-      listWorkflows: () => TWELVE_WORKFLOW_SPECS,
+      listWorkflows: () => this.allowedWorkflows(),
       startRun: async (req) => {
-        const spec = TWELVE_WORKFLOW_SPECS.find((s) => s.id === req.workflowId);
-        if (!spec) throw new Error(`unknown workflow: ${req.workflowId}`);
+        const spec = this.resolveWorkflow(req.workflowId);
+        if (!spec) throw new Error(`unknown or pack-disallowed workflow: ${req.workflowId}`);
         const runId = `RUN-${spec.id}-${Date.now()}`;
         const contract: GoalContract = {
           runId,
