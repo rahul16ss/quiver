@@ -2481,6 +2481,56 @@ async function integrationWiringContract() {
   );
 
   await check(
+    "PROMPT-REGISTRY-EXISTS",
+    "US-11.1 / §11",
+    "A versioned PromptRegistry with the 6 deterministic layers (core/domain/customer/workflow/task/checker) must exist outside orchestration code, hashable, fail-closed on missing/unknown vars, with customer overrides only at permitted layers",
+    () => {
+      const c = srcText("src/prompt/registry.ts");
+      if (!/class PromptRegistry/.test(c))
+        throw new Error("missing PromptRegistry");
+      // 6 layers.
+      for (const l of ["core", "domain", "customer", "workflow", "task", "checker"]) {
+        if (!new RegExp(`"${l}"`).test(c))
+          throw new Error(`missing layer: ${l}`);
+      }
+      // Stable id + version.
+      if (!/id:\s*string/.test(c) || !/version:\s*string/.test(c))
+        throw new Error("templates need stable id + version");
+      // Hashable.
+      if (!/createHash/.test(c) || !/compositeHash/.test(c))
+        throw new Error("no hashing / composite hash for run records");
+      // Fail-closed on missing + unknown vars + leftover placeholders.
+      if (!/Missing required variables/.test(c))
+        throw new Error("no fail-closed on missing required vars");
+      if (!/Unknown variables/.test(c))
+        throw new Error("no fail-closed on unknown vars (typos)");
+      if (!/Unreplaced placeholders/.test(c))
+        throw new Error("no fail-closed on leftover placeholders");
+      // Customer overrides only at permitted layers (core/checker protected).
+      if (!/customerOverridable/.test(c) || !/not customer-overridable/.test(c))
+        throw new Error("no customer-override guard (core/checker must be protected)");
+      // Preview for admins.
+      if (!/preview\(/.test(c))
+        throw new Error("no admin preview");
+      return true;
+    },
+  );
+
+  await check(
+    "PROMPT-CORE-NOT-CUSTOMER-OVERRIDABLE",
+    "US-11.1 / §11",
+    "the core Quiver contract and checker prompt must not be customer-overridable (a customer cannot rewrite the security boundary)",
+    () => {
+      const c = codeOnly("src/prompt/registry.ts");
+      if (/id:\s*"core:v1"[\s\S]*?customerOverridable:\s*true/.test(c))
+        throw new Error("core template is customer-overridable — security boundary can be rewritten");
+      if (/id:\s*"checker:v1"[\s\S]*?customerOverridable:\s*true/.test(c))
+        throw new Error("checker template is customer-overridable");
+      return true;
+    },
+  );
+
+  await check(
     "WIRE-TOKEN-BUDGET",
     "US-11.2",
     "the agent loop must run calculateBudget() and honor shouldBlockSubmission() before model submission",
