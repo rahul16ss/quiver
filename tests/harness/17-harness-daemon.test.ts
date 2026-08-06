@@ -15,6 +15,7 @@ import { SqliteCheckpointSaver } from "../../src/harness/sqlite-checkpoint.js";
 import { LocalTraceSink } from "../../src/harness/trace-sink.js";
 import { DurableJobScheduler } from "../../src/harness/durable-job.js";
 import { emptyPack } from "../../src/harness/customer-pack.js";
+import { resolveProductionPack } from "../../src/harness/launcher.js";
 import type { ModelClient, ModelMessage, ModelResult, ModelProfileRef } from "../../src/harness/interfaces.js";
 
 let passed = 0, failed = 0;
@@ -127,6 +128,27 @@ async function run() {
   const disallowRun = await apiCall(porigin, psecret, "/api/run/start", "POST", { workflowId: "company-primer" });
   check("HD-PACK-DISALLOWS-UNLISTED-WORKFLOW", disallowRun.status === 400 || /disallowed/.test(JSON.stringify(disallowRun.body)), JSON.stringify(disallowRun.body));
   await hdPack.close();
+
+  // ── End-to-end: the PRODUCTION pack loader threads into the daemon ──
+  // Dispute-1 proof: resolveProductionPack loads the shipped pack from disk
+  // (the same loader startBrowserUI uses), and a HarnessDaemon constructed the
+  // way startHarness does (with that pack) enforces its workflowSpecs allowlist
+  // — proving the production browser path honors the pack, not just injected packs.
+  const savedQ = process.env.QUIVER_PACK;
+  process.env.QUIVER_PACK = path.resolve("packs/conviction-studio-default/pack.json");
+  const diskPack = await resolveProductionPack();
+  process.env.QUIVER_PACK = savedQ;
+  check("E2E-PACK-LOADS-FROM-DISK", !!diskPack && diskPack.id === "conviction-studio-default" && diskPack.workflowSpecs.length === 12, JSON.stringify(diskPack?.id ?? null));
+  const hdDisk = new HarnessDaemon({
+    engine,
+    uiDir: path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "src", "harness", "ui"),
+    pack: diskPack,
+  });
+  const { origin: dorigin } = await hdDisk.listen();
+  const dsecret = (hdDisk as any).opts.secret ?? (hdDisk as any).daemon.secret;
+  const diskWf = await apiCall(dorigin, dsecret, "/api/workflows");
+  check("E2E-PACK-ALLOWLIST-APPLIED", diskWf.body.length === 12, `listed=${diskWf.body.length}`);
+  await hdDisk.close();
 
   await hd.close();
   saver.close();

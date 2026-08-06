@@ -116,16 +116,24 @@ export class ModalityRouter {
 
 	// ─── native-document tier ──────────────────────────────────────────
 
+	/** True when a registered profile may serve `role` (allowedRoles absent → any). */
+	private servesRole(slug: string, role: ModelRole): boolean {
+		const p = this.bySlug.get(slug);
+		if (!p) return false;
+		return !p.allowedRoles || p.allowedRoles.includes(role);
+	}
+
 	private pickNativeDoc(role: ModelRole): string | undefined {
 		// Reviewer / failsafe get the frontier native-doc model (Opus 5 is
 		// particularly strong at chart/document visual analysis + complex office
 		// deliverables). Maker/checker get the value native-doc model (Sonnet 5).
 		const preferred =
 			role === "reviewer" || role === "failsafe" ? "native-doc-frontier" : "native-doc-primary";
-		if (this.bySlug.has(preferred)) return preferred;
-		// Fall back within the native-doc tier only — never to a text profile.
+		if (this.servesRole(preferred, role)) return preferred;
+		// Fall back within the native-doc tier only — never to a text profile,
+		// and never to a profile the pack disallows for this role.
 		const order = ["native-doc-frontier", "native-doc-primary", "native-doc-budget"];
-		return order.find((s) => this.bySlug.has(s));
+		return order.find((s) => this.servesRole(s, role));
 	}
 
 	// ─── text-only tier ────────────────────────────────────────────────
@@ -139,8 +147,8 @@ export class ModalityRouter {
 				: role === "reviewer" || role === "failsafe"
 					? "text-failsafe"
 					: "text-maker"; // planner + maker
-		if (this.bySlug.has(preferred)) return preferred;
+		if (this.servesRole(preferred, role)) return preferred;
 		const order = ["text-maker", "text-checker", "text-failsafe", "text-pro"];
-		return order.find((s) => this.bySlug.has(s));
+		return order.find((s) => this.servesRole(s, role));
 	}
 }

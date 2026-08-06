@@ -39,6 +39,10 @@ export interface ModelProfile {
   nativeFileInput: boolean;
   /** Router role this profile is the preferred pick for (see ModalityRouter). */
   routerRole?: "planner" | "maker" | "checker" | "reviewer" | "failsafe";
+  /** Optional pack-declared role allowlist: when present, the profile may only
+   *  serve these router roles (a pack entry with roles [checker, reviewer] is
+   *  honored for BOTH, not just the first). Absent → any role. */
+  allowedRoles?: Array<"planner" | "maker" | "checker" | "reviewer" | "failsafe">;
   /** Sensitivity profiles this profile is approved for. */
   approvedFor: SensitivityProfile[];
   /** Last contract-test date (ISO) and pass/fail. */
@@ -119,8 +123,9 @@ export function applyApprovedModels(
     const merged: ModelProfile = {
       ...p,
       providerOrder: entry.providerOrder.length > 0 ? entry.providerOrder : p.providerOrder,
-      // A pack that assigns a role flag on the profile makes it eligible for
-      // that role via the router's routerRole; otherwise keep the catalog's.
+      // Honor the pack's FULL role list: an entry approving a profile for
+      // [checker, reviewer] serves BOTH roles. Absent roles → any role.
+      allowedRoles: entry.roles && entry.roles.length > 0 ? [...entry.roles] : p.allowedRoles,
       routerRole: entry.roles && entry.roles.length > 0 ? (entry.roles[0] as ModelProfileRunnerRole) : p.routerRole,
     };
     out.register(merged);

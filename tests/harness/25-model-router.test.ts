@@ -147,10 +147,12 @@ function run() {
   check("PACK-TEXT-MAKER-ROUTES-APPROVED", tMaker === "text-maker");
   // Native-file maker routes to pack-approved native-doc (NOT unapproved frontier).
   check("PACK-NATIVE-ROUTES-APPROVED", nMaker === "native-doc-primary");
-  // text-failsafe is NOT approved: reviewer/failsafe fail CLOSED to approved
-  // text-maker rather than reaching an unapproved profile.
-  check("PACK-FAILSAFE-CLOSED-TO-APPROVED", reviewer === "text-maker");
-  check("PACK-CANNOT-REACH-UNAPPROVED", failsafe === "text-maker");
+  // text-failsafe / text-checker are NOT approved for reviewer or failsafe, and
+  // the only text profile (text-maker) is approved for maker only → reviewer
+  // and failsafe are undefined (fail closed, never leak to a role the pack
+  // didn't authorize).
+  check("PACK-REVIEWER-CLOSED-UNDEF", reviewer === undefined);
+  check("PACK-FAILSAFE-CLOSED-UNDEF", failsafe === undefined);
   // A pack approving ONLY a native-doc profile leaves text maker undefined
   // (no text profile approved → fail closed, never a silent unapproved pick).
   const nativeOnly = applyApprovedModels(base, [{ profileSlug: "native-doc-primary", roles: ["maker"], providerOrder: ["Anthropic"] }]);
@@ -159,6 +161,20 @@ function run() {
   check("PACK-NATIVE-ONLY-TEXT-UNDEF", noText === undefined);
   // Pack providerOrder is applied to the approved profile.
   check("PACK-PROVIDER-ORDER-APPLIED", packRestricted.get("native-doc-primary")?.providerOrder.join(",") === "Anthropic");
+
+  // ── Multi-role pack entry is honored for ALL its roles, not just the first ──
+  const multiRole = applyApprovedModels(base, [
+    { profileSlug: "text-checker", roles: ["checker", "reviewer"], providerOrder: ["Z-Ai"] },
+    { profileSlug: "text-maker", roles: ["maker"], providerOrder: ["DeepSeek"] },
+  ]);
+  const multiRouter = new ModalityRouter(multiRole.list());
+  const mrText = [textMsg];
+  check("PACK-MULTIROLE-CHECKER", multiRouter.route(mrText, "checker", "public") === "text-checker");
+  // text-checker is approved for reviewer too → reviewer routes to it (not maker).
+  check("PACK-MULTIROLE-REVIEWER-SERVES-SAME", multiRouter.route(mrText, "reviewer", "public") === "text-checker");
+  // text-maker is NOT approved for checker (roles: [maker] only) → checker must
+  // not fall through to the maker profile.
+  check("PACK-MULTIROLE-CHECKER-NOT-MAKER", multiRouter.route(mrText, "checker", "public") === "text-checker");
 }
 
 run();

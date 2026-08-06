@@ -30,6 +30,21 @@ export interface LauncherState {
  * Demo transports exist only behind buildDemoEngine() (tests) and are visibly
  * labelled. No production caller may use buildDemoEngine().
  */
+
+/**
+ * Resolve the production customer pack: the QUIVER_PACK env path, or undefined
+ * (shipped catalog) when unset. Both buildProductionEngine (model registry) and
+ * the daemon (workflow allowlist) call this so the SAME pack drives the whole
+ * production browser path — model routing AND runnable workflows.
+ */
+export async function resolveProductionPack(): Promise<import("./customer-pack.js").CustomerPack | undefined> {
+  const packPathArg = process.env.QUIVER_PACK;
+  if (!packPathArg) return undefined;
+  const { CustomerPackRegistry } = await import("./customer-pack.js");
+  const reg = new CustomerPackRegistry();
+  return reg.loadFromFile(packPathArg).pack;
+}
+
 export async function buildProductionEngine(pack?: import("./customer-pack.js").CustomerPack): Promise<import("./interfaces.js").ExecutionEngine> {
   const { QuiverExecutionEngine } = await import("./execution-engine.js");
   const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
@@ -50,15 +65,7 @@ export async function buildProductionEngine(pack?: import("./customer-pack.js").
   // path. Without either, the shipped starter catalog runs as-is. A pack's
   // approvedModels DRIVE the router (unapproved profiles removed → fail
   // closed) and override provider orders.
-  let resolvedPack = pack;
-  if (!resolvedPack) {
-    const packPathArg = process.env.QUIVER_PACK;
-    if (packPathArg) {
-      const { CustomerPackRegistry } = await import("./customer-pack.js");
-      const reg = new CustomerPackRegistry();
-      resolvedPack = reg.loadFromFile(packPathArg).pack;
-    }
-  }
+  const resolvedPack = pack ?? (await resolveProductionPack());
   const base = new ModelProfileRegistry();
   for (const pp of starterCatalog()) base.register(pp);
   const profiles = resolvedPack ? applyApprovedModels(base, resolvedPack.approvedModels) : base;
@@ -162,12 +169,14 @@ export class QuiverLauncher {
    * Opens the browser with the per-install secret in the URL fragment (never
    * sent to the server). Keeps the process alive serving.
    */
-  async startHarness(engine: import("./interfaces.js").ExecutionEngine, opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
+  async startHarness(engine: import("./interfaces.js").ExecutionEngine, opts: { uiDir?: string; port?: number; open?: boolean } = {}, pack?: import("./customer-pack.js").CustomerPack): Promise<LauncherState> {
     const secret = loadOrCreateSecret();
     const uiDir = opts.uiDir ?? path.join(path.dirname(new URL(import.meta.url).pathname), "ui");
     // The browser-UI bridge: the chatbot/context/sessions surface (ADR-009).
     const { browserApiHandler, browserSseHandler } = await import("./browser-bridge.js");
-    const hd = new HarnessDaemon({ engine, secret, uiDir, browserApiHandler, sseHandler: browserSseHandler, ssePath: "/api/agent/events" });
+    // Thread the customer pack into the daemon so its workflowSpecs allowlist
+    // is enforced end-to-end (not just the model registry).
+    const hd = new HarnessDaemon({ engine, secret, uiDir, browserApiHandler, sseHandler: browserSseHandler, ssePath: "/api/agent/events", pack });
     const { port, origin } = await hd.listen(opts.port);
     const state: LauncherState = { pid: process.pid, port, origin, startedAt: new Date().toISOString() };
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
@@ -190,8 +199,11 @@ export class QuiverLauncher {
    * a TTY calls this instead of entering the legacy REPL.
    */
   async startBrowserUI(opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
-    const engine = await buildProductionEngine();
-    return this.startHarness(engine, opts);
+    // Resolve the customer pack ONCE so the SAME pack drives the model registry
+    // (buildProductionEngine) and the daemon's workflow allowlist.
+    const pack = await resolveProductionPack();
+    const engine = await buildProductionEngine(pack);
+    return this.startHarness(engine, opts, pack);
   }
 
   status(): LauncherState | null {
