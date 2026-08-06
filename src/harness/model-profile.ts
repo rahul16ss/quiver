@@ -101,6 +101,36 @@ export function isCertifiedFor(profile: ModelProfile, mime: NativeMime): boolean
 }
 
 /**
+ * Apply a customer pack's `approvedModels` to a profile registry — restricts
+ * the registry to only the profiles the pack approves, and overrides each
+ * approved profile's provider order with the pack's. Any profile in the base
+ * catalog that the pack does NOT approve is removed, so the router can never
+ * silently pick an unapproved cloud model (fail closed). Returns a NEW
+ * registry; the input is left intact.
+ */
+export function applyApprovedModels(
+  base: ModelProfileRegistry,
+  approved: Array<{ profileSlug: string; roles?: Array<"planner" | "maker" | "checker" | "reviewer">; providerOrder: string[] }>,
+): ModelProfileRegistry {
+  const out = new ModelProfileRegistry();
+  for (const entry of approved) {
+    const p = base.get(entry.profileSlug);
+    if (!p) continue; // pack references an unknown profile → ignored (honest)
+    const merged: ModelProfile = {
+      ...p,
+      providerOrder: entry.providerOrder.length > 0 ? entry.providerOrder : p.providerOrder,
+      // A pack that assigns a role flag on the profile makes it eligible for
+      // that role via the router's routerRole; otherwise keep the catalog's.
+      routerRole: entry.roles && entry.roles.length > 0 ? (entry.roles[0] as ModelProfileRunnerRole) : p.routerRole,
+    };
+    out.register(merged);
+  }
+  return out;
+}
+
+type ModelProfileRunnerRole = "planner" | "maker" | "checker" | "reviewer" | "failsafe";
+
+/**
  * Shipped catalog — the production tiered profiles (ADR-001 §5 router).
  * Grounded in live OpenRouter Models API data (Aug 2026, ZDR endpoints only).
  * See docs/refactor/model-router.md for selection rationale + benchmark scores.

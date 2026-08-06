@@ -30,10 +30,10 @@ export interface LauncherState {
  * Demo transports exist only behind buildDemoEngine() (tests) and are visibly
  * labelled. No production caller may use buildDemoEngine().
  */
-export async function buildProductionEngine(): Promise<import("./interfaces.js").ExecutionEngine> {
+export async function buildProductionEngine(pack?: import("./customer-pack.js").CustomerPack): Promise<import("./interfaces.js").ExecutionEngine> {
   const { QuiverExecutionEngine } = await import("./execution-engine.js");
   const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
-  const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
+  const { ModelProfileRegistry, starterCatalog, applyApprovedModels } = await import("./model-profile.js");
   const { QuiverOpenRouterClient, LocalModelClient, ChatOpenRouterTransport } = await import("./model-client.js");
   const { QuiverPolicyEngine } = await import("./policy-engine.js");
   const { emptyPack } = await import("./customer-pack.js");
@@ -42,15 +42,18 @@ export async function buildProductionEngine(): Promise<import("./interfaces.js")
 
   await globalRegistry.loadAll();
   // Install the network guard for air-gapped / private-network profiles (§7).
-  // Blocks public-internet egress below the app layer. No-op for connected-zdr.
   const { resolveDeploymentProfile, installNetworkGuard } = await import("../security/execution_context.js");
   const profile = resolveDeploymentProfile();
   installNetworkGuard(profile);
   const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
-  const profiles = new ModelProfileRegistry();
-  for (const pp of starterCatalog()) profiles.register(pp);
-  const pack = emptyPack();
-  const policy = new QuiverPolicyEngine(pack);
+  const base = new ModelProfileRegistry();
+  for (const pp of starterCatalog()) base.register(pp);
+  // A customer pack's approvedModels DRIVE the router: unapproved profiles are
+  // removed (fail closed), pack provider orders are applied. With no pack, the
+  // shipped catalog is used as-is.
+  const profiles = pack ? applyApprovedModels(base, pack.approvedModels) : base;
+  const enginePack = pack ?? emptyPack();
+  const policy = new QuiverPolicyEngine(enginePack);
 
   // ── Real model gateway: OpenRouter (cloud) or local OpenAI-compatible ──
   let model: import("./interfaces.js").ModelClient;

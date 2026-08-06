@@ -5,7 +5,7 @@
  * No network, no transport. Deterministic exit.
  */
 import picocolors from "picocolors";
-import { ModelProfileRegistry, starterCatalog } from "../../src/harness/model-profile.js";
+import { ModelProfileRegistry, starterCatalog, applyApprovedModels } from "../../src/harness/model-profile.js";
 import { ModalityRouter, classifyModality, AUTO_PROFILE, type ModelRole } from "../../src/harness/model-router.js";
 import type { ModelMessage } from "../../src/harness/interfaces.js";
 
@@ -127,6 +127,38 @@ function run() {
     starterCatalog().filter((p) => !p.nativeFileInput && p.slug !== "local-private-default"),
   );
   check("NATIVE-WITH-NO-FILE-PROFILE-UNDEFINED", textOnlyRouter.route([pdfMsg], "maker", "public") === undefined);
+
+  // ── Customer pack approvedModels DRIVE routing (fail closed) ─────────
+  const base = new ModelProfileRegistry();
+  for (const p of starterCatalog()) base.register(p);
+  // A pack approving ONLY the text-maker (for maker) + a native-doc profile
+  // must restrict routing: unapproved profiles are unreachable.
+  const packRestricted = applyApprovedModels(base, [
+    { profileSlug: "text-maker", roles: ["maker"], providerOrder: ["DeepSeek"] },
+    { profileSlug: "native-doc-primary", roles: ["maker", "checker"], providerOrder: ["Anthropic"] },
+  ]);
+  const packRouter = new ModalityRouter(packRestricted.list());
+  // Precompute route results once (avoids nested-call inference + is clearer).
+  const tMaker = packRouter.route([textMsg], "maker", "public");
+  const nMaker = packRouter.route([pdfMsg], "maker", "public");
+  const reviewer = packRouter.route([textMsg], "reviewer", "public");
+  const failsafe = packRouter.route([textMsg], "failsafe", "public");
+  // Text maker routes to the pack-approved text-maker.
+  check("PACK-TEXT-MAKER-ROUTES-APPROVED", tMaker === "text-maker");
+  // Native-file maker routes to pack-approved native-doc (NOT unapproved frontier).
+  check("PACK-NATIVE-ROUTES-APPROVED", nMaker === "native-doc-primary");
+  // text-failsafe is NOT approved: reviewer/failsafe fail CLOSED to approved
+  // text-maker rather than reaching an unapproved profile.
+  check("PACK-FAILSAFE-CLOSED-TO-APPROVED", reviewer === "text-maker");
+  check("PACK-CANNOT-REACH-UNAPPROVED", failsafe === "text-maker");
+  // A pack approving ONLY a native-doc profile leaves text maker undefined
+  // (no text profile approved → fail closed, never a silent unapproved pick).
+  const nativeOnly = applyApprovedModels(base, [{ profileSlug: "native-doc-primary", roles: ["maker"], providerOrder: ["Anthropic"] }]);
+  const nativeOnlyRouter = new ModalityRouter(nativeOnly.list());
+  const noText = nativeOnlyRouter.route([textMsg], "maker", "public");
+  check("PACK-NATIVE-ONLY-TEXT-UNDEF", noText === undefined);
+  // Pack providerOrder is applied to the approved profile.
+  check("PACK-PROVIDER-ORDER-APPLIED", packRestricted.get("native-doc-primary")?.providerOrder.join(",") === "Anthropic");
 }
 
 run();
