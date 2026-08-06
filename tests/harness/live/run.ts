@@ -40,7 +40,7 @@ async function openrouterNativePdf() {
   }
   const profiles = new ModelProfileRegistry();
   for (const p of starterCatalog()) profiles.register(p);
-  const slug = process.env.QUIVER_LIVE_MODEL_PROFILE || "openai-gpt-4o";
+  const slug = process.env.QUIVER_LIVE_MODEL_PROFILE || "native-doc-primary";
   // Pre-certify based on an explicit opt-in env flag; the test itself is the
   // certification. A failure here means the route cannot accept native PDFs and
   // must NOT be silently substituted with OCR.

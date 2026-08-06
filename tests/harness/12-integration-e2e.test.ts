@@ -45,7 +45,7 @@ async function run() {
   // Model plane (OpenRouter-enforcing client with a mock transport).
   const profiles = new ModelProfileRegistry();
   for (const p of starterCatalog()) profiles.register(p);
-  profiles.certify("openai-gpt-4o", "application/pdf", "pass");
+  profiles.certify("native-doc-primary", "application/pdf", "pass");
   const mockTransport: ModelTransport = {
     async invoke(req: TransportRequest): Promise<TransportResponse> {
       // Assert the enforced policy reached the transport.
@@ -93,7 +93,7 @@ async function run() {
   check("E2E-RESEARCH-EXTRACT-FULL-CONTENT", !!extract[0].fullContent);
 
   // ── 2. Model call enforces ZDR policy (mock transport asserts it) ───
-  const modelRes = await model.invoke([{ role: "user", content: "Summarize the filing." }], { modelProfile: "openai-gpt-4o", sensitivity: "public" });
+  const modelRes = await model.invoke([{ role: "user", content: "Summarize the filing." }], { modelProfile: "native-doc-primary", sensitivity: "public" });
   check("E2E-MODEL-ZDR-ENFORCED", modelRes.route === "openai/gpt-4o" && modelRes.usage?.totalTokens === 12);
 
   // ── 3. Stage the source artifact (no direct mutation) ───────────────

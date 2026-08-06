@@ -41,6 +41,7 @@ import {
   type ModelProfile,
   type NativeMime,
 } from "./model-profile.js";
+import { ModalityRouter, AUTO_PROFILE, type ModelRole } from "./model-router.js";
 
 // ─── Transport abstraction ────────────────────────────────────────────
 
@@ -91,13 +92,16 @@ export interface TransportResponse {
 export class QuiverOpenRouterClient implements ModelClient {
   readonly id = "openrouter";
   readonly kind = "cloud" as const;
+  private router: ModalityRouter;
 
   constructor(
     private transport: ModelTransport,
     private profiles: ModelProfileRegistry,
     private policy: PolicyEngine,
     private opts: { siteUrl?: string; siteName?: string } = {},
-  ) {}
+  ) {
+    this.router = new ModalityRouter(profiles.list());
+  }
 
   listProfiles(): ModelProfileRef[] {
     return this.profiles.list().map((p) => ({
@@ -120,18 +124,34 @@ export class QuiverOpenRouterClient implements ModelClient {
       budget?: RequestBudget;
       strictOutput?: Record<string, unknown>;
       sensitivity?: import("./interfaces.js").SensitivityProfile;
+      /** Router role hint (maker/checker/planner/reviewer/failsafe). Default "maker". */
+      role?: ModelRole;
     },
   ): Promise<ModelResult> {
-    const profile = this.profiles.get(options.modelProfile);
+    // Auto-routing: "auto" (or an unknown slug) resolves to a real profile via
+    // the modality router — native-file messages → a native-doc profile;
+    // text-only → the cheaper text tier. Explicit slugs override (backward compat).
+    const sensitivity = options.sensitivity ?? "public";
+    let slug = options.modelProfile;
+    if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
+      const routed = this.router.route(messages, options.role ?? "maker", sensitivity);
+      if (!routed) {
+        throw new Error(
+          `ModalityRouter found no eligible profile for role=${options.role ?? "maker"} ` +
+            `sensitivity=${sensitivity}. Configure an approved profile or a local endpoint.`,
+        );
+      }
+      slug = routed;
+    }
+    const profile = this.profiles.get(slug);
     if (!profile) {
-      throw new Error(`Unknown model profile: ${options.modelProfile}`);
+      throw new Error(`Unknown model profile: ${slug}`);
     }
     if (!profile.zdrEligible) {
       throw new Error(`Profile ${profile.slug} is not ZDR-eligible; cloud egress refused.`);
     }
 
     // Policy gate: cloud inference for this sensitivity must be permitted.
-    const sensitivity = options.sensitivity ?? "public";
     const decision = this.policy.decide({ kind: "model", sensitivity, route: profile.modelSlug });
     if (!decision.permitted) {
       throw new Error(`Policy refused model call: ${decision.reasons.join("; ")}`);
@@ -198,6 +218,8 @@ export class QuiverOpenRouterClient implements ModelClient {
           finishReason: resp.finishReason,
           modelProfile: profile.slug,
           route: resp.route || profile.modelSlug,
+          // Surface the router's selection so callers can observe which tier ran.
+          routedFrom: slug !== options.modelProfile ? options.modelProfile : undefined,
         };
       } catch (err) {
         lastErr = err;
@@ -215,11 +237,14 @@ export class QuiverOpenRouterClient implements ModelClient {
 export class LocalModelClient implements ModelClient {
   readonly id = "local";
   readonly kind = "local" as const;
+  private router: ModalityRouter;
 
   constructor(
     private transport: ModelTransport,
     private profiles: ModelProfileRegistry,
-  ) {}
+  ) {
+    this.router = new ModalityRouter(profiles.list());
+  }
 
   listProfiles(): ModelProfileRef[] {
     return this.profiles.list().map((p) => ({
@@ -241,10 +266,19 @@ export class LocalModelClient implements ModelClient {
       maxTokens?: number;
       budget?: RequestBudget;
       strictOutput?: Record<string, unknown>;
+      sensitivity?: import("./interfaces.js").SensitivityProfile;
+      role?: ModelRole;
     },
   ): Promise<ModelResult> {
-    const profile = this.profiles.get(options.modelProfile);
-    if (!profile) throw new Error(`Unknown local model profile: ${options.modelProfile}`);
+    const sensitivity = options.sensitivity ?? "public";
+    let slug = options.modelProfile;
+    if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
+      const routed = this.router.route(messages, options.role ?? "maker", sensitivity);
+      if (!routed) throw new Error(`ModalityRouter found no eligible local profile for role=${options.role ?? "maker"} sensitivity=${sensitivity}.`);
+      slug = routed;
+    }
+    const profile = this.profiles.get(slug);
+    if (!profile) throw new Error(`Unknown local model profile: ${slug}`);
     const signal = options.budget?.signal ?? maybeTimeout(options.budget?.timeoutMs);
     const resp = await this.transport.invoke({
       model: profile.modelSlug,
@@ -265,6 +299,7 @@ export class LocalModelClient implements ModelClient {
       finishReason: resp.finishReason,
       modelProfile: profile.slug,
       route: resp.route || "local",
+      routedFrom: slug !== options.modelProfile ? options.modelProfile : undefined,
     };
   }
 }

@@ -34,6 +34,11 @@ export interface ModelProfile {
   zdrEligible: boolean;
   /** Whether this profile may serve the independent checker role. */
   checkerEligible: boolean;
+  /** Whether the underlying model accepts `file` input natively (input_modalities ⊇ file).
+   *  Native-document ingestion is only permitted on such profiles — never via OCR fallback. */
+  nativeFileInput: boolean;
+  /** Router role this profile is the preferred pick for (see ModalityRouter). */
+  routerRole?: "planner" | "maker" | "checker" | "reviewer" | "failsafe";
   /** Sensitivity profiles this profile is approved for. */
   approvedFor: SensitivityProfile[];
   /** Last contract-test date (ISO) and pass/fail. */
@@ -95,39 +100,142 @@ export function isCertifiedFor(profile: ModelProfile, mime: NativeMime): boolean
   );
 }
 
-/** A small shipped catalog of starter profiles (all `not-run` until certified). */
+/**
+ * Shipped catalog — the production tiered profiles (ADR-001 §5 router).
+ * Grounded in live OpenRouter Models API data (Aug 2026, ZDR endpoints only).
+ * See docs/refactor/model-router.md for selection rationale + benchmark scores.
+ *
+ * All profiles start `not-run`; native ingestion remains gated on the
+ * CapabilityRegistry's per-MIME contract test (§6) — the router proposes,
+ * certification disposes. A profile's `nativeFileInput` flag is the static
+ * property (the model's documented input modalities); certification is the
+ * dynamic, opt-in proof.
+ */
 export function starterCatalog(): ModelProfile[] {
+  const approvedCloud: SensitivityProfile[] = ["public", "confidential-internal"];
   return [
+    // ── Native-document tier (input_modalities ⊇ file) ───────────────
     {
-      slug: "openai-gpt-4o",
-      modelSlug: "openai/gpt-4o",
-      providerOrder: ["OpenAI"],
-      testedNativeMimeTypes: [],
-      supportsToolCalling: true,
-      supportsStrictOutput: true,
-      contextWindowTokens: 128_000,
-      maxFileBytes: 20 * 1024 * 1024,
-      zdrEligible: true,
-      checkerEligible: true,
-      approvedFor: ["public", "confidential-internal"],
-      lastContractTest: { date: "", result: "not-run" },
-      pdfEngine: "native",
-    },
-    {
-      slug: "anthropic-claude-sonnet",
-      modelSlug: "anthropic/claude-sonnet-4.5",
+      slug: "native-doc-frontier",
+      modelSlug: "anthropic/claude-opus-5",
       providerOrder: ["Anthropic"],
       testedNativeMimeTypes: [],
       supportsToolCalling: true,
       supportsStrictOutput: true,
-      contextWindowTokens: 200_000,
+      contextWindowTokens: 1_000_000,
       maxFileBytes: 32 * 1024 * 1024,
       zdrEligible: true,
       checkerEligible: true,
-      approvedFor: ["public", "confidential-internal"],
+      nativeFileInput: true,
+      routerRole: "reviewer",
+      approvedFor: approvedCloud,
       lastContractTest: { date: "", result: "not-run" },
       pdfEngine: "native",
     },
+    {
+      slug: "native-doc-primary",
+      modelSlug: "anthropic/claude-sonnet-5",
+      providerOrder: ["Anthropic"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_000_000,
+      maxFileBytes: 32 * 1024 * 1024,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: true,
+      routerRole: "maker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    {
+      slug: "native-doc-budget",
+      modelSlug: "google/gemini-3.6-flash",
+      providerOrder: ["Google"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_048_576,
+      maxFileBytes: 32 * 1024 * 1024,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: true,
+      routerRole: "maker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    // ── Text-only tier (input_modalities = [text]) ───────────────────
+    {
+      slug: "text-failsafe",
+      modelSlug: "openai/gpt-5.6-sol",
+      providerOrder: ["OpenAI"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_050_000,
+      maxFileBytes: 0, // text-only by default; native-file path uses a native-doc profile
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: true, // gpt-5.6-sol DOES accept file input; usable as failsafe for doc work too
+      routerRole: "failsafe",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    {
+      slug: "text-checker",
+      modelSlug: "z-ai/glm-5.2",
+      providerOrder: ["Z-Ai"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_048_576,
+      maxFileBytes: 0,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: false,
+      routerRole: "checker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    {
+      slug: "text-maker",
+      modelSlug: "deepseek/deepseek-v4-flash-0731",
+      providerOrder: ["DeepSeek"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_048_576,
+      maxFileBytes: 0,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: false,
+      routerRole: "maker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    {
+      slug: "text-pro",
+      modelSlug: "deepseek/deepseek-v4-pro",
+      providerOrder: ["DeepSeek"],
+      testedNativeMimeTypes: [],
+      supportsToolCalling: true,
+      supportsStrictOutput: true,
+      contextWindowTokens: 1_048_576,
+      maxFileBytes: 0,
+      zdrEligible: true,
+      checkerEligible: true,
+      nativeFileInput: false,
+      routerRole: "maker",
+      approvedFor: approvedCloud,
+      lastContractTest: { date: "", result: "not-run" },
+      pdfEngine: "native",
+    },
+    // ── Local / private escape hatch (air-gapped + restricted-mnpi) ──
     {
       slug: "local-private-default",
       modelSlug: "local/private-default",
@@ -139,6 +247,8 @@ export function starterCatalog(): ModelProfile[] {
       maxFileBytes: 8 * 1024 * 1024,
       zdrEligible: true,
       checkerEligible: true,
+      nativeFileInput: true,
+      routerRole: "maker",
       approvedFor: ["public", "confidential-internal", "restricted-mnpi"],
       lastContractTest: { date: "", result: "not-run" },
       pdfEngine: "native",

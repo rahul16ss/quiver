@@ -41,9 +41,22 @@ export class QuiverOpenRouterProvider implements ModelProvider {
     private opts: ProviderBridgeOptions,
     private chatModelFactory?: (opts: ProviderBridgeOptions) => Promise<ChatModelLike>,
   ) {
-    const p = opts.profiles.get(opts.profileSlug);
-    if (!p) throw new Error(`QuiverOpenRouterProvider: unknown profile '${opts.profileSlug}'`);
-    if (!p.zdrEligible) throw new Error(`QuiverOpenRouterProvider: profile '${opts.profileSlug}' is not ZDR-eligible.`);
+    // Resolve the "auto" router sentinel to a concrete profile for the chat
+    // path (which streams and cannot cheaply re-pick per message). The harness
+    // path (QuiverOpenRouterClient) does true per-call modality routing; this
+    // chat path picks the default text maker, the most common chat modality.
+    let slug = opts.profileSlug;
+    if (slug === "auto") {
+      const list = opts.profiles.list();
+      slug = list.find((p) => p.routerRole === "maker" && !p.nativeFileInput)?.slug
+        ?? list.find((p) => p.routerRole === "maker")?.slug
+        ?? list[0]?.slug;
+      if (!slug) throw new Error("QuiverOpenRouterProvider: no profiles registered for auto-routing.");
+      this.opts = { ...opts, profileSlug: slug };
+    }
+    const p = this.opts.profiles.get(this.opts.profileSlug);
+    if (!p) throw new Error(`QuiverOpenRouterProvider: unknown profile '${this.opts.profileSlug}'`);
+    if (!p.zdrEligible) throw new Error(`QuiverOpenRouterProvider: profile '${this.opts.profileSlug}' is not ZDR-eligible.`);
     this.profile = p;
   }
 

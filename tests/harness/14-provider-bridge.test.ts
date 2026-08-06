@@ -43,7 +43,7 @@ async function run() {
   };
 
   const provider = new QuiverOpenRouterProvider(
-    { apiKey: "sk-or-test", profiles, profileSlug: "openai-gpt-4o" },
+    { apiKey: "sk-or-test", profiles, profileSlug: "native-doc-primary" },
     async () => mock,
   );
 
@@ -85,7 +85,7 @@ async function run() {
 
   // ── Stream error is surfaced as an error event (not a throw) ────────
   const errMock: ChatModelLike = { async *stream() { throw new Error("boom"); } };
-  const errProvider = new QuiverOpenRouterProvider({ apiKey: "k", profiles, profileSlug: "openai-gpt-4o" }, async () => errMock);
+  const errProvider = new QuiverOpenRouterProvider({ apiKey: "k", profiles, profileSlug: "native-doc-primary" }, async () => errMock);
   const errEvents = await collect(errProvider.streamChat(req, new AbortController().signal));
   check("BRIDGE-STREAM-ERROR-SURFACED", errEvents.some((e) => e.type === "error" && /boom/.test(e.error)));
 
@@ -96,7 +96,7 @@ async function run() {
   config.openRouterModelProfile = "";
   check("ACCESSOR-NULL-WHEN-UNCONFIGURED", (await getOpenRouterProvider()) === null);
   config.openRouterApiKey = "sk-or-test";
-  config.openRouterModelProfile = "openai-gpt-4o";
+  config.openRouterModelProfile = "native-doc-primary";
   const orProv = await getOpenRouterProvider();
   check("ACCESSOR-RETURNS-BRIDGE-WHEN-CONFIGURED", !!orProv && orProv.id === "openrouter");
   config.openRouterModelProfile = "nonexistent-profile";
@@ -114,7 +114,7 @@ async function run() {
   // When OpenRouter is configured, getActiveProvider() returns the bridge;
   // when unset, it returns the legacy OpenAI-compatible provider.
   config.openRouterApiKey = "sk-or-test";
-  config.openRouterModelProfile = "openai-gpt-4o";
+  config.openRouterModelProfile = "native-doc-primary";
   const flipped = getActiveProvider();
   check("FLIP-ACTIVE-PROVIDER-IS-BRIDGE", flipped.id === "openrouter");
   config.openRouterApiKey = "";

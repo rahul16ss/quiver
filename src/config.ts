@@ -377,7 +377,7 @@ export const config: Config = {
   // OpenAI-compatible path remains for local/private endpoints; the final
   // getActiveProvider() flip is gated on spec updates.
   openRouterApiKey: resolveSecretSync("OPENROUTER_API_KEY"),
-  openRouterModelProfile: process.env.OPENROUTER_MODEL_PROFILE || "",
+  openRouterModelProfile: process.env.OPENROUTER_MODEL_PROFILE || "auto",
   browserHeadless: !_parsedAutonomy.has("browser:visible"),
   autonomyGrants: _parsedAutonomy,
   maxContextTokens: parseFiniteEnvInteger("QUIVER_MAX_CONTEXT_TOKENS", 120000),

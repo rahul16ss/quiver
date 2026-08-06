@@ -69,6 +69,8 @@ export interface ModelResult {
   modelProfile: string;
   /** The provider/model route actually used. */
   route: string;
+  /** When auto-routing ran, the requested slug (e.g. "auto") that was routed from. */
+  routedFrom?: string;
 }
 
 /** A request budget: cancellation, timeout and retry. */
@@ -103,6 +105,8 @@ export interface ModelClient {
       strictOutput?: Record<string, unknown>;
       /** Sensitivity profile for policy routing (cloud vs local). */
       sensitivity?: SensitivityProfile;
+      /** Router role hint (maker/checker/planner/reviewer/failsafe). */
+      role?: import("./model-router.js").ModelRole;
     },
   ): Promise<ModelResult>;
   /** List certified profiles this client can serve. */

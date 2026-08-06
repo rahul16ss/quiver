@@ -41,6 +41,7 @@ import type {
 } from "./interfaces.js";
 import type { GoalContract } from "./goal-contract.js";
 import { GapLedger, initialLedger, evaluateCompletion } from "./goal-contract.js";
+import { AUTO_PROFILE } from "./model-router.js";
 
 // ─── Tool executor abstraction ────────────────────────────────────────
 
@@ -183,7 +184,7 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     try {
       const res = await this.model.invoke(
         [{ role: "user", content: prompt }],
-        { modelProfile: pickCheckerProfile(this.model), sensitivity: state.contract.dataSensitivity },
+        { modelProfile: AUTO_PROFILE, role: "checker", sensitivity: state.contract.dataSensitivity },
       );
       checkerOk = /^OK/i.test(res.content.trim()) && this.preCheckerReady(state);
     } catch {
@@ -396,6 +397,9 @@ function pickCheckerProfile(model: ModelClient): string {
   const checker = profiles.find((p) => p.checkerEligible);
   return checker?.slug ?? profiles[0]?.slug ?? "local-private-default";
 }
+
+// Auto-routing sentinel — the ModalityRouter selects the actual profile per
+// call from message modality + role + sensitivity (native-doc vs text tier).
 
 /** A no-op trace sink for runs that don't supply one. */
 class NoopTraceSink implements TraceSink {
