@@ -20,8 +20,96 @@ export interface LauncherState {
   startedAt: string;
 }
 
-/** Build a demo workflow-run engine (mock model + tools). A real deployment wires the OpenRouter bridge + tool registry. */
+/**
+ * Build the PRODUCTION workflow engine — the same composition root used by
+ * the CLI and the browser chat path. Constructs the real model gateway
+ * (QuiverOpenRouterClient with ZDR enforcement, or the local OpenAI-compatible
+ * provider) and the real tool registry. Fails with an honest configuration
+ * error when no provider is configured — never substitutes a mock success.
+ *
+ * Demo transports exist only behind buildDemoEngine() (tests) and are visibly
+ * labelled. No production caller may use buildDemoEngine().
+ */
+export async function buildProductionEngine(): Promise<import("./interfaces.js").ExecutionEngine> {
+  const { QuiverExecutionEngine } = await import("./execution-engine.js");
+  const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
+  const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
+  const { QuiverOpenRouterClient, LocalModelClient, ChatOpenRouterTransport } = await import("./model-client.js");
+  const { QuiverPolicyEngine } = await import("./policy-engine.js");
+  const { emptyPack } = await import("./customer-pack.js");
+  const { config } = await import("../config.js");
+  const { globalRegistry } = await import("../registry.js");
+
+  await globalRegistry.loadAll();
+  const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
+  const profiles = new ModelProfileRegistry();
+  for (const pp of starterCatalog()) profiles.register(pp);
+  const pack = emptyPack();
+  const policy = new QuiverPolicyEngine(pack);
+
+  // ── Real model gateway: OpenRouter (cloud) or local OpenAI-compatible ──
+  let model: import("./interfaces.js").ModelClient;
+  const siteUrl = "https://convictionstudio.com";
+  const siteName = "Quiver";
+
+  if (config.openRouterApiKey && config.openRouterModelProfile) {
+    // Sole cloud gateway (ADR-001). ZDR + data_collection=deny enforced per request.
+    const transport = new ChatOpenRouterTransport(config.openRouterApiKey, { siteUrl, siteName });
+    model = new QuiverOpenRouterClient(transport, profiles, policy, { siteUrl, siteName });
+  } else if (config.llmBaseUrl) {
+    // Local/private OpenAI-compatible endpoint (air-gapped / MNPI escape hatch).
+    const { OpenAICompatibleProvider } = await import("../providers/types.js");
+    const provider = new OpenAICompatibleProvider("default", config.llmBaseUrl, config.llmApiKey);
+    const localTransport = {
+      async invoke(req: any) {
+        const ev = await provider.streamChat({
+          model: req.model, messages: req.messages, tools: req.tools,
+          temperature: req.temperature, topP: req.topP, maxTokens: req.maxTokens,
+          signal: req.signal ?? new AbortController().signal,
+        } as any, req.signal ?? new AbortController().signal);
+        let content = ""; let usage: any;
+        for await (const e of ev) {
+          if (e.type === "text_delta") content += e.content ?? "";
+          if (e.type === "done") usage = e.usage;
+        }
+        return { content, route: "local", usage };
+      },
+    };
+    model = new LocalModelClient(localTransport as any, profiles);
+  } else {
+    // Honest configuration error — no mock, no synthetic success.
+    throw new Error(
+      "No model provider configured. Set OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE " +
+      "for cloud inference (the sole cloud gateway), or LLM_API_BASE_URL for a local " +
+      "OpenAI-compatible endpoint. Quiver refuses to run workflows against a mock.",
+    );
+  }
+
+  // ── Real tool executor: wraps the live tool registry (no stubs) ──
+  const tools: import("./execution-engine.js").ToolExecutor = {
+    available: () => globalRegistry.getAllTools().map((t) => t.name),
+    async call(name: string, args: Record<string, unknown>) {
+      const tool = globalRegistry.getTool(name);
+      if (!tool) return { ok: false, error: `Unknown tool: ${name}` };
+      try {
+        const out = await tool.execute(args);
+        return { ok: true, output: out };
+      } catch (err: any) {
+        return { ok: false, error: String(err?.message || err) };
+      }
+    },
+  };
+
+  return new QuiverExecutionEngine(saver, model, tools, { maxIterations: 20 });
+}
+
+/**
+ * DEMO ONLY — mock model + stub tools. Never used in production paths.
+ * Exists solely so harness tests can exercise the goal-loop state machine
+ * without a live model. Visibly labelled; no production caller.
+ */
 async function buildDemoEngine(): Promise<import("./interfaces.js").ExecutionEngine> {
+  const DEMO_ENGINE = true; // labelled sentinel — no production caller (ADR-009 §5)
   const { QuiverExecutionEngine } = await import("./execution-engine.js");
   const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
   const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
@@ -84,7 +172,7 @@ export class QuiverLauncher {
    * a TTY calls this instead of entering the legacy REPL.
    */
   async startBrowserUI(opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
-    const engine = await buildDemoEngine();
+    const engine = await buildProductionEngine();
     return this.startHarness(engine, opts);
   }
 
@@ -141,9 +229,8 @@ export async function runLauncherCli(args: string[]): Promise<number> {
       return 0;
     }
     case "harness": {
-      // Demo harness daemon with a mock engine. A real deployment wires the
-      // OpenRouter bridge + tool registry before calling startHarness.
-      const engine = await buildDemoEngine();
+      // Production composition root — real model gateway + real tool registry.
+      const engine = await buildProductionEngine();
       const state = await launcher.startHarness(engine, { open: true });
       console.log(`Quiver harness daemon on ${state.origin} (pid ${state.pid}) — opening browser…`);
       return 0;

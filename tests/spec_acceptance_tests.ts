@@ -2386,6 +2386,65 @@ async function integrationWiringContract() {
   );
 
   await check(
+    "PRODUCTION-RUNTIME-NO-DEMO-ENGINE",
+    "US-2.2 / ADR-009",
+    "the browser-UI and daemon CLI workflow path must use the production composition root (buildProductionEngine), not buildDemoEngine — no synthetic unconditional success in production",
+    () => {
+      const launcher = codeOnly("src/harness/launcher.ts");
+      // buildProductionEngine must exist and be exported.
+      if (!/export\s+async\s+function\s+buildProductionEngine/.test(launcher))
+        throw new Error("launcher.ts does not export buildProductionEngine");
+      // No production caller of buildDemoEngine: startBrowserUI + runLauncherCli's
+      // harness command must call buildProductionEngine.
+      if (!/startBrowserUI[\s\S]*?buildProductionEngine/.test(launcher))
+        throw new Error("startBrowserUI does not call buildProductionEngine");
+      // buildDemoEngine must be visibly labelled DEMO ONLY and must not appear
+      // in startBrowserUI or the harness CLI command.
+      if (!/DEMO_ENGINE/.test(launcher))
+        throw new Error("buildDemoEngine is not labelled DEMO ONLY");
+      // The honest config error must be present (no mock fallback).
+      if (!/No model provider configured/.test(launcher))
+        throw new Error("buildProductionEngine has no honest config-error guard");
+      return true;
+    },
+  );
+
+  await check(
+    "PRODUCTION-RUNTIME-HONEST-CONFIG-ERROR",
+    "US-2.2 / ADR-009",
+    "buildProductionEngine must throw an honest configuration error (not a mock success) when no provider is configured",
+    async () => {
+      const { config } = await import("../src/config.js");
+      const saved = {
+        or: config.openRouterApiKey,
+        prof: config.openRouterModelProfile,
+        url: config.llmBaseUrl,
+        key: config.llmApiKey,
+      };
+      try {
+        config.openRouterApiKey = "";
+        config.openRouterModelProfile = "";
+        config.llmBaseUrl = "";
+        config.llmApiKey = "";
+        const { buildProductionEngine } = await import("../src/harness/launcher.js");
+        try {
+          await buildProductionEngine();
+          throw new Error("buildProductionEngine returned a mock instead of failing honestly");
+        } catch (e: any) {
+          if (!/No model provider configured/i.test(e.message))
+            throw new Error(`unexpected error: ${e.message}`);
+          return true;
+        }
+      } finally {
+        config.openRouterApiKey = saved.or;
+        config.openRouterModelProfile = saved.prof;
+        config.llmBaseUrl = saved.url;
+        config.llmApiKey = saved.key;
+      }
+    },
+  );
+
+  await check(
     "WIRE-PROMPT-ASSEMBLER",
     "US-11.1",
     "the agent loop must build the system prompt via assemblePrompt() (the deterministic 9-section assembler), not a parallel buildSystemPrompt that bypasses it",
