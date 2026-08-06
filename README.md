@@ -124,7 +124,7 @@ npm run demo:portfolio-review
 
 ## 6. Data handling
 
-Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via `LLM_API_BASE_URL`, or Vertex AI via the customer’s own `VERTEX_PROJECT_ID` (Google bills that GCP project — Quiver does not use a shared Conviction Studio Google account). When a cloud endpoint is used, prompt and file content sent in a request reaches that provider. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no product telemetry.
+Quiver does not bake in a model endpoint. OpenRouter is the sole cloud model gateway (ADR-001); the operator configures it via `OPENROUTER_API_KEY` plus a certified model profile. A local/private OpenAI-compatible endpoint via `LLM_API_BASE_URL` is the high-sensitivity escape hatch. When a cloud endpoint is used, prompt and file content sent in a request reaches that provider (with ZDR / data_collection=deny enforced). Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. There is no product telemetry.
 
 ### Recommended finance-client deployment configuration
 
