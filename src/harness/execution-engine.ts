@@ -142,7 +142,7 @@ export class QuiverExecutionEngine implements ExecutionEngine {
           `analysis, deliverable production, and verification. Keep it to 5-12 concrete steps.`;
         const res = await this.model.invoke(
           [{ role: "user", content: prompt }],
-          { modelProfile: AUTO_PROFILE, role: "maker", sensitivity: contract.dataSensitivity },
+          { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
         );
         const lines = parsePlanSteps(res.content);
         if (lines.length > 0) plan = lines;
@@ -150,7 +150,7 @@ export class QuiverExecutionEngine implements ExecutionEngine {
         plan = deterministic; // honest fallback — never break the loop on model failure
       }
       state.plan = plan;
-      state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length, makerRouted: plan !== deterministic });
+      state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length, plannerRouted: plan !== deterministic });
       return { plan: state.plan };
     }
     state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length });
@@ -166,9 +166,44 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       return { iterations: state.iterations + 1 };
     }
     const toolName = pickToolFor(next, this.tools.available());
-    const res = await this.tools.call(toolName, { step: next });
     const ledger = GapLedger.from(state.ledgerEntries, state.ledgerNextId);
-    if (res.ok) {
+    let ok = false;
+    let evidence: string[] = [];
+    // Maker/checker/planner separation: for a "produce <deliverable>" step the
+    // MAKER model WRITES the analytical deliverable (not just tool dispatch).
+    // It is routed by the deliverable MIME — a native-doc deliverable
+    // (docx/pdf/pptx) goes to a native-doc multimodal model; a text deliverable
+    // stays on the text tier. Any model failure falls back to tool dispatch so
+    // the loop never breaks.
+    if (next.startsWith("produce ") && state.contract.requiredDeliverables[0]) {
+      const deliverable = state.contract.requiredDeliverables[0];
+      try {
+        const genPrompt =
+          `You are the maker for a capital-markets deliverable. Objective: ${state.contract.objective}\n` +
+          `Deliverable type: ${deliverable.type} (${deliverable.mimeType}). Sections: ${deliverable.sections.join(", ")}\n` +
+          `Produce the full deliverable content (analysis, figures, facts separated from derived value, ` +
+          `assumption, interpretation and recommendation), citing sources. Answer directly in the body.`;
+        const res = await this.model.invoke(
+          [{ role: "user", content: genPrompt }],
+          {
+            modelProfile: AUTO_PROFILE,
+            role: "maker",
+            sensitivity: state.contract.dataSensitivity,
+            hintMime: deliverable.mimeType, // document deliverable → native-doc multimodal model
+          },
+        );
+        ok = res.content.trim().length > 20;
+        evidence = [`deliverable:${deliverable.type}`, `generated:${deliverable.type}`];
+      } catch {
+        ok = false; // fall through to tool dispatch
+      }
+    }
+    if (!ok) {
+      const res = await this.tools.call(toolName, { step: next });
+      ok = res.ok;
+      evidence = res.evidenceRefs ?? [];
+    }
+    if (ok) {
       // Resolve the matching ledger gap by category.
       const cat = categoryForStep(next);
       const gap = ledger.all().find((e) => e.status !== "resolved" && (cat ? e.category === cat : (e.description.includes(next) || next.includes(e.description))));
@@ -176,11 +211,11 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     } else {
       // A failed tool call is never success — record a blocked gap.
       const g = ledger.add(`Tool '${toolName}' failed for: ${next}`, "deliverable", toolName);
-      ledger.block(g.id, res.error ?? "tool failed");
+      ledger.block(g.id, "failed");
     }
-    const completedSteps = res.ok ? [...state.completedSteps, next] : state.completedSteps;
-    const artifacts = res.ok && res.evidenceRefs ? [...state.artifacts, ...res.evidenceRefs] : state.artifacts;
-    state.trace.endSpan(span, { tool: toolName, ok: res.ok });
+    const completedSteps = ok ? [...state.completedSteps, next] : state.completedSteps;
+    const artifacts = ok ? [...state.artifacts, ...evidence] : state.artifacts;
+    state.trace.endSpan(span, { tool: toolName, ok });
     const snap = ledger.snapshot();
     return { plan: remaining, completedSteps, artifacts, iterations: state.iterations + 1, ledgerEntries: snap.entries, ledgerNextId: snap.nextId };
   }

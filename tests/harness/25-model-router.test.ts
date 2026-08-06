@@ -175,6 +175,18 @@ function run() {
   // text-maker is NOT approved for checker (roles: [maker] only) → checker must
   // not fall through to the maker profile.
   check("PACK-MULTIROLE-CHECKER-NOT-MAKER", multiRouter.route(mrText, "checker", "public") === "text-checker");
+
+  // ── Multimodal vs text-only (hintMime): a document deliverable routes a
+  // text-only maker prompt to the native-doc tier; a text deliverable stays
+  // on the text tier. This is the spectrum-of-tasks requirement. ──
+  const docxHint = router.route([textMsg], "maker", "public", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  check("HINTMIME-DOCX-ROUTES-NATIVE", docxHint === "native-doc-primary");
+  const pdfHint = router.route([textMsg], "maker", "public", "application/pdf");
+  check("HINTMIME-PDF-ROUTES-NATIVE", pdfHint === "native-doc-primary");
+  const txtHint = router.route([textMsg], "maker", "public", "text/plain");
+  check("HINTMIME-TEXT-STAYS-TEXT", txtHint === "text-maker");
+  const noHint = router.route([textMsg], "maker", "public");
+  check("HINTMIME-NONE-ROUTES-TEXT", noHint === "text-maker");
 }
 
 run();

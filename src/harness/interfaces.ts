@@ -107,6 +107,8 @@ export interface ModelClient {
       sensitivity?: SensitivityProfile;
       /** Router role hint (maker/checker/planner/reviewer/failsafe). */
       role?: import("./model-router.js").ModelRole;
+      /** Native-document MIME hint (document deliverable → native-doc/multimodal). */
+      hintMime?: string;
     },
   ): Promise<ModelResult>;
   /** List certified profiles this client can serve. */

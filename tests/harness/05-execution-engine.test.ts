@@ -26,7 +26,7 @@ function check(name: string, cond: boolean, detail?: string) {
 class MockModel implements ModelClient {
   id = "mock"; kind = "local" as const;
   checkerShouldPass: boolean;
-  calls: Array<{ role?: string; modelProfile?: string; content: string }>;
+  calls: Array<{ role?: string; modelProfile?: string; content: string; hintMime?: string }>;
   constructor(checkerShouldPass = true, public planContent = "ack") {
     this.checkerShouldPass = checkerShouldPass;
     this.calls = [];
@@ -34,15 +34,19 @@ class MockModel implements ModelClient {
   listProfiles(): ModelProfileRef[] {
     return [{ slug: "local-private-default", label: "local", providerOrder: ["Local"], zdrEligible: true, checkerEligible: true }];
   }
-  async invoke(messages: ModelMessage[], options?: { modelProfile?: string; role?: string }): Promise<ModelResult> {
+  async invoke(messages: ModelMessage[], options?: { modelProfile?: string; role?: string; hintMime?: string }): Promise<ModelResult> {
     const last = messages[messages.length - 1];
     const content = typeof last.content === "string" ? last.content : "";
-    this.calls.push({ role: options?.role, modelProfile: options?.modelProfile, content });
+    this.calls.push({ role: options?.role, modelProfile: options?.modelProfile, content, hintMime: options?.hintMime });
     if (/independent checker/i.test(content)) {
       return { content: this.checkerShouldPass ? "OK all met" : "UNRESOLVED: missing consensus", modelProfile: "local-private-default", route: "local" };
     }
     if (/planning agent/i.test(content)) {
       return { content: this.planContent, modelProfile: "local-private-default", route: "local" };
+    }
+    // Maker: produce step — return long deliverable content so the maker fires.
+    if (/maker for a capital-markets deliverable/i.test(content)) {
+      return { content: "Deliverable analysis with sourced figures, facts separated from derived value, assumption, interpretation and recommendation. This is intentionally long so the maker counts as producing content.", modelProfile: "local-private-default", route: "local" };
     }
     return { content: "ack", modelProfile: "local-private-default", route: "local" };
   }
@@ -150,13 +154,18 @@ async function run() {
   const c6 = contract();
   const engine6 = new QuiverExecutionEngine(newSaver(), makerModel, new MockTools(), { maxIterations: 6 });
   await engine6.run(c6, { trace: new LocalTraceSink() } as any);
-  const makerCalls = makerModel.calls.filter((c) => c.role === "maker");
-  check("ENGINE-MAKER-ROLE-DISPATCHED", makerCalls.length >= 1, JSON.stringify(makerCalls));
-  check("ENGINE-MAKER-USES-AUTO-PROFILE", makerCalls.some((c) => c.modelProfile === "auto"), JSON.stringify(makerCalls));
-  check("ENGINE-MAKER-PLAN-CONSUMED", makerCalls.length >= 1 && /planning agent/i.test(makerCalls[0].content), JSON.stringify(makerCalls[0]?.content));
+  const plannerCalls = makerModel.calls.filter((c) => c.role === "planner");
+  const checkerCalls = makerModel.calls.filter((c) => c.role === "checker");
+  // Maker/checker/PLANNER separation: the plan step uses a DISTINCT planner
+  // role (previously planning reused role="maker"), the audit uses the
+  // independent checker role. The maker's produce-step routing (role maker +
+  // native-doc hintMime) is covered at the router level (25-model-router).
+  check("ENGINE-PLANNER-ROLE-DISPATCHED", plannerCalls.length >= 1, JSON.stringify(plannerCalls));
+  check("ENGINE-PLANNER-USES-AUTO-PROFILE", plannerCalls.some((c) => c.modelProfile === "auto"), JSON.stringify(plannerCalls));
+  check("ENGINE-PLANNER-PLAN-CONSUMED", plannerCalls.length >= 1 && /planning agent/i.test(plannerCalls[0].content), JSON.stringify(plannerCalls[0]?.content));
   // Checker still routed separately (independent role), preserving maker/checker separation.
-  check("ENGINE-CHECKER-ROLE-DISPATCHED", makerModel.calls.some((c) => c.role === "checker"), JSON.stringify(makerModel.calls));
-  check("ENGINE-MAKER-CHECKER-ROLES-DIFFER", makerModel.calls.some((c) => c.role === "maker") && makerModel.calls.some((c) => c.role === "checker") && makerModel.calls.filter((c) => c.role === "maker").length >= 1);
+  check("ENGINE-CHECKER-ROLE-DISPATCHED", checkerCalls.length >= 1, JSON.stringify(makerModel.calls));
+  check("ENGINE-PLANNER-CHECKER-DISJOINT", plannerCalls.length >= 1 && checkerCalls.length >= 1);
 }
 
 await run();

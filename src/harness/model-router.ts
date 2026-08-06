@@ -67,6 +67,11 @@ export function classifyModality(messages: ModelMessage[]): MessageModality {
 	return "text-only";
 }
 
+/** True when a MIME represents a native document deliverable needing a multimodal model. */
+export function isNativeDocMime(mime: string): boolean {
+	return NATIVE_FILE_MIMES.has(mime);
+}
+
 /**
  * The modality router. Constructed with the catalog of registered profiles
  * (already loaded into a ModelProfileRegistry); selects a slug per call.
@@ -92,6 +97,7 @@ export class ModalityRouter {
 		messages: ModelMessage[],
 		role: ModelRole,
 		sensitivity: SensitivityProfile,
+		hintMime?: string,
 	): string | undefined {
 		// 1. MNPI never egresses to cloud. Only a local/private route may serve it.
 		if (sensitivity === "restricted-mnpi") {
@@ -102,6 +108,14 @@ export class ModalityRouter {
 
 		// 2. Native file → a profile whose model accepts file input natively.
 		if (modality === "native-file") {
+			return this.pickNativeDoc(role);
+		}
+
+		// 2b. A native-document deliverable (hintMime) also needs a native-doc
+		// model — producing a docx/pdf/pptx calls for a multimodal-capable maker
+		// even on a text-only prompt, so the deliverable benefits from native
+		// document understanding. text/vnd mimes stay on the text tier.
+		if (hintMime && isNativeDocMime(hintMime) && this.pickNativeDoc(role)) {
 			return this.pickNativeDoc(role);
 		}
 

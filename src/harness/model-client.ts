@@ -126,6 +126,8 @@ export class QuiverOpenRouterClient implements ModelClient {
       sensitivity?: import("./interfaces.js").SensitivityProfile;
       /** Router role hint (maker/checker/planner/reviewer/failsafe). Default "maker". */
       role?: ModelRole;
+      /** Native-document MIME hint → routes a document deliverable to native-doc (multimodal). */
+      hintMime?: string;
     },
   ): Promise<ModelResult> {
     // Auto-routing: "auto" (or an unknown slug) resolves to a real profile via
@@ -134,7 +136,7 @@ export class QuiverOpenRouterClient implements ModelClient {
     const sensitivity = options.sensitivity ?? "public";
     let slug = options.modelProfile;
     if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
-      const routed = this.router.route(messages, options.role ?? "maker", sensitivity);
+      const routed = this.router.route(messages, options.role ?? "maker", sensitivity, options.hintMime);
       if (!routed) {
         throw new Error(
           `ModalityRouter found no eligible profile for role=${options.role ?? "maker"} ` +
@@ -268,12 +270,13 @@ export class LocalModelClient implements ModelClient {
       strictOutput?: Record<string, unknown>;
       sensitivity?: import("./interfaces.js").SensitivityProfile;
       role?: ModelRole;
+      hintMime?: string;
     },
   ): Promise<ModelResult> {
     const sensitivity = options.sensitivity ?? "public";
     let slug = options.modelProfile;
     if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
-      const routed = this.router.route(messages, options.role ?? "maker", sensitivity);
+      const routed = this.router.route(messages, options.role ?? "maker", sensitivity, options.hintMime);
       if (!routed) throw new Error(`ModalityRouter found no eligible local profile for role=${options.role ?? "maker"} sensitivity=${sensitivity}.`);
       slug = routed;
     }
