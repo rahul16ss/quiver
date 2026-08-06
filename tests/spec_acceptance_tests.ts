@@ -5318,9 +5318,11 @@ async function specGapCoverageContract() {
     "the daemon must validate every request against the per-install secret allowlist (the browser-UI equivalent of the preload channel allowlist)",
     () => {
       const daemon = codeOnly("src/harness/daemon.ts");
-      // Every state-changing / API request is gated by checkSecret.
       if (!/checkSecret|X-Quiver-Secret|timingSafeEqual/i.test(daemon))
         throw new Error("daemon does not validate requests against the per-install secret");
+      // §16: the secret must NEVER be accepted via a URL query param.
+      if (/searchParams\.get\s*\(\s*["']token["']/.test(daemon))
+        throw new Error("daemon accepts the secret via ?token= query param — secrets must go in a header, not the URL (§16)");
       return true;
     },
   );

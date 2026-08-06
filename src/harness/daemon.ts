@@ -142,14 +142,11 @@ export class QuiverDaemon {
   }
 
   private checkSecret(req: IncomingMessage): boolean {
-    // Header (preferred) — works for fetch. EventSource cannot set headers,
-    // so also accept ?token=... on the URL (timing-safe compare either way).
-    let provided: string | undefined =
+    // The secret is sent via the x-quiver-secret header (fetch can set it).
+    // Never accept the secret via a URL query param — query params land in
+    // access logs, browser history, and Referer headers (§16).
+    const provided =
       (Array.isArray(req.headers["x-quiver-secret"]) ? req.headers["x-quiver-secret"][0] : req.headers["x-quiver-secret"]) as string | undefined;
-    if (!provided) {
-      const url = new URL(req.url ?? "/", `http://127.0.0.1`);
-      provided = url.searchParams.get("token") ?? undefined;
-    }
     if (!provided) return false;
     const a = Buffer.from(provided);
     const b = Buffer.from(this.secret);

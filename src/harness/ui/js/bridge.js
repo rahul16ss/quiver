@@ -85,28 +85,51 @@ export const api = {
   onPromptRequest: (cb) => subscribe("prompt_request", cb),
 };
 
-// SSE subscription helper. The daemon streams typed events at /api/agent/events.
-// `cb` receives the event data (the inner object).
-let evtSource = null;
+// SSE subscription via fetch + ReadableStream (can set the x-quiver-secret
+// header — the secret never goes in a URL query param, per §16).
+let streamController = null;
 const subs = new Map(); // kind -> Set<callback>
 function subscribe(kind, cb) {
   if (!subs.has(kind)) subs.set(kind, new Set());
   subs.get(kind).add(cb);
-  if (!evtSource) {
-    // SSE needs the secret as a header; EventSource can't set headers, so pass
-    // it as a query param (the daemon's checkSecret reads the header OR the
-    // token query for the SSE route only).
-    evtSource = new EventSource(`/api/agent/events?token=${encodeURIComponent(SECRET)}`);
-    evtSource.onmessage = (e) => {
-      try {
-        const ev = JSON.parse(e.data);
-        const set = subs.get(ev.kind);
-        if (set) for (const fn of set) fn(ev);
-      } catch { /* ignore malformed */ }
-    };
-    // Typed events (named by `event:` field) also land in onmessage.
+  if (!streamController) {
+    startEventStream();
   }
   return () => { subs.get(kind)?.delete(cb); };
+}
+
+async function startEventStream() {
+  try {
+    const res = await fetch(`/api/agent/events`, {
+      headers: { "x-quiver-secret": SECRET },
+    });
+    if (!res.ok || !res.body) { setTimeout(startEventStream, 3000); return; }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    streamController = new AbortController();
+    // SSE: parse `data: <json>\n\n` frames.
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
+        if (!dataLine) continue;
+        const json = dataLine.slice(5).trim();
+        try {
+          const ev = JSON.parse(json);
+          const set = subs.get(ev.kind);
+          if (set) for (const fn of set) fn(ev);
+        } catch { /* ignore malformed */ }
+      }
+    }
+  } catch { /* reconnect */ }
+  // Reconnect after a delay (the daemon may have restarted).
+  setTimeout(startEventStream, 3000);
 }
 
 // Make the api available as window.quiver for any renderer code that reads it
