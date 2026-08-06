@@ -9,7 +9,7 @@ import picocolors from "picocolors";
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
-import { DurableJobScheduler, AlertAggregator, DurableIdempotencyLedger } from "../../src/harness/durable-job.js";
+import { DurableJobScheduler, AlertAggregator, DurableIdempotencyLedger, cronNext } from "../../src/harness/durable-job.js";
 import { InMemoryCursorKV } from "../../src/harness/cursor-store.js";
 
 let passed = 0;
@@ -122,6 +122,26 @@ async function run() {	// ── Interval due scheduling ───────�
 	// A redelivered (duplicate) webhook is a no-op.
 	check("IDEMPOTENCY-REDELIVERY-DEDUPED", (await ledger.touch("wh_1")) === false);
 	check("IDEMPOTENCY-DISTINCT-NOT-COLLAPSED", (await ledger.touch("wh_2")) === true && (await ledger.alreadyProcessed("wh_2")));
+
+	// ── Cron next-fire computation (§14) ───────────────────────────────
+	// "0 9 * * 1-5": 09:00 on weekdays. From a Monday 08:30 → next is Mon 09:00.
+	const mon0830 = Date.UTC(2026, 7, 3, 8, 30); // 2026-08-03 = Monday
+	check("CRON-NEXT-0900-DOW", cronNext("0 9 * * 1-5", mon0830) === Date.UTC(2026, 7, 3, 9, 0), String(new Date(cronNext("0 9 * * 1-5", mon0830)).toISOString()));
+	// From a Friday after 09:00 → next is Monday 09:00 (weekend skipped).
+	const fri1000 = Date.UTC(2026, 7, 7, 10, 0); // 2026-08-07 = Friday
+	check("CRON-SKIPS-WEEKEND", cronNext("0 9 * * 1-5", fri1000) === Date.UTC(2026, 7, 10, 9, 0), String(new Date(cronNext("0 9 * * 1-5", fri1000)).toISOString()));
+	// Every 15 minutes: "*/15 * * * *". From 08:07 → next 08:15.
+	check("CRON-STEP-MINUTES", cronNext("*/15 * * * *", Date.UTC(2026, 7, 3, 8, 7)) === Date.UTC(2026, 7, 3, 8, 15));
+	// Invalid field count → throws.
+	let threw = false; try { cronNext("0 9 * *", 0); } catch { threw = true; }
+	check("CRON-INVALID-THROWS", threw);
+	// Scheduler nextDue uses cron (a cron job due at its next fire, not +1min).
+	const sCron = new DurableJobScheduler(":memory:");
+	sCron.upsert({ jobId: "c1", kind: "k", schedule: { type: "cron", expr: "*/15 * * * *" }, createdAt: 0 });
+	sCron.acquire("c1", "w", 30_000, Date.UTC(2026, 7, 3, 8, 7));
+	sCron.complete("c1", Date.UTC(2026, 7, 3, 8, 15)); // manually set to a cron-consistent next
+	check("CRON-DUE-AT-NEXT-FIRE", sCron.dueNow(Date.UTC(2026, 7, 3, 8, 15)).some((j) => j.jobId === "c1"));
+	check("CRON-NOT-DUE-EARLY", !sCron.dueNow(Date.UTC(2026, 7, 3, 8, 14)).some((j) => j.jobId === "c1"));
 }
 
 await run();

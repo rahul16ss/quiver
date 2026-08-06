@@ -207,10 +207,89 @@ export class DurableJobScheduler {
 	private nextDue(job: JobRecord, now: number): number {
 		const s = job.schedule;
 		if (s.type === "interval") return now + s.everyMs;
-		// For cron expressions the scheduler cannot estimate the next instant
-		// portably; fall back to a 1-minute re-check so a due job is revisited.
-		return now + 60_000;
+		// Cron: compute the actual next fire time so the job is due at the
+		// intended instant, not a coarse 1-min re-check.
+		return cronNext(s.expr, now);
 	}
+}
+
+/**
+ * Compute the next fire time (ms epoch) for a standard 5-field cron expression
+ * `min hour dom month dow`, supporting `*`, `,`, `-`, and `/`.
+ * Constants: DOM = day-of-month (1-31); DOW = day-of-week (0-6, Sun=0).
+ */
+export function cronNext(expr: string, from: number = Date.now()): number {
+	const parts = expr.trim().split(/\s+/);
+	if (parts.length !== 5) throw new Error(`Invalid cron expression (expected 5 fields): "${expr}"`);
+	const [minF, hourF, domF, monF, dowF] = parts;
+	const minutes = parseField(minF, 0, 59);
+	const hours = parseField(hourF, 0, 23);
+	const doms = parseField(domF, 1, 31);
+	const months = parseField(monF, 1, 12);
+	const dows = parseField(dowF, 0, 6);
+
+	const start = new Date(from);
+	let cand = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate(), start.getUTCHours(), start.getUTCMinutes(), 0, 0));
+	cand.setUTCMinutes(cand.getUTCMinutes() + 1); // strictly after `from` minute
+
+	const mode = (domF !== "*" || dowF !== "*"); // DOM or DOW constrained
+	for (let guard = 0; guard < 366 * 25; guard++) {
+		const y = cand.getUTCFullYear();
+		const mo = cand.getUTCMonth() + 1; // 1-12
+		const dom = cand.getUTCDate();
+		const dow = cand.getUTCDay();
+
+		if (mode) {
+			// Cron DOM/DOW semantics: if both are restricted, a match on EITHER
+			// counts; if only one is restricted, that one must match.
+			const domRestricted = domF !== "*";
+			const dowRestricted = dowF !== "*";
+			const domOk = doms.has(dom);
+			const dowOk = dows.has(dow);
+			const dayOk = domRestricted && dowRestricted ? domOk || dowOk : domRestricted ? domOk : dowOk;
+			if (!dayOk) { cand = rollToNextDay(cand); continue; }
+		} else {
+			// Neither DOM nor DOW restricted → day always allowed.
+		}
+
+		if (months.has(mo) && hours.has(cand.getUTCHours()) && minutes.has(cand.getUTCMinutes())) {
+			return cand.getTime();
+		}
+		// Advance: if hour/minute don't match, step to the next matching minute
+		// or hour; otherwise roll to next day.
+		cand.setUTCMinutes(cand.getUTCMinutes() + 1);
+		if (cand.getUTCHours() === 0 && cand.getUTCMinutes() === 0) {
+			// already rolled into next day via +1
+		}
+	}
+	throw new Error(`Cron expression "${expr}" could not be resolved within a reasonable horizon.`);
+}
+
+function rollToNextDay(d: Date): Date {
+	d.setUTCDate(d.getUTCDate() + 1);
+	d.setUTCHours(0, 0, 0, 0);
+	return d;
+}
+
+function parseField(field: string, min: number, max: number): Set<number> {
+	const out = new Set<number>();
+	for (const item of field.split(",")) {
+		let step = 1;
+		let range = item;
+		const slash = item.indexOf("/");
+		if (slash !== -1) {
+			range = item.slice(0, slash);
+			step = parseInt(item.slice(slash + 1), 10) || 1;
+		}
+		let lo: number; let hi: number;
+		if (range === "*") { lo = min; hi = max; }
+		else if (range.includes("-")) {
+			const [a, b] = range.split("-");
+			lo = parseInt(a, 10); hi = parseInt(b, 10);
+		} else { lo = hi = parseInt(range, 10); }
+		for (let v = lo; v <= hi; v += step) out.add(v);
+	}
+	return out;
 }
 
 interface Row {
