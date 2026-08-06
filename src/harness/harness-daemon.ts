@@ -22,6 +22,12 @@ export interface HarnessDaemonOptions {
   uiDir?: string;
   port?: number;
   engine: ExecutionEngine;
+  /** Optional durable job/signal ambient runner (§14): scheduler + handler. */
+  jobs?: {
+    scheduler: import("./durable-job.js").DurableJobScheduler;
+    /** Executes a due job; throw to mark the attempt failed / dead-letter. */
+    handler: (job: import("./durable-job.js").JobRecord) => Promise<void> | void;
+  };
   /** Optional browser-UI API handler (the chat/context/sessions surface). */
   browserApiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
   /** Optional SSE handler + path (the agent event stream). */
@@ -53,6 +59,18 @@ export class HarnessDaemon {
     if (req.method === "POST" && req.pathname === "/api/run/state") return api.state((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/approve") return api.approve((req.body as any)?.runId ?? "");
     if (req.method === "POST" && req.pathname === "/api/run/reject") return api.reject((req.body as any)?.runId ?? "");
+    // §14 ambient jobs: run due jobs / list / recover via the durable scheduler.
+    if (this.opts.jobs && req.pathname.startsWith("/api/jobs")) {
+      if (req.method === "POST" && req.pathname === "/api/jobs/tick") {
+        const res = await this.opts.jobs.scheduler.runDue(this.opts.jobs.handler, "daemon", {});
+        return { ok: "ran", summary: res };
+      }
+      if (req.method === "GET" && req.pathname === "/api/jobs/list") return { jobs: this.opts.jobs.scheduler.deadLettered() };
+      if (req.method === "POST" && req.pathname === "/api/jobs/recover") {
+        this.opts.jobs.scheduler.recover((req.body as any)?.jobId ?? "", Date.now());
+        return { ok: "recovered" };
+      }
+    }
     // Fall through to the browser-UI API (chat/context/sessions/memory/…).
     if (browserApi) return browserApi(req);
     throw new Error(`unknown harness route: ${req.method} ${req.pathname}`);

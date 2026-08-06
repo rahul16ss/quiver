@@ -138,7 +138,7 @@ export class QuiverDaemon {
       return this.sseHandler(req, res);
     }
     // Harness API routes (secret-gated above).
-    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow"))) {
+    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow") || pathname.startsWith("/api/jobs"))) {
       let body: unknown = undefined;
       if (req.method !== "GET" && req.method !== "HEAD") {
         body = await this.readBody(req);

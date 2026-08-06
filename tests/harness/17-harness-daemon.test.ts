@@ -13,6 +13,7 @@ import { HarnessDaemon } from "../../src/harness/harness-daemon.js";
 import { QuiverExecutionEngine, type ToolExecutor, type ToolResult } from "../../src/harness/execution-engine.js";
 import { SqliteCheckpointSaver } from "../../src/harness/sqlite-checkpoint.js";
 import { LocalTraceSink } from "../../src/harness/trace-sink.js";
+import { DurableJobScheduler } from "../../src/harness/durable-job.js";
 import type { ModelClient, ModelMessage, ModelResult, ModelProfileRef } from "../../src/harness/interfaces.js";
 
 let passed = 0, failed = 0;
@@ -78,6 +79,35 @@ async function run() {
   // ── Unknown workflow → 400 ──────────────────────────────────────────
   const bad = await apiCall(origin, secret, "/api/run/start", "POST", { workflowId: "nope" });
   check("HD-UNKNOWN-WORKFLOW-400", bad.status === 400);
+
+  // ── §14 ambient: /api/jobs/tick runs due jobs; list/recover the DLQ ──
+  const scheduler = new DurableJobScheduler(":memory:");
+  const jstart = Date.UTC(2026, 7, 3, 8, 0);
+  scheduler.upsert({ jobId: "ok-job", kind: "k", schedule: { type: "interval", everyMs: 60_000 }, createdAt: jstart - 1000 });
+  scheduler.upsert({ jobId: "bad-job", kind: "k", schedule: { type: "interval", everyMs: 60_000 }, maxAttempts: 2, createdAt: jstart - 1000 });
+  const executed: string[] = [];
+  const hdJobs = new HarnessDaemon({
+    engine,
+    uiDir: path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "src", "harness", "ui"),
+    jobs: {
+      scheduler,
+      handler: async (job) => {
+        executed.push(job.jobId);
+        if (job.jobId === "bad-job") throw new Error("kaboom");
+      },
+    },
+  });
+  const { port: jport, origin: jorigin } = await hdJobs.listen();
+  const jsecret = (hdJobs as any).opts.secret ?? (hdJobs as any).daemon.secret;
+  const tick = await apiCall(jorigin, jsecret, "/api/jobs/tick", "POST");
+  check("HD-JOBS-TICK-RAN", tick.body.summary?.ran >= 1, JSON.stringify(tick.body));
+  check("HD-JOBS-HANDLER-RAN", executed.includes("ok-job"), JSON.stringify(executed));
+  // bad-job failed once → not dead-lettered yet; a second tick on it dead-letters.
+  const listOut = await apiCall(jorigin, jsecret, "/api/jobs/list");
+  check("HD-JOBS-LIST-DLQ", Array.isArray(listOut.body.jobs), JSON.stringify(listOut.body));
+  const rec = await apiCall(jorigin, jsecret, "/api/jobs/recover", "POST", { jobId: "bad-job" });
+  check("HD-JOBS-RECOVER", rec.body.ok === "recovered");
+  await hdJobs.close();
 
   await hd.close();
   saver.close();
