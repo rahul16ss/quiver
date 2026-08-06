@@ -22,6 +22,33 @@ import * as path from "path";
 import { Readable } from "stream";
 import type { IncomingMessage, ServerResponse } from "http";
 
+/**
+ * Constrain a browser-supplied path to a canonical project directory (§16).
+ * The browser must not pass arbitrary filesystem paths; this resolves the
+ * requested path and rejects it unless it is inside the allowed dir. Returns
+ * the safe absolute path or throws.
+ */
+function confineToDir(dir: string, requested: string): string {
+  const safe = path.resolve(dir);
+  const full = path.resolve(safe, requested);
+  if (!full.startsWith(safe + path.sep) && full !== safe) {
+    throw new Error(`forbidden: path '${requested}' is outside the allowed directory`);
+  }
+  return full;
+}
+
+/** Constrain to the project sessions directory (for load/delete session). */
+function confineSessionPath(filePath: string): string {
+  const { getProjectSessionsDir } = require("../paths.js");
+  return confineToDir(getProjectSessionsDir(), filePath);
+}
+
+/** Constrain to the project root (for preview/open of deliverables). */
+function confineProjectPath(filePath: string): string {
+  const { getProjectRoot } = require("../paths.js");
+  return confineToDir(getProjectRoot(), filePath);
+}
+
 // ─── SSE event bus ────────────────────────────────────────────────────
 // A single browser client subscribes to /api/agent/events (SSE). Agent events
 // + prompt requests are pushed here. The prompt resolver awaits a matching
@@ -177,11 +204,13 @@ export async function listSessions(): Promise<any[]> {
 }
 export async function loadSession(filePath: string): Promise<any> {
   if (!agent) await startAgent({}, false);
-  await agent.loadSessionState?.(filePath);
+  const safe = confineSessionPath(filePath);
+  await agent.loadSessionState?.(safe);
   return { loaded: true };
 }
 export async function deleteSession(filePath: string): Promise<void> {
-  try { fs.rmSync(filePath, { force: true }); } catch { /* ignore */ }
+  const safe = confineSessionPath(filePath);
+  try { fs.rmSync(safe, { force: true }); } catch { /* ignore */ }
 }
 
 // ── Memory files (persona/project .txt) ──────────────────────────────
@@ -259,16 +288,18 @@ export async function saveSkill(skillName: string, content: string): Promise<voi
 
 // ── Preview / deliverables ───────────────────────────────────────────
 export async function previewFile(filePath: string): Promise<any> {
-  if (!fs.existsSync(filePath)) return { error: "not found" };
-  const buf = fs.readFileSync(filePath);
-  const ext = path.extname(filePath).toLowerCase();
+  const safe = confineProjectPath(filePath);
+  if (!fs.existsSync(safe)) return { error: "not found" };
+  const buf = fs.readFileSync(safe);
+  const ext = path.extname(safe).toLowerCase();
   const type = [".docx", ".xlsx", ".pptx"].includes(ext) ? "office" : ext === ".pdf" ? "pdf" : "text";
-  return { type, name: path.basename(filePath), content: buf.toString("utf8").slice(0, 20000) };
+  return { type, name: path.basename(safe), content: buf.toString("utf8").slice(0, 20000) };
 }
 export async function openFile(filePath: string): Promise<void> {
+  const safe = confineProjectPath(filePath);
   const { spawn } = await import("child_process");
   const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "" : "xdg-open";
-  if (cmd) try { spawn(cmd, [filePath], { detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+  if (cmd) try { spawn(cmd, [safe], { detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
 }
 export async function showInFolder(filePath: string): Promise<void> {
   const { spawn } = await import("child_process");

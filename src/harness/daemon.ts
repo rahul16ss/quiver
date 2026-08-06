@@ -93,11 +93,23 @@ export class QuiverDaemon {
       return this.send(res, 403, { error: "forbidden: non-loopback host" });
     }
 
+    // CSRF hardening: for state-changing requests, the Origin header (when
+    // present) must be the loopback daemon origin. A cross-origin form/XHR
+    // from another site carries a different Origin; reject it even if it
+    // somehow obtained the secret (§16).
+    const isStateChange = req.method !== "GET" && req.method !== "HEAD";
+    if (isStateChange && req.headers.origin) {
+      const origin = String(req.headers.origin);
+      if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+        return this.send(res, 403, { error: "forbidden: cross-origin state-changing request" });
+      }
+    }
+
     // CSRF + auth: require the per-install secret in the X-Quiver-Secret header
     // for every state-changing (non-GET) request. GETs that return UI are
     // allowed without the secret (the browser loads the page first), but API
     // GETs still require the secret.
-    const isStateChange = req.method !== "GET" && req.method !== "HEAD";
+    // The Origin check above already computed isStateChange.
     const isApi = pathname.startsWith("/api/");
     if ((isStateChange || isApi) && !this.checkSecret(req)) {
       return this.send(res, 401, { error: "unauthorized: missing or invalid per-install secret" });

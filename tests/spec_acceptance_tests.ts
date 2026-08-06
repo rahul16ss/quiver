@@ -5313,6 +5313,42 @@ async function specGapCoverageContract() {
   // ─── US-17.9: browser-UI request allowlist (secret-gating, replaces preload channel allowlist) ──
 
   await check(
+    "CSRF-ORIGIN-VALIDATION",
+    "US-17.9 / §16",
+    "the daemon must reject cross-origin state-changing requests by validating the Origin header (CSRF hardening beyond the secret)",
+    () => {
+      const d = codeOnly("src/harness/daemon.ts");
+      if (!/isStateChange\s*=\s*req\.method\s*!==\s*"GET"/.test(d))
+        throw new Error("no isStateChange gate");
+      if (!/req\.headers\.origin/.test(d))
+        throw new Error("no Origin header check on state-changing requests");
+      if (!/cross-origin state-changing request/.test(d))
+        throw new Error("no cross-origin rejection");
+      // Only loopback origins permitted.
+      if (!/127\.0\.0\.1|localhost/.test(d))
+        throw new Error("Origin allowlist is not loopback-only");
+      return true;
+    },
+  );
+
+  await check(
+    "BROWSER-PATH-CONFINEMENT",
+    "US-17.9 / §16",
+    "browser-supplied session/file paths must be confined to canonical project dirs (no arbitrary filesystem paths)",
+    () => {
+      const b = codeOnly("src/harness/browser-bridge.ts");
+      if (!/confineToDir|confineSessionPath|confineProjectPath/.test(b))
+        throw new Error("no path confinement for browser-supplied paths");
+      if (!/forbidden: path .* is outside the allowed directory/.test(b))
+        throw new Error("confinement guard does not reject outside paths");
+      // loadSession + deleteSession must use the guard.
+      if (!/confineSessionPath\(filePath\)/.test(b))
+        throw new Error("loadSession/deleteSession do not confine to the sessions dir");
+      return true;
+    },
+  );
+
+  await check(
     "PRELOAD-CHANNEL-ALLOWLIST",
     "US-17.9",
     "the daemon must validate every request against the per-install secret allowlist (the browser-UI equivalent of the preload channel allowlist)",
