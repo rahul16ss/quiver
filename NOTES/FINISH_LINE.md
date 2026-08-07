@@ -22,7 +22,7 @@ Hostile, evidence-first. Interfaces without production callers = **unwired**.
 | ResearchStateStore harvest | brokered research observations record claims |
 | Honest no-ops | approve / exclude / rerun no longer fake `{ok:true}` |
 | Runtime status API | `GET /api/runtime/status` |
-| Docs | README, providers.md, AGENTS/CLAUDE/CONTRIBUTING, architecture/capabilities/release/testing/advanced/windows checklist, product stories, ATTRIBUTION, docs/index.html, NOTES/*, SPEC buyer-surface language, historical banners on `docs/refactor/*`; owner `PROJECTS.md` |
+| Docs | README, providers.md, AGENTS/CLAUDE/CONTRIBUTING, architecture/capabilities/release/testing/advanced/windows checklist, product stories, ATTRIBUTION, docs/index.html, NOTES/*, SPEC buyer-surface language, historical banners on `docs/refactor/*`; owner `PROJECTS.md`; Conviction Studio `capability-truth-table.md` + `llms-full.txt` synced 2026-08-07 (`website` `00fbdec`) |
 
 Tests: `35-production-runtime` (25), `36-finish-line-wiring` (13), Office read-back checks.
 
