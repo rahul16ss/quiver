@@ -71,6 +71,31 @@ export interface ToolResult {
   evidenceRefs?: string[];
 }
 
+// ─── Chat-turn executor (conversational runs on the same control plane) ───
+
+/**
+ * I/O surface for a conversational turn. Callbacks are NOT checkpointed — they
+ * are per-process streaming channels (SSE tokens/events) and are passed to the
+ * engine via run options, never through graph state.
+ */
+export interface TurnIo {
+  onToken?: (token: string) => void;
+  onEvent?: (event: unknown) => void;
+}
+
+/**
+ * A conversational turn executor. The browser chat path delegates the ReAct
+ * loop (prompt streaming, approvals, consent) to the Agent through this seam,
+ * while the ExecutionEngine owns the run: durable checkpoint, trace spans,
+ * gap ledger, and an honest RunOutcome. A chat turn carries no commit-review
+ * interrupt — review happens inline via the agent's own consent/approval
+ * gates, surfaced through onEvent.
+ */
+export type TurnExecutor = (
+  contract: GoalContract,
+  io: TurnIo,
+) => Promise<{ content: string; refused?: boolean; usage?: unknown }>;
+
 // ─── Graph state ──────────────────────────────────────────────────────
 
 const QuiverState = Annotation.Root({
@@ -90,6 +115,8 @@ const QuiverState = Annotation.Root({
   planRevisions: Annotation<number>,
   /** Set when a step exhausts its checker budget: feedback for the planner. */
   revisionRequest: Annotation<string | null>,
+  /** Durable per-item fan-out progress (checkpointed — restart resumes). */
+  fanOutProgress: Annotation<import("./fanout.js").FanOutProgress>,
   trace: Annotation<TraceSink>,
 });
 
@@ -107,16 +134,41 @@ type QuiverStateType = typeof QuiverState.State;
 export class QuiverExecutionEngine implements ExecutionEngine {
   private compiled: Promise<any>;
 
+  /** Streaming channels for in-flight chat turns, keyed by runId (not checkpointed). */
+  private turnIoByRun = new Map<string, TurnIo>();
+
   constructor(
     private checkpointer: BaseCheckpointSaver,
     private model: ModelClient,
     private tools: ToolExecutor,
-    private opts: { maxIterations?: number; stepTimeoutMs?: number } = {},
+    private opts: {
+      maxIterations?: number;
+      stepTimeoutMs?: number;
+      /** When present, this engine runs conversational turns (chat mode). */
+      turnExecutor?: TurnExecutor;
+    } = {},
   ) {
     this.compiled = this.build();
   }
 
+  /** True when this engine instance runs conversational turns rather than the plan loop. */
+  get isChatEngine(): boolean {
+    return typeof this.opts.turnExecutor === "function";
+  }
+
   private async build(): Promise<any> {
+    if (this.opts.turnExecutor) {
+      // Chat mode: one durable node per turn. No planner, no commit interrupt —
+      // the turn executor's own consent/approval gates run inline and stream
+      // through TurnIo. The checkpoint + gap ledger + honest outcome are the
+      // same control plane the workflow loop uses.
+      const graph = new StateGraph(QuiverState)
+        .addNode("runTurn", this.chatTurnNode.bind(this))
+        .addEdge(START, "runTurn")
+        .addEdge("runTurn", END)
+        .compile({ checkpointer: this.checkpointer });
+      return graph;
+    }
     const graph = new StateGraph(QuiverState)
       .addNode("makePlan", this.planNode.bind(this))
       .addNode("runStep", this.executeNode.bind(this))
@@ -133,6 +185,56 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       .addEdge("runApprove", END)
       .compile({ checkpointer: this.checkpointer });
     return graph;
+  }
+
+  // ── Chat-mode node ──────────────────────────────────────────────────
+
+  private async chatTurnNode(state: QuiverStateType): Promise<Partial<QuiverStateType>> {
+    const span = state.trace.startSpan("node.turn", { runId: state.contract.runId });
+    const ledger = GapLedger.from(state.ledgerEntries, state.ledgerNextId);
+    const io = this.turnIoByRun.get(state.contract.runId) ?? {};
+    let stopReason: string;
+    const artifacts: string[] = state.artifacts;
+    try {
+      const res = await this.opts.turnExecutor!(state.contract, io);
+      if (res.refused) {
+        // Refusals (consent declined, sensitivity refusal) are honest blocked
+        // outcomes, never silent completions.
+        const g = ledger.add("Turn refused by consent/sensitivity gate", "validation");
+        ledger.block(g.id, "refused");
+        stopReason = "turn refused by gate";
+      } else {
+        // The turn executor ran its own inline gates; every contract gap is
+        // satisfied by the completed conversational turn.
+        for (const e of ledger.open()) ledger.resolve(e.id);
+        stopReason = "turn completed";
+      }
+    } catch (err) {
+      const g = ledger.add(
+        `Turn failed: ${String((err as Error)?.message ?? err).slice(0, 200)}`,
+        "validation",
+      );
+      ledger.block(g.id, "error");
+      stopReason = "turn failed";
+    }
+    const snap = ledger.snapshot();
+    state.trace.endSpan(span, { stopReason });
+    return {
+      stopReason,
+      artifacts,
+      ledgerEntries: snap.entries,
+      ledgerNextId: snap.nextId,
+      iterations: state.iterations + 1,
+    };
+  }
+
+  /** Cost/accounting budget for a model call, derived from the contract. */
+  private callBudget(contract: GoalContract): import("./interfaces.js").RequestBudget {
+    return {
+      engagementId: contract.engagementId ?? "default",
+      costCapUsd: contract.budgets.costUsd,
+      runId: contract.runId,
+    };
   }
 
   // ── Nodes ───────────────────────────────────────────────────────────
@@ -160,10 +262,12 @@ export class QuiverExecutionEngine implements ExecutionEngine {
           `Revise the REMAINING plan pragmatically, with a bias for completion: simplify or re-scope the stuck ` +
           `step rather than abandoning the objective. Numbered steps, one per line, keeping [dod:...] tags. 5-12 steps max.`;
         try {
-          const res = await this.model.invoke(
-            [{ role: "user", content: revisePrompt }],
-            { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
-          );
+          const res = await this.model.invoke([{ role: "user", content: revisePrompt }], {
+            modelProfile: AUTO_PROFILE,
+            role: "planner",
+            budget: this.callBudget(state.contract),
+            sensitivity: contract.dataSensitivity,
+          });
           const lines = parsePlanSteps(res.content);
           if (lines.length > 0) {
             state.trace.endSpan(span, { revision: true, applied: true, planSize: lines.length });
@@ -200,8 +304,22 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       for (let attempt = 1; attempt <= MAX_PLANNER_ATTEMPTS && plan.length === 0; attempt++) {
         try {
           const res = await this.model.invoke(
-            [{ role: "user", content: basePrompt + (lastFailure ? `\nYour previous attempt failed: ${lastFailure}. Retry correctly.` : "") }],
-            { modelProfile: AUTO_PROFILE, role: "planner", sensitivity: contract.dataSensitivity },
+            [
+              {
+                role: "user",
+                content:
+                  basePrompt +
+                  (lastFailure
+                    ? `\nYour previous attempt failed: ${lastFailure}. Retry correctly.`
+                    : ""),
+              },
+            ],
+            {
+              modelProfile: AUTO_PROFILE,
+              role: "planner",
+              sensitivity: contract.dataSensitivity,
+              budget: this.callBudget(contract),
+            },
           );
           plan = parsePlanSteps(res.content);
           if (plan.length === 0) lastFailure = "returned no parseable steps";
@@ -211,7 +329,11 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       }
       if (plan.length === 0) plan = deterministic; // honest fallback — never break the loop on model failure
       state.plan = plan;
-      state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length, plannerRouted: plan !== deterministic });
+      state.trace.endSpan(span, {
+        iterations: state.iterations,
+        planSize: state.plan.length,
+        plannerRouted: plan !== deterministic,
+      });
       return { plan: state.plan };
     }
     state.trace.endSpan(span, { iterations: state.iterations, planSize: state.plan.length });
@@ -219,7 +341,10 @@ export class QuiverExecutionEngine implements ExecutionEngine {
   }
 
   private async executeNode(state: QuiverStateType): Promise<Partial<QuiverStateType>> {
-    const span = state.trace.startSpan("node.execute", { runId: state.contract.runId, iteration: state.iterations });
+    const span = state.trace.startSpan("node.execute", {
+      runId: state.contract.runId,
+      iteration: state.iterations,
+    });
     const remaining = [...state.plan];
     const next = remaining.shift();
     if (!next) {
@@ -232,6 +357,67 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     let evidence: string[] = [];
     let revisionRequest: string | null = null;
     const stepRetries = { ...state.stepRetries };
+    let fanOutProgress = { ...state.fanOutProgress };
+
+    // Fan-out step: the contract carries a work set — run it with per-item
+    // retry, bounded concurrency, durable progress, and partial-failure
+    // honesty. Failed items become blocked gaps; completed items are not
+    // re-run on resume (progress is checkpointed in graph state).
+    if (/^fanout\b/i.test(next) && state.contract.fanOut) {
+      const { runFanOut } = await import("./fanout.js");
+      const spec = state.contract.fanOut;
+      const result = await runFanOut(spec, fanOutProgress, async (item) => {
+        const tool = spec.toolName ?? toolName;
+        if (!this.tools.available().includes(tool)) {
+          return { ok: false, error: `tool '${tool}' not available` };
+        }
+        const res = await this.tools.call(tool, { step: spec.task, item });
+        return { ok: res.ok, output: res.output, error: res.error };
+      });
+      fanOutProgress = result.progress;
+      if (result.failed.length === 0) {
+        ok = true;
+        evidence = result.completed.map((id) => `fanout:${id}`);
+      } else {
+        // Partial success is honest: completed items are evidence; failed
+        // items are blocked gaps with their errors attached.
+        evidence = result.completed.map((id) => `fanout:${id}`);
+        for (const line of result.unresolved) {
+          const g = ledger.add(line, "deliverable");
+          ledger.block(g.id, "fanout item failed");
+        }
+        ok = result.completed.length > 0;
+      }
+      const cat = categoryForStep(next);
+      const gap = ledger
+        .all()
+        .find(
+          (e) =>
+            e.status !== "resolved" &&
+            (cat
+              ? e.category === cat
+              : e.description.includes(next) || next.includes(e.description)),
+        );
+      if (gap && result.failed.length === 0) ledger.resolve(gap.id);
+      const completedSteps = ok ? [...state.completedSteps, next] : state.completedSteps;
+      const artifacts = [...state.artifacts, ...evidence];
+      state.trace.endSpan(span, {
+        tool: toolName,
+        ok,
+        fanOut: { completed: result.completed.length, failed: result.failed.length },
+      });
+      const snap = ledger.snapshot();
+      return {
+        plan: remaining,
+        completedSteps,
+        artifacts,
+        iterations: state.iterations + 1,
+        ledgerEntries: snap.entries,
+        ledgerNextId: snap.nextId,
+        stepRetries,
+        fanOutProgress,
+      };
+    }
     // Maker/checker/planner separation: for a "produce <deliverable>" step the
     // MAKER model WRITES the analytical deliverable (not just tool dispatch),
     // and the independent CHECKER verifies the draft for THIS step before it
@@ -253,15 +439,13 @@ export class QuiverExecutionEngine implements ExecutionEngine {
             (feedback
               ? `\nThe independent checker rejected your previous draft for this step: ${feedback}\nRework it; do not repeat the rejected approach.`
               : "");
-          const res = await this.model.invoke(
-            [{ role: "user", content: genPrompt }],
-            {
-              modelProfile: AUTO_PROFILE,
-              role: "maker",
-              sensitivity: state.contract.dataSensitivity,
-              hintMime: deliverable.mimeType, // document deliverable → native-doc multimodal model
-            },
-          );
+          const res = await this.model.invoke([{ role: "user", content: genPrompt }], {
+            modelProfile: AUTO_PROFILE,
+            role: "maker",
+            budget: this.callBudget(state.contract),
+            sensitivity: state.contract.dataSensitivity,
+            hintMime: deliverable.mimeType, // document deliverable → native-doc multimodal model
+          });
           makerText = res.content.trim();
         } catch {
           makerText = "";
@@ -281,7 +465,12 @@ export class QuiverExecutionEngine implements ExecutionEngine {
                   `If the output fully satisfies this step's purpose, reply OK; otherwise reply with the specific gaps.`,
               },
             ],
-            { modelProfile: AUTO_PROFILE, role: "checker", sensitivity: state.contract.dataSensitivity },
+            {
+              modelProfile: AUTO_PROFILE,
+              role: "checker",
+              budget: this.callBudget(state.contract),
+              sensitivity: state.contract.dataSensitivity,
+            },
           );
           stepOk = /^OK/i.test(verdict.content.trim());
           if (!stepOk) feedback = verdict.content.trim().slice(0, 600);
@@ -316,7 +505,15 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     if (ok) {
       // Resolve the matching ledger gap by category.
       const cat = categoryForStep(next);
-      const gap = ledger.all().find((e) => e.status !== "resolved" && (cat ? e.category === cat : (e.description.includes(next) || next.includes(e.description))));
+      const gap = ledger
+        .all()
+        .find(
+          (e) =>
+            e.status !== "resolved" &&
+            (cat
+              ? e.category === cat
+              : e.description.includes(next) || next.includes(e.description)),
+        );
       if (gap) ledger.resolve(gap.id);
     } else if (!revisionRequest) {
       // A failed tool call is never success — record a blocked gap.
@@ -335,6 +532,7 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       ledgerEntries: snap.entries,
       ledgerNextId: snap.nextId,
       stepRetries,
+      fanOutProgress,
       ...(revisionRequest ? { revisionRequest } : {}),
     };
   }
@@ -350,7 +548,10 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       const satisfied = state.completedSteps.some((s) => s === d || s.includes(d));
       return { id: `dod:${d}`, pass: satisfied, detail: satisfied ? "met" : "not yet met" };
     });
-    state.trace.endSpan(span, { checks: checks.length, passed: checks.filter((c) => c.pass).length });
+    state.trace.endSpan(span, {
+      checks: checks.length,
+      passed: checks.filter((c) => c.pass).length,
+    });
     return { doneChecks: checks };
   }
 
@@ -364,15 +565,19 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     const prompt = `You are an independent checker. Open gap items: ${summary.unresolved.length}. Done checks passed: ${state.doneChecks.filter((c) => c.pass).length}/${state.doneChecks.length}. If all mandatory items are met, reply OK; otherwise list unresolved items.`;
     let checkerOk = true;
     try {
-      const res = await this.model.invoke(
-        [{ role: "user", content: prompt }],
-        { modelProfile: AUTO_PROFILE, role: "checker", sensitivity: state.contract.dataSensitivity },
-      );
+      const res = await this.model.invoke([{ role: "user", content: prompt }], {
+        modelProfile: AUTO_PROFILE,
+        role: "checker",
+        budget: this.callBudget(state.contract),
+        sensitivity: state.contract.dataSensitivity,
+      });
       checkerOk = /^OK/i.test(res.content.trim()) && this.preCheckerReady(state);
     } catch {
       checkerOk = false;
     }
-    const checkerGap = ledger.all().find((e) => e.category === "validation" && e.status !== "resolved");
+    const checkerGap = ledger
+      .all()
+      .find((e) => e.category === "validation" && e.status !== "resolved");
     if (checkerOk) {
       if (checkerGap) ledger.resolve(checkerGap.id);
     } else if (!ledger.all().some((e) => e.category === "validation" && e.status !== "resolved")) {
@@ -410,17 +615,30 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     }
     // Human interrupt: approval gate before commit. The graph pauses; the
     // caller resumes with a Command({ resume: decision }).
-    const decision = interrupt({ kind: "commit_approval", summary: "All acceptance checks passed. Approve commit?" });
+    const decision = interrupt({
+      kind: "commit_approval",
+      summary: "All acceptance checks passed. Approve commit?",
+    });
     if (decision?.approved) {
-      const approvalGap = ledger.all().find((e) => e.category === "approval" && e.status !== "resolved");
+      const approvalGap = ledger
+        .all()
+        .find((e) => e.category === "approval" && e.status !== "resolved");
       if (approvalGap) ledger.resolve(approvalGap.id);
       const snap = ledger.snapshot();
-      return { stopReason: "approved by human reviewer", ledgerEntries: snap.entries, ledgerNextId: snap.nextId };
+      return {
+        stopReason: "approved by human reviewer",
+        ledgerEntries: snap.entries,
+        ledgerNextId: snap.nextId,
+      };
     }
     const g = ledger.add("Human reviewer rejected the change set", "approval");
     ledger.block(g.id, "rejected");
     const snap = ledger.snapshot();
-    return { stopReason: "rejected by human reviewer", ledgerEntries: snap.entries, ledgerNextId: snap.nextId };
+    return {
+      stopReason: "rejected by human reviewer",
+      ledgerEntries: snap.entries,
+      ledgerNextId: snap.nextId,
+    };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────
@@ -428,7 +646,9 @@ export class QuiverExecutionEngine implements ExecutionEngine {
   /** Everything except the checker-validation and approval gates is done. */
   private preCheckerReady(state: QuiverStateType): boolean {
     const ledger = GapLedger.from(state.ledgerEntries, state.ledgerNextId);
-    const open = ledger.open().filter((e) => e.category !== "approval" && e.category !== "validation");
+    const open = ledger
+      .open()
+      .filter((e) => e.category !== "approval" && e.category !== "validation");
     return open.length === 0 && state.doneChecks.every((c) => c.pass);
   }
 
@@ -444,6 +664,9 @@ export class QuiverExecutionEngine implements ExecutionEngine {
   async run(contract: GoalContract, options: RunOptions = {}): Promise<RunOutcome> {
     const graph = await this.compiled;
     const trace = (options as any).trace as TraceSink | undefined;
+    // Chat mode: stash streaming channels outside checkpointable state.
+    const turnIo = (options as any).turnIo as TurnIo | undefined;
+    if (this.opts.turnExecutor && turnIo) this.turnIoByRun.set(contract.runId, turnIo);
     const ledger = initialLedger(contract);
     const maxIter = this.opts.maxIterations ?? 5;
     const initialState = {
@@ -458,6 +681,7 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       pendingApproval: null as PendingApproval | null,
       stopReason: null as string | null,
       stepRetries: {} as Record<string, number>,
+      fanOutProgress: {},
       planRevisions: 0,
       revisionRequest: null as string | null,
       trace: trace ?? new NoopTraceSink(),
@@ -483,7 +707,10 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       }
       return this.toOutcome(result as QuiverStateType);
     } catch (err) {
-      if (String((err as Error).message).includes("interrupt") || (err as any)?.name === "GraphInterrupt") {
+      if (
+        String((err as Error).message).includes("interrupt") ||
+        (err as any)?.name === "GraphInterrupt"
+      ) {
         const snap = await this.inspect(contract.runId);
         return {
           runId: contract.runId,
@@ -495,6 +722,8 @@ export class QuiverExecutionEngine implements ExecutionEngine {
         };
       }
       throw err;
+    } finally {
+      this.turnIoByRun.delete(contract.runId);
     }
   }
 
@@ -506,7 +735,10 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     const existing = await this.inspect(runId);
     if (existing && existing.status !== "paused") {
       const graph = await this.compiled;
-      const config = { configurable: { thread_id: runId }, recursionLimit: (this.opts.maxIterations ?? 5) * 8 + 16 };
+      const config = {
+        configurable: { thread_id: runId },
+        recursionLimit: (this.opts.maxIterations ?? 5) * 8 + 16,
+      };
       const st = (await graph.getState(config)).values as QuiverStateType;
       return this.toOutcome(st);
     }
@@ -529,9 +761,19 @@ export class QuiverExecutionEngine implements ExecutionEngine {
       : [];
     return {
       runId,
-      status: snap.next?.length ? "paused" : evalResult.status === "completed" ? "completed" : "blocked",
+      status: snap.next?.length
+        ? "paused"
+        : evalResult.status === "completed"
+          ? "completed"
+          : "blocked",
       currentPhase: snap.next?.[0] ?? "done",
-      gapLedger: vLedger.all().map((e) => ({ id: e.id, description: e.description, category: e.category, status: e.status, blocker: e.blocker })),
+      gapLedger: vLedger.all().map((e) => ({
+        id: e.id,
+        description: e.description,
+        category: e.category,
+        status: e.status,
+        blocker: e.blocker,
+      })),
       pendingApprovals: pending,
       stopReason: v.stopReason ?? undefined,
       unresolved: evalResult.unresolved,
@@ -547,15 +789,18 @@ export class QuiverExecutionEngine implements ExecutionEngine {
     const ledger = GapLedger.from(state.ledgerEntries, state.ledgerNextId);
     const evalResult = evaluateCompletion(state.contract, ledger, state.doneChecks);
     const status: RunOutcome["status"] =
-      state.stopReason === "approved by human reviewer"
+      state.stopReason === "approved by human reviewer" || state.stopReason === "turn completed"
         ? "completed"
-        : state.stopReason === "rejected by human reviewer"
+        : state.stopReason === "rejected by human reviewer" ||
+            state.stopReason === "turn refused by gate"
           ? "partial"
-          : evalResult.status === "blocked"
-            ? "blocked"
-            : evalResult.status === "completed"
-              ? "completed"
-              : "partial";
+          : state.stopReason === "turn failed"
+            ? "failed"
+            : evalResult.status === "blocked"
+              ? "blocked"
+              : evalResult.status === "completed"
+                ? "completed"
+                : "partial";
     return {
       runId: state.contract.runId,
       status,
@@ -583,7 +828,8 @@ function categoryForStep(step: string): string | null {
 function pickToolFor(step: string, available: string[]): string {
   const lower = step.toLowerCase();
   if (/produce|deliverable/.test(lower) && available.includes("office_doc")) return "office_doc";
-  if (/source|research|search/.test(lower) && available.includes("deep_research")) return "deep_research";
+  if (/source|research|search/.test(lower) && available.includes("deep_research"))
+    return "deep_research";
   if (/figure|evidence|sourced/.test(lower) && available.includes("evidence")) return "evidence";
   return available[0] ?? "noop";
 }
@@ -598,14 +844,15 @@ function parsePlanSteps(content: string): string[] {
   const steps = content
     .split(/\n/)
     .map((l) => l.replace(/^\s*\d+[.)]?\s*/, "").trim())
-    .filter((l) => l.length > 3 && !/^([A-Za-z\s:]+\d*[:.]?)$/.test(l) && !/^(objective|deliverables|sources|definition|plan|analysis|verification|step|the plan)/i.test(l));
+    .filter(
+      (l) =>
+        l.length > 3 &&
+        !/^([A-Za-z\s:]+\d*[:.]?)$/.test(l) &&
+        !/^(objective|deliverables|sources|definition|plan|analysis|verification|step|the plan)/i.test(
+          l,
+        ),
+    );
   return steps;
-}
-
-function pickCheckerProfile(model: ModelClient): string {
-  const profiles = model.listProfiles();
-  const checker = profiles.find((p) => p.checkerEligible);
-  return checker?.slug ?? profiles[0]?.slug ?? "local-private-default";
 }
 
 // Auto-routing sentinel — the ModalityRouter selects the actual profile per

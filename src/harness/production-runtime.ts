@@ -39,12 +39,21 @@ export interface ProductionRuntime {
   jobs: DurableJobScheduler;
   idempotency: DurableIdempotencyLedger;
   office: OfficeCliEngine | null;
+  /** Per-engagement cost accounting (durable JSONL). */
+  costs: import("./cost-ledger.js").CostLedger;
   artifacts: LocalArtifactRepository;
   traces: LocalTraceSink;
   executionContext: ExecutionContext;
   deploymentProfile: DeploymentProfile;
   /** Capabilities that could not be constructed — honest, not silent. */
   unavailable: string[];
+  /**
+   * Build a chat-mode ExecutionEngine on the SAME control plane (checkpointer,
+   * model gateway, tool executor) as workflow runs. The conversational ReAct
+   * loop is delegated to the supplied turn executor; the engine owns the
+   * durable run record, trace spans, and honest outcome.
+   */
+  createChatEngine(turnExecutor: import("./execution-engine.js").TurnExecutor): ExecutionEngine;
 }
 
 export interface BuildProductionRuntimeOpts {
@@ -76,8 +85,10 @@ export async function buildProductionRuntime(
 ): Promise<ProductionRuntime> {
   const { QuiverExecutionEngine } = await import("./execution-engine.js");
   const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
-  const { ModelProfileRegistry, starterCatalog, applyApprovedModels } = await import("./model-profile.js");
-  const { QuiverOpenRouterClient, LocalModelClient, ChatOpenRouterTransport } = await import("./model-client.js");
+  const { ModelProfileRegistry, starterCatalog, applyApprovedModels } =
+    await import("./model-profile.js");
+  const { QuiverOpenRouterClient, LocalModelClient, ChatOpenRouterTransport } =
+    await import("./model-client.js");
   const { QuiverPolicyEngine } = await import("./policy-engine.js");
   const { emptyPack } = await import("./customer-pack.js");
   const { CapabilityRegistry } = await import("./capability-registry.js");
@@ -117,6 +128,16 @@ export async function buildProductionRuntime(
   const capabilities = new CapabilityRegistry();
   seedCapabilitiesFromProfiles(capabilities, profiles);
 
+  // Measured routing evidence (routing-eval harness). Absent/stale snapshots
+  // change nothing — the router falls back to its static order.
+  const { RoutingEvidenceStore } = await import("./routing-eval.js");
+  const routingEvidence = new RoutingEvidenceStore(path.join(dataDir, "routing-evidence.json"));
+
+  // Per-engagement cost ledger (§P1): usage recorded per model call; budget
+  // caps enforced pre-invocation when a contract carries budgets.costUsd.
+  const { CostLedger } = await import("./cost-ledger.js");
+  const costLedger = new CostLedger(path.join(dataDir, "cost-ledger.jsonl"));
+
   // ── Model gateway ──────────────────────────────────────────────────
   let model: import("./interfaces.js").ModelClient | null = null;
   const siteUrl = "https://convictionstudio.com";
@@ -136,6 +157,8 @@ export async function buildProductionRuntime(
       siteUrl,
       siteName,
       capabilities,
+      routingEvidence,
+      costLedger,
     });
   } else if (config.llmBaseUrl) {
     const { OpenAICompatibleProvider } = await import("../providers/types.js");
@@ -208,7 +231,10 @@ export async function buildProductionRuntime(
       }
       const { invokeUnderRuntime } = await import("./runtime-binding.js");
       const tool = globalRegistry.getTool(name);
-      if (!tool && !["web_search", "scrape_url", "deep_research", "find_all", "entity_search"].includes(name)) {
+      if (
+        !tool &&
+        !["web_search", "scrape_url", "deep_research", "find_all", "entity_search"].includes(name)
+      ) {
         return { ok: false, error: `Unknown tool: ${name}` };
       }
       const result = await invokeUnderRuntime(name, args, async () => {
@@ -285,7 +311,8 @@ export async function buildProductionRuntime(
   // ── OfficeCLI (optional until binary + pin present) ────────────────
   let office: OfficeCliEngine | null = null;
   try {
-    const { OfficeCliEngine, ShellOfficeCliRunner, OFFICECLI_PINS } = await import("./office-engine.js");
+    const { OfficeCliEngine, ShellOfficeCliRunner, OFFICECLI_PINS } =
+      await import("./office-engine.js");
     const { findBinary } = await import("../utils/find_binary.js");
     const configured = process.env.QUIVER_OFFICECLI_PATH?.trim();
     const bin =
@@ -324,6 +351,10 @@ export async function buildProductionRuntime(
     };
   }
   const engine = new QuiverExecutionEngine(saver, model!, tools, { maxIterations: 20 });
+  const createChatEngine = (
+    turnExecutor: import("./execution-engine.js").TurnExecutor,
+  ): ExecutionEngine =>
+    new QuiverExecutionEngine(saver, model!, tools, { maxIterations: 1, turnExecutor });
 
   const runtime: ProductionRuntime = {
     engine,
@@ -337,11 +368,13 @@ export async function buildProductionRuntime(
     jobs,
     idempotency,
     office,
+    costs: costLedger,
     artifacts,
     traces,
     executionContext,
     deploymentProfile,
     unavailable: [...new Set(unavailable)],
+    createChatEngine,
   };
   // Bind for chat/Agent + any late tool invokes in this process.
   const { bindProductionRuntime } = await import("./runtime-binding.js");
@@ -377,7 +410,12 @@ function seedCapabilitiesFromProfiles(
         maxFileBytes: p.maxFileBytes,
         lastContractTest: {
           date: p.lastContractTest.date || new Date(0).toISOString(),
-          result: p.lastContractTest.result === "pass" ? "pass" : p.lastContractTest.result === "fail" ? "fail" : "not-run",
+          result:
+            p.lastContractTest.result === "pass"
+              ? "pass"
+              : p.lastContractTest.result === "fail"
+                ? "fail"
+                : "not-run",
           runtimeVersion,
           evidence: `seeded from ModelProfile ${p.slug}`,
         },
