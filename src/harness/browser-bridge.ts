@@ -275,7 +275,10 @@ export async function saveConfig(cfg: any): Promise<{ saved: boolean; error?: st
   const grants = cleanString(cfg.autonomyGrants);
   if (grants !== undefined) {
     assignments.QUIVER_AUTONOMY = grants;
-    const parts = grants.split(",").map((s) => s.trim()).filter(Boolean);
+    const parts = grants
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const tierPart = parts.find((p) => p.startsWith("tier:"));
     if (tierPart) {
       applyTrustTier(tierPart.slice("tier:".length) as any);
@@ -306,7 +309,11 @@ export async function saveConfig(cfg: any): Promise<{ saved: boolean; error?: st
 
 /** Store a provider credential in the OS credential store (never plaintext). */
 export async function setCredentialForUi(key: string, value: string): Promise<{ ok: boolean }> {
-  if (!CREDENTIAL_KEY_ALLOWLIST.has(key) || typeof value !== "string" || value.trim().length === 0) {
+  if (
+    !CREDENTIAL_KEY_ALLOWLIST.has(key) ||
+    typeof value !== "string" ||
+    value.trim().length === 0
+  ) {
     return { ok: false };
   }
   const { setCredential } = await import("../secrets/keychain.js");
