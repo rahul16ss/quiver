@@ -31,7 +31,11 @@ export interface HarnessDaemonOptions {
   /** Optional customer pack: its workflowSpecs allowlist which workflows run. */
   pack?: import("./customer-pack.js").CustomerPack;
   /** Optional browser-UI API handler (the chat/context/sessions surface). */
-  browserApiHandler?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>;
+  browserApiHandler?: (req: {
+    method: string;
+    pathname: string;
+    body: unknown;
+  }) => Promise<unknown>;
   /** Optional SSE handler + path (the agent event stream). */
   sseHandler?: (req: import("http").IncomingMessage, res: import("http").ServerResponse) => void;
   ssePath?: string;
@@ -111,20 +115,29 @@ export class HarnessDaemon {
     return { status: 200, body: { ok: true, accepted: true, eventId } };
   }
 
-  private async route(req: { method: string; pathname: string; body: any }, api: ReturnType<HarnessDaemon["api"]>, browserApi?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>): Promise<unknown> {
+  private async route(
+    req: { method: string; pathname: string; body: any },
+    api: ReturnType<HarnessDaemon["api"]>,
+    browserApi?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>,
+  ): Promise<unknown> {
     if (req.method === "GET" && req.pathname === "/api/workflows") return api.listWorkflows();
-    if (req.method === "POST" && req.pathname === "/api/run/start") return api.startRun(req.body ?? {});
+    if (req.method === "POST" && req.pathname === "/api/run/start")
+      return api.startRun(req.body ?? {});
     if (req.method === "GET" && req.pathname === "/api/run/active") return { runs: api.active() };
-    if (req.method === "POST" && req.pathname === "/api/run/state") return api.state((req.body as any)?.runId ?? "");
-    if (req.method === "POST" && req.pathname === "/api/run/approve") return api.approve((req.body as any)?.runId ?? "");
-    if (req.method === "POST" && req.pathname === "/api/run/reject") return api.reject((req.body as any)?.runId ?? "");
+    if (req.method === "POST" && req.pathname === "/api/run/state")
+      return api.state((req.body as any)?.runId ?? "");
+    if (req.method === "POST" && req.pathname === "/api/run/approve")
+      return api.approve((req.body as any)?.runId ?? "");
+    if (req.method === "POST" && req.pathname === "/api/run/reject")
+      return api.reject((req.body as any)?.runId ?? "");
     // §14 ambient jobs: run due jobs / list / recover via the durable scheduler.
     if (this.opts.jobs && req.pathname.startsWith("/api/jobs")) {
       if (req.method === "POST" && req.pathname === "/api/jobs/tick") {
         const res = await this.opts.jobs.scheduler.runDue(this.opts.jobs.handler, "daemon", {});
         return { ok: "ran", summary: res };
       }
-      if (req.method === "GET" && req.pathname === "/api/jobs/list") return { jobs: this.opts.jobs.scheduler.deadLettered() };
+      if (req.method === "GET" && req.pathname === "/api/jobs/list")
+        return { jobs: this.opts.jobs.scheduler.deadLettered() };
       if (req.method === "POST" && req.pathname === "/api/jobs/recover") {
         this.opts.jobs.scheduler.recover((req.body as any)?.jobId ?? "", Date.now());
         return { ok: "recovered" };
@@ -163,7 +176,11 @@ export class HarnessDaemon {
   /** The harness API the browser UI calls (over the loopback, secret-gated daemon). */
   api(): {
     listWorkflows: () => WorkflowSpec[];
-    startRun: (req: { workflowId: string; reviewer?: string; sensitivity?: GoalContract["dataSensitivity"] }) => Promise<RunOutcome>;
+    startRun: (req: {
+      workflowId: string;
+      reviewer?: string;
+      sensitivity?: GoalContract["dataSensitivity"];
+    }) => Promise<RunOutcome>;
     active: () => string[];
     state: (runId: string) => Promise<RunSnapshot | null>;
     approve: (runId: string) => Promise<RunOutcome>;
@@ -178,7 +195,13 @@ export class HarnessDaemon {
         const contract: GoalContract = {
           runId,
           objective: spec.name,
-          requiredDeliverables: [{ type: spec.deliverable.type as any, mimeType: spec.deliverable.mimeType, sections: spec.deliverable.sections }],
+          requiredDeliverables: [
+            {
+              type: spec.deliverable.type as any,
+              mimeType: spec.deliverable.mimeType,
+              sections: spec.deliverable.sections,
+            },
+          ],
           definitionOfDone: spec.acceptanceChecks.map((c) => c.id),
           requiredSourceCategories: spec.requiredSourceCategories,
           dataSensitivity: req.sensitivity ?? spec.dataSensitivity,
@@ -196,7 +219,8 @@ export class HarnessDaemon {
         return outcome;
       },
       // Run ids still executing (registered at start, outcome not yet settled).
-      active: () => [...this.runs.entries()].filter(([, v]) => v.outcome === null).map(([id]) => id),
+      active: () =>
+        [...this.runs.entries()].filter(([, v]) => v.outcome === null).map(([id]) => id),
       state: (runId) => this.engine.inspect(runId),
       approve: async (runId) => {
         const entry = this.runs.get(runId);

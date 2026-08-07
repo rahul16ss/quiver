@@ -1,112 +1,251 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiver — Controlled, source-backed document workflows in finance</title>
-  <meta name="description" content="Quiver is an open foundation for controlled, source-backed document workflows in finance: approved files, public research, workflow instructions, and review rules turned into native Office deliverables with inspectable evidence.">
-  <link rel="icon" href="assets/logo.png" type="image/png">
-  <link rel="apple-touch-icon" href="assets/logo.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: "Inter", -apple-system, sans-serif; margin: 0; color: #1c1c1e; background: #fcfbf9; }
-    h1, h2 { font-family: "Outfit", "Inter", sans-serif; }
-    .page { max-width: 720px; margin: 0 auto; padding: 56px 24px; line-height: 1.65; }
-    .hero h1 { font-size: 2rem; margin: 0 0 0.25rem; }
-    .page h2 { font-size: 1.2rem; margin-top: 2.25rem; }
-    .tagline { font-size: 1.1rem; color: #555; margin-bottom: 2rem; }
-    .notice { border-left: 3px solid #8e8e93; padding: 10px 16px; background: #f4f3f0; font-size: 0.95rem; margin: 1.5rem 0; }
-    .page code { background: #efeeea; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-    .page pre { background: #efeeea; padding: 10px 14px; border-radius: 6px; overflow-x: auto; }
-    .page ul { padding-left: 1.2rem; }
-    .links a { margin-right: 1.25rem; color: #1b365d; }
-    .mockup { margin: 1.5rem 0; }
-    .footer { margin-top: 2.5rem; font-size: 0.9rem; color: #777; }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <header class="hero">
-      <h1>Quiver</h1>
-      <p class="tagline"><strong>An open foundation for controlled, source-backed document workflows in finance.</strong></p>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quiver — Controlled, source-backed document workflows in finance</title>
+    <meta
+      name="description"
+      content="Quiver is an open foundation for controlled, source-backed document workflows in finance: approved files, public research, workflow instructions, and review rules turned into native Office deliverables with inspectable evidence."
+    />
+    <link rel="icon" href="assets/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family:
+          "Inter",
+          -apple-system,
+          sans-serif;
+        margin: 0;
+        color: #1c1c1e;
+        background: #fcfbf9;
+      }
+      h1,
+      h2 {
+        font-family: "Outfit", "Inter", sans-serif;
+      }
+      .page {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 56px 24px;
+        line-height: 1.65;
+      }
+      .hero h1 {
+        font-size: 2rem;
+        margin: 0 0 0.25rem;
+      }
+      .page h2 {
+        font-size: 1.2rem;
+        margin-top: 2.25rem;
+      }
+      .tagline {
+        font-size: 1.1rem;
+        color: #555;
+        margin-bottom: 2rem;
+      }
+      .notice {
+        border-left: 3px solid #8e8e93;
+        padding: 10px 16px;
+        background: #f4f3f0;
+        font-size: 0.95rem;
+        margin: 1.5rem 0;
+      }
+      .page code {
+        background: #efeeea;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.9em;
+      }
+      .page pre {
+        background: #efeeea;
+        padding: 10px 14px;
+        border-radius: 6px;
+        overflow-x: auto;
+      }
+      .page ul {
+        padding-left: 1.2rem;
+      }
+      .links a {
+        margin-right: 1.25rem;
+        color: #1b365d;
+      }
+      .mockup {
+        margin: 1.5rem 0;
+      }
+      .footer {
+        margin-top: 2.5rem;
+        font-size: 0.9rem;
+        color: #777;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <h1>Quiver</h1>
+        <p class="tagline">
+          <strong
+            >An open foundation for controlled, source-backed document workflows in finance.</strong
+          >
+        </p>
+      </header>
 
-    <h2>The problem</h2>
-    <p>Generic chat tools fall short for investment teams: figures appear without a
-    trail, the model does not know the firm's template or prior work, and the output
-    stays in a chat window instead of the Word, Excel, and PowerPoint files a senior
-    professional actually reviews and signs. The limitation is not drafting speed —
-    it is evidence, format, and control.</p>
+      <h2>The problem</h2>
+      <p>
+        Generic chat tools fall short for investment teams: figures appear without a trail, the
+        model does not know the firm's template or prior work, and the output stays in a chat window
+        instead of the Word, Excel, and PowerPoint files a senior professional actually reviews and
+        signs. The limitation is not drafting speed — it is evidence, format, and control.
+      </p>
 
-    <h2>What Quiver is</h2>
-    <p>Quiver helps turn approved files, public research, workflow instructions, and
-    review rules into native Office deliverables with inspectable evidence.
-    <a href="https://convictionstudio.com">Conviction Studio</a> uses it as the shared engine for client workflow engagements.</p>
+      <h2>What Quiver is</h2>
+      <p>
+        Quiver helps turn approved files, public research, workflow instructions, and review rules
+        into native Office deliverables with inspectable evidence.
+        <a href="https://convictionstudio.com">Conviction Studio</a> uses it as the shared engine
+        for client workflow engagements.
+      </p>
 
-    <div class="notice">Quiver is infrastructure, not investment advice and not a
-    turnkey replacement for professional judgment. Generated work remains a draft
-    until a professional reviews it.</div>
+      <div class="notice">
+        Quiver is infrastructure, not investment advice and not a turnkey replacement for
+        professional judgment. Generated work remains a draft until a professional reviews it.
+      </div>
 
-    <!-- Illustrative mockup: deliverable with evidence rail -->
-    <svg class="mockup" viewBox="0 0 560 220" width="100%" role="img" aria-label="Illustration: a Word memo with an evidence rail linking figures to sources">
-      <rect x="10" y="10" width="340" height="200" rx="8" fill="#ffffff" stroke="#d8d5cf"/>
-      <rect x="30" y="30" width="180" height="12" rx="3" fill="#1b365d"/>
-      <rect x="30" y="56" width="300" height="7" rx="3" fill="#e2e0da"/>
-      <rect x="30" y="70" width="280" height="7" rx="3" fill="#e2e0da"/>
-      <rect x="30" y="92" width="120" height="9" rx="3" fill="#8e8e93"/>
-      <rect x="30" y="110" width="130" height="16" rx="3" fill="#eef2f7" stroke="#1b365d"/>
-      <text x="38" y="122" font-family="Inter, sans-serif" font-size="10" fill="#1b365d">Revenue $48.2m</text>
-      <rect x="30" y="140" width="300" height="7" rx="3" fill="#e2e0da"/>
-      <rect x="30" y="154" width="260" height="7" rx="3" fill="#e2e0da"/>
-      <text x="30" y="196" font-family="Inter, sans-serif" font-size="9" fill="#9a978f">Illustrative workflow — synthetic data · Draft for review</text>
-      <rect x="370" y="10" width="180" height="200" rx="8" fill="#f4f3f0" stroke="#d8d5cf"/>
-      <text x="384" y="34" font-family="Inter, sans-serif" font-size="10" font-weight="600" fill="#1c1c1e">Evidence</text>
-      <text x="384" y="56" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">Model_v12.xlsx · RevenueBuild</text>
-      <text x="384" y="72" font-family="Inter, sans-serif" font-size="9" fill="#2e7d32">Sourced · cell verified</text>
-      <text x="384" y="96" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">Q2 transcript · p.7</text>
-      <text x="384" y="112" font-family="Inter, sans-serif" font-size="9" fill="#b26a00">Needs analyst</text>
-      <text x="384" y="136" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">Internal model note</text>
-      <text x="384" y="152" font-family="Inter, sans-serif" font-size="9" fill="#b3261e">Unresolved</text>
-      <line x1="160" y1="118" x2="370" y2="60" stroke="#1b365d" stroke-dasharray="3 3"/>
-    </svg>
+      <!-- Illustrative mockup: deliverable with evidence rail -->
+      <svg
+        class="mockup"
+        viewBox="0 0 560 220"
+        width="100%"
+        role="img"
+        aria-label="Illustration: a Word memo with an evidence rail linking figures to sources"
+      >
+        <rect x="10" y="10" width="340" height="200" rx="8" fill="#ffffff" stroke="#d8d5cf" />
+        <rect x="30" y="30" width="180" height="12" rx="3" fill="#1b365d" />
+        <rect x="30" y="56" width="300" height="7" rx="3" fill="#e2e0da" />
+        <rect x="30" y="70" width="280" height="7" rx="3" fill="#e2e0da" />
+        <rect x="30" y="92" width="120" height="9" rx="3" fill="#8e8e93" />
+        <rect x="30" y="110" width="130" height="16" rx="3" fill="#eef2f7" stroke="#1b365d" />
+        <text x="38" y="122" font-family="Inter, sans-serif" font-size="10" fill="#1b365d">
+          Revenue $48.2m
+        </text>
+        <rect x="30" y="140" width="300" height="7" rx="3" fill="#e2e0da" />
+        <rect x="30" y="154" width="260" height="7" rx="3" fill="#e2e0da" />
+        <text x="30" y="196" font-family="Inter, sans-serif" font-size="9" fill="#9a978f">
+          Illustrative workflow — synthetic data · Draft for review
+        </text>
+        <rect x="370" y="10" width="180" height="200" rx="8" fill="#f4f3f0" stroke="#d8d5cf" />
+        <text
+          x="384"
+          y="34"
+          font-family="Inter, sans-serif"
+          font-size="10"
+          font-weight="600"
+          fill="#1c1c1e"
+        >
+          Evidence
+        </text>
+        <text x="384" y="56" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">
+          Model_v12.xlsx · RevenueBuild
+        </text>
+        <text x="384" y="72" font-family="Inter, sans-serif" font-size="9" fill="#2e7d32">
+          Sourced · cell verified
+        </text>
+        <text x="384" y="96" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">
+          Q2 transcript · p.7
+        </text>
+        <text x="384" y="112" font-family="Inter, sans-serif" font-size="9" fill="#b26a00">
+          Needs analyst
+        </text>
+        <text x="384" y="136" font-family="Inter, sans-serif" font-size="9" fill="#4b5563">
+          Internal model note
+        </text>
+        <text x="384" y="152" font-family="Inter, sans-serif" font-size="9" fill="#b3261e">
+          Unresolved
+        </text>
+        <line x1="160" y1="118" x2="370" y2="60" stroke="#1b365d" stroke-dasharray="3 3" />
+      </svg>
 
-    <h2>Reference workflows</h2>
-    <p>The repository ships three executable reference workflow demonstrations across key workflow families:</p>
-    <ul>
-      <li><code>npm run demo:ic-memo</code> — Dealmaking &amp; Diligence: native Word IC memo (Project Alder) with cell-verified evidence map &amp; review checklist.</li>
-      <li><code>npm run demo:post-earnings</code> — Investment Research: post-earnings evidence pack with transcript &amp; model verification.</li>
-      <li><code>npm run demo:portfolio-review</code> — Wealth &amp; Portfolio: native Excel (.xlsx) portfolio review pack with IPS policy &amp; benchmark alignment checks.</li>
-    </ul>
+      <h2>Reference workflows</h2>
+      <p>
+        The repository ships three executable reference workflow demonstrations across key workflow
+        families:
+      </p>
+      <ul>
+        <li>
+          <code>npm run demo:ic-memo</code> — Dealmaking &amp; Diligence: native Word IC memo
+          (Project Alder) with cell-verified evidence map &amp; review checklist.
+        </li>
+        <li>
+          <code>npm run demo:post-earnings</code> — Investment Research: post-earnings evidence pack
+          with transcript &amp; model verification.
+        </li>
+        <li>
+          <code>npm run demo:portfolio-review</code> — Wealth &amp; Portfolio: native Excel (.xlsx)
+          portfolio review pack with IPS policy &amp; benchmark alignment checks.
+        </li>
+      </ul>
 
-    <h2>Principles</h2>
-    <ul>
-      <li><strong>Start with the deliverable</strong> — native Word, Excel, and PowerPoint files in your house styling.</li>
-      <li><strong>Sources you can inspect</strong> — important claims can be connected to cells, pages, sections or URLs—or explicitly flagged for review.</li>
-      <li><strong>Reviewer-in-the-loop governance</strong> — drafts require human sign-off; overrides are recorded in a local audit chain.</li>
-      <li><strong>Data handling configured per engagement</strong> — model endpoints and privacy boundaries are explicitly set by the operator.</li>
-      <li><strong>Reproducible verification</strong> — workflow behavior is validated against explicit acceptance checks.</li>
-    </ul>
+      <h2>Principles</h2>
+      <ul>
+        <li>
+          <strong>Start with the deliverable</strong> — native Word, Excel, and PowerPoint files in
+          your house styling.
+        </li>
+        <li>
+          <strong>Sources you can inspect</strong> — important claims can be connected to cells,
+          pages, sections or URLs—or explicitly flagged for review.
+        </li>
+        <li>
+          <strong>Reviewer-in-the-loop governance</strong> — drafts require human sign-off;
+          overrides are recorded in a local audit chain.
+        </li>
+        <li>
+          <strong>Data handling configured per engagement</strong> — model endpoints and privacy
+          boundaries are explicitly set by the operator.
+        </li>
+        <li>
+          <strong>Reproducible verification</strong> — workflow behavior is validated against
+          explicit acceptance checks.
+        </li>
+      </ul>
 
-    <h2>Data handling</h2>
-    <p>Quiver does not bake in a model endpoint. The sole shared cloud gateway is OpenRouter (<code>OPENROUTER_API_KEY</code> + <code>OPENROUTER_MODEL_PROFILE</code>), with per-request ZDR routing prefs enforced when that path is used. A local/private OpenAI-compatible endpoint via <code>LLM_API_BASE_URL</code> is the high-sensitivity escape hatch. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. Quiver does not ship product analytics; optional update checks may contact GitHub for release info.</p>
+      <h2>Data handling</h2>
+      <p>
+        Quiver does not bake in a model endpoint. The sole shared cloud gateway is OpenRouter (<code
+          >OPENROUTER_API_KEY</code
+        >
+        + <code>OPENROUTER_MODEL_PROFILE</code>), with per-request ZDR routing prefs enforced when
+        that path is used. A local/private OpenAI-compatible endpoint via
+        <code>LLM_API_BASE_URL</code> is the high-sensitivity escape hatch. A fully local
+        configuration requires external research and remote connectors to be disabled or separately
+        approved. Memory, sessions, documents, and the audit log live in files on your machine.
+        Quiver does not ship product analytics; optional update checks may contact GitHub for
+        release info.
+      </p>
 
-    <h2>Install</h2>
-    <pre><code>git clone https://github.com/rahul16ss/quiver.git &amp;&amp; cd quiver
+      <h2>Install</h2>
+      <pre><code>git clone https://github.com/rahul16ss/quiver.git &amp;&amp; cd quiver
 npm install
 npm run demo:ic-memo   # flagship workflow + acceptance checks
 npm test               # full acceptance suite + harness gate
 npm start              # loopback browser UI (harness daemon)</code></pre>
 
-    <h2>Learn more</h2>
-    <p class="links">
-      <a href="https://github.com/rahul16ss/quiver">GitHub Repository</a>
-      <a href="capabilities.md">Technical Capability Matrix</a>
-      <a href="https://convictionstudio.com">Conviction Studio</a>
-    </p>
+      <h2>Learn more</h2>
+      <p class="links">
+        <a href="https://github.com/rahul16ss/quiver">GitHub Repository</a>
+        <a href="capabilities.md">Technical Capability Matrix</a>
+        <a href="https://convictionstudio.com">Conviction Studio</a>
+      </p>
 
-    <p class="footer">Apache License 2.0. Example data is synthetic — illustrative workflows, not client work.</p>
-  </main>
-</body>
+      <p class="footer">
+        Apache License 2.0. Example data is synthetic — illustrative workflows, not client work.
+      </p>
+    </main>
+  </body>
 </html>

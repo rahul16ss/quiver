@@ -24,50 +24,121 @@
     "units": "millions unless stated"
   },
   "templates": [
-    { "id": "ic-memo-template", "name": "IC Memo Template", "path": "templates/ic-memo-template.docx" },
-    { "id": "diligence-tracker-template", "name": "Diligence Tracker Template", "path": "templates/diligence-tracker-template.xlsx" },
-    { "id": "portfolio-review-template", "name": "Portfolio Review Template", "path": "templates/portfolio-review-template.xlsx" }
+    {
+      "id": "ic-memo-template",
+      "name": "IC Memo Template",
+      "path": "templates/ic-memo-template.docx"
+    },
+    {
+      "id": "diligence-tracker-template",
+      "name": "Diligence Tracker Template",
+      "path": "templates/diligence-tracker-template.xlsx"
+    },
+    {
+      "id": "portfolio-review-template",
+      "name": "Portfolio Review Template",
+      "path": "templates/portfolio-review-template.xlsx"
+    }
   ],
   "examples": [
-    { "id": "project-alder", "name": "Project Alder (synthetic IC memo)", "path": "examples/project-alder" }
+    {
+      "id": "project-alder",
+      "name": "Project Alder (synthetic IC memo)",
+      "path": "examples/project-alder"
+    }
   ],
   "sourcePrecedence": [
     { "category": "filings-ir", "rank": 90, "note": "Primary: SEC filings and issuer IR." },
-    { "category": "market-data-estimates", "rank": 80, "note": "Licensed consensus/estimates/prices." },
+    {
+      "category": "market-data-estimates",
+      "rank": 80,
+      "note": "Licensed consensus/estimates/prices."
+    },
     { "category": "transcripts-events", "rank": 70, "note": "Earnings calls and events." },
-    { "category": "portfolio-models-trackers", "rank": 60, "note": "Internal models and trackers." },
+    {
+      "category": "portfolio-models-trackers",
+      "rank": 60,
+      "note": "Internal models and trackers."
+    },
     { "category": "internal-research-notes", "rank": 50, "note": "Internal research and notes." },
-    { "category": "public-web-research", "rank": 10, "note": "Open web only — never a substitute for licensed data." }
+    {
+      "category": "public-web-research",
+      "rank": 10,
+      "note": "Open web only — never a substitute for licensed data."
+    }
   ],
   "approvedModels": [
     { "profileSlug": "text-maker", "roles": ["maker"], "providerOrder": ["OpenAI"] },
     { "profileSlug": "text-planner", "roles": ["planner"], "providerOrder": ["OpenAI"] },
-    { "profileSlug": "native-doc-primary", "roles": ["maker", "reviewer"], "providerOrder": ["Anthropic"] },
+    {
+      "profileSlug": "native-doc-primary",
+      "roles": ["maker", "reviewer"],
+      "providerOrder": ["Anthropic"]
+    },
     { "profileSlug": "native-doc-checker", "roles": ["checker"], "providerOrder": ["MoonshotAI"] },
-    { "profileSlug": "text-checker", "roles": ["checker", "reviewer"], "providerOrder": ["Google"] },
-    { "profileSlug": "local-private-default", "roles": ["planner", "maker", "checker", "reviewer"], "providerOrder": ["Local"] }
+    {
+      "profileSlug": "text-checker",
+      "roles": ["checker", "reviewer"],
+      "providerOrder": ["Google"]
+    },
+    {
+      "profileSlug": "local-private-default",
+      "roles": ["planner", "maker", "checker", "reviewer"],
+      "providerOrder": ["Local"]
+    }
   ],
   "sensitivityProfiles": [
     { "name": "public", "parallelAllowed": true, "cloudInferenceAllowed": true },
-    { "name": "confidential-internal", "parallelAllowed": true, "parallelSanitizedOnly": true, "cloudInferenceAllowed": true },
-    { "name": "restricted-mnpi", "parallelAllowed": false, "cloudInferenceAllowed": false, "localRouteSlug": "local-private-default" }
+    {
+      "name": "confidential-internal",
+      "parallelAllowed": true,
+      "parallelSanitizedOnly": true,
+      "cloudInferenceAllowed": true
+    },
+    {
+      "name": "restricted-mnpi",
+      "parallelAllowed": false,
+      "cloudInferenceAllowed": false,
+      "localRouteSlug": "local-private-default"
+    }
   ],
   "storageConnectors": [
-    { "providerId": "local-workspace", "kind": "local", "configRef": "workspace-roots.json", "roots": ["./workspace"] },
+    {
+      "providerId": "local-workspace",
+      "kind": "local",
+      "configRef": "workspace-roots.json",
+      "roots": ["./workspace"]
+    },
     { "providerId": "sharepoint", "kind": "microsoft-graph", "configRef": "graph-connector.json" },
     { "providerId": "gdrive", "kind": "google-drive", "configRef": "drive-connector.json" }
   ],
   "dataVendorEntitlements": [
-    { "connector": "edgar", "datasets": ["filings-ir"], "redistributionAllowed": false, "cacheExpirySeconds": 86400 },
-    { "connector": "refinitiv", "datasets": ["market-data-estimates", "transcripts-events"], "redistributionAllowed": true, "cacheExpirySeconds": 900 }
+    {
+      "connector": "edgar",
+      "datasets": ["filings-ir"],
+      "redistributionAllowed": false,
+      "cacheExpirySeconds": 86400
+    },
+    {
+      "connector": "refinitiv",
+      "datasets": ["market-data-estimates", "transcripts-events"],
+      "redistributionAllowed": true,
+      "cacheExpirySeconds": 900
+    }
   ],
   "allowedTools": [
-    "office_doc", "evidence", "deep_research", "web_search", "scrape_url",
-    "data_query", "entity_search", "find_all", "browser_control", "run_command"
+    "office_doc",
+    "evidence",
+    "deep_research",
+    "web_search",
+    "scrape_url",
+    "data_query",
+    "entity_search",
+    "find_all",
+    "browser_control",
+    "run_command"
   ],
-  "allowedDomains": [
-    "sec.gov", "investorrelations.example", "parallel.ai", "openrouter.ai"
-  ],
+  "allowedDomains": ["sec.gov", "investorrelations.example", "parallel.ai", "openrouter.ai"],
   "reviewers": [
     { "role": "analyst", "approvalThreshold": "single", "canCommit": false },
     { "role": "senior_analyst", "approvalThreshold": "single", "canCommit": false },
@@ -84,9 +155,18 @@
     "review-policy": "Reviewer accepts/rejects individual changes, claims, cells, paragraphs or slides — not only the whole run. A deliverable is never marked complete when mandatory evidence, validation or save-back failed."
   },
   "workflowSpecs": [
-    "earnings-update", "transcript-review", "company-primer", "thesis-tracker",
-    "ic-memo", "diligence-tracker", "market-map", "pitchbook-materials",
-    "portfolio-review", "investment-proposal", "manager-research-note", "client-commentary"
+    "earnings-update",
+    "transcript-review",
+    "company-primer",
+    "thesis-tracker",
+    "ic-memo",
+    "diligence-tracker",
+    "market-map",
+    "pitchbook-materials",
+    "portfolio-review",
+    "investment-proposal",
+    "manager-research-note",
+    "client-commentary"
   ],
   "evaluationFixtures": [
     { "id": "earnings-fixture", "path": "fixtures/earnings" },

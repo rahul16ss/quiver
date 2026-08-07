@@ -51,7 +51,11 @@ export class LocalStorageProvider implements StorageProvider {
    * @param reducedGuarantee Set true when the root is a synced OneDrive/
    *                         SharePoint/Google Drive folder — label it honestly.
    */
-  constructor(id: string, private roots: string[], reducedGuarantee = false) {
+  constructor(
+    id: string,
+    private roots: string[],
+    reducedGuarantee = false,
+  ) {
     this.id = id;
     this.reduced = reducedGuarantee;
   }
@@ -136,17 +140,23 @@ export class LocalStorageProvider implements StorageProvider {
     opts: StorageCommitOpts,
   ): Promise<StorageCommitResult> {
     if (!opts.reviewer || !opts.approvalRef) {
-      throw new Error("LocalStorageProvider.commit requires reviewer + approvalRef (no overwrite without an approved change set).");
+      throw new Error(
+        "LocalStorageProvider.commit requires reviewer + approvalRef (no overwrite without an approved change set).",
+      );
     }
     const p = this.resolve(candidate.path);
     // Conflict detection: re-fetch metadata; fail if the base version/etag moved.
     if (opts.baseEtag || opts.baseVersion) {
       const current = await this.metadata(workingCopy.identity);
       if (opts.baseEtag && current.etag && current.etag !== opts.baseEtag) {
-        throw new Error(`Local commit conflict: file '${p}' changed since checkout (etag mismatch).`);
+        throw new Error(
+          `Local commit conflict: file '${p}' changed since checkout (etag mismatch).`,
+        );
       }
       if (opts.baseVersion && current.version && current.version !== opts.baseVersion) {
-        throw new Error(`Local commit conflict: file '${p}' changed since checkout (version mismatch).`);
+        throw new Error(
+          `Local commit conflict: file '${p}' changed since checkout (version mismatch).`,
+        );
       }
     }
     atomicWriteSync(p, candidate.data);
@@ -190,7 +200,12 @@ export interface GraphItemMetadata {
 export class MicrosoftGraphStorageProvider implements StorageProvider {
   readonly id: string;
   readonly kind = "microsoft-graph" as const;
-  constructor(id: string, private client: GraphClient) { this.id = id; }
+  constructor(
+    id: string,
+    private client: GraphClient,
+  ) {
+    this.id = id;
+  }
 
   capabilities(): StorageCapabilities {
     return {
@@ -245,10 +260,14 @@ export class MicrosoftGraphStorageProvider implements StorageProvider {
     // Fail-on-conflict: never default to conflictBehavior:"replace".
     const current = await this.client.getMetadata(workingCopy.identity.id);
     if (opts.baseEtag && current.eTag && current.eTag !== opts.baseEtag) {
-      throw new Error(`Graph commit conflict: '${workingCopy.identity.id}' ETag changed since checkout. Refusing replace.`);
+      throw new Error(
+        `Graph commit conflict: '${workingCopy.identity.id}' ETag changed since checkout. Refusing replace.`,
+      );
     }
     if (opts.baseVersion && current.version && current.version !== opts.baseVersion) {
-      throw new Error(`Graph commit conflict: '${workingCopy.identity.id}' version changed since checkout. Refusing replace.`);
+      throw new Error(
+        `Graph commit conflict: '${workingCopy.identity.id}' version changed since checkout. Refusing replace.`,
+      );
     }
     const updated = await this.client.uploadSession(workingCopy.identity.id, candidate.data);
     return {
@@ -263,7 +282,12 @@ export class MicrosoftGraphStorageProvider implements StorageProvider {
 
   async poll(opts?: StoragePollOpts): Promise<StorageChange[]> {
     const res = await this.client.delta(opts?.since);
-    return res.items.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified", version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified }));
+    return res.items.map((m) => ({
+      identity: { id: m.id, webUrl: m.webUrl },
+      kind: "modified",
+      version: m.version ?? m.eTag ?? "",
+      modifiedAt: m.lastModified,
+    }));
   }
 
   /**
@@ -279,7 +303,12 @@ export class MicrosoftGraphStorageProvider implements StorageProvider {
       for (let guard = 0; guard < MAX_POLL_PAGES; guard++) {
         const res = await this.client.delta(token);
         for (const m of res.items) {
-          all.push({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.version ?? m.eTag ?? "", modifiedAt: m.lastModified });
+          all.push({
+            identity: { id: m.id, webUrl: m.webUrl },
+            kind: "modified" as const,
+            version: m.version ?? m.eTag ?? "",
+            modifiedAt: m.lastModified,
+          });
         }
         if (!res.nextToken) break; // last page
         token = res.nextToken;
@@ -295,7 +324,9 @@ export interface DriveClient {
   getMetadata(fileId: string): Promise<DriveItemMetadata>;
   download(fileId: string): Promise<Buffer>;
   upload(fileId: string, data: Buffer, baseRevisionId?: string): Promise<DriveItemMetadata>;
-  listChanges(pageToken?: string): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }>;
+  listChanges(
+    pageToken?: string,
+  ): Promise<{ changes: DriveItemMetadata[]; nextPageToken?: string }>;
 }
 
 export interface DriveItemMetadata {
@@ -314,7 +345,12 @@ export interface DriveItemMetadata {
 export class GoogleDriveStorageProvider implements StorageProvider {
   readonly id: string;
   readonly kind = "google-drive" as const;
-  constructor(id: string, private client: DriveClient) { this.id = id; }
+  constructor(
+    id: string,
+    private client: DriveClient,
+  ) {
+    this.id = id;
+  }
 
   capabilities(): StorageCapabilities {
     return {
@@ -363,11 +399,16 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     // sibling when conflict safety cannot be guaranteed.
     const current = await this.client.getMetadata(workingCopy.identity.id);
     if (current.isGoogleNative) {
-      throw new Error("Refusing to silently convert a Google-native document to Office (or back). Conversion is explicit and warns about fidelity loss.");
+      throw new Error(
+        "Refusing to silently convert a Google-native document to Office (or back). Conversion is explicit and warns about fidelity loss.",
+      );
     }
     if (opts.baseVersion && current.headRevisionId && current.headRevisionId !== opts.baseVersion) {
       // Create a sibling output rather than silently overwriting.
-      const sibling = await this.client.upload(workingCopy.identity.id + "-reviewed", candidate.data);
+      const sibling = await this.client.upload(
+        workingCopy.identity.id + "-reviewed",
+        candidate.data,
+      );
       return {
         identity: { id: sibling.id, webUrl: sibling.webUrl },
         newVersion: sibling.headRevisionId ?? sibling.version ?? "",
@@ -376,7 +417,11 @@ export class GoogleDriveStorageProvider implements StorageProvider {
         committedAt: new Date().toISOString(),
       };
     }
-    const updated = await this.client.upload(workingCopy.identity.id, candidate.data, opts.baseVersion);
+    const updated = await this.client.upload(
+      workingCopy.identity.id,
+      candidate.data,
+      opts.baseVersion,
+    );
     return {
       identity: { id: updated.id, webUrl: updated.webUrl },
       newVersion: updated.headRevisionId ?? updated.version ?? "",
@@ -388,7 +433,12 @@ export class GoogleDriveStorageProvider implements StorageProvider {
 
   async poll(opts?: StoragePollOpts): Promise<StorageChange[]> {
     const res = await this.client.listChanges(opts?.since);
-    return res.changes.map((m) => ({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified", version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime }));
+    return res.changes.map((m) => ({
+      identity: { id: m.id, webUrl: m.webUrl },
+      kind: "modified",
+      version: m.headRevisionId ?? m.version ?? "",
+      modifiedAt: m.modifiedTime,
+    }));
   }
 
   /**
@@ -407,7 +457,12 @@ export class GoogleDriveStorageProvider implements StorageProvider {
       for (let guard = 0; guard < MAX_POLL_PAGES; guard++) {
         const res = await this.client.listChanges(token);
         for (const m of res.changes) {
-          all.push({ identity: { id: m.id, webUrl: m.webUrl }, kind: "modified" as const, version: m.headRevisionId ?? m.version ?? "", modifiedAt: m.modifiedTime });
+          all.push({
+            identity: { id: m.id, webUrl: m.webUrl },
+            kind: "modified" as const,
+            version: m.headRevisionId ?? m.version ?? "",
+            modifiedAt: m.modifiedTime,
+          });
         }
         if (!res.nextPageToken) break; // last page
         token = res.nextPageToken;
@@ -428,18 +483,26 @@ function sha256(data: Buffer | string): string {
 
 function mimeForExt(ext: string): string {
   switch (ext.toLowerCase()) {
-    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    case ".pdf": return "application/pdf";
-    case ".csv": return "text/csv";
-    default: return "application/octet-stream";
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".pdf":
+      return "application/pdf";
+    case ".csv":
+      return "text/csv";
+    default:
+      return "application/octet-stream";
   }
 }
 
 function minimatch(name: string, pattern: string): boolean {
   // Minimal glob: only supports "*" wildcard and exact extensions like "*.xlsx".
-  const re = new RegExp("^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  const re = new RegExp(
+    "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
+  );
   return re.test(name);
 }
 

@@ -163,7 +163,23 @@ export class QuiverDaemon {
       return this.sseHandler(req, res);
     }
     // Harness API routes (secret-gated above).
-    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow") || pathname.startsWith("/api/jobs") || pathname.startsWith("/api/runtime"))) {
+    if (
+      this.apiHandler &&
+      (pathname === "/api/workflows" ||
+        pathname.startsWith("/api/run/") ||
+        pathname.startsWith("/api/agent/") ||
+        pathname.startsWith("/api/memory") ||
+        pathname.startsWith("/api/sessions") ||
+        pathname.startsWith("/api/skills") ||
+        pathname.startsWith("/api/config") ||
+        pathname.startsWith("/api/preview") ||
+        pathname.startsWith("/api/file") ||
+        pathname.startsWith("/api/evidence") ||
+        pathname.startsWith("/api/review") ||
+        pathname.startsWith("/api/workflow") ||
+        pathname.startsWith("/api/jobs") ||
+        pathname.startsWith("/api/runtime"))
+    ) {
       let body: unknown = undefined;
       if (req.method !== "GET" && req.method !== "HEAD") {
         body = await this.readBody(req);
@@ -182,8 +198,11 @@ export class QuiverDaemon {
     // The secret is sent via the x-quiver-secret header (fetch can set it).
     // Never accept the secret via a URL query param — query params land in
     // access logs, browser history, and Referer headers (§16).
-    const provided =
-      (Array.isArray(req.headers["x-quiver-secret"]) ? req.headers["x-quiver-secret"][0] : req.headers["x-quiver-secret"]) as string | undefined;
+    const provided = (
+      Array.isArray(req.headers["x-quiver-secret"])
+        ? req.headers["x-quiver-secret"][0]
+        : req.headers["x-quiver-secret"]
+    ) as string | undefined;
     if (!provided) return false;
     const a = Buffer.from(provided);
     const b = Buffer.from(this.secret);
@@ -192,7 +211,8 @@ export class QuiverDaemon {
   }
 
   private serveUi(res: ServerResponse, rel: string): void {
-    const uiDir = this.opts.uiDir ?? path.join(path.dirname(new URL(import.meta.url).pathname), "ui");
+    const uiDir =
+      this.opts.uiDir ?? path.join(path.dirname(new URL(import.meta.url).pathname), "ui");
     const safe = path.normalize(rel).replace(/^(\.\.[/\\])+/, "");
     const full = path.join(uiDir, safe);
     // Path traversal guard: the resolved path must stay inside uiDir.
@@ -203,7 +223,14 @@ export class QuiverDaemon {
       return this.send(res, 404, { error: "not found" });
     }
     const ext = path.extname(full).toLowerCase();
-    const type = ext === ".html" ? "text/html" : ext === ".js" ? "text/javascript" : ext === ".css" ? "text/css" : "application/octet-stream";
+    const type =
+      ext === ".html"
+        ? "text/html"
+        : ext === ".js"
+          ? "text/javascript"
+          : ext === ".css"
+            ? "text/css"
+            : "application/octet-stream";
     res.setHeader("Content-Type", `${type}; charset=utf-8`);
     fs.createReadStream(full).pipe(res);
   }
@@ -212,7 +239,13 @@ export class QuiverDaemon {
     return new Promise((resolve) => {
       let buf = "";
       req.on("data", (d) => (buf += d.toString()));
-      req.on("end", () => { try { resolve(buf ? JSON.parse(buf) : undefined); } catch { resolve(buf); } });
+      req.on("end", () => {
+        try {
+          resolve(buf ? JSON.parse(buf) : undefined);
+        } catch {
+          resolve(buf);
+        }
+      });
       req.on("error", () => resolve(undefined));
     });
   }
@@ -245,11 +278,15 @@ export function loadOrCreateSecret(secretPath: string = defaultSecretPath()): st
     if (fs.existsSync(secretPath)) {
       return fs.readFileSync(secretPath, "utf8").trim();
     }
-  } catch { /* fall through to create */ }
+  } catch {
+    /* fall through to create */
+  }
   const secret = randomBytes(32).toString("hex");
   try {
     fs.mkdirSync(path.dirname(secretPath), { recursive: true });
     fs.writeFileSync(secretPath, secret, { mode: 0o600 });
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
   return secret;
 }

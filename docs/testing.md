@@ -31,6 +31,7 @@ The gate exits non-zero while any check is unmet. A green run prints
 ## Definition of Done
 
 A user story is accepted when:
+
 - `npx tsc --noEmit` passes with no warnings or errors (`TSC-CLEAN`).
 - Every check in `tests/spec_acceptance_tests.ts` is met.
 - Security, user data ownership, explicit consent, and inspectable-state
@@ -98,12 +99,12 @@ It covers:
 Behavioral end-to-end tests live in `tests/e2e/` and complement the acceptance
 contract. They are tiered by environment requirements:
 
-| Command | Tiers | What it runs |
-|---------|-------|--------------|
-| `npm run test:e2e` | A + B | Default offline behavioral e2e (mock LLM) plus OfficeCLI action matrix |
-| `npm run test:e2e:a` | A only | Offline behavioral e2e against a mock model server |
-| `npm run test:e2e:all` | A + B + C + D | Full e2e stack including live model/network spot checks |
-| `npm run test:e2e:live` | C + D | Live model + network spot checks (requires configured credentials) |
+| Command                 | Tiers         | What it runs                                                           |
+| ----------------------- | ------------- | ---------------------------------------------------------------------- |
+| `npm run test:e2e`      | A + B         | Default offline behavioral e2e (mock LLM) plus OfficeCLI action matrix |
+| `npm run test:e2e:a`    | A only        | Offline behavioral e2e against a mock model server                     |
+| `npm run test:e2e:all`  | A + B + C + D | Full e2e stack including live model/network spot checks                |
+| `npm run test:e2e:live` | C + D         | Live model + network spot checks (requires configured credentials)     |
 
 - **Tier A** — offline behavioral e2e (mock model server; no network).
 - **Tier B** — OfficeCLI action matrix and IC memo acceptance (requires `officecli` on PATH).

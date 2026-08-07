@@ -101,6 +101,7 @@ office_doc: {
 ## Key Concepts
 
 ### Paths
+
 - **Word**: `/body` (container), `/body/p[1]` (paragraph), `/body/tbl[1]/tr[1]/tc[1]` (table cell)
 - **Excel**: `/Sheet1/A1` (cell), `/Sheet1/row[1]` (row), `/Sheet1` (sheet)
 - **PowerPoint**: `/slide[1]` (slide), `/slide[1]/shape[1]` (shape/textbox)
@@ -108,12 +109,14 @@ office_doc: {
 - Always quote paths with brackets in shell: `"/slide[1]"` not `/slide[1]`
 
 ### Properties
+
 - All property values are **strings** (even booleans/numbers)
 - Common Word props: `text`, `style` (Heading1/Heading2/Normal), `bold`, `italic`, `color`, `font`, `size`
 - Common Excel props: `value`, `bold`, `italic`, `formula`, `format`
 - Common PPT props: `text`, `x`, `y`, `w`, `h` (in EMU units), `font`, `size`, `color`, `fill`
 
 ### Workflow
+
 1. **Create** the document with `action: "create"`
 2. **Add** elements with `action: "add"` (paragraphs, tables, slides, shapes)
 3. **Set** properties with `action: "set"` (cell values, formatting)
@@ -125,7 +128,9 @@ office_doc: {
    presenting the document as ready.
 
 ### Help
+
 When unsure about available element types or properties:
+
 ```
 office_doc: { action: "help", file: "", format: "docx" }
 office_doc: { action: "help", file: "", format: "docx", element: "paragraph" }
@@ -136,6 +141,7 @@ office_doc: { action: "help", file: "", format: "pptx" }
 ## Common Patterns
 
 ### Investment Brief (Word)
+
 1. Create .docx
 2. Add Heading1: "Investment Brief: [Company Name]"
 3. Add Heading2: "Executive Summary" + paragraph
@@ -146,6 +152,7 @@ office_doc: { action: "help", file: "", format: "pptx" }
 8. Save and validate
 
 ### Financial Model (Excel)
+
 1. Create .xlsx
 2. Set header row: Quarter, Revenue, Costs, Profit, Margin
 3. Set data rows with values and formulas
@@ -153,6 +160,7 @@ office_doc: { action: "help", file: "", format: "pptx" }
 5. Save and view
 
 ### Pitch Deck (PowerPoint)
+
 1. Create .pptx
 2. Add slides with title + content textboxes
 3. Use EMU coordinates for positioning (1 inch = 914400 EMU)

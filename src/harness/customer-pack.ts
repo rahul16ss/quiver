@@ -276,7 +276,8 @@ export function diffPacks(before: CustomerPack, after: CustomerPack): PackDiff {
     const a = (after as unknown as Record<string, unknown>)[key];
     if (b === undefined && a !== undefined) added.push(key);
     else if (b !== undefined && a === undefined) removed.push(key);
-    else if (JSON.stringify(b) !== JSON.stringify(a)) changed.push({ path: key, before: b, after: a });
+    else if (JSON.stringify(b) !== JSON.stringify(a))
+      changed.push({ path: key, before: b, after: a });
   }
   return { added, removed, changed };
 }

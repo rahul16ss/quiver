@@ -24,7 +24,7 @@ advice, a legal opinion, or a substitute for counsel's judgment.
 
 Use standard legal citation format:
 
-- **Cases**: *Smith v. Jones*, 123 F.3d 456, 460 (2d Cir. 2024)
+- **Cases**: _Smith v. Jones_, 123 F.3d 456, 460 (2d Cir. 2024)
 - **Statutes**: 15 U.S.C. § 78j(b) (2024)
 - **Regulations**: 17 C.F.R. § 240.10b-5 (2024)
 - **Restatements**: Restatement (Third) of Torts § 7 (2010)
@@ -42,6 +42,7 @@ Use standard legal citation format:
 ## Analysis Structure
 
 For each legal issue, use IRAC format:
+
 - **Issue**: The specific legal question
 - **Rule**: The governing legal rule with citation
 - **Analysis**: Application of the rule to the facts

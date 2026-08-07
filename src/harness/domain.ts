@@ -24,7 +24,13 @@ export interface SecurityIdentity {
   ticker: string;
   exchange: string;
   /** Ticker changes, dual listings, share classes. */
-  aliases?: Array<{ ticker: string; exchange: string; shareClass?: string; from?: string; to?: string }>;
+  aliases?: Array<{
+    ticker: string;
+    exchange: string;
+    shareClass?: string;
+    from?: string;
+    to?: string;
+  }>;
   /** Share class (e.g. "A", "B", "C"). */
   shareClass?: string;
 }
@@ -38,7 +44,8 @@ export interface CorporateAction {
 
 // ─── Periods and calendars ────────────────────────────────────────────
 
-export type PeriodKind = "fiscal-q1" | "fiscal-q2" | "fiscal-q3" | "fiscal-q4" | "fiscal-year" | "half-year" | "calendar";
+export type PeriodKind =
+  "fiscal-q1" | "fiscal-q2" | "fiscal-q3" | "fiscal-q4" | "fiscal-year" | "half-year" | "calendar";
 
 export interface FiscalPeriod {
   kind: PeriodKind;
@@ -107,7 +114,9 @@ export function resolvePrecedence(
   const top = ranked.filter((r) => r.rank === maxRank);
   if (top.length > 1) {
     // Equal precedence + different values → conflicting.
-    const distinct = new Set(top.map((t) => `${t.value.value}|${t.value.currency}|${t.value.scale}`));
+    const distinct = new Set(
+      top.map((t) => `${t.value.value}|${t.value.currency}|${t.value.scale}`),
+    );
     return { winner: top[0].locator, conflicting: distinct.size > 1 };
   }
   return { winner: top[0].locator, conflicting: false };
@@ -125,7 +134,12 @@ export interface MaterialClaim {
   transformation?: string;
   status: FigureStatus;
   /** Reviewer + decision for this individual claim/cell/paragraph. */
-  review?: { reviewer: string; decision: "accepted" | "rejected" | "pending"; at: string; comment?: string };
+  review?: {
+    reviewer: string;
+    decision: "accepted" | "rejected" | "pending";
+    at: string;
+    comment?: string;
+  };
   /** Sensitivity of the underlying data. */
   sensitivity: SensitivityProfile;
 }
@@ -140,8 +154,14 @@ export interface DataEntitlement {
 }
 
 /** Check whether a source category is entitled for a connector. */
-export function isEntitled(entitlements: DataEntitlement[], connector: string, category: SourceCategory): boolean {
-  return entitlements.some((e) => e.connector === connector && e.datasets.includes(category) && e.redistributionAllowed);
+export function isEntitled(
+  entitlements: DataEntitlement[],
+  connector: string,
+  category: SourceCategory,
+): boolean {
+  return entitlements.some(
+    (e) => e.connector === connector && e.datasets.includes(category) && e.redistributionAllowed,
+  );
 }
 
 // ─── Domain normalization checks ──────────────────────────────────────
@@ -154,11 +174,15 @@ export interface NormalizationIssue {
 /** Validate a MaterialClaim carries the mandatory point-in-time + source fields. */
 export function validateMaterialClaim(claim: MaterialClaim): NormalizationIssue[] {
   const issues: NormalizationIssue[] = [];
-  if (!claim.pointInTime?.asOf) issues.push({ field: "pointInTime", message: "missing as-of date" });
+  if (!claim.pointInTime?.asOf)
+    issues.push({ field: "pointInTime", message: "missing as-of date" });
   if (!claim.source?.locator) issues.push({ field: "source", message: "missing source locator" });
-  if (!claim.source?.retrievedAt) issues.push({ field: "source", message: "missing retrieved-at timestamp" });
-  if (claim.value && !claim.value.currency) issues.push({ field: "value", message: "missing currency" });
-  if (claim.value && !claim.value.scale) issues.push({ field: "value", message: "missing scale/unit" });
+  if (!claim.source?.retrievedAt)
+    issues.push({ field: "source", message: "missing retrieved-at timestamp" });
+  if (claim.value && !claim.value.currency)
+    issues.push({ field: "value", message: "missing currency" });
+  if (claim.value && !claim.value.scale)
+    issues.push({ field: "value", message: "missing scale/unit" });
   if (claim.status === "sourced" && !claim.transformation && claim.value === undefined) {
     issues.push({ field: "status", message: "sourced claim has no value" });
   }
@@ -180,13 +204,19 @@ export function reconcileActualEstimate(
   tolerancePct = 0,
 ): { status: FigureStatus; note: string } {
   if (actual && estimate && actual.value && estimate.value) {
-    const sameUnit = actual.value.currency === estimate.value.currency && actual.value.scale === estimate.value.scale;
-    if (!sameUnit) return { status: "conflicting", note: "actual vs estimate unit/currency/scale mismatch" };
+    const sameUnit =
+      actual.value.currency === estimate.value.currency &&
+      actual.value.scale === estimate.value.scale;
+    if (!sameUnit)
+      return { status: "conflicting", note: "actual vs estimate unit/currency/scale mismatch" };
     const diff = Math.abs(actual.value.value - estimate.value.value);
     const base = Math.abs(estimate.value.value) || 1;
     const pct = (diff / base) * 100;
     if (pct > tolerancePct) {
-      return { status: "conflicting", note: `actual vs estimate diverge by ${pct.toFixed(1)}% (tolerance ${tolerancePct}%)` };
+      return {
+        status: "conflicting",
+        note: `actual vs estimate diverge by ${pct.toFixed(1)}% (tolerance ${tolerancePct}%)`,
+      };
     }
     return { status: "sourced", note: "actual within estimate tolerance" };
   }

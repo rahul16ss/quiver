@@ -49,9 +49,24 @@ export interface OfficeCliBinaryPin {
  * engine warns and a production build fails closed on empty checksums.
  */
 export const OFFICECLI_PINS: Record<string, OfficeCliBinaryPin> = {
-  darwin: { version: "1.0.0-quiver-pinned", checksum: "", platform: "darwin", licenseNotices: ["OfficeCLI — see ATTRIBUTION.md"] },
-  win32: { version: "1.0.0-quiver-pinned", checksum: "", platform: "win32", licenseNotices: ["OfficeCLI — see ATTRIBUTION.md.md"] },
-  linux: { version: "1.0.0-quiver-pinned", checksum: "", platform: "linux", licenseNotices: ["OfficeCLI — see ATTRIBUTION.md"] },
+  darwin: {
+    version: "1.0.0-quiver-pinned",
+    checksum: "",
+    platform: "darwin",
+    licenseNotices: ["OfficeCLI — see ATTRIBUTION.md"],
+  },
+  win32: {
+    version: "1.0.0-quiver-pinned",
+    checksum: "",
+    platform: "win32",
+    licenseNotices: ["OfficeCLI — see ATTRIBUTION.md.md"],
+  },
+  linux: {
+    version: "1.0.0-quiver-pinned",
+    checksum: "",
+    platform: "linux",
+    licenseNotices: ["OfficeCLI — see ATTRIBUTION.md"],
+  },
 };
 
 // ─── Runner abstraction ───────────────────────────────────────────────
@@ -76,18 +91,33 @@ export interface OfficeCliRunResult {
 // ─── High-risk detection ──────────────────────────────────────────────
 
 const HIGH_RISK_EXTENSIONS = new Set([".xlsm", ".xlsb", ".docm", ".pptm", ".xltm"]);
-const HIGH_RISK_MARKERS = [/macro/i, /encrypt/i, /IRM/i, /sensitivity/i, /protected/i, /DDE/i, /external link/i];
+const HIGH_RISK_MARKERS = [
+  /macro/i,
+  /encrypt/i,
+  /IRM/i,
+  /sensitivity/i,
+  /protected/i,
+  /DDE/i,
+  /external link/i,
+];
 
 /** Detect high-risk Office files (macro-enabled/encrypted/IRM/sensitivity-labelled). */
-export function detectHighRisk(filePath: string, warnings: string[] = []): { highRisk: boolean; reasons: string[] } {
+export function detectHighRisk(
+  filePath: string,
+  warnings: string[] = [],
+): { highRisk: boolean; reasons: string[] } {
   const reasons: string[] = [];
   const ext = path.extname(filePath).toLowerCase();
   if (HIGH_RISK_EXTENSIONS.has(ext)) {
-    reasons.push(`macro-enabled/legacy extension '${ext}' — read-only/copy-on-write, macros not executed`);
+    reasons.push(
+      `macro-enabled/legacy extension '${ext}' — read-only/copy-on-write, macros not executed`,
+    );
   }
   for (const marker of HIGH_RISK_MARKERS) {
     if (warnings.some((w) => marker.test(w))) {
-      reasons.push(`warning indicates ${marker.source.replace(/[\\/$^]/g, "")} — high-risk treatment`);
+      reasons.push(
+        `warning indicates ${marker.source.replace(/[\\/$^]/g, "")} — high-risk treatment`,
+      );
     }
   }
   return { highRisk: reasons.length > 0, reasons };
@@ -157,7 +187,11 @@ export class OfficeCliEngine implements OfficeEngine {
     return structure;
   }
 
-  async edit(workingCopyPath: string, changes: OfficeChange[], opts: OfficeEditOpts = {}): Promise<OfficeEditResult> {
+  async edit(
+    workingCopyPath: string,
+    changes: OfficeChange[],
+    opts: OfficeEditOpts = {},
+  ): Promise<OfficeEditResult> {
     await this.ensureVerified();
     // High-risk working copies are copy-on-write: never edit the original.
     const target = workingCopyPath;
@@ -168,7 +202,11 @@ export class OfficeCliEngine implements OfficeEngine {
     const res = await this.runner.run(args, { timeoutMs: opts.budget?.timeoutMs });
     cleanup(dataFile);
     if (!res.success) {
-      return { path: target, applied: 0, warnings: parseWarnings(res).concat([res.stderr].filter(Boolean)) };
+      return {
+        path: target,
+        applied: 0,
+        warnings: parseWarnings(res).concat([res.stderr].filter(Boolean)),
+      };
     }
     const applied = parseAppliedCount(res);
     // Read-back verification: an edit that the binary cannot re-validate is
@@ -187,7 +225,9 @@ export class OfficeCliEngine implements OfficeEngine {
 
   async validate(filePath: string, opts: OfficeOpts = {}): Promise<OfficeValidationResult> {
     await this.ensureVerified();
-    const res = await this.runner.run(["validate", filePath, "--json"], { timeoutMs: opts.budget?.timeoutMs });
+    const res = await this.runner.run(["validate", filePath, "--json"], {
+      timeoutMs: opts.budget?.timeoutMs,
+    });
     const warnings = parseWarnings(res);
     const errors = res.success ? [] : [res.stderr || `validation failed (exit ${res.exitCode})`];
     return { ok: res.success && errors.length === 0, errors, warnings };
@@ -209,11 +249,18 @@ export class OfficeCliEngine implements OfficeEngine {
 
   async compare(before: string, after: string, opts: OfficeOpts = {}): Promise<ArtifactDiff> {
     await this.ensureVerified();
-    const res = await this.runner.run(["compare", before, after, "--json"], { timeoutMs: opts.budget?.timeoutMs });
+    const res = await this.runner.run(["compare", before, after, "--json"], {
+      timeoutMs: opts.budget?.timeoutMs,
+    });
     const changes = (res.json as any)?.changes ?? [];
     return {
       semantic: (res.json as any)?.summary ?? `${changes.length} change(s)`,
-      changes: changes.map((c: any) => ({ kind: c.kind ?? "paragraph", locator: c.locator ?? "", before: c.before, after: c.after })),
+      changes: changes.map((c: any) => ({
+        kind: c.kind ?? "paragraph",
+        locator: c.locator ?? "",
+        before: c.before,
+        after: c.after,
+      })),
     };
   }
 }
@@ -221,7 +268,10 @@ export class OfficeCliEngine implements OfficeEngine {
 // ─── Real runner (shells out to the pinned binary) ────────────────────
 
 export class ShellOfficeCliRunner implements OfficeCliRunner {
-  constructor(private binPath: string, private pinEntry: OfficeCliBinaryPin) {}
+  constructor(
+    private binPath: string,
+    private pinEntry: OfficeCliBinaryPin,
+  ) {}
 
   binaryPath(): string | null {
     return fs.existsSync(this.binPath) ? this.binPath : null;
@@ -231,15 +281,33 @@ export class ShellOfficeCliRunner implements OfficeCliRunner {
     return this.pinEntry;
   }
 
-  async run(args: string[], opts: { cwd?: string; timeoutMs?: number } = {}): Promise<OfficeCliRunResult> {
+  async run(
+    args: string[],
+    opts: { cwd?: string; timeoutMs?: number } = {},
+  ): Promise<OfficeCliRunResult> {
     const { execFile } = await import("child_process");
     return new Promise((resolve) => {
-      execFile(this.binPath, args, { maxBuffer: 10 * 1024 * 1024, cwd: opts.cwd, timeout: opts.timeoutMs ?? 30_000 }, (err, stdout, stderr) => {
-        const exitCode = err ? (typeof err.code === "number" ? err.code : 1) : 0;
-        let json: unknown;
-        try { json = stdout ? JSON.parse(stdout) : undefined; } catch { json = undefined; }
-        resolve({ success: exitCode === 0, stdout: stdout.trim(), stderr: stderr.trim(), exitCode, json });
-      });
+      execFile(
+        this.binPath,
+        args,
+        { maxBuffer: 10 * 1024 * 1024, cwd: opts.cwd, timeout: opts.timeoutMs ?? 30_000 },
+        (err, stdout, stderr) => {
+          const exitCode = err ? (typeof err.code === "number" ? err.code : 1) : 0;
+          let json: unknown;
+          try {
+            json = stdout ? JSON.parse(stdout) : undefined;
+          } catch {
+            json = undefined;
+          }
+          resolve({
+            success: exitCode === 0,
+            stdout: stdout.trim(),
+            stderr: stderr.trim(),
+            exitCode,
+            json,
+          });
+        },
+      );
     });
   }
 }
@@ -260,7 +328,7 @@ function parseWarnings(res: OfficeCliRunResult): string[] {
 
 function parseAppliedCount(res: OfficeCliRunResult): number {
   const n = (res.json as any)?.applied;
-  return typeof n === "number" ? n : (res.success ? 1 : 0);
+  return typeof n === "number" ? n : res.success ? 1 : 0;
 }
 
 function parseStructure(res: OfficeCliRunResult, filePath: string): OfficeStructure {
@@ -279,14 +347,23 @@ function parseStructure(res: OfficeCliRunResult, filePath: string): OfficeStruct
 
 function extToMime(ext: string): string {
   switch (ext) {
-    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    case ".pdf": return "application/pdf";
-    default: return "application/octet-stream";
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".pdf":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
   }
 }
 
 function cleanup(p: string): void {
-  try { fs.unlinkSync(p); } catch { /* ignore */ }
+  try {
+    fs.unlinkSync(p);
+  } catch {
+    /* ignore */
+  }
 }

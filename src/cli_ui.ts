@@ -104,28 +104,21 @@ const identity = {
   white: (s: string) => s,
 };
 
-export function supportsColor(
-  stream: NodeJS.WriteStream = process.stdout,
-): boolean {
+export function supportsColor(stream: NodeJS.WriteStream = process.stdout): boolean {
   if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR !== "") {
     return false;
   }
   if (process.env.QUIVER_NO_COLOR === "1") {
     return false;
   }
-  if (
-    process.env.FORCE_COLOR !== undefined &&
-    process.env.FORCE_COLOR !== "0"
-  ) {
+  if (process.env.FORCE_COLOR !== undefined && process.env.FORCE_COLOR !== "0") {
     return true;
   }
   return stream.isTTY === true;
 }
 
 /** Theme with semantic color aliases. */
-export function theme(
-  stream: NodeJS.WriteStream = process.stdout,
-): QuiverTheme {
+export function theme(stream: NodeJS.WriteStream = process.stdout): QuiverTheme {
   const useColor = supportsColor(stream);
   const pc = useColor ? picocolors : identity;
 
@@ -140,9 +133,7 @@ export function theme(
     info: pc.blue,
     dry: pc.cyan,
     promptUser: () => pc.bold(pc.cyan("❯ ")),
-    promptAgent: () =>
-      pc.bold(pc.cyan("❯ ")) +
-      pc.gray(`[${config.llmModelName}] `),
+    promptAgent: () => pc.bold(pc.cyan("❯ ")) + pc.gray(`[${config.llmModelName}] `),
     brandBorder: pc.gray,
     brandBar: pc.cyan,
   };
@@ -366,9 +357,7 @@ export class UsageError extends Error {
 }
 
 export function emitJson(
-  payload:
-    | Record<string, unknown>
-    | { type: string; data?: Record<string, unknown> },
+  payload: Record<string, unknown> | { type: string; data?: Record<string, unknown> },
   stream: NodeJS.WriteStream = process.stdout,
 ): void {
   stream.write(`${JSON.stringify(payload)}\n`);
@@ -378,15 +367,9 @@ export function printUnknownFlagHints(flags: string[]): void {
   for (const flag of flags) {
     const suggestion = suggestFlag(flag);
     if (suggestion) {
-      statusLine(
-        "WARN",
-        `Unknown flag '${flag}'. Did you mean '${suggestion}'?`,
-      );
+      statusLine("WARN", `Unknown flag '${flag}'. Did you mean '${suggestion}'?`);
     } else {
-      statusLine(
-        "WARN",
-        `Unknown flag '${flag}'. Run 'quiver --help' for options.`,
-      );
+      statusLine("WARN", `Unknown flag '${flag}'. Run 'quiver --help' for options.`);
     }
   }
 }
@@ -398,15 +381,13 @@ export function printUnknownFlagHints(flags: string[]): void {
 // ───────────────────────────────────────────────────────────────────────
 
 /** Card — one box style across the TUI (signin/init/deliverable/update/ask). */
-export function card(
-  opts: {
-    title?: string;
-    body: string[];
-    footer?: string;
-    accent?: "brand" | "success" | "warning" | "danger" | "muted";
-    stream?: NodeJS.WriteStream;
-  },
-): void {
+export function card(opts: {
+  title?: string;
+  body: string[];
+  footer?: string;
+  accent?: "brand" | "success" | "warning" | "danger" | "muted";
+  stream?: NodeJS.WriteStream;
+}): void {
   const s = opts.stream ?? process.stdout;
   const t = theme(s);
   const cols = Math.min(s.columns && s.columns > 0 ? s.columns : 80, 100);
@@ -428,7 +409,13 @@ export function card(
       .map((l) => l.padEnd(stringWidth(l) + Math.max(0, innerW - 2 - stringWidth(l))))
       .join("\n");
 
-  const tl = "╭", tr = "╮", bl = "╰", br = "╯", side = "│", mid = "├", midr = "┤";
+  const tl = "╭",
+    tr = "╮",
+    bl = "╰",
+    br = "╯",
+    side = "│",
+    mid = "├",
+    midr = "┤";
 
   if (opts.title) {
     const titleLine = ` ${opts.title} `;
@@ -480,6 +467,12 @@ export function welcome(opts: {
   const s = opts.stream ?? process.stdout;
   const t = theme(s);
   s.write("\n");
-  s.write(t.muted("  Quiver ") + t.bold(t.brand(`v${opts.version}`)) + t.muted(` · ${opts.model}`) + (opts.modeSuffix ?? "") + "\n");
+  s.write(
+    t.muted("  Quiver ") +
+      t.bold(t.brand(`v${opts.version}`)) +
+      t.muted(` · ${opts.model}`) +
+      (opts.modeSuffix ?? "") +
+      "\n",
+  );
   s.write(t.muted("  /help for commands") + "\n\n");
 }

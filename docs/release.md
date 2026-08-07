@@ -7,6 +7,7 @@
 > convenience. Interactive surface: loopback browser UI via the harness daemon.
 
 ### Homebrew (macOS) — developer convenience
+
 ```bash
 brew tap rahul16ss/quiver
 brew install quiver
@@ -15,6 +16,7 @@ brew install quiver
 Formula: `Formula/quiver.rb` — **automatically repinned on every release tag** by the `update-homebrew-formula` job in `.github/workflows/release.yml` (runs `scripts/update_formula.js` to update the url, sha256, and version, then commits and pushes). To update manually: `npm run update-formula [tag]`.
 
 ### npm (global install from a clone)
+
 ```bash
 git clone https://github.com/rahul16ss/quiver.git
 cd quiver
@@ -22,6 +24,7 @@ npm install -g .
 ```
 
 ### Source
+
 ```bash
 git clone https://github.com/rahul16ss/quiver.git
 cd quiver
@@ -32,6 +35,7 @@ npm start   # loopback browser UI via harness daemon
 ## Versioning
 
 Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
+
 - **MAJOR:** Breaking changes to session schema or config
 - **MINOR:** New features, backward-compatible
 - **PATCH:** Bug fixes, security patches

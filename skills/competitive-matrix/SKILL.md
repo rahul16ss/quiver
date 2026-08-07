@@ -23,18 +23,18 @@ freshness, evidence, and interpretation must remain visible.
 
 Include at least 5 of these dimensions in the table:
 
-| Dimension | Description |
-|---|---|
-| Pricing | Price range, pricing model (subscription, usage-based, freemium) |
-| Key Features | 3-5 flagship features that differentiate |
-| Target Market | Who they sell to (enterprise, SMB, consumer, specific industry) |
-| Funding/Revenue | Total raised, last round, or estimated revenue |
-| Geographic Coverage | Regions/countries served |
-| Market Share | Estimated or stated market share |
-| Key Customers | Notable clients (if publicly known) |
-| Technology | Tech stack or platform approach |
-| Strengths | 2-3 competitive advantages |
-| Weaknesses | 2-3 competitive disadvantages |
+| Dimension           | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| Pricing             | Price range, pricing model (subscription, usage-based, freemium) |
+| Key Features        | 3-5 flagship features that differentiate                         |
+| Target Market       | Who they sell to (enterprise, SMB, consumer, specific industry)  |
+| Funding/Revenue     | Total raised, last round, or estimated revenue                   |
+| Geographic Coverage | Regions/countries served                                         |
+| Market Share        | Estimated or stated market share                                 |
+| Key Customers       | Notable clients (if publicly known)                              |
+| Technology          | Tech stack or platform approach                                  |
+| Strengths           | 2-3 competitive advantages                                       |
+| Weaknesses          | 2-3 competitive disadvantages                                    |
 
 ## Rules
 

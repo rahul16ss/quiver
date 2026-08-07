@@ -131,10 +131,16 @@ function mapToolArgs(toolName: string, args: Record<string, unknown>): Record<st
     case "entity_search":
       return { query: args.query ?? args.q ?? "", opts: { sensitivity: "public" } };
     case "scrape_url":
-      return { urls: Array.isArray(args.urls) ? args.urls : [args.url].filter(Boolean), opts: { sensitivity: "public" } };
+      return {
+        urls: Array.isArray(args.urls) ? args.urls : [args.url].filter(Boolean),
+        opts: { sensitivity: "public" },
+      };
     case "deep_research":
     case "find_all":
-      return { input: args.query ?? args.objective ?? args.input ?? "", opts: { sensitivity: "public" } };
+      return {
+        input: args.query ?? args.objective ?? args.input ?? "",
+        opts: { sensitivity: "public" },
+      };
     default:
       return args;
   }

@@ -14,10 +14,7 @@
 import { DatabaseSync } from "node:sqlite";
 import * as path from "path";
 import * as fs from "fs";
-import {
-  BaseCheckpointSaver,
-  getCheckpointId,
-} from "@langchain/langgraph-checkpoint";
+import { BaseCheckpointSaver, getCheckpointId } from "@langchain/langgraph-checkpoint";
 import type {
   Checkpoint,
   CheckpointMetadata,
@@ -34,10 +31,14 @@ function assertSafeKey(field: string, value: unknown, opts: { allowEmpty?: boole
     throw new Error(`Invalid configurable value for key "${field}": expected a string identifier.`);
   }
   if (!opts.allowEmpty && value === "") {
-    throw new Error(`Invalid configurable value for key "${field}": empty string is not permitted.`);
+    throw new Error(
+      `Invalid configurable value for key "${field}": empty string is not permitted.`,
+    );
   }
   if (POLLUTION_KEYS.has(value)) {
-    throw new Error(`Invalid configurable value for key "${field}": value "${value}" is reserved (prototype pollution guard).`);
+    throw new Error(
+      `Invalid configurable value for key "${field}": value "${value}" is reserved (prototype pollution guard).`,
+    );
   }
 }
 
@@ -49,7 +50,10 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
    *               (useful for tests).
    * @param serde Optional serializer; defaults to the base saver's JsonPlusSerializer.
    */
-  constructor(dbPath: string, serde?: import("@langchain/langgraph-checkpoint").SerializerProtocol) {
+  constructor(
+    dbPath: string,
+    serde?: import("@langchain/langgraph-checkpoint").SerializerProtocol,
+  ) {
     super(serde);
     if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new DatabaseSync(dbPath);
@@ -99,71 +103,149 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
     let row: any;
     if (checkpointId) {
       row = this.db
-        .prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?")
+        .prepare(
+          "SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
+        )
         .get(threadId, ns, checkpointId);
     } else {
       row = this.db
-        .prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC LIMIT 1")
+        .prepare(
+          "SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC LIMIT 1",
+        )
         .get(threadId, ns);
     }
     if (!row) return undefined;
 
-    const checkpoint = (await this.serde.loadsTyped("json", row.checkpoint as Uint8Array)) as Checkpoint;
-    const metadata = (await this.serde.loadsTyped("json", row.metadata as Uint8Array)) as CheckpointMetadata;
+    const checkpoint = (await this.serde.loadsTyped(
+      "json",
+      row.checkpoint as Uint8Array,
+    )) as Checkpoint;
+    const metadata = (await this.serde.loadsTyped(
+      "json",
+      row.metadata as Uint8Array,
+    )) as CheckpointMetadata;
 
     const writes = this.db
-      .prepare("SELECT task_id, channel, value FROM writes WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=? ORDER BY idx")
-      .all(threadId, ns, row.checkpoint_id) as Array<{ task_id: string; channel: string; value: Uint8Array }>;
+      .prepare(
+        "SELECT task_id, channel, value FROM writes WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=? ORDER BY idx",
+      )
+      .all(threadId, ns, row.checkpoint_id) as Array<{
+      task_id: string;
+      channel: string;
+      value: Uint8Array;
+    }>;
     const pendingWrites = await Promise.all(
-      writes.map(async (w) => [w.task_id, w.channel, await this.serde.loadsTyped("json", w.value)] as [string, string, unknown]),
+      writes.map(
+        async (w) =>
+          [w.task_id, w.channel, await this.serde.loadsTyped("json", w.value)] as [
+            string,
+            string,
+            unknown,
+          ],
+      ),
     );
 
     const tuple: CheckpointTuple = {
-      config: { configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: row.checkpoint_id } },
+      config: {
+        configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: row.checkpoint_id },
+      },
       checkpoint,
       metadata,
       pendingWrites,
     };
     if (row.parent_checkpoint_id) {
-      tuple.parentConfig = { configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: row.parent_checkpoint_id } };
+      tuple.parentConfig = {
+        configurable: {
+          thread_id: threadId,
+          checkpoint_ns: ns,
+          checkpoint_id: row.parent_checkpoint_id,
+        },
+      };
     }
     return tuple;
   }
 
-  async *list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple> {
+  async *list(
+    config: RunnableConfig,
+    options?: CheckpointListOptions,
+  ): AsyncGenerator<CheckpointTuple> {
     const { threadId, ns } = this.ns(config);
     const beforeId = options?.before?.configurable?.checkpoint_id;
     const rows = beforeId
-      ? this.db.prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND created_at < (SELECT created_at FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?) ORDER BY created_at DESC").all(threadId, ns, threadId, ns, beforeId)
-      : this.db.prepare("SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC").all(threadId, ns);
+      ? this.db
+          .prepare(
+            "SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND created_at < (SELECT created_at FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?) ORDER BY created_at DESC",
+          )
+          .all(threadId, ns, threadId, ns, beforeId)
+      : this.db
+          .prepare(
+            "SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=? ORDER BY rowid DESC",
+          )
+          .all(threadId, ns);
     for (const row of rows as Array<any>) {
-      const checkpoint = (await this.serde.loadsTyped("json", row.checkpoint as Uint8Array)) as Checkpoint;
-      const metadata = (await this.serde.loadsTyped("json", row.metadata as Uint8Array)) as CheckpointMetadata;
+      const checkpoint = (await this.serde.loadsTyped(
+        "json",
+        row.checkpoint as Uint8Array,
+      )) as Checkpoint;
+      const metadata = (await this.serde.loadsTyped(
+        "json",
+        row.metadata as Uint8Array,
+      )) as CheckpointMetadata;
       const tuple: CheckpointTuple = {
-        config: { configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: row.checkpoint_id } },
+        config: {
+          configurable: {
+            thread_id: threadId,
+            checkpoint_ns: ns,
+            checkpoint_id: row.checkpoint_id,
+          },
+        },
         checkpoint,
         metadata,
       };
       if (row.parent_checkpoint_id) {
-        tuple.parentConfig = { configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: row.parent_checkpoint_id } };
+        tuple.parentConfig = {
+          configurable: {
+            thread_id: threadId,
+            checkpoint_ns: ns,
+            checkpoint_id: row.parent_checkpoint_id,
+          },
+        };
       }
       yield tuple;
       if (options?.limit && --(options.limit as number) <= 0) return;
     }
   }
 
-  async put(config: RunnableConfig, checkpoint: Checkpoint, metadata: CheckpointMetadata): Promise<RunnableConfig> {
+  async put(
+    config: RunnableConfig,
+    checkpoint: Checkpoint,
+    metadata: CheckpointMetadata,
+  ): Promise<RunnableConfig> {
     const { threadId, ns } = this.ns(config);
     const parentId = config.configurable?.checkpoint_id;
     const [ckptType, ckptData] = await this.serde.dumpsTyped(checkpoint);
     const [metaType, metaData] = await this.serde.dumpsTyped(metadata);
     if (ckptType !== "json" || metaType !== "json") {
-      throw new Error(`SqliteCheckpointSaver only supports json serde (got ${ckptType}/${metaType}).`);
+      throw new Error(
+        `SqliteCheckpointSaver only supports json serde (got ${ckptType}/${metaType}).`,
+      );
     }
     this.db
-      .prepare("INSERT OR REPLACE INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata, created_at) VALUES (?,?,?,?,?,?,?)")
-      .run(threadId, ns, checkpoint.id, parentId ?? null, Buffer.from(ckptData), Buffer.from(metaData), checkpoint.ts);
-    return { configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: checkpoint.id } };
+      .prepare(
+        "INSERT OR REPLACE INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata, created_at) VALUES (?,?,?,?,?,?,?)",
+      )
+      .run(
+        threadId,
+        ns,
+        checkpoint.id,
+        parentId ?? null,
+        Buffer.from(ckptData),
+        Buffer.from(metaData),
+        checkpoint.ts,
+      );
+    return {
+      configurable: { thread_id: threadId, checkpoint_ns: ns, checkpoint_id: checkpoint.id },
+    };
   }
 
   async putWrites(config: RunnableConfig, writes: PendingWrite[], taskId: string): Promise<void> {
@@ -172,9 +254,12 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
     let idx = 0;
     for (const [channel, value] of writes) {
       const [type, data] = await this.serde.dumpsTyped(value);
-      if (type !== "json") throw new Error(`SqliteCheckpointSaver only supports json serde (got ${type}).`);
+      if (type !== "json")
+        throw new Error(`SqliteCheckpointSaver only supports json serde (got ${type}).`);
       this.db
-        .prepare("INSERT OR REPLACE INTO writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, value) VALUES (?,?,?,?,?,?,?)")
+        .prepare(
+          "INSERT OR REPLACE INTO writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, value) VALUES (?,?,?,?,?,?,?)",
+        )
         .run(threadId, ns, checkpointId, taskId, idx++, channel, Buffer.from(data));
     }
   }

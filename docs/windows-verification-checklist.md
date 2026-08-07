@@ -58,13 +58,13 @@ the **loopback browser UI** served by the harness daemon (`npm start` /
 
 ## Sign-off
 
-| Check | Pass? | Notes |
-| :--- | :--- | :--- |
-| Browser UI launch | | |
-| Credential Manager storage | | |
-| Daemon autostart | | |
-| IC memo demo | | |
-| Evidence hard gate | | |
-| Consent / air-gap | | |
+| Check                      | Pass? | Notes |
+| :------------------------- | :---- | :---- |
+| Browser UI launch          |       |       |
+| Credential Manager storage |       |       |
+| Daemon autostart           |       |       |
+| IC memo demo               |       |       |
+| Evidence hard gate         |       |       |
+| Consent / air-gap          |       |       |
 
-Owner sign-off: ________________  Date: ________
+Owner sign-off: ________________ Date: ________

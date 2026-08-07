@@ -31,24 +31,32 @@ It implements the full 6-phase lifecycle promised by Conviction Studio:
 Workflows can be launched in three modes:
 
 ### Manual / On-Demand
+
 Execute a workflow pack immediately via the CLI or REPL:
+
 ```bash
 quiver workflow run investment-committee-memo
 ```
+
 or inside the interactive REPL:
+
 ```text
 /workflow run investment-committee-memo
 ```
 
 ### Cron Scheduler (`WorkflowScheduler`)
+
 Set up recurring background executions. Stored in `~/.quiver/schedules.json` and executed by the daemon:
+
 ```bash
 # Run every Monday at 8:00 AM
 quiver workflow schedule investment-committee-memo --cron "0 8 * * 1"
 ```
 
 ### File System Watcher (`WorkflowWatcher`)
+
 Monitor input folders (e.g. VDR drops, earnings release directories) and auto-trigger workflows upon file arrival:
+
 ```bash
 quiver workflow watch post-earnings-evidence-pack --dir ./inbox --pattern "*.pdf"
 ```
@@ -70,6 +78,7 @@ Review status can be inspected and updated programmatically or via REPL commands
 ## 4. Workflow Pack Layout
 
 Every workflow pack lives under `workflow-packs/<family>/<pack-name>/` and contains:
+
 - `workflow.yaml` — Declarative manifest detailing inputs, deliverable sections, review roles, and outputs.
 - `acceptance-checklist.yaml` — Structural and numeric validation rules.
 - `expected-structure.json` — Drift detection baseline file.

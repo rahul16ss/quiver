@@ -25,46 +25,51 @@ import * as path from "node:path";
 
 /** A minimal key→value durable store seam (persisted snapshot or KV backend). */
 export interface CursorKV {
-	get(key: string): Promise<string | null>;
-	set(key: string, value: string): Promise<void>;
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
 }
 
 /** In-memory KV for tests/ambient use (not durable across process). */
 export class InMemoryCursorKV implements CursorKV {
-	private map = new Map<string, string>();
-	async get(key: string): Promise<string | null> { return this.map.get(key) ?? null; }
-	async set(key: string, value: string): Promise<void> { this.map.set(key, value); }
-}/**
+  private map = new Map<string, string>();
+  async get(key: string): Promise<string | null> {
+    return this.map.get(key) ?? null;
+  }
+  async set(key: string, value: string): Promise<void> {
+    this.map.set(key, value);
+  }
+} /**
  * Durable, SQLite-backed cursor KV — production backend so cursors survive
  * process restarts (Node's built-in `node:sqlite`, no extra dependency).
  */
 export class SqliteCursorKV implements CursorKV {
-	private db: DatabaseSync;
+  private db: DatabaseSync;
 
-	constructor(dbPath: string) {
-		if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-		this.db = new DatabaseSync(dbPath);
-		this.db.exec(
-			"CREATE TABLE IF NOT EXISTS durable_cursors (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;",
-		);
-	}
+  constructor(dbPath: string) {
+    if (dbPath !== ":memory:") fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    this.db = new DatabaseSync(dbPath);
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS durable_cursors (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;",
+    );
+  }
 
-	async get(key: string): Promise<string | null> {
-		const row = this.db.prepare("SELECT value FROM durable_cursors WHERE key = ?").get(key) as
-			| { value: string }
-			| undefined;
-		return row?.value ?? null;
-	}
+  async get(key: string): Promise<string | null> {
+    const row = this.db.prepare("SELECT value FROM durable_cursors WHERE key = ?").get(key) as
+      { value: string } | undefined;
+    return row?.value ?? null;
+  }
 
-	async set(key: string, value: string): Promise<void> {
-		this.db
-			.prepare("INSERT INTO durable_cursors (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?")
-			.run(key, value, value);
-	}
+  async set(key: string, value: string): Promise<void> {
+    this.db
+      .prepare(
+        "INSERT INTO durable_cursors (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+      )
+      .run(key, value, value);
+  }
 
-	close(): void {
-		this.db.close();
-	}
+  close(): void {
+    this.db.close();
+  }
 }
 
 /**
@@ -74,53 +79,53 @@ export class SqliteCursorKV implements CursorKV {
  * resumed from exactly where it stopped: nothing missed, nothing re-applied.
  */
 export class DurableCursorStore {
-	constructor(private kv: CursorKV) {}
+  constructor(private kv: CursorKV) {}
 
-	private key(scope: string): string {
-		return `quiver:cursor:${scope}`;
-	}
+  private key(scope: string): string {
+    return `quiver:cursor:${scope}`;
+  }
 
-	/** Last persisted cursor for a scope, or null if never advanced. */
-	async get(scope: string): Promise<string | null> {
-		return this.kv.get(this.key(scope));
-	}
+  /** Last persisted cursor for a scope, or null if never advanced. */
+  async get(scope: string): Promise<string | null> {
+    return this.kv.get(this.key(scope));
+  }
 
-	/**
-	 * Atomically advance a scope's cursor to `next`.
-	 * First-writer-wins: returns true only when `next` was persisted here.
-	 * Returns false if a concurrent/fresher cursor was already applied, so the
-	 * caller must not re-apply `next`'s change window.
-	 */
-	async advance(scope: string, next: string): Promise<boolean> {
-		const current = await this.get(scope);
-		if (current === next) return false; // already at this cursor (idempotent)
-		await this.kv.set(this.key(scope), next);
-		return true;
-	}
+  /**
+   * Atomically advance a scope's cursor to `next`.
+   * First-writer-wins: returns true only when `next` was persisted here.
+   * Returns false if a concurrent/fresher cursor was already applied, so the
+   * caller must not re-apply `next`'s change window.
+   */
+  async advance(scope: string, next: string): Promise<boolean> {
+    const current = await this.get(scope);
+    if (current === next) return false; // already at this cursor (idempotent)
+    await this.kv.set(this.key(scope), next);
+    return true;
+  }
 
-	/**
-	 * Compute the exact `since` for the next poll and the cursor to persist
-	 * after applying, given the raw cursor this scope currently holds.
-	 *
-	 * `loader(cursor)` maps the persisted cursor to the provider's `since`. A
-	 * null/cold cursor returns `since=null` (start at the beginning); a cursor
-	 * at `nextCursor` means we're already up to date.
-	 */
-	async planNext(
-		scope: string,
-		loader: (cursor: string | null) => Promise<{ since?: string | null; nextCursor?: string }>,
-		applyWindow: (since: string | null) => Promise<string | null>,
-	): Promise<{ applied: boolean; nextCursor: string | null }> {
-		const held = await this.get(scope);
-		const plan = await loader(held);
-		const since = plan.since ?? null;
-		const applied = await applyWindow(since);
-		if (applied === null) return { applied: false, nextCursor: held };
-		// Persist the cursor the provider returned as "up to here" (first-wins
-		// guards against racing ambient workers).
-		await this.advance(scope, applied);
-		return { applied: true, nextCursor: applied };
-	}
+  /**
+   * Compute the exact `since` for the next poll and the cursor to persist
+   * after applying, given the raw cursor this scope currently holds.
+   *
+   * `loader(cursor)` maps the persisted cursor to the provider's `since`. A
+   * null/cold cursor returns `since=null` (start at the beginning); a cursor
+   * at `nextCursor` means we're already up to date.
+   */
+  async planNext(
+    scope: string,
+    loader: (cursor: string | null) => Promise<{ since?: string | null; nextCursor?: string }>,
+    applyWindow: (since: string | null) => Promise<string | null>,
+  ): Promise<{ applied: boolean; nextCursor: string | null }> {
+    const held = await this.get(scope);
+    const plan = await loader(held);
+    const since = plan.since ?? null;
+    const applied = await applyWindow(since);
+    if (applied === null) return { applied: false, nextCursor: held };
+    // Persist the cursor the provider returned as "up to here" (first-wins
+    // guards against racing ambient workers).
+    await this.advance(scope, applied);
+    return { applied: true, nextCursor: applied };
+  }
 }
 
 /**
@@ -133,14 +138,14 @@ export class DurableCursorStore {
  * missed window, no re-apply.
  */
 export async function cursorPoll<R>(
-	store: DurableCursorStore,
-	scope: string,
-	rawPoll: (since: string | null) => Promise<{ changes: R[]; nextCursor?: string }>,
+  store: DurableCursorStore,
+  scope: string,
+  rawPoll: (since: string | null) => Promise<{ changes: R[]; nextCursor?: string }>,
 ): Promise<R[]> {
-	const held = await store.get(scope);
-	const res = await rawPoll(held);
-	if (res.nextCursor) {
-		await store.advance(scope, res.nextCursor);
-	}
-	return res.changes;
+  const held = await store.get(scope);
+  const res = await rawPoll(held);
+  if (res.nextCursor) {
+    await store.advance(scope, res.nextCursor);
+  }
+  return res.changes;
 }

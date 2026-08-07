@@ -25,12 +25,14 @@ export interface HarnessAdapter {
 ## Built-in Adapters
 
 ### DefaultAdapter
+
 - **ID:** `default`
 - **Compatibility:** All OpenAI-compatible models
 - **Citation Style:** XML (`<memory-citation doc="file">`)
 - **Edit Mode:** string_replace
 
 ### GLMAdapter
+
 - **ID:** `glm`
 - **Compatibility:** GLM-5.2 and GLM-family models
 - **Context Window:** 128K tokens
@@ -38,6 +40,7 @@ export interface HarnessAdapter {
 - **Citation Style:** XML
 
 ### ClaudeAdapter
+
 - **ID:** `claude`
 - **Compatibility:** Anthropic Claude models
 - **Context Window:** 200K tokens
@@ -61,6 +64,7 @@ export interface AdapterDefaults {
 ## Registration
 
 Custom adapters can be registered via `registerAdapter()`. The system automatically selects the best adapter for a given model via `getAdapterForModel()`.
+
 ## Selection & Wiring
 
 `getAdapterForModel(model)` evaluates **specific adapters first** (Claude, GLM)

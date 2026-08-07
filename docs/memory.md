@@ -7,12 +7,16 @@ Quiver implements multiple distinct memory structures, all stored as plain text 
 ## Memory Layers
 
 ### 1. Core Memory (`~/.quiver/core.json`)
+
 Global identity and human context, shared across all projects:
+
 - `identity` — Engagement preferences (tone/audience hints). Product role identity lives only in `skills/system-prompt/SKILL.md`.
 - `human_context` — Who the user is
 
 ### 2. Project Memory (`~/.quiver/projects/{project_id}/memory/`)
+
 Per-project memory files:
+
 - `project.json` — Project context and metadata
 - `persona.txt` — Agent behavior notes
 - `user-preferences.md` — User preferences
@@ -20,6 +24,7 @@ Per-project memory files:
 - `facts.jsonl` — Structured memory facts with provenance
 
 ### 3. Session Memory (`~/.quiver/projects/{project_id}/.sessions/`)
+
 - Session logs (JSON)
 - Checkpoints for crash recovery
 - Compacted conversation archives
@@ -45,6 +50,7 @@ Per-project memory files:
 ```
 
 ## Memory Types
+
 - `workspace_fact` — Facts about the project structure
 - `user_preference` — User's coding preferences
 - `code_behavior` — How code behaves or should behave
@@ -53,6 +59,7 @@ Per-project memory files:
 - `skill_accretion` — Learned skills
 
 ## Privacy Labels
+
 - `public` — Safe for remote models
 - `project` — Project-scoped, only for approved models
 - `private` — Only sent to remote with explicit opt-in
@@ -61,6 +68,7 @@ Per-project memory files:
 ## Review Queue
 
 Extracted facts start as `pending`. User can:
+
 - **Accept** — Fact enters active prompt assembly
 - **Edit** — Modify content then accept
 - **Reject** — Delete the fact
@@ -73,17 +81,20 @@ GUI: Memory review panel
 ## Citation Tracking
 
 The harness adapter enforces citation tags in model output:
+
 ```xml
 <memory-citation doc="user-preferences.md">...</memory-citation>
 ```
 
 Citations are parsed and tracked in `usage_stats.json`:
+
 - `hit_count` — Number of times cited
 - `last_used` — Last citation timestamp
 
 ## Memory Decay
 
 Unused memories decay with a half-life function:
+
 ```
 decay_score = hit_count × 0.5^(elapsed_days / half_life_days)
 ```
@@ -108,10 +119,12 @@ editable · consented" requirement of SPEC §6.1 layer B for memory.
 ## Learning from sessions
 
 Learning is **opt-in and user-gated**, not an automatic background hook:
+
 - The `continual_learning` tool mines past session transcripts for high-signal
   patterns (repeated corrections, durable workspace facts).
 - Extracted facts enter the **pending review queue** — nothing becomes permanent
   context until you Accept, Edit, or Reject it.
+
 ## Wiring into the agent loop
 
 Privacy, citations, and decay are applied by the real loop, not just exported

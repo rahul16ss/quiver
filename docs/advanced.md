@@ -7,32 +7,32 @@ engagement decision.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Show available commands |
-| `/tools` | List all tools |
-| `/config` | Show configuration |
-| `/model <name>` | Change model |
-| `/compact` | Compact conversation history |
-| `/reset` | Reset conversation (keeps memory) |
-| `/resume` | Resume a previous session |
-| `/exit` | End session (auto-saves) |
-| `/mcp` | Show MCP server connections |
-| `/autonomy` | Trust tiers & grants (add/remove grants, sandbox) |
-| `/sandbox` | Toggle path sandbox on/off (highest trust tier required to disable) |
+| Command         | Description                                                         |
+| --------------- | ------------------------------------------------------------------- |
+| `/help`         | Show available commands                                             |
+| `/tools`        | List all tools                                                      |
+| `/config`       | Show configuration                                                  |
+| `/model <name>` | Change model                                                        |
+| `/compact`      | Compact conversation history                                        |
+| `/reset`        | Reset conversation (keeps memory)                                   |
+| `/resume`       | Resume a previous session                                           |
+| `/exit`         | End session (auto-saves)                                            |
+| `/mcp`          | Show MCP server connections                                         |
+| `/autonomy`     | Trust tiers & grants (add/remove grants, sandbox)                   |
+| `/sandbox`      | Toggle path sandbox on/off (highest trust tier required to disable) |
 
 ## Trust tiers (internal names)
 
 Quiver's permissioning is an incremental ladder from most-restrictive to
 fully-unrestricted, persisted per project to `~/.quiver/projects/<id>/permissions.json`.
 
-| Tier | Grants | Read scope | Sandbox |
-|------|--------|-----------|---------|
-| `observe` | none — every state change prompts | workspace only | on |
-| `propose` | + workspace writes, todo/memory | workspace | on |
-| `build` | + safe/moderate shell, web tools | workspace + home | on |
-| `operate` | + destructive, privileged, network, browser | filesystem | on |
-| top tier (internal alias `yolo`) | everything | filesystem | off |
+| Tier                             | Grants                                      | Read scope       | Sandbox |
+| -------------------------------- | ------------------------------------------- | ---------------- | ------- |
+| `observe`                        | none — every state change prompts           | workspace only   | on      |
+| `propose`                        | + workspace writes, todo/memory             | workspace        | on      |
+| `build`                          | + safe/moderate shell, web tools            | workspace + home | on      |
+| `operate`                        | + destructive, privileged, network, browser | filesystem       | on      |
+| top tier (internal alias `yolo`) | everything                                  | filesystem       | off     |
 
 The internal top-tier alias remains for backwards compatibility with tests and
 developer muscle memory. It must not appear in the desktop business UI, the primary
@@ -74,21 +74,21 @@ boundary. **Ctrl+C** aborts the active generation (twice to exit).
 
 ## Full tool surface
 
-| Category | Tools |
-|----------|-------|
+| Category      | Tools                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------- |
 | Local storage | view_file, write_file, replace_content, apply_patch, list_dir, glob, format_code, grep_search |
-| System | run_command, run_tests, log_tokens |
-| Web | web_search, scrape_url, browser_control, deep_research, find_all, entity_search |
-| Memory | memory_append, memory_replace, continual_learning |
-| Evidence | evidence (source/claim lineage, Evidence.json) |
-| Data | data_query (registered data-vendor connectors) |
-| Planning | todo_write, ask_question |
-| Iteration | (ambient goal-loop — always-on, no tool call needed) |
-| Quality | bar_critic (benchmark bar-comparison, §10.1) |
-| Agents | subagent |
-| Office | office_doc (via OfficeCLI) |
-| Workflows | workflow (discover, run, inspect workflow packs) |
-| MCP | external tools via `.quiver/mcp.json` |
+| System        | run_command, run_tests, log_tokens                                                            |
+| Web           | web_search, scrape_url, browser_control, deep_research, find_all, entity_search               |
+| Memory        | memory_append, memory_replace, continual_learning                                             |
+| Evidence      | evidence (source/claim lineage, Evidence.json)                                                |
+| Data          | data_query (registered data-vendor connectors)                                                |
+| Planning      | todo_write, ask_question                                                                      |
+| Iteration     | (ambient goal-loop — always-on, no tool call needed)                                          |
+| Quality       | bar_critic (benchmark bar-comparison, §10.1)                                                  |
+| Agents        | subagent                                                                                      |
+| Office        | office_doc (via OfficeCLI)                                                                    |
+| Workflows     | workflow (discover, run, inspect workflow packs)                                              |
+| MCP           | external tools via `.quiver/mcp.json`                                                         |
 
 `subagent` is available for user workflows that benefit from isolated research
 or delegated analysis. It remains subject to the same approval and workspace
@@ -125,19 +125,19 @@ multimodal model via Ollama (`VISION_MODEL_NAME`, or Settings → Vision Model i
 
 ## CLI flags
 
-| Flag | Description |
-|------|-------------|
-| `--continue`, `-c` | Resume most recent session |
-| `--resume`, `-r` | Pick a session to resume |
-| `--list-sessions` | List saved sessions |
-| `--single-turn "prompt"` | Run one prompt and exit |
-| `--json` | Structured JSON output (for scripts) |
-| `--dry-run`, `-n` | Preview tool actions without executing |
+| Flag                     | Description                            |
+| ------------------------ | -------------------------------------- |
+| `--continue`, `-c`       | Resume most recent session             |
+| `--resume`, `-r`         | Pick a session to resume               |
+| `--list-sessions`        | List saved sessions                    |
+| `--single-turn "prompt"` | Run one prompt and exit                |
+| `--json`                 | Structured JSON output (for scripts)   |
+| `--dry-run`, `-n`        | Preview tool actions without executing |
 
 ## Feature flags (internal)
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `QUIVER_AMBIENT` | on | Completion self-heal + goal-loop; `=0` to disable |
-| `QUIVER_LOG_RETENTION_DAYS` | 30 | Auto-purge old session logs (`0` = keep forever) |
-| `QUIVER_LIFECYCLE_TRACE` | off | One-line trace of lifecycle hooks |
+| Variable                    | Default | Description                                       |
+| --------------------------- | ------- | ------------------------------------------------- |
+| `QUIVER_AMBIENT`            | on      | Completion self-heal + goal-loop; `=0` to disable |
+| `QUIVER_LOG_RETENTION_DAYS` | 30      | Auto-purge old session logs (`0` = keep forever)  |
+| `QUIVER_LIFECYCLE_TRACE`    | off     | One-line trace of lifecycle hooks                 |

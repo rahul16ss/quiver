@@ -16,7 +16,13 @@
  * compiler is testable now and the assembler can delegate to it later.
  */
 
-import type { PromptCompiler, PromptCompileInput, CompiledPrompt, CustomerPackRef, GapEntry } from "./interfaces.js";
+import type {
+  PromptCompiler,
+  PromptCompileInput,
+  CompiledPrompt,
+  CustomerPackRef,
+  GapEntry,
+} from "./interfaces.js";
 import type { CustomerPack } from "./customer-pack.js";
 import { SECURITY_PREAMBLE } from "../prompts/security.js";
 
@@ -55,11 +61,7 @@ export class QuiverPromptCompiler implements PromptCompiler {
     push("Runtime invariants & safety", SECURITY_PREAMBLE, true);
 
     // 2. Capital-markets domain policy.
-    push(
-      "Capital-markets domain policy",
-      CAPITAL_MARKETS_DOMAIN_POLICY,
-      true,
-    );
+    push("Capital-markets domain policy", CAPITAL_MARKETS_DOMAIN_POLICY, true);
 
     // 3. Customer pack.
     push("Customer pack", this.compilePackLayer(), true);
@@ -78,10 +80,15 @@ export class QuiverPromptCompiler implements PromptCompiler {
     const goal = input.goal
       ? `Goal: ${input.goal.objective}\nDefinition of done:\n${input.goal.definitionOfDone.map((d) => `- ${d}`).join("\n")}`
       : undefined;
-    push("Goal & approved context", [goal, input.approvedContext].filter(Boolean).join("\n\n"), !!(goal || input.approvedContext));
+    push(
+      "Goal & approved context",
+      [goal, input.approvedContext].filter(Boolean).join("\n\n"),
+      !!(goal || input.approvedContext),
+    );
 
     // 7. Gap ledger and run state.
-    const gap = input.gapLedger && input.gapLedger.length > 0 ? formatGapLedger(input.gapLedger) : undefined;
+    const gap =
+      input.gapLedger && input.gapLedger.length > 0 ? formatGapLedger(input.gapLedger) : undefined;
     const run = input.runState ? `Run state: ${JSON.stringify(input.runState)}` : undefined;
     push("Gap ledger & run state", [gap, run].filter(Boolean).join("\n\n"), !!(gap || run));
 
@@ -103,7 +110,8 @@ export class QuiverPromptCompiler implements PromptCompiler {
       for (const [k, v] of Object.entries(p.terminology)) lines.push(`- ${k}: ${v}`);
     }
     if (p.style.voice) lines.push(`Voice: ${p.style.voice}`);
-    if (p.style.bannedPhrases?.length) lines.push(`Banned phrases: ${p.style.bannedPhrases.join(", ")}`);
+    if (p.style.bannedPhrases?.length)
+      lines.push(`Banned phrases: ${p.style.bannedPhrases.join(", ")}`);
     if (p.sourcePrecedence.length > 0) {
       lines.push("Source precedence:");
       for (const sp of [...p.sourcePrecedence].sort((a, b) => b.rank - a.rank)) {
@@ -116,7 +124,8 @@ export class QuiverPromptCompiler implements PromptCompiler {
 
 function formatGapLedger(gaps: GapEntry[]): string {
   const lines = ["Gap ledger:"];
-  for (const g of gaps) lines.push(`- [${g.status}] ${g.description}${g.blocker ? ` (blocked: ${g.blocker})` : ""}`);
+  for (const g of gaps)
+    lines.push(`- [${g.status}] ${g.description}${g.blocker ? ` (blocked: ${g.blocker})` : ""}`);
   return lines.join("\n");
 }
 
@@ -124,8 +133,6 @@ function estimateTokens(text: string): number {
   // Rough estimate: ~4 chars per token. Good enough for budget display.
   return Math.ceil(text.length / 4);
 }
-
-
 
 /**
  * Compile the customer-pack and capital-markets domain-policy layer strings
@@ -144,8 +151,12 @@ export function compileCustomerPackLayers(pack: import("./customer-pack.js").Cus
   const cpLayer = compiled.layers.find((l) => l.name === "Customer pack");
   const dpLayer = compiled.layers.find((l) => l.name === "Capital-markets domain policy");
   return {
-    customerPack: cpLayer?.included ? extractLayerContent(compiled.systemPrompt, "Customer pack") : "",
-    domainPolicy: dpLayer?.included ? extractLayerContent(compiled.systemPrompt, "Capital-markets domain policy") : "",
+    customerPack: cpLayer?.included
+      ? extractLayerContent(compiled.systemPrompt, "Customer pack")
+      : "",
+    domainPolicy: dpLayer?.included
+      ? extractLayerContent(compiled.systemPrompt, "Capital-markets domain policy")
+      : "",
   };
 }
 

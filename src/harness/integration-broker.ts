@@ -51,7 +51,12 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
    */
   decide(name: string, opts: IntegrationInvokeOpts = {}): PolicyDecisionResult {
     const h = this.handlers.get(name);
-    if (!h) return { permitted: false, conditions: [], reasons: [`integration '${name}' not registered`] };
+    if (!h)
+      return {
+        permitted: false,
+        conditions: [],
+        reasons: [`integration '${name}' not registered`],
+      };
     const decl = h.declaration;
     const conditions: PolicyCondition[] = [];
     const reasons: string[] = [];
@@ -61,7 +66,11 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
       const supplied = new Set(opts.approvals ?? []);
       const missing = decl.requiredApprovals.filter((a) => !supplied.has(a));
       if (missing.length > 0) {
-        conditions.push({ id: "approval-required", reason: `missing approvals: ${missing.join(", ")}`, resolved: false });
+        conditions.push({
+          id: "approval-required",
+          reason: `missing approvals: ${missing.join(", ")}`,
+          resolved: false,
+        });
         reasons.push(`missing approvals: ${missing.join(", ")}`);
       }
     }
@@ -69,7 +78,11 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
     // Data classification: restricted-MNPI may not flow through a public integration.
     const sensitivity = opts.sensitivity ?? decl.dataClassification;
     if (sensitivity === "restricted-mnpi" && decl.dataClassification === "public") {
-      conditions.push({ id: "sensitivity-mismatch", reason: "restricted-mnpi may not flow through a public integration", resolved: false });
+      conditions.push({
+        id: "sensitivity-mismatch",
+        reason: "restricted-mnpi may not flow through a public integration",
+        resolved: false,
+      });
       reasons.push("restricted-mnpi may not flow through a public integration");
     }
 
@@ -77,7 +90,11 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
     // 'llm-processing' right to send data to a model. (This is a static check
     // against the declaration; a deployment resolves it via entitlement config.)
     if (decl.rights && !decl.rights.rights.includes("llm-processing")) {
-      conditions.push({ id: "entitlement-llm-processing", reason: "integration is not entitled for LLM processing", resolved: false });
+      conditions.push({
+        id: "entitlement-llm-processing",
+        reason: "integration is not entitled for LLM processing",
+        resolved: false,
+      });
       reasons.push("not entitled for LLM processing");
     }
 
@@ -85,8 +102,14 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
     if (decl.networkZone === "public-internet" && opts.executionContext) {
       const ctx = opts.executionContext;
       if (ctx.deploymentProfile !== "connected-zdr") {
-        conditions.push({ id: "network-zone", reason: `integration requires public-internet but profile is ${ctx.deploymentProfile}`, resolved: false });
-        reasons.push(`integration requires public-internet but profile is ${ctx.deploymentProfile}`);
+        conditions.push({
+          id: "network-zone",
+          reason: `integration requires public-internet but profile is ${ctx.deploymentProfile}`,
+          resolved: false,
+        });
+        reasons.push(
+          `integration requires public-internet but profile is ${ctx.deploymentProfile}`,
+        );
       }
     }
 
@@ -98,17 +121,34 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
     return { permitted: allResolved, conditions, reasons };
   }
 
-  async invoke(name: string, input: unknown, opts: IntegrationInvokeOpts = {}): Promise<IntegrationResult> {
+  async invoke(
+    name: string,
+    input: unknown,
+    opts: IntegrationInvokeOpts = {},
+  ): Promise<IntegrationResult> {
     const h = this.handlers.get(name);
     if (!h) {
-      return { ok: false, error: `integration '${name}' not registered`, provenance: { vendor: name, dataset: "", apiRef: "", timestamp: new Date().toISOString() } };
+      return {
+        ok: false,
+        error: `integration '${name}' not registered`,
+        provenance: { vendor: name, dataset: "", apiRef: "", timestamp: new Date().toISOString() },
+      };
     }
     // §9: invoke() re-runs decide() and refuses if any condition is unresolved.
     // A caller that ignores decide()'s output still cannot invoke.
     const decision = this.decide(name, opts);
     if (!decision.permitted) {
       const open = decision.conditions.filter((c) => !c.resolved).map((c) => c.reason);
-      return { ok: false, error: `policy denied: ${open.join("; ") || "unresolved conditions"}`, provenance: { vendor: name, dataset: "", apiRef: h.declaration.name, timestamp: new Date().toISOString() } };
+      return {
+        ok: false,
+        error: `policy denied: ${open.join("; ") || "unresolved conditions"}`,
+        provenance: {
+          vendor: name,
+          dataset: "",
+          apiRef: h.declaration.name,
+          timestamp: new Date().toISOString(),
+        },
+      };
     }
     const decl = h.declaration;
     try {
@@ -117,12 +157,29 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
       const maxBytes = decl.maxOutputBytes ?? Infinity;
       const data = await Promise.race([
         h.invoke(input, opts),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`integration '${name}' timed out after ${timeoutMs}ms`)), timeoutMs)),
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () => rej(new Error(`integration '${name}' timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          ),
+        ),
       ]);
       // Output-size limit.
-      const serialized = typeof data === "string" ? Buffer.byteLength(data) : Buffer.byteLength(JSON.stringify(data));
+      const serialized =
+        typeof data === "string"
+          ? Buffer.byteLength(data)
+          : Buffer.byteLength(JSON.stringify(data));
       if (serialized > maxBytes) {
-        return { ok: false, error: `output exceeds maxOutputBytes (${serialized} > ${maxBytes})`, provenance: { vendor: name, dataset: decl.capabilities.join(","), apiRef: decl.name, timestamp: new Date().toISOString() } };
+        return {
+          ok: false,
+          error: `output exceeds maxOutputBytes (${serialized} > ${maxBytes})`,
+          provenance: {
+            vendor: name,
+            dataset: decl.capabilities.join(","),
+            apiRef: decl.name,
+            timestamp: new Date().toISOString(),
+          },
+        };
       }
       return {
         ok: true,
@@ -139,7 +196,12 @@ export class QuiverIntegrationBroker implements IntegrationBroker {
       return {
         ok: false,
         error: (err as Error).message,
-        provenance: { vendor: name, dataset: "", apiRef: decl.name, timestamp: new Date().toISOString() },
+        provenance: {
+          vendor: name,
+          dataset: "",
+          apiRef: decl.name,
+          timestamp: new Date().toISOString(),
+        },
       };
     }
   }

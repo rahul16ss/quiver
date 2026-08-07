@@ -4,6 +4,8 @@
  * Loopback browser UI security helpers owned by the harness daemon.
  */
 
+import path from "node:path";
+
 /** Strict Content Security Policy for the browser UI. */
 export const CSP_POLICY = [
   "default-src 'self'",
@@ -31,7 +33,8 @@ export function isTrustedOrigin(url: string): boolean {
   if (url.startsWith("file://")) return true;
   if (url === "about:blank" || url === "about:blank#blocked") return true;
   // The loopback daemon origin is trusted.
-  if (/^http:\/\/127\.0\.0\.1(:\d+)?\//.test(url) || /^http:\/\/localhost(:\d+)?\//.test(url)) return true;
+  if (/^http:\/\/127\.0\.0\.1(:\d+)?\//.test(url) || /^http:\/\/localhost(:\d+)?\//.test(url))
+    return true;
   return false;
 }
 
@@ -54,7 +57,6 @@ export function getSecurityHeaders(): Record<string, string> {
 
 /** Sanitize a file path to prevent path traversal in the UI. */
 export function sanitizePath(inputPath: string, allowedBase: string): string | null {
-  const path = require("path");
   const resolved = path.resolve(allowedBase, inputPath);
   const relative = path.relative(allowedBase, resolved);
   if (relative.startsWith("..") || path.isAbsolute(relative)) return null;

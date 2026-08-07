@@ -37,6 +37,7 @@ export interface ModelInfo {
 ## Built-in Provider
 
 ### OpenRouter (sole cloud gateway)
+
 OpenRouter is the only cloud model gateway. Quiver sends each request through
 `QuiverOpenRouterClient`/`QuiverOpenRouterProvider`, which enforce the approved
 profile, ZDR/provider policy, `data_collection=deny`, explicit provider order,
@@ -59,6 +60,7 @@ PDF/Office MIME types remain fail-closed until the exact route passes its
 contract test.
 
 ### Local/private escape hatch
+
 For air-gapped or restricted deployments, configure an OpenAI-compatible local
 endpoint:
 
@@ -77,6 +79,7 @@ set. There is no Ollama-cloud research path and no Vertex research path.
 ## Streaming Events
 
 The provider emits `ModelEvent` objects via async iterable:
+
 - `text_delta` — Incremental text content
 - `tool_call_start` — Tool call begins
 - `tool_call_delta` — Tool call arguments stream

@@ -68,7 +68,10 @@ export class ModelProfileRegistry {
   }
 
   /** Find a profile approved for a role + sensitivity, preferring ZDR-eligible. */
-  pick(role: "planner" | "maker" | "checker" | "reviewer", sensitivity: SensitivityProfile): ModelProfile | undefined {
+  pick(
+    role: "planner" | "maker" | "checker" | "reviewer",
+    sensitivity: SensitivityProfile,
+  ): ModelProfile | undefined {
     const eligible = Array.from(this.profiles.values()).filter(
       (p) => p.approvedFor.includes(sensitivity) && (role !== "checker" || p.checkerEligible),
     );
@@ -98,10 +101,7 @@ export class ModelProfileRegistry {
 
 /** Whether a profile is certified for native ingestion of a given MIME type. */
 export function isCertifiedFor(profile: ModelProfile, mime: NativeMime): boolean {
-  return (
-    profile.testedNativeMimeTypes.includes(mime) &&
-    profile.lastContractTest.result === "pass"
-  );
+  return profile.testedNativeMimeTypes.includes(mime) && profile.lastContractTest.result === "pass";
 }
 
 /**
@@ -114,7 +114,11 @@ export function isCertifiedFor(profile: ModelProfile, mime: NativeMime): boolean
  */
 export function applyApprovedModels(
   base: ModelProfileRegistry,
-  approved: Array<{ profileSlug: string; roles?: Array<"planner" | "maker" | "checker" | "reviewer">; providerOrder: string[] }>,
+  approved: Array<{
+    profileSlug: string;
+    roles?: Array<"planner" | "maker" | "checker" | "reviewer">;
+    providerOrder: string[];
+  }>,
 ): ModelProfileRegistry {
   const out = new ModelProfileRegistry();
   for (const entry of approved) {
@@ -126,7 +130,10 @@ export function applyApprovedModels(
       // Honor the pack's FULL role list: an entry approving a profile for
       // [checker, reviewer] serves BOTH roles. Absent roles → any role.
       allowedRoles: entry.roles && entry.roles.length > 0 ? [...entry.roles] : p.allowedRoles,
-      routerRole: entry.roles && entry.roles.length > 0 ? (entry.roles[0] as ModelProfileRunnerRole) : p.routerRole,
+      routerRole:
+        entry.roles && entry.roles.length > 0
+          ? (entry.roles[0] as ModelProfileRunnerRole)
+          : p.routerRole,
     };
     out.register(merged);
   }

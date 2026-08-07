@@ -3,12 +3,14 @@
 **Source of truth for cross-project context:** `/Users/rahul/PROJECTS.md`
 
 Repo-local:
+
 - `docs/product/user-stories.md` — design source for the buyer surface
 - `SPEC.md` — technical spec (gitignored; §19 status table). Build in §19 order.
 - `NOTES/STATUS.md` — open external/deferred items only
 - Buyer surface: loopback browser UI (`src/harness/ui/`). Launch: `npm start`
 
 Hard rules:
+
 1. `npm test` is checker-owned — never edit tests to pass.
 2. Release gate: `npm test` · `npx tsc --noEmit` · three demos · daemon smoke ·
    visual browser-UI walkthrough with screenshots you actually read.

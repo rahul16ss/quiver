@@ -30,7 +30,9 @@ function main() {
   const platform = args[args.indexOf("--platform") + 1];
   const outDir = args[args.indexOf("--out") + 1] ?? "bundles/officecli";
   if (!binary || !platform || !PINS[platform]) {
-    console.error("usage: bundle-officecli.mjs --binary <path> --platform <darwin|win32|linux> [--out <dir>]");
+    console.error(
+      "usage: bundle-officecli.mjs --binary <path> --platform <darwin|win32|linux> [--out <dir>]",
+    );
     process.exit(2);
   }
   if (!existsSync(binary)) {
@@ -39,7 +41,9 @@ function main() {
   }
   const pin = PINS[platform];
   if (!pin.checksum) {
-    console.error(`REFUSING: OFFICECLI_PINS.${platform}.checksum is empty. Populate the audited checksum before bundling (production builds must pin).`);
+    console.error(
+      `REFUSING: OFFICECLI_PINS.${platform}.checksum is empty. Populate the audited checksum before bundling (production builds must pin).`,
+    );
     process.exit(1);
   }
   const actual = sha256(binary);
@@ -59,7 +63,9 @@ function main() {
     licenseNotices: ["OfficeCLI — see ATTRIBUTION.md"],
   };
   writeFileSync(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
-  console.log(`bundled ${dest} (sha256 ${actual.slice(0, 16)}…) — background self-updates disabled`);
+  console.log(
+    `bundled ${dest} (sha256 ${actual.slice(0, 16)}…) — background self-updates disabled`,
+  );
 }
 
 main();

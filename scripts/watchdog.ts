@@ -37,10 +37,7 @@ const OFFSET_PATH = path.join(QUIVER_DIR, "watchdog.offset.json");
 const SEEN_KEYS_PATH = path.join(QUIVER_DIR, "watchdog.seen.json");
 
 const CYCLE_MS = parseInt(process.env.QUIVER_WATCHDOG_INTERVAL_MS || "300000", 10);
-const SESSIONS_DIR = path.join(
-  os.homedir(),
-  ".quiver/projects/quiver/.sessions",
-);
+const SESSIONS_DIR = path.join(os.homedir(), ".quiver/projects/quiver/.sessions");
 
 // ── Tiny utilities ────────────────────────────────────────────────────
 
@@ -48,12 +45,7 @@ function ensureDirs(): void {
   fs.mkdirSync(QUIVER_DIR, { recursive: true });
 }
 
-function appendFinding(f: {
-  kind: string;
-  key: string;
-  severity: string;
-  detail: string;
-}): void {
+function appendFinding(f: { kind: string; key: string; severity: string; detail: string }): void {
   ensureDirs();
   const line =
     JSON.stringify({
@@ -119,7 +111,12 @@ function heartbeat(cycle: number, ok: boolean, note: string): void {
   );
 }
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): {
+function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): {
   ok: boolean;
   stdout: string;
   stderr: string;
@@ -154,7 +151,10 @@ function probeTsc(seen: Set<string>): void {
   }
   const errs = (r.stderr || r.stdout || "").trim();
   // Surface each distinct compiler error file so fixes can target them.
-  const firstLines = errs.split("\n").filter((l) => /error TS/.test(l)).slice(0, 20);
+  const firstLines = errs
+    .split("\n")
+    .filter((l) => /error TS/.test(l))
+    .slice(0, 20);
   if (firstLines.length === 0) {
     recordOnce(seen, "tsc", "fail", "error", `tsc failed: ${errs.slice(0, 800)}`);
     return;
@@ -273,10 +273,18 @@ function probeSessionErrors(seen: Set<string>): void {
 
   // Look for error-bearing lines. JSONL-ish (pretty printed) so scan by event.
   const errorPatterns: Array<{ re: RegExp; kind: string; sev: string }> = [
-    { re: /Provider error 400.*invalid tool call arguments/, kind: "400-invalid-tool-args", sev: "error" },
+    {
+      re: /Provider error 400.*invalid tool call arguments/,
+      kind: "400-invalid-tool-args",
+      sev: "error",
+    },
     { re: /Provider error 4\d\d/, kind: "provider-4xx", sev: "error" },
     { re: /Provider error 5\d\d/, kind: "provider-5xx", sev: "error" },
-    { re: /Connection failed|Connection timeout|Stream stall timeout/, kind: "connection", sev: "warn" },
+    {
+      re: /Connection failed|Connection timeout|Stream stall timeout/,
+      kind: "connection",
+      sev: "warn",
+    },
     { re: /Invalid tool arguments: /, kind: "invalid-tool-args-local", sev: "warn" },
     { re: /tool_failure_diagnostic/, kind: "tool-failure", sev: "warn" },
     { re: /Unsupported event:/, kind: "unsupported-stream-event", sev: "info" },
@@ -309,17 +317,17 @@ function probeProcess(seen: Set<string>): void {
   const r = run("pgrep", ["-fl", "quiver/src/cli.ts|quiver.*--continue|"], PROJECT_DIR, 10_000);
   const out = (r.stdout || "").trim();
   if (!out) {
-    recordOnce(seen, "process", "no-quiver-process", "warn", "no quiver CLI/electron process running (pgrep empty)");
+    recordOnce(
+      seen,
+      "process",
+      "no-quiver-process",
+      "warn",
+      "no quiver CLI/electron process running (pgrep empty)",
+    );
     return;
   }
   const lines = out.split("\n").filter(Boolean);
-  recordOnce(
-    seen,
-    "process",
-    "alive",
-    "info",
-    `${lines.length} quiver process(es) alive`,
-  );
+  recordOnce(seen, "process", "alive", "info", `${lines.length} quiver process(es) alive`);
 }
 
 // ── Loop ──────────────────────────────────────────────────────────────

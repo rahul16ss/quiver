@@ -88,7 +88,7 @@ User Input
 > **Mid-run:** while the loop is running, `Esc` injects a steering user message
 > at the next iteration (US-2.3); `Ctrl+C` aborts the active stream.
 
-> **Implementation status.** Every stage above is the *live* agent loop in
+> **Implementation status.** Every stage above is the _live_ agent loop in
 > `src/agent.ts`, not aspirational. The model call goes through
 > `getActiveProvider().streamChat()`; the prompt through `assemblePrompt()`;
 > the budget through `calculateBudget()`/`shouldBlockSubmission()`; file tools
@@ -124,15 +124,15 @@ User Input
 
 ## Maker-Checker Verification (Epic 15)
 
-Every unit of work is treated as a transaction that is *made* and then
-*independently checked* before it touches the user's workspace, generalizing
+Every unit of work is treated as a transaction that is _made_ and then
+_independently checked_ before it touches the user's workspace, generalizing
 the safety primitives (subagent pool, JIT sandbox, path sandbox, audit chain,
 diff approval) into one automatic verification discipline.
 
 - **Maker** — the primary agent loop (or a maker subagent) produces the proposed
   change: file edits, shell commands, or tool calls.
 - **Checker** — `src/subagents/checker.ts` is a structurally isolated second
-  instance that verifies the maker's output *before* it is applied. It runs in
+  instance that verifies the maker's output _before_ it is applied. It runs in
   its own sandboxed context with **read-only** workspace access and **no**
   write, network, secret, or full-`process.env` access. Its only output is a
   structured verdict — `approve | reject | revise` — with evidence.
@@ -150,7 +150,7 @@ diff approval) into one automatic verification discipline.
 - **Configuration** — maker-checker is **always on and unconditional** for
   high-risk operations (filesystem mutations, destructive/privileged/network/
   exfiltration shell bands). Per the acceptance
-  contract (US-15.1) it is *not* gated behind an env flag — the maker cannot
+  contract (US-15.1) it is _not_ gated behind an env flag — the maker cannot
   self-certify, so there is no opt-out. It degrades gracefully: if the checker
   cannot run, the change falls back to the existing user-approval gate and is
   logged, never silently applied.

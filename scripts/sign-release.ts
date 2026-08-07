@@ -53,4 +53,7 @@ async function main() {
   console.log(`Signed manifest written: ${out} (signature: ${signature.slice(0, 16)}…)`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

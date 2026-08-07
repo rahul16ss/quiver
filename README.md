@@ -27,21 +27,21 @@ Quiver helps investment, advisory, and wealth management teams build inspection-
 
 Quiver includes an **Ambient Workflow Engine** (`quiver workflow`) and **13** declared pack manifests across 3 families:
 
-| Family | Workflow Pack | Intended purpose and deliverable |
-| :--- | :--- | :--- |
-| **Dealmaking** | `investment-committee-memo` | First-pass IC Memo (`.docx`) with registered cell lineage |
-| **Dealmaking** | `diligence-tracker` | VDR document tracking & red flag matrix (`.xlsx`) |
-| **Dealmaking** | `market-map` | Industry landscape, unit economics & multiples (`.pptx`) |
-| **Dealmaking** | `pitchbook-materials` | Institutional pitch deck & credentials (`.pptx`) |
-| **Research** | `post-earnings-evidence-pack` | Reported metrics, consensus deltas & transcript analysis (`.html`) |
-| **Research** | `transcript-review` | Guidance shifts, tone analysis & non-GAAP checks (`.docx`) |
-| **Research** | `thesis-tracker` | Long/short thesis tracking & KPI catalyst scoring (`.xlsx`) |
-| **Research** | `company-primer` | Comprehensive equity research initiation primer (`.docx`) |
-| **Wealth** | `portfolio-review-pack` | Asset allocation, performance & risk review (`.xlsx`) |
-| **Wealth** | `investment-proposal` | HNW client portfolio proposal & tax profile (`.docx`) |
-| **Wealth** | `manager-research-note` | Fund manager due diligence & style drift audit (`.docx`) |
-| **Wealth** | `client-commentary` | Tailored quarterly client market update (`.docx`) |
-| **Wealth** | `risk-exposure-summary` | VaR, factor exposure & stress testing summary (`.pdf`) |
+| Family         | Workflow Pack                 | Intended purpose and deliverable                                   |
+| :------------- | :---------------------------- | :----------------------------------------------------------------- |
+| **Dealmaking** | `investment-committee-memo`   | First-pass IC Memo (`.docx`) with registered cell lineage          |
+| **Dealmaking** | `diligence-tracker`           | VDR document tracking & red flag matrix (`.xlsx`)                  |
+| **Dealmaking** | `market-map`                  | Industry landscape, unit economics & multiples (`.pptx`)           |
+| **Dealmaking** | `pitchbook-materials`         | Institutional pitch deck & credentials (`.pptx`)                   |
+| **Research**   | `post-earnings-evidence-pack` | Reported metrics, consensus deltas & transcript analysis (`.html`) |
+| **Research**   | `transcript-review`           | Guidance shifts, tone analysis & non-GAAP checks (`.docx`)         |
+| **Research**   | `thesis-tracker`              | Long/short thesis tracking & KPI catalyst scoring (`.xlsx`)        |
+| **Research**   | `company-primer`              | Comprehensive equity research initiation primer (`.docx`)          |
+| **Wealth**     | `portfolio-review-pack`       | Asset allocation, performance & risk review (`.xlsx`)              |
+| **Wealth**     | `investment-proposal`         | HNW client portfolio proposal & tax profile (`.docx`)              |
+| **Wealth**     | `manager-research-note`       | Fund manager due diligence & style drift audit (`.docx`)           |
+| **Wealth**     | `client-commentary`           | Tailored quarterly client market update (`.docx`)                  |
+| **Wealth**     | `risk-exposure-summary`       | VaR, factor exposure & stress testing summary (`.pdf`)             |
 
 Pack maturity is explicit. `investment-committee-memo`, `post-earnings-evidence-pack`,
 and `portfolio-review-pack` are the three credential-free, runnable reference demos.
@@ -53,10 +53,12 @@ Scaffold packs may name intended formats (including `.pdf`) that the current
 pipelines.
 
 Run any workflow pack on demand (requires configured model; one-shot CLI):
+
 ```bash
 quiver workflow list
 quiver workflow run investment-committee-memo
 ```
+
 For recurring/file-triggered automation, register a schedule or watch rule and
 keep an interactive `quiver` session (or the daemon) running — one-shot
 `quiver workflow schedule|watch` registers the rule then exits.
@@ -89,8 +91,8 @@ cd quiver
 # Install dependencies
 npm install
 
-# Run the spec acceptance suite
-npm test
+# Run the full quality gate (format, lint, typecheck, build, tests)
+npm run check
 
 # Run reference workflow demonstrations
 npm run demo:ic-memo
@@ -128,14 +130,14 @@ See [profiles/finance-client/README.md](profiles/finance-client/README.md) for d
 
 ## 7. Capability summary & detailed documentation
 
-| Capability | Summary |
-| :--- | :--- |
-| **Native Office Output** | Builds `.docx`, `.xlsx`, and `.pptx` around configured templates |
-| **Evidence & Lineage** | Tracks Excel-sourced figures to cell coordinates; other evidence remains file/page/section/URL scoped |
-| **Reviewer Sign-off** | Blocks mark-final status while open flags remain; logs overrides |
-| **Data Handling** | Operator-configured endpoints; local models supported; no product telemetry |
-| **Browser UI** | Responsive browser app served by the loopback daemon (no Electron): workflow select, live progress, change-set approval, commit |
-| **Reference Workflows** | Executable demo pipelines for dealmaking, research, and wealth |
+| Capability               | Summary                                                                                                                         |
+| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **Native Office Output** | Builds `.docx`, `.xlsx`, and `.pptx` around configured templates                                                                |
+| **Evidence & Lineage**   | Tracks Excel-sourced figures to cell coordinates; other evidence remains file/page/section/URL scoped                           |
+| **Reviewer Sign-off**    | Blocks mark-final status while open flags remain; logs overrides                                                                |
+| **Data Handling**        | Operator-configured endpoints; local models supported; no product telemetry                                                     |
+| **Browser UI**           | Responsive browser app served by the loopback daemon (no Electron): workflow select, live progress, change-set approval, commit |
+| **Reference Workflows**  | Executable demo pipelines for dealmaking, research, and wealth                                                                  |
 
 For the governing principles, see [docs/principles.md](docs/principles.md). For the complete technical feature matrix (compaction consent, episodic memory store, drift detection, DMS framework), see [docs/capabilities.md](docs/capabilities.md).
 
@@ -144,11 +146,8 @@ For the governing principles, see [docs/principles.md](docs/principles.md). For 
 ## 8. Development
 
 ```bash
-# Type check
-npx tsc --noEmit
-
-# Run unit & spec tests
-npm test
+# One serial quality gate (format, lint, typecheck, build, tests, daemon smoke)
+npm run check
 
 # Launch the loopback browser UI (production composition root)
 npm start

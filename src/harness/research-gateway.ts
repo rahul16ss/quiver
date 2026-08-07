@@ -52,7 +52,12 @@ export interface ParallelTransport {
     mode?: "turbo" | "basic" | "advanced";
     advanced_settings?: { max_results?: number };
   }): Promise<{
-    results: Array<{ url: string; title?: string | null; publish_date?: string | null; excerpts: string[] }>;
+    results: Array<{
+      url: string;
+      title?: string | null;
+      publish_date?: string | null;
+      excerpts: string[];
+    }>;
     warnings?: Array<{ message?: string } | string> | null;
   }>;
   extract(params: {
@@ -60,15 +65,35 @@ export interface ParallelTransport {
     objective?: string;
     advanced_settings?: { full_content?: boolean | { max_chars_per_result?: number } };
   }): Promise<{
-    results: Array<{ url: string; title?: string | null; publish_date?: string | null; excerpts: string[]; full_content?: string | null }>;
-    errors?: Array<{ url: string; error_type?: string; content?: string | null; http_status_code?: number | null }>;
+    results: Array<{
+      url: string;
+      title?: string | null;
+      publish_date?: string | null;
+      excerpts: string[];
+      full_content?: string | null;
+    }>;
+    errors?: Array<{
+      url: string;
+      error_type?: string;
+      content?: string | null;
+      http_status_code?: number | null;
+    }>;
     warnings?: Array<{ message?: string } | string> | null;
   }>;
   taskRun(params: {
     input: string;
     processor?: string;
-    task_spec?: { output_schema?: { type: "json" | "text"; json_schema?: Record<string, unknown>; description?: string } };
-  }): Promise<{ output?: { type: string; content: unknown; basis?: Array<any> }; run?: { status?: string } }>;
+    task_spec?: {
+      output_schema?: {
+        type: "json" | "text";
+        json_schema?: Record<string, unknown>;
+        description?: string;
+      };
+    };
+  }): Promise<{
+    output?: { type: string; content: unknown; basis?: Array<any> };
+    run?: { status?: string };
+  }>;
   monitor(params: {
     type: "event_stream" | "snapshot";
     frequency: string;
@@ -78,11 +103,31 @@ export interface ParallelTransport {
     metadata?: Record<string, string>;
   }): Promise<{ monitor_id: string; status: string }>;
   monitorCancel(id: string): Promise<void>;
-  monitorEvents(id: string, opts?: { event_group_id?: string; include_completions?: boolean }): Promise<{ events: any[]; next_cursor?: string }>;
-  findEntities(params: { search_queries: string[]; objective?: string }): Promise<{ results: Array<{ url: string; title?: string | null; excerpts: string[] }> }>;
-  findAllCreate(params: { objective: string; entity_type: "companies" | "people"; generator?: string; match_conditions?: Array<{ name: string; description: string }>; match_limit?: number }): Promise<{ findall_id: string }>;
+  monitorEvents(
+    id: string,
+    opts?: { event_group_id?: string; include_completions?: boolean },
+  ): Promise<{ events: any[]; next_cursor?: string }>;
+  findEntities(params: {
+    search_queries: string[];
+    objective?: string;
+  }): Promise<{ results: Array<{ url: string; title?: string | null; excerpts: string[] }> }>;
+  findAllCreate(params: {
+    objective: string;
+    entity_type: "companies" | "people";
+    generator?: string;
+    match_conditions?: Array<{ name: string; description: string }>;
+    match_limit?: number;
+  }): Promise<{ findall_id: string }>;
   findAllRetrieve(id: string): Promise<{ status: { is_active: boolean } }>;
-  findAllResult(id: string): Promise<{ candidates?: Array<{ name?: string; matched?: boolean; reasoning?: string; confidence?: number; citations?: Array<{ url: string; title?: string; excerpts?: string[] }> }> }>;
+  findAllResult(id: string): Promise<{
+    candidates?: Array<{
+      name?: string;
+      matched?: boolean;
+      reasoning?: string;
+      confidence?: number;
+      citations?: Array<{ url: string; title?: string; excerpts?: string[] }>;
+    }>;
+  }>;
 }
 
 // ─── ParallelResearchGateway ──────────────────────────────────────────
@@ -123,10 +168,16 @@ export class ParallelResearchGateway implements ResearchGateway {
     const res = await this.transport.taskRun({
       input: sanitized,
       processor: opts.processor,
-      task_spec: opts.outputSchema ? { output_schema: { type: "json", json_schema: opts.outputSchema } } : undefined,
+      task_spec: opts.outputSchema
+        ? { output_schema: { type: "json", json_schema: opts.outputSchema } }
+        : undefined,
     });
     const citations = (res.output?.basis ?? []).flatMap((f: any) =>
-      (f.citations ?? []).map((c: any) => ({ url: c.url, title: c.title, excerpts: c.excerpts ?? [] })),
+      (f.citations ?? []).map((c: any) => ({
+        url: c.url,
+        title: c.title,
+        excerpts: c.excerpts ?? [],
+      })),
     );
     return { content: res.output?.content, citations };
   }
@@ -138,27 +189,35 @@ export class ParallelResearchGateway implements ResearchGateway {
         ? { query: sanitizeQuery(spec.settings.query ?? "", spec.sensitivity) }
         : { task_run_id: spec.settings.task_run_id };
     if (spec.settings.output_schema) settings.output_schema = spec.settings.output_schema;
-    if (spec.settings.include_backfill !== undefined) settings.include_backfill = spec.settings.include_backfill;
-    if (spec.settings.advanced_settings) settings.advanced_settings = spec.settings.advanced_settings;
+    if (spec.settings.include_backfill !== undefined)
+      settings.include_backfill = spec.settings.include_backfill;
+    if (spec.settings.advanced_settings)
+      settings.advanced_settings = spec.settings.advanced_settings;
     const created = await this.transport.monitor({
       type: spec.type,
       frequency: spec.frequency,
       settings,
       processor: spec.processor,
-      webhook: spec.webhook ? { url: spec.webhook.url, event_types: spec.webhook.event_types } : undefined,
+      webhook: spec.webhook
+        ? { url: spec.webhook.url, event_types: spec.webhook.event_types }
+        : undefined,
       metadata: spec.metadata,
     });
     const id = created.monitor_id;
     return {
       monitorId: id,
       cancel: () => this.transport.monitorCancel(id),
-      events: (opts) => this.transport.monitorEvents(id, opts).then((r) => (r.events || []).map(toMonitorEvent)),
+      events: (opts) =>
+        this.transport.monitorEvents(id, opts).then((r) => (r.events || []).map(toMonitorEvent)),
     };
   }
 
   async findEntities(query: string, opts: ResearchOpts = {}): Promise<ResearchSearchResult[]> {
     this.assertAllowed(opts.sensitivity);
-    const res = await this.transport.findEntities({ search_queries: [sanitizeQuery(query, opts.sensitivity)], objective: query });
+    const res = await this.transport.findEntities({
+      search_queries: [sanitizeQuery(query, opts.sensitivity)],
+      objective: query,
+    });
     const retrievedAt = new Date().toISOString();
     return (res.results || []).map((r) => toSearchResult(r, retrievedAt, undefined));
   }
@@ -211,7 +270,9 @@ export class ParallelWebTransport implements ParallelTransport {
 
   private async client(): Promise<any> {
     if (!this.clientPromise) {
-      this.clientPromise = import("parallel-web").then((mod: any) => new mod.Parallel({ apiKey: this.apiKey }));
+      this.clientPromise = import("parallel-web").then(
+        (mod: any) => new mod.Parallel({ apiKey: this.apiKey }),
+      );
     }
     return this.clientPromise;
   }
@@ -278,7 +339,13 @@ function toSearchResult(
 }
 
 function toExtractResult(
-  r: { url: string; title?: string | null; publish_date?: string | null; excerpts: string[]; full_content?: string | null },
+  r: {
+    url: string;
+    title?: string | null;
+    publish_date?: string | null;
+    excerpts: string[];
+    full_content?: string | null;
+  },
   retrievedAt: string,
   warnings?: Array<{ message?: string } | string> | null,
 ): ResearchExtractResult {
@@ -298,7 +365,7 @@ function toExtractResult(
 
 function normalizeWarnings(w?: Array<{ message?: string } | string> | null): string[] | undefined {
   if (!w || w.length === 0) return undefined;
-  return w.map((x) => (typeof x === "string" ? x : x.message ?? "warning"));
+  return w.map((x) => (typeof x === "string" ? x : (x.message ?? "warning")));
 }
 
 function hashExcerpts(excerpts: string[]): string | undefined {
@@ -365,7 +432,10 @@ export function dedupeMonitorEvents(
 function sanitizeQuery(query: string, sensitivity?: SensitivityProfile): string {
   if (sensitivity === "confidential-internal") {
     return query
-      .replace(/\b(thesis|conviction|position|holdings?|client|account|MNPI|material non-public)\b/gi, "[redacted]")
+      .replace(
+        /\b(thesis|conviction|position|holdings?|client|account|MNPI|material non-public)\b/gi,
+        "[redacted]",
+      )
       .trim();
   }
   return query;

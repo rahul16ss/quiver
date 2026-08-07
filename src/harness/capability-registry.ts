@@ -105,14 +105,23 @@ export class CapabilityRegistry {
     capability: CapabilityKind;
     mime?: NativeMime;
   }): string {
-    return [r.gateway, r.providerEndpoint, r.model, r.runtimeVersion, r.capability, r.mime ?? ""].join("|");
+    return [
+      r.gateway,
+      r.providerEndpoint,
+      r.model,
+      r.runtimeVersion,
+      r.capability,
+      r.mime ?? "",
+    ].join("|");
   }
 
   /**
    * Record a contract-test result. Immutable: appends a new version rather than
    * mutating. Returns the new record.
    */
-  record(input: Omit<CapabilityRecord, "version" | "supersedes"> & { supersedes?: number }): CapabilityRecord {
+  record(
+    input: Omit<CapabilityRecord, "version" | "supersedes"> & { supersedes?: number },
+  ): CapabilityRecord {
     const k = this.key(input);
     const existing = this.records.get(k) ?? [];
     const version = existing.length + 1;
@@ -128,13 +137,35 @@ export class CapabilityRegistry {
   }
 
   /** The latest record for a capability (or null if never tested). */
-  latest(gateway: Gateway, endpoint: string, model: string, runtime: string, capability: CapabilityKind, mime?: NativeMime): CapabilityRecord | null {
-    const arr = this.records.get(this.key({ gateway, providerEndpoint: endpoint, model, runtimeVersion: runtime, capability, mime }));
+  latest(
+    gateway: Gateway,
+    endpoint: string,
+    model: string,
+    runtime: string,
+    capability: CapabilityKind,
+    mime?: NativeMime,
+  ): CapabilityRecord | null {
+    const arr = this.records.get(
+      this.key({
+        gateway,
+        providerEndpoint: endpoint,
+        model,
+        runtimeVersion: runtime,
+        capability,
+        mime,
+      }),
+    );
     return arr?.[arr.length - 1] ?? null;
   }
 
   /** Is a route certified (last test = pass) for a native MIME? */
-  isCertified(gateway: Gateway, endpoint: string, model: string, runtime: string, mime: NativeMime): boolean {
+  isCertified(
+    gateway: Gateway,
+    endpoint: string,
+    model: string,
+    runtime: string,
+    mime: NativeMime,
+  ): boolean {
     const r = this.latest(gateway, endpoint, model, runtime, "native-mime", mime);
     return r?.lastContractTest.result === "pass";
   }
@@ -143,7 +174,13 @@ export class CapabilityRegistry {
    * Build the composite capability snapshot for a route. A route is "capable"
    * of a native MIME only if its latest test passed — independently per MIME.
    */
-  snapshot(gateway: Gateway, endpoint: string, model: string, runtime: string, role: ModelRole): RouteCapability {
+  snapshot(
+    gateway: Gateway,
+    endpoint: string,
+    model: string,
+    runtime: string,
+    role: ModelRole,
+  ): RouteCapability {
     const nativeMime: Record<string, boolean> = {};
     const maxFileBytes: Record<string, number> = {};
     const mimes: NativeMime[] = [
@@ -165,19 +202,26 @@ export class CapabilityRegistry {
     const tools = this.latest(gateway, endpoint, model, runtime, "tool-calling");
     const strict = this.latest(gateway, endpoint, model, runtime, "strict-structured-output");
     return {
-      gateway, providerEndpoint: endpoint, model, role, runtimeVersion: runtime,
+      gateway,
+      providerEndpoint: endpoint,
+      model,
+      role,
+      runtimeVersion: runtime,
       contextWindowTokens: ctx?.contextWindowTokens,
       maxConcurrency: conc?.maxConcurrency,
       zdrEligible: zdr?.zdrEligible,
       supportsToolCalling: tools?.lastContractTest.result === "pass",
       supportsStrictOutput: strict?.lastContractTest.result === "pass",
-      nativeMime, maxFileBytes,
+      nativeMime,
+      maxFileBytes,
     };
   }
 
   /** All records (for audit/export). Immutable copies. */
   export(): CapabilityRecord[] {
-    return Array.from(this.records.values()).flat().map((r) => ({ ...r }));
+    return Array.from(this.records.values())
+      .flat()
+      .map((r) => ({ ...r }));
   }
 
   /** Hash of the full record set (for run records / tamper-evidence). */

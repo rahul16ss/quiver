@@ -13,11 +13,15 @@ npm install
 ## Development
 
 ```bash
+npm run check      # Serial gate: format + lint + typecheck + build + tests + daemon smoke
 npm test            # Checker-owned acceptance contract + harness gate — must stay green
-npx tsc --noEmit    # TypeScript clean
 npm run demo:ic-memo # Flagship workflow demo (8/8 checks, no network needed)
-npm start           # Loopback browser UI via harness daemon
+npm start           # Loopback browser UI via harness daemon (compiled dist/)
 ```
+
+Never run two npm commands concurrently in the same checkout — concurrent
+commands can mutate `node_modules` underneath each other and produce phantom
+module-resolution failures. `npm run check` is deliberately serial.
 
 ## The acceptance contract
 
@@ -27,8 +31,8 @@ The contract asserts against `SPEC.md` and `docs/product/user-stories.md`, not a
 
 ## Before submitting a PR
 
-1. `npm test` green
-2. `npx tsc --noEmit` clean
+1. `npm run check` green (includes `npm test` and `tsc --noEmit`)
+2. No new lint errors (warnings in legacy files are a tracked ratchet — see docs/status/READINESS.md)
 3. `npm run demo:ic-memo` 8/8
 4. If you changed the browser UI, do a visual walkthrough (launch → send/workflow → approval → deliverable card → session resume → settings) and read the screenshots. "Tests green" has shipped a broken UI before.
 5. No secrets in code, commits, or diffs. API keys live in the OS keychain or `.env` (gitignored). Prefer `OPENROUTER_API_KEY` for cloud; `LLM_API_*` for local/private.

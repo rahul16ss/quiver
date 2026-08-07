@@ -18,14 +18,14 @@ cp templates/acceptance/investment-brief.md .quiver/acceptance.md
 
 ## Available Templates
 
-| Template | Use Case | Who It's For |
-|---|---|---|
-| `research-report.md` | General research reports with cited sources | Analysts, researchers, consultants |
-| `investment-brief.md` | Company investment analysis and recommendations | Investment analysts, portfolio managers |
-| `compliance-review.md` | Regulatory compliance gap assessments | Compliance officers, risk managers |
-| `due-diligence.md` | M&A / investment due diligence checklists | Deal teams, investment bankers |
-| `competitive-matrix.md` | Competitive landscape comparison matrices | Strategy teams, product managers |
-| `legal-research-memo.md` | Legal research memoranda with case citations | Lawyers, legal researchers |
+| Template                 | Use Case                                        | Who It's For                            |
+| ------------------------ | ----------------------------------------------- | --------------------------------------- |
+| `research-report.md`     | General research reports with cited sources     | Analysts, researchers, consultants      |
+| `investment-brief.md`    | Company investment analysis and recommendations | Investment analysts, portfolio managers |
+| `compliance-review.md`   | Regulatory compliance gap assessments           | Compliance officers, risk managers      |
+| `due-diligence.md`       | M&A / investment due diligence checklists       | Deal teams, investment bankers          |
+| `competitive-matrix.md`  | Competitive landscape comparison matrices       | Strategy teams, product managers        |
+| `legal-research-memo.md` | Legal research memoranda with case citations    | Lawyers, legal researchers              |
 
 ## Customizing
 
@@ -33,6 +33,7 @@ Each template uses the standard acceptance.md format:
 
 ```markdown
 ## Section Name
+
 - [ ] criterion description
 - [ ] another criterion
 ```

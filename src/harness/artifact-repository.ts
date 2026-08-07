@@ -59,10 +59,7 @@ export class LocalArtifactRepository implements ArtifactRepository {
       workingCopyPath,
       createdAt: new Date().toISOString(),
     };
-    fs.writeFileSync(
-      path.join(dir, "staged.json"),
-      JSON.stringify(staged, null, 2),
-    );
+    fs.writeFileSync(path.join(dir, "staged.json"), JSON.stringify(staged, null, 2));
     return Promise.resolve(staged);
   }
 
@@ -108,11 +105,17 @@ export class LocalArtifactRepository implements ArtifactRepository {
       const b = beforeLines[i] ?? "";
       const a = afterLines[i] ?? "";
       if (b !== a) {
-        changes.push({ kind: "paragraph", locator: `line:${i + 1}`, before: b || undefined, after: a || undefined });
+        changes.push({
+          kind: "paragraph",
+          locator: `line:${i + 1}`,
+          before: b || undefined,
+          after: a || undefined,
+        });
       }
     }
     return Promise.resolve({
-      semantic: changes.length === 0 ? "no structural changes" : `${changes.length} structural change(s)`,
+      semantic:
+        changes.length === 0 ? "no structural changes" : `${changes.length} structural change(s)`,
       changes,
     });
   }
@@ -133,7 +136,9 @@ export class LocalArtifactRepository implements ArtifactRepository {
   commit(candidate: CandidateArtifact): Promise<CommittedArtifact> {
     if (candidate.approval.status !== "accepted") {
       return Promise.reject(
-        new Error("Cannot commit a candidate that has not been accepted (maker/checker + human approval required)."),
+        new Error(
+          "Cannot commit a candidate that has not been accepted (maker/checker + human approval required).",
+        ),
       );
     }
     const dir = this.runDir(candidate.staged.runId);
