@@ -1,5 +1,6 @@
-// Settings — loads/saves via the proven loadConfig/saveConfig path (which
-// writes quiver-config.json and syncs .env). Plain business language only.
+// Settings — loads/saves via the daemon's loadConfig/saveConfig API. Secrets
+// go to the OS credential store; everything else persists on the daemon side
+// and applies without a restart. Plain business language only.
 
 const api = window.quiver;
 const $ = (id) => document.getElementById(id);
@@ -9,7 +10,15 @@ let currentConfig = null;
 async function loadSettings() {
   currentConfig = await api.loadConfig();
   $("workspacePath").value = currentConfig.workspacePath || "";
-  $("modelName").value = currentConfig.provider?.modelName || "";
+  const modelName = currentConfig.provider?.modelName || "";
+  // "model chosen by workflow" is a display alias for the automatic profile,
+  // not a value the user typed — show it as a placeholder, not editable text.
+  if (modelName === "model chosen by workflow") {
+    $("modelName").value = "";
+    $("modelName").placeholder = "Chosen automatically by the workflow";
+  } else {
+    $("modelName").value = modelName;
+  }
   $("baseUrl").value = currentConfig.provider?.baseUrl || "";
   $("checkerModelName").value = currentConfig.checkerModelName || "";
   $("maxContextTokens").value = currentConfig.maxContextTokens || 120000;
@@ -52,10 +61,6 @@ function isToggleActive(id) {
   return el ? el.classList.contains("active") : false;
 }
 
-async function browseWorkspace() {
-  const selected = await api.selectWorkspaceDir();
-  if (selected) $("workspacePath").value = selected;
-}
 function showSettingsError(message) {
   let el = document.getElementById("settingsInlineError");
   if (!el) {
@@ -112,15 +117,8 @@ async function saveSettings() {
     }
   }
 
-  const {
-    vertexProjectId: _vertexProjectId,
-    vertexLocation: _vertexLocation,
-    googleApplicationCredentials: _googleApplicationCredentials,
-    ...safeCurrentConfig
-  } = currentConfig || {};
   const saved = await api.saveConfig({
-    ...safeCurrentConfig,
-    workspacePath: $("workspacePath").value.trim(),
+    ...(currentConfig || {}),
     provider: {
       ...currentConfig?.provider,
       apiKey: "",
@@ -143,7 +141,6 @@ async function saveSettings() {
   await api.loadMain();
 }
 
-$("browseWorkspaceBtn").addEventListener("click", browseWorkspace);
 $("saveBtn").addEventListener("click", saveSettings);
 $("cancelBtn").addEventListener("click", () => api.loadMain());
 

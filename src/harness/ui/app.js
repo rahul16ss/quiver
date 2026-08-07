@@ -1,7 +1,7 @@
-// ─── Quiver Desktop — renderer entry (ES modules) ───────────────────────
-// Three planes: Context | Conversation | Activity. The renderer is a thin
-// view over the Quiver CLI (run in --json mode by the main process). It
-// speaks only the allowlisted window.quiver IPC API exposed by preload.js.
+// ─── Quiver browser UI — entry (ES modules) ─────────────────────────────
+// Three planes: Context | Conversation | Activity. The app is a thin view
+// over the loopback daemon's HTTP/SSE API, exposed as `api`/window.quiver by
+// js/bridge.js (the browser equivalent of the old Electron preload).
 // No framework, no build step, no inline scripts (CSP script-src 'self').
 
 import { $ } from "./js/dom.js";

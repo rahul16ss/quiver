@@ -141,6 +141,18 @@ export async function loadConfig(): Promise<any> {
     },
     autonomyGrants: config.autonomyGrants?.size ? [...config.autonomyGrants].join(",") : "",
     memory: { reviewQueue: true },
+    // Settings surface (browser build): the workspace is fixed at launch and
+    // shown read-only; credentials report stored/not-stored, never values.
+    workspacePath: process.cwd(),
+    checkerModelName: config.checkerModelName || "",
+    maxContextTokens: config.maxContextTokens,
+    consentGateEnabled: config.consentGateEnabled === true,
+    sessionLogEnabled: config.sessionLogEnabled !== false,
+    sessionLogMaxChars: config.sessionLogMaxChars,
+    credentials: {
+      llmApiKeyStored: Boolean(config.llmApiKey || config.openRouterApiKey),
+      parallelApiKeyStored: Boolean(config.parallelApiKey),
+    },
   };
 }
 
@@ -153,6 +165,159 @@ export async function isConfigured(): Promise<boolean> {
     config.llmApiKey ||
     config.llmBaseUrl,
   );
+}
+
+// ─── Config persistence (Settings / onboarding save path) ──────────────
+//
+// Non-secret settings persist as env assignments in the same .env file
+// config.ts reads (CWD first, then walk-up; created 0600 when absent) and are
+// applied to the live config so a save takes effect without a restart.
+// Secrets NEVER pass through this path — they go to the OS credential store
+// via /api/config/setCredential (US-1.3: never silently write a plaintext key).
+
+const ENV_KEY_ALLOWLIST = new Set([
+  "LLM_MODEL_NAME",
+  "LLM_API_BASE_URL",
+  "CHECKER_LLM_MODEL_NAME",
+  "QUIVER_MAX_CONTEXT_TOKENS",
+  "QUIVER_AUTONOMY",
+  "QUIVER_CONSENT_GATE",
+  "QUIVER_SESSION_LOG",
+  "QUIVER_SESSION_LOG_MAX_CHARS",
+]);
+
+const CREDENTIAL_KEY_ALLOWLIST = new Set(["LLM_API_KEY", "OPENROUTER_API_KEY", "PARALLEL_API_KEY"]);
+
+function resolveEnvFilePath(): string {
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = path.join(dir, ".env");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(process.cwd(), ".env");
+}
+
+function updateEnvFile(assignments: Record<string, string>): void {
+  const envPath = resolveEnvFilePath();
+  const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+  const lines = existing.length > 0 ? existing.split("\n") : [];
+  const remaining = new Map(Object.entries(assignments));
+  const updated = lines.map((line) => {
+    const match = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=/.exec(line);
+    if (!match) return line;
+    const key = match[1];
+    if (!remaining.has(key)) return line;
+    const value = remaining.get(key)!;
+    remaining.delete(key);
+    return `${key}=${value}`;
+  });
+  for (const [key, value] of remaining) updated.push(`${key}=${value}`);
+  const body = updated.join("\n").replace(/\n*$/, "\n");
+  fs.writeFileSync(envPath, body, { mode: 0o600 });
+  try {
+    fs.chmodSync(envPath, 0o600);
+  } catch {
+    // best effort on platforms without POSIX modes
+  }
+}
+
+/** Persist + live-apply non-secret settings from the Settings/onboarding UI. */
+export async function saveConfig(cfg: any): Promise<{ saved: boolean; error?: string }> {
+  if (!cfg || typeof cfg !== "object") return { saved: false, error: "no settings provided" };
+  const { config, applyTrustTier, ALL_GRANTS } = await import("../config.js");
+
+  const assignments: Record<string, string> = {};
+  const cleanString = (v: unknown): string | undefined => {
+    if (typeof v !== "string") return undefined;
+    const trimmed = v.trim();
+    // Values never span lines; a newline here is an injection attempt.
+    if (/[\r\n]/.test(trimmed)) return undefined;
+    return trimmed;
+  };
+
+  const modelName = cleanString(cfg.provider?.modelName);
+  // "model chosen by workflow" is the display alias for profile-auto — never persist it.
+  if (modelName !== undefined && modelName !== "model chosen by workflow") {
+    assignments.LLM_MODEL_NAME = modelName;
+    config.llmModelName = modelName;
+  }
+  const baseUrl = cleanString(cfg.provider?.baseUrl);
+  if (baseUrl !== undefined && baseUrl !== "https://openrouter.ai/api/v1") {
+    assignments.LLM_API_BASE_URL = baseUrl;
+    config.llmBaseUrl = baseUrl;
+  }
+  const checkerModelName = cleanString(cfg.checkerModelName);
+  if (checkerModelName !== undefined) {
+    assignments.CHECKER_LLM_MODEL_NAME = checkerModelName;
+    config.checkerModelName = checkerModelName;
+  }
+  const maxContext = Number(cfg.maxContextTokens);
+  if (Number.isFinite(maxContext) && maxContext >= 1_000) {
+    assignments.QUIVER_MAX_CONTEXT_TOKENS = String(Math.floor(maxContext));
+    config.maxContextTokens = Math.floor(maxContext);
+  }
+  if (typeof cfg.consentGateEnabled === "boolean") {
+    assignments.QUIVER_CONSENT_GATE = cfg.consentGateEnabled ? "1" : "0";
+    config.consentGateEnabled = cfg.consentGateEnabled;
+  }
+  if (typeof cfg.sessionLogEnabled === "boolean") {
+    assignments.QUIVER_SESSION_LOG = cfg.sessionLogEnabled ? "1" : "0";
+    config.sessionLogEnabled = cfg.sessionLogEnabled;
+  }
+  const logMax = Number(cfg.sessionLogMaxChars);
+  if (Number.isFinite(logMax) && logMax > 0) {
+    assignments.QUIVER_SESSION_LOG_MAX_CHARS = String(Math.floor(logMax));
+    config.sessionLogMaxChars = Math.floor(logMax);
+  }
+  const grants = cleanString(cfg.autonomyGrants);
+  if (grants !== undefined) {
+    assignments.QUIVER_AUTONOMY = grants;
+    const parts = grants.split(",").map((s) => s.trim()).filter(Boolean);
+    const tierPart = parts.find((p) => p.startsWith("tier:"));
+    if (tierPart) {
+      applyTrustTier(tierPart.slice("tier:".length) as any);
+    } else {
+      applyTrustTier(null);
+    }
+    for (const part of parts) {
+      if (part.startsWith("tier:")) continue;
+      if ((ALL_GRANTS as readonly string[]).includes(part)) {
+        config.autonomyGrants.add(part as any);
+      }
+    }
+    config.browserHeadless = !config.autonomyGrants.has("browser:visible");
+  }
+
+  // Refuse to persist anything secret-shaped; secrets go to the credential store.
+  for (const key of Object.keys(assignments)) {
+    if (!ENV_KEY_ALLOWLIST.has(key)) delete assignments[key];
+  }
+
+  try {
+    if (Object.keys(assignments).length > 0) updateEnvFile(assignments);
+    return { saved: true };
+  } catch (err: any) {
+    return { saved: false, error: `could not persist settings: ${err?.message ?? err}` };
+  }
+}
+
+/** Store a provider credential in the OS credential store (never plaintext). */
+export async function setCredentialForUi(key: string, value: string): Promise<{ ok: boolean }> {
+  if (!CREDENTIAL_KEY_ALLOWLIST.has(key) || typeof value !== "string" || value.trim().length === 0) {
+    return { ok: false };
+  }
+  const { setCredential } = await import("../secrets/keychain.js");
+  const stored = await setCredential(key, value.trim());
+  if (!stored) return { ok: false };
+  // Live-apply so onboarding can start the agent without a restart.
+  const { config } = await import("../config.js");
+  if (key === "LLM_API_KEY") config.llmApiKey = value.trim();
+  if (key === "OPENROUTER_API_KEY") config.openRouterApiKey = value.trim();
+  if (key === "PARALLEL_API_KEY") config.parallelApiKey = value.trim();
+  return { ok: true };
 }
 
 export async function startAgent(_config: any, _resumeLatest: boolean): Promise<void> {
@@ -609,6 +774,9 @@ export async function browserApiHandler(req: {
   if (pathname === "/api/config/isConfigured" && method === "GET")
     return { configured: await isConfigured() };
   if (pathname === "/api/config" && method === "GET") return loadConfig();
+  if (pathname === "/api/config/save" && method === "POST") return saveConfig(b.config);
+  if (pathname === "/api/config/setCredential" && method === "POST")
+    return setCredentialForUi(String(b.key ?? ""), String(b.value ?? ""));
   if (pathname === "/api/agent/start" && method === "POST") {
     await startAgent(b.config, b.resumeLatest);
     return { started: true };
@@ -702,7 +870,9 @@ export async function browserApiHandler(req: {
       brokerIntegrations: rt.broker.list().map((d) => d.name),
     };
   }
-  return { error: `unknown route: ${method} ${pathname}` };
+  // Unknown routes are a 404, never a 200-with-error-body: the UI must be
+  // able to distinguish "saved" from "this endpoint does not exist" by status.
+  return { __status: 404, error: `unknown route: ${method} ${pathname}` };
 }
 
 /** The SSE handler (mounted by the launcher as sseHandler). */

@@ -38,8 +38,8 @@
       <section class="settings-section">
         <h2>Model Provider</h2>
         <p class="settings-help">
-          Prefer OpenRouter for the shared cloud gateway (<code>OPENROUTER_API_KEY</code>). Use
-          Provider address only for a local/private OpenAI-compatible endpoint.
+          Most teams use the standard cloud gateway — just add your model key below. Fill in
+          Provider address only if your firm runs its own private model service.
         </p>
         <label
           >Model <input id="modelName" class="field" placeholder="Model name from your provider"
@@ -60,10 +60,14 @@
         /></label>
         <label
           >Workspace folder
-          <span class="field-row">
-            <input id="workspacePath" class="field" placeholder="Where Quiver does its work" />
-            <button id="browseWorkspaceBtn" class="ghost-btn">Choose…</button>
-          </span>
+          <input
+            id="workspacePath"
+            class="field"
+            readonly
+            title="The workspace is chosen when Quiver starts"
+            placeholder="Where Quiver does its work"
+          />
+          <span class="field-hint">Chosen when Quiver starts; shown here for reference.</span>
         </label>
         <label
           >Working memory (tokens)
@@ -157,6 +161,7 @@
       </section>
     </div>
 
-    <script src="settings.js"></script>
+    <script type="module" src="js/bridge.js"></script>
+    <script type="module" src="settings.js"></script>
   </body>
 </html>

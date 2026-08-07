@@ -63,11 +63,18 @@ function setModel(name, config) {
   const cfg = config || state.lastModelConfig;
   const f = friendlyModelName(name);
   const locality = modelLocality(cfg);
+  // The Electron shell had a #modelBadge in the top bar; the browser UI
+  // surfaces the model in the context plane (trust pill covers the top bar).
   const badge = $("modelBadge");
-  badge.textContent = locality ? `Model \u00b7 ${f} \u00b7 ${locality}` : `Model \u00b7 ${f}`;
-  badge.title = name ? `Model id: ${name}` : "No model selected";
-  $("ctxModel").textContent = f;
-  $("ctxModel").title = name ? name : "";
+  if (badge) {
+    badge.textContent = locality ? `Model \u00b7 ${f} \u00b7 ${locality}` : `Model \u00b7 ${f}`;
+    badge.title = name ? `Model id: ${name}` : "No model selected";
+  }
+  const ctxModel = $("ctxModel");
+  if (ctxModel) {
+    ctxModel.textContent = f;
+    ctxModel.title = name ? name : "";
+  }
 }
 
 export { MODEL_LABELS, SIZE_TAG, friendlyModelName, modelLocality, setModel };

@@ -186,6 +186,12 @@ export class QuiverDaemon {
       }
       try {
         const result = await this.apiHandler!({ method: req.method ?? "GET", pathname, body });
+        // Handlers may carry an explicit HTTP status (e.g. 404 for unknown
+        // routes) via __status; plain results remain 200 as before.
+        if (result && typeof result === "object" && "__status" in (result as any)) {
+          const { __status, ...rest } = result as any;
+          return this.send(res, Number(__status) || 200, rest);
+        }
         return this.send(res, 200, result);
       } catch (err: any) {
         return this.send(res, 400, { error: err.message });

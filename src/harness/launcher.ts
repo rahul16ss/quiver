@@ -197,7 +197,9 @@ export class QuiverLauncher {
     };
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
-    if (opts.open !== false) {
+    // QUIVER_NO_BROWSER=1 lets QA drivers and CI attach their own browser
+    // instead of opening the user's default one.
+    if (opts.open !== false && process.env.QUIVER_NO_BROWSER !== "1") {
       const { spawn } = await import("child_process");
       const url = `${origin}/#token=${encodeURIComponent(secret)}`;
       const cmd =

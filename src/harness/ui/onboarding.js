@@ -12,10 +12,13 @@ $("onbStartBtn").addEventListener("click", async () => {
   try {
     if (key) {
       // Prefer the OS keychain (settings:set-credential → keychain.ts).
+      // OpenRouter keys (sk-or-…) power the standard cloud gateway; anything
+      // else is a key for the user's own model service.
+      const credentialName = key.startsWith("sk-or-") ? "OPENROUTER_API_KEY" : "LLM_API_KEY";
       let inKeychain = false;
       if (typeof api.settingsSetCredential === "function") {
         try {
-          inKeychain = await api.settingsSetCredential("LLM_API_KEY", key);
+          inKeychain = await api.settingsSetCredential(credentialName, key);
         } catch {
           inKeychain = false;
         }

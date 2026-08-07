@@ -41,7 +41,7 @@
           id="onbKey"
           class="field"
           type="password"
-          placeholder="Paste your model key (API key)"
+          placeholder="Paste your model key"
           autocomplete="off"
         />
         <p class="onb-hint">
@@ -49,8 +49,8 @@
           local fallback only when that store cannot be reached.
         </p>
         <p class="onb-hint">
-          In Settings, set the model name and provider address (project folder stays on your
-          machine) to point Quiver at any OpenAI-compatible service.
+          In Settings, you can also set the model name and provider address if your firm runs its
+          own private model service. Your project folder stays on your machine.
         </p>
       </div>
 
@@ -71,6 +71,7 @@
         settings control what Quiver can do without asking (full auto is opt-in).
       </p>
     </div>
-    <script src="onboarding.js"></script>
+    <script type="module" src="js/bridge.js"></script>
+    <script type="module" src="onboarding.js"></script>
   </body>
 </html>

@@ -19,7 +19,11 @@ export const api = {
   // Config
   loadConfig: () => get("/api/config"),
   isConfigured: async () => (await get("/api/config/isConfigured")).configured,
-  saveConfig: (config) => post("/api/config/save", { config }),
+  saveConfig: async (config) => (await post("/api/config/save", { config })).saved === true,
+  // Secrets go to the OS credential store on the daemon side — never into
+  // JSON config or query params.
+  settingsSetCredential: async (key, value) =>
+    (await post("/api/config/setCredential", { key, value })).ok === true,
 
   // Agent
   startAgent: (config, resumeLatest) => post("/api/agent/start", { config, resumeLatest }),
@@ -91,11 +95,17 @@ export const api = {
     return () => connSubs.delete(cb);
   },
 
-  // Navigation (no-ops in the browser — all one page)
-  loadMain: () => {},
-  loadSettings: () => {},
+  // Navigation — real pages served by the daemon. The per-install token
+  // travels in the URL fragment (never sent to the server), so it must be
+  // preserved across page changes or the next page loses its session.
+  loadMain: () => {
+    window.location.href = `/index.html${window.location.hash}`;
+  },
+  loadSettings: () => {
+    window.location.href = `/settings.html${window.location.hash}`;
+  },
   loadOnboarding: () => {
-    window.location.hash = "#onboarding";
+    window.location.href = `/onboarding.html${window.location.hash}`;
   },
 
   // Events (agent → renderer) — SSE subscription.
