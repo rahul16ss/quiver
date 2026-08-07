@@ -54,3 +54,23 @@ Classification uses the requested A–E categories. This table is evidence-first
   project's current layout; a lint script would need an added linter dependency
   and is not required by the committed acceptance contract. Recorded, not
   fabricated.
+
+## Defect found by real CLI reproduction (2026-08-07)
+
+- Reproduced from the repository root with a pseudo-TTY. Before the fix, the
+  startup output showed the raw `LLM_MODEL_NAME` (`google/gemini-3.6-flash`),
+  the legacy checker-endpoint warning, and the user reported a terminal
+  `Question` card whose body was `undefined`.
+- Root cause at the runtime boundary: `src/tools/ask_question.ts` passed raw
+  provider arguments directly into the terminal card; malformed/missing
+  `question` values could render `undefined`. It also rendered a terminal card
+  even when the browser prompt resolver owned the question surface.
+- Fixed in `bab66ef`: validate question/header/choices at execution time;
+  missing/invalid question fails closed; terminal card only renders when no
+  browser prompt resolver is installed; OpenRouter suppresses the legacy
+  checker-endpoint warning; auto-routing banner says `model chosen by
+  workflow` rather than the raw legacy model name.
+- Verification after fix, all from `/Users/rahul/quiver`: `npm test` exit 0
+  (459 spec + all harness), `npx tsc --noEmit` exit 0, Tier-A E2E 24/24,
+  daemon smoke pass, and pseudo-TTY startup capture showed no `Question` or
+  `undefined` line. New test 33 has 7 deterministic boundary checks.
