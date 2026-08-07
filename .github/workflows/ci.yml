@@ -20,6 +20,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Install OfficeCLI (behavioral acceptance checks + tier-B e2e)
+        run: curl -fsSL https://d.officecli.ai/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Quality gate (format, lint, typecheck, build, tests, daemon smoke)
         run: npm run check
       - name: Offline + OfficeCLI e2e

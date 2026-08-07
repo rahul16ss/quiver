@@ -79,7 +79,6 @@ gitignore and remember.rtf
 # ─── Commercial strategy & sensitive internal docs (not for public repo) ──
 # Private technical spec — owner's machine only, referenced from PROJECTS.md
 SPEC.md
-docs/security/
 docs/qa/
 tests/ACCEPTANCE_CONTRACT.md
 

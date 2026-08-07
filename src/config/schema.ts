@@ -48,7 +48,10 @@ export function getDefaultConfig(): ConfigSchema {
     schema_version: CONFIG_SCHEMA_VERSION,
     model: {
       provider: "custom",
-      model_name: config.llmModelName,
+      // A clean environment (no .env) must still produce a VALID default:
+      // fall back to the OpenRouter profile ("auto") when no local model name
+      // is set — cloud inference is the default route (ADR-001).
+      model_name: config.llmModelName || config.openRouterModelProfile || "auto",
       base_url: resolveMakerBaseUrl() || config.llmBaseUrl,
       api_key_ref: "LLM_API_KEY",
       max_context_tokens: config.maxContextTokens,
