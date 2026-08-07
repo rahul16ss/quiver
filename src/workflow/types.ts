@@ -123,6 +123,12 @@ export interface WorkflowRun {
   trigger: "manual" | "schedule" | "watch" | "api";
   /** Error message if failed */
   error?: string;
+  /**
+   * Review gate: set when the run paused after `verify` awaiting the
+   * reviewer chain. The run resumes (train → handover) only once the
+   * review is approved — the senior signs the document, not the loop.
+   */
+  review_run_id?: string;
 }
 
 // ─── Multi-Role Review ───────────────────────────────────────────────

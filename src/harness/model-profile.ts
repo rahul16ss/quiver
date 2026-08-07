@@ -7,6 +7,8 @@
  * used for native ingestion of that MIME type — the client fails closed.
  */
 
+import * as fs from "fs";
+import * as path from "path";
 import type { SensitivityProfile } from "./interfaces.js";
 
 export type NativeMime =
@@ -338,4 +340,61 @@ export function starterCatalog(): ModelProfile[] {
       pdfEngine: "native",
     },
   ];
+}
+
+// ─── Certification persistence ─────────────────────────────────────────
+//
+// `certify()` mutates the in-memory registry; without persistence every
+// process restart would silently forget live contract-test passes and the
+// client would fail closed forever. Certifications persist as an append-only
+// JSON list; the latest entry per (profile, mime) wins, so a later "fail"
+// honestly revokes an earlier "pass".
+
+export interface PersistedCertification {
+  profileSlug: string;
+  modelSlug: string;
+  mime: NativeMime;
+  result: "pass" | "fail";
+  date: string;
+  /** What proved it (e.g. "code-word round-trip via file-parser native"). */
+  evidence: string;
+}
+
+export function appendCertification(filePath: string, entry: PersistedCertification): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const existing: PersistedCertification[] = fs.existsSync(filePath)
+    ? JSON.parse(fs.readFileSync(filePath, "utf8"))
+    : [];
+  existing.push(entry);
+  fs.writeFileSync(filePath, `${JSON.stringify(existing, null, 2)}\n`, { mode: 0o600 });
+}
+
+/**
+ * Apply persisted certifications to a registry. The latest entry per
+ * (profile, mime) wins; entries whose modelSlug no longer matches the
+ * profile's current model are ignored (a swapped model must re-certify).
+ */
+export function loadPersistedCertifications(
+  registry: ModelProfileRegistry,
+  filePath: string,
+): void {
+  if (!fs.existsSync(filePath)) return;
+  let entries: PersistedCertification[];
+  try {
+    entries = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return; // unreadable certifications certify nothing (fail closed)
+  }
+  if (!Array.isArray(entries)) return;
+  const latest = new Map<string, PersistedCertification>();
+  for (const e of entries) {
+    if (!e?.profileSlug || !e?.mime || !e?.result) continue;
+    latest.set(`${e.profileSlug} ${e.mime}`, e);
+  }
+  for (const e of latest.values()) {
+    const profile = registry.get(e.profileSlug);
+    if (!profile) continue;
+    if (profile.modelSlug !== e.modelSlug) continue;
+    registry.certify(e.profileSlug, e.mime, e.result);
+  }
 }

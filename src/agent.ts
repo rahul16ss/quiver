@@ -796,6 +796,45 @@ export class Agent {
     toolCalls: 0,
     turns: 0,
   };
+  // Per-engagement spend attribution: the chat plane records into the SAME
+  // cost ledger the workflow plane uses (~/.quiver/cost-ledger.jsonl), so
+  // engagement spend is one number, not "workflows only". Lazy so tests and
+  // air-gapped runs never pay for it unless a turn actually completes.
+  private costLedger: import("./harness/cost-ledger.js").CostLedger | null = null;
+
+  private recordChatUsage(
+    usage: { promptTokens: number; completionTokens: number; costUsd?: number },
+    modelName: string,
+  ): void {
+    const entry = {
+      at: new Date().toISOString(),
+      engagementId: `chat:${path.basename(process.cwd())}`,
+      kind: "model" as const,
+      role: "maker",
+      profileSlug: modelName,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      costUsd: usage.costUsd ?? 0,
+    };
+    try {
+      if (this.costLedger) {
+        this.costLedger.record(entry);
+        return;
+      }
+      void import("./harness/cost-ledger.js")
+        .then((m) => {
+          this.costLedger ??= new m.CostLedger(
+            path.join(os.homedir(), ".quiver", "cost-ledger.jsonl"),
+          );
+          this.costLedger.record(entry);
+        })
+        .catch(() => {
+          // Spend attribution must never break a turn.
+        });
+    } catch {
+      // Spend attribution must never break a turn.
+    }
+  }
   // US-6.1: hash-based read-before-write (compare-and-swap). Replaces the
   // crude Set<string> path tracker with SHA-256 + mtimeMs verification so a
   // file modified between read and write is never silently overwritten.
@@ -2671,6 +2710,13 @@ export class Agent {
                 if (ev.finishReason && !streamFinishReason) {
                   streamFinishReason = ev.finishReason;
                 }
+                // Per-engagement spend attribution (chat plane): real provider
+                // usage (and OpenRouter's real cost when reported) lands in
+                // the same ledger the workflow plane uses. Never content —
+                // ids, token counts, and dollars only.
+                if (ev.usage) {
+                  this.recordChatUsage(ev.usage, turnModel);
+                }
               } else if (ev.type === "error") {
                 throw new Error(ev.error || "Provider stream error");
               } else if (ev.type === "reasoning_delta") {
@@ -3316,10 +3362,17 @@ export class Agent {
                       this.tokenStats.toolCalls++;
                       // US-AMBIENT: remember that this turn changed files so the
                       // completion-gate verifier knows to run a health check.
+                      // Office mutations count: building the deliverable is the
+                      // flagship act — a document-only turn must not skip the
+                      // completion gate that a code edit would trigger.
                       if (
                         toolName === "write_file" ||
                         toolName === "replace_content" ||
-                        toolName === "apply_patch"
+                        toolName === "apply_patch" ||
+                        (toolName === "office_doc" &&
+                          !["get", "view", "query", "validate", "help", "close"].includes(
+                            String(args?.action || ""),
+                          ))
                       ) {
                         mutatedThisTurn = true;
                       }

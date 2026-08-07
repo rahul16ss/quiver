@@ -40,7 +40,7 @@ async function loadContextSurfaces(config) {
   const endpointEl = $("ctxEndpoint");
   if (endpointEl) {
     const baseUrl = config?.provider?.baseUrl || "";
-    let where = "Cloud — default provider endpoint";
+    let where = "Cloud — your configured model provider";
     if (baseUrl) {
       try {
         const host = new URL(baseUrl).hostname;
@@ -424,9 +424,16 @@ async function openPreview(filePath, title) {
       return;
     }
     if (res?.isImage && res?.imageUrl) {
-      body.innerHTML = `<img src="${res.imageUrl}" alt="" />`;
+      // Build via DOM, never string interpolation: a URL is attacker-shaped
+      // data even when it came from our own daemon.
+      const img = document.createElement("img");
+      img.src = res.imageUrl;
+      img.alt = "";
+      body.replaceChildren(img);
     } else if (res?.isPdf && res?.pdfUrl) {
-      body.innerHTML = `<iframe src="${res.pdfUrl}"></iframe>`;
+      const frame = document.createElement("iframe");
+      frame.src = res.pdfUrl;
+      body.replaceChildren(frame);
     } else {
       body.textContent = res?.content ?? "";
     }

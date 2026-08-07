@@ -27,6 +27,9 @@
       <div
         id="trustContextPill"
         class="trust-context-pill"
+        role="button"
+        tabindex="0"
+        aria-label="Inspect context and trust details"
         title="Click to inspect context & trust details"
       >
         <span id="statusDot" class="status-dot idle" title="Agent status"></span>
@@ -373,7 +376,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3 id="verificationRailTitle">Source</h3>
-          <button class="close-btn" data-close="verificationRail">×</button>
+          <button class="close-btn" data-close="verificationRail" aria-label="Close">×</button>
         </div>
         <div id="verificationRailBody" class="preview-body"></div>
         <div class="overlay-actions">
@@ -393,7 +396,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3>Before Quiver runs</h3>
-          <button class="close-btn" data-close="consentGateOverlay">×</button>
+          <button class="close-btn" data-close="consentGateOverlay" aria-label="Close">×</button>
         </div>
         <div id="consentGateSummary" class="consent-gate-summary"></div>
         <div class="overlay-actions">
@@ -409,7 +412,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3>Context compaction proposed</h3>
-          <button class="close-btn" data-close="compactionOverlay">×</button>
+          <button class="close-btn" data-close="compactionOverlay" aria-label="Close">×</button>
         </div>
         <div id="compactionSummary" class="consent-gate-summary"></div>
         <div class="overlay-actions">
@@ -424,7 +427,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3>Evidence approval required</h3>
-          <button class="close-btn" data-close="evidenceConsentOverlay">×</button>
+          <button class="close-btn" data-close="evidenceConsentOverlay" aria-label="Close">×</button>
         </div>
         <div id="evidenceConsentSummary" class="consent-gate-summary"></div>
         <div class="overlay-actions">
@@ -439,7 +442,7 @@
       <div class="overlay-card wide">
         <div class="overlay-head">
           <h3 id="deliverableContextTitle">Context used for this document</h3>
-          <button class="close-btn" data-close="deliverableContextOverlay">×</button>
+          <button class="close-btn" data-close="deliverableContextOverlay" aria-label="Close">×</button>
         </div>
         <div id="deliverableContextBody" class="context-used-body"></div>
       </div>
@@ -452,7 +455,7 @@
       <div class="overlay-card wide">
         <div class="overlay-head">
           <h3 id="approvalTitle">Quiver wants to act</h3>
-          <button class="close-btn" data-close="approvalOverlay">×</button>
+          <button class="close-btn" data-close="approvalOverlay" aria-label="Close">×</button>
         </div>
         <p id="approvalSummary" class="overlay-sub"></p>
         <div id="approvalDiff" class="diff-view"></div>
@@ -475,7 +478,7 @@
           <h3 id="previewTitle">Preview</h3>
           <div class="overlay-actions">
             <button id="previewOpenBtn" class="ghost-btn" hidden>Open in app</button>
-            <button class="close-btn" data-close="preview-panel">×</button>
+            <button class="close-btn" data-close="preview-panel" aria-label="Close">×</button>
           </div>
         </div>
         <div id="previewBody" class="preview-body"></div>
@@ -487,7 +490,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3 id="memoryEditorTitle">Memory</h3>
-          <button class="close-btn" data-close="memoryOverlay">×</button>
+          <button class="close-btn" data-close="memoryOverlay" aria-label="Close">×</button>
         </div>
         <input id="memoryName" class="field" placeholder="File name (e.g. persona.txt)" />
         <textarea
@@ -507,7 +510,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3>What Quiver remembers about you</h3>
-          <button class="close-btn" data-close="coreOverlay">×</button>
+          <button class="close-btn" data-close="coreOverlay" aria-label="Close">×</button>
         </div>
         <div class="core-grid">
           <label
@@ -536,7 +539,7 @@
       <div class="overlay-card">
         <div class="overlay-head">
           <h3 id="skillTitle">Skill</h3>
-          <button class="close-btn" data-close="skillOverlay">×</button>
+          <button class="close-btn" data-close="skillOverlay" aria-label="Close">×</button>
         </div>
         <textarea id="skillContent" class="big-field code-field"></textarea>
         <div class="overlay-actions">
@@ -550,7 +553,7 @@
       <div class="overlay-card wide">
         <div class="overlay-head">
           <h3>Review what Quiver learned</h3>
-          <button class="close-btn" data-close="reviewOverlay">×</button>
+          <button class="close-btn" data-close="reviewOverlay" aria-label="Close">×</button>
         </div>
         <p class="overlay-sub">Nothing becomes permanent until you accept it.</p>
         <div id="reviewList" class="review-list"></div>
@@ -564,7 +567,7 @@
           <h3>Past sessions</h3>
           <div class="overlay-actions">
             <button id="newSessionBtn" class="primary-btn">New</button>
-            <button class="close-btn" data-close="sessionsOverlay">×</button>
+            <button class="close-btn" data-close="sessionsOverlay" aria-label="Close">×</button>
           </div>
         </div>
         <input

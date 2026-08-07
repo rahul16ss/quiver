@@ -95,3 +95,23 @@ Equally important — what **not** to do (§0 discipline): no new workflow packs
 Durable-job consolidation of the legacy cron scheduler (A-4) · intra-phase checkpointing (A-5) · markdown href sanitization + dialog a11y + focusable trust pill (C-4) · chat-plane per-run token/cost ceilings beyond the ledger (A-6).
 
 **Standing risk to log:** SPEC §19 calls the browser UI a "shipped foundation" while its Settings screen is unreachable — the status table is ahead of reality on Epic 2. Correct §19 when P0-1 lands (the doc's own maintenance rule: fix disagreements before doing anything else).
+
+---
+
+## Remediation addendum — 2026-08-07 (same day)
+
+**Fixed and verified (all gates green: npm test, tsc, demo:ic-memo, GUI QA 12/12):**
+- P0-1..4 complete: `/api/config/save` + `/api/config/setCredential` (keychain-only secrets, allowlisted env keys, 0600), real Settings/onboarding navigation with fragment-token preservation, 404 on unknown API routes, buyer-language fixes, stale vertex descriptor removed, GUI QA rewritten against the daemon UI (`tests/gui_browser_qa.mjs`; also caught + fixed a live null-deref in `model.js`).
+- C-4: markdown `href` scheme allowlist, DOM-built preview embeds, keyboard-accessible trust pill, `aria-label` on close buttons (overlays already had role/aria-modal/focus-trap).
+- A-1: `office_doc` mutations now set `mutatedThisTurn` — document-only turns trigger the ambient completion gate.
+- D-2: `validateEvidence()` re-reads declared `excel_cell`/`excel_derived` cells via officecli in the live loop; relative paths resolve against the Evidence.json directory; unrunnable reads are failures (never passes).
+- A-3: legacy orchestrator pauses after `verify` when the workflow declares a `review_role` (creates the ReviewManager chain, `workflow:paused` event); resume refuses until the review is approved.
+- A-2/B-6 (partial): chat plane requests usage accounting (`stream_options.include_usage`; OpenRouter `usage.include` → real `costUsd`) and records every turn to the shared `~/.quiver/cost-ledger.jsonl` as `chat:<workspace>`.
+- B-2/B-3 infrastructure: certification persistence (`~/.quiver/native-certifications.json`, latest-wins, model-swap invalidation, loaded by `buildProductionRuntime`) + live contract-test runner (`scripts/run_native_contract_tests.ts`, code-word round-trip, same wire shape as the client). All catalog slugs verified to exist on OpenRouter (the catalog is real, not fictional).
+
+**Blocked on owner (key limit):** the live certification run and `QUIVER_LIVE_EVAL=1` routing eval both 403 — the OpenRouter key's $300 total limit is exhausted. Raise/remove at openrouter.ai/settings/keys, then run:
+`npx tsx scripts/run_native_contract_tests.ts` and `QUIVER_LIVE_EVAL=1 npx tsx scripts/run_routing_eval.ts`.
+
+**New finding from the live run (B-7):** with `zdr: true` pinned, OpenRouter returns *no endpoints* for `anthropic/*` and `openai/*` models (404), while Google/Moonshot pass endpoint resolution. As shipped, the ZDR promise silently excludes Anthropic/OpenAI from the harness plane entirely; kimi-k3's real providers (Fireworks/BaseTen/DigitalOcean/…) also don't match a "Moonshot" providerOrder. Decide: keep the hard ZDR pin and prune those profiles honestly, or introduce an explicit per-engagement `zdr: "required" | "preferred"` posture. Do not soften silently.
+
+**Still open (deferred deliberately):** B-1/C-5 chat→engine unification; B-4 per-format ingestion policy + OpenRouter annotation caching; A-4 scheduler consolidation; A-5 intra-phase checkpoints.

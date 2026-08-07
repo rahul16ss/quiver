@@ -115,7 +115,12 @@ async function main() {
     );
 
     // 4. Drive the real UI.
-    browser = await puppeteer.launch({ headless: "shell" });
+    // Desktop viewport: below 840px the trust pill collapses to its dot by
+    // design, and the buyer demo runs on a laptop, not a phone.
+    browser = await puppeteer.launch({
+      headless: "shell",
+      defaultViewport: { width: 1366, height: 850 },
+    });
     const page = await browser.newPage();
     page.on("pageerror", (err) => record("page error (unexpected)", false, String(err?.stack || err)));
     await page.goto(`${origin}/index.html#token=${encodeURIComponent(secret)}`, {

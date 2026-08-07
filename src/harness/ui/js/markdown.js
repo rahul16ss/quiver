@@ -137,8 +137,13 @@ function renderInlineMarkdown(text) {
       out += `<del>${tok.slice(2, -2)}</del>`;
     } else if (tok.startsWith("[")) {
       const lm = tok.match(/^\[([^\]]*)\]\(([^)]+)\)$/);
-      if (lm) {
-        out += `<a href="${lm[2]}" target="_blank" class="preview-link">${lm[1]}</a>`;
+      // Scheme allowlist: model output must never mint javascript:/data:
+      // links (CSP mitigates, but defense in depth is the rule here).
+      const safeHref = lm && /^(https?:|mailto:)/i.test(lm[2].trim()) ? lm[2].trim() : null;
+      if (lm && safeHref) {
+        out += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="preview-link">${lm[1]}</a>`;
+      } else if (lm) {
+        out += lm[1];
       } else {
         out += tok;
       }

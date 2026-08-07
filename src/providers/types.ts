@@ -59,6 +59,8 @@ export interface ModelEvent {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    /** Real cost in USD when the gateway reports it (OpenRouter usage accounting). */
+    costUsd?: number;
   };
   /** For "unsupported" events: the raw event data that couldn't be classified. */
   rawEvent?: unknown;
@@ -243,6 +245,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
             : {}),
           max_tokens: request.maxTokens,
           stream: true,
+          // Usage accounting on the final chunk: stream_options is the
+          // OpenAI-compat form (vLLM/Ollama honor it, others ignore it);
+          // usage.include is OpenRouter's richer form that also returns real
+          // cost — sent only to OpenRouter so strict local servers never see
+          // an unknown field.
+          stream_options: { include_usage: true },
+          ...(this.baseUrl.includes("openrouter.ai") ? { usage: { include: true } } : {}),
         }),
         signal: timeoutController.signal,
       });
@@ -407,6 +416,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
                       promptTokens: parsed.usage.prompt_tokens || 0,
                       completionTokens: parsed.usage.completion_tokens || 0,
                       totalTokens: parsed.usage.total_tokens || 0,
+                      ...(typeof parsed.usage.cost === "number"
+                        ? { costUsd: parsed.usage.cost }
+                        : {}),
                     }
                   : undefined,
               };

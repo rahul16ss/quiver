@@ -119,6 +119,10 @@ export async function buildProductionRuntime(
   const base = new ModelProfileRegistry();
   for (const pp of starterCatalog()) base.register(pp);
   const profiles = resolvedPack ? applyApprovedModels(base, resolvedPack.approvedModels) : base;
+  // Live contract-test passes persist across restarts; without this, native
+  // ingestion would fail closed forever no matter how many tests passed.
+  const { loadPersistedCertifications } = await import("./model-profile.js");
+  loadPersistedCertifications(profiles, path.join(dataDir, "native-certifications.json"));
   const enginePack = resolvedPack ?? emptyPack();
   const policy = new QuiverPolicyEngine(enginePack);
 

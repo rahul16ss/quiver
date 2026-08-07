@@ -53,6 +53,14 @@ function wireButtons() {
   $("toggleContextBtn")?.addEventListener("click", toggleContextDrawer);
   $("toggleActivityBtn")?.addEventListener("click", toggleActivityDrawer);
   $("trustContextPill")?.addEventListener("click", toggleContextDrawer);
+  // The pill is a role=button div (its two theme styles preclude a native
+  // <button>): Enter/Space must activate it like any button.
+  $("trustContextPill")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleContextDrawer();
+    }
+  });
 
   $("approveBtn").addEventListener("click", () => approveAction(false));
   $("approveAllBtn").addEventListener("click", () => approveAction(true));

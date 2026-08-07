@@ -818,6 +818,18 @@ export async function executeWorkflow(
     if (!existing) {
       throw new Error(`Run ${resumeRunId} not found`);
     }
+    // Review gate (fail closed): a run paused for review resumes only once
+    // the reviewer chain approved. A rejected review never resumes silently.
+    if (existing.status === "paused" && existing.review_run_id) {
+      const { ReviewManager } = await import("./review.js");
+      const review = new ReviewManager().getReview(existing.review_run_id);
+      if (!review || review.status !== "approved") {
+        throw new Error(
+          `Run ${resumeRunId} is paused awaiting review (${review?.status ?? "no review found"}). ` +
+            "It resumes only after the reviewer chain approves — the senior signs, not the loop.",
+        );
+      }
+    }
     run = existing;
     run.status = "running";
   } else {
@@ -872,6 +884,22 @@ export async function executeWorkflow(
         run.error = result.errors?.join("; ") || `Phase ${phase} failed`;
         run.completed_at = new Date().toISOString();
         emit("workflow:failed", run, { phase, error: run.error });
+        saveRun(run);
+        return run;
+      }
+
+      // Review gate: a workflow that declares a review_role pauses after
+      // verify, before train/handover. The reviewer chain (ReviewManager)
+      // must approve before executeWorkflow({ resumeRunId }) will continue —
+      // the senior signs the document, not the loop.
+      if (phase === "verify" && def.review_role && !run.review_run_id) {
+        const { ReviewManager } = await import("./review.js");
+        const document = run.deliverables[run.deliverables.length - 1] ?? def.name;
+        new ReviewManager().createReview(document, run.run_id, def.family);
+        run.review_run_id = run.run_id;
+        run.status = "paused";
+        run.current_phase = null;
+        emit("workflow:paused", run, { phase, document, awaiting: "review" });
         saveRun(run);
         return run;
       }
