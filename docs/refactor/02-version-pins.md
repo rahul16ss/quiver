@@ -1,5 +1,15 @@
 # Version Pins — Phase 2/3 prerequisite
 
+> **Historical snapshot.** This document records the production-refactor
+> baseline and phased plan as of the audit/migration period. Current engineering
+> status is **`NOTES/FINISH_LINE.md`** (HEAD `cbb0b67`, 2026-08-07): Electron /
+> `ui/` / `npm run gui` / interactive `tui.ts` are removed; the buyer surface is
+> the loopback browser UI (`src/harness/ui/`); OpenRouter is the sole shared cloud
+> gateway; Parallel is the sole public-web research gateway; production callers
+> share `buildProductionRuntime()`. Treat claims below as historical unless
+> independently confirmed against current source.
+
+
 Audited exact versions, pinned with `--save-exact` (no `^`/`~`). These are the
 only cloud/research SDKs the harness depends on beyond the existing runtime.
 

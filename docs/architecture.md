@@ -1,5 +1,9 @@
 # Quiver Architecture
 
+> Current production composition and remaining blockers:
+> [`NOTES/FINISH_LINE.md`](../NOTES/FINISH_LINE.md). Historical refactor ADRs:
+> [`docs/refactor/`](refactor/).
+
 ## Overview
 
 Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; product principles and boundaries are kept in [principles.md](principles.md). The engine is built around four primary architectural systems:
@@ -35,9 +39,10 @@ quiver/
 │   ├── watchdog.ts           # Self-health queue (findings/summary/status)
 │   ├── init.ts               # Project init / onboarding
 │   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
+│   ├── harness/              # Production composition root + loopback browser UI (Electron removed)
 │   ├── adapters/             # Model adapter layer (prompting, tool formats, parsing)
-│   ├── providers/            # Model provider abstraction (transport layer)
-│   ├── security/             # Path policy, command classification, secrets, seatbelt, scratch-area, sensitivity, consent gate
+│   ├── providers/            # Model provider abstraction (OpenRouter + OpenAI-compatible local)
+│   ├── security/             # Path policy, command classification, secrets, seatbelt, scratch-area, sensitivity, consent gate, ExecutionContext
 │   ├── secrets/              # OS keychain integration + .env fallback
 │   ├── prompts/              # Security preamble, untrusted content wrapping
 │   ├── session/              # File access tracking, schema, checkpoints
@@ -46,17 +51,18 @@ quiver/
 │   ├── connectors/           # Data-vendor plugin framework (DataConnector interface, caching+TTLs, auto-load from .quiver/connectors/)
 │   ├── document/             # Render→Look→Fix orchestrator (officecli screenshot/validate/issues, 5-round cap)
 │   ├── context/              # Token budgeting
-│   ├── prompt/               # Deterministic prompt assembly
+│   ├── prompt/               # Deterministic prompt assembly + PromptRegistry
 │   ├── fs/                   # Atomic writes with rollback
 │   ├── mcp/                  # MCP client + server config (.quiver/mcp.json)
 │   ├── subagents/            # Maker-checker (validates Evidence.json, rejects unsourced), targeted check filter, scratchpad helpers
 │   └── tools/                # Static tool implementations incl. office_doc, evidence, data_query, web research, memory (versioned) + sandbox helpers
-├── ui/                       # Electron GUI (main, preload, renderer)
 ├── docs/                     # Documentation, landing page, threat model
 ├── examples/                 # Flagship example: investment-committee-memo
 ├── skills/                   # Skill files (investment-brief, due-diligence, …)
 ├── workflow-packs/           # Executable workflow packs (dealmaking, research, wealth)
-├── tests/                    # Checker-owned acceptance contract (spec_acceptance_tests.ts)
+├── packs/                    # Customer packs (model allowlists, workflows)
+├── NOTES/                    # Engineering handoff notes (FINISH_LINE.md)
+├── tests/                    # Checker-owned acceptance contract + harness gate
 └── Formula/                  # Homebrew formula
 ```
 

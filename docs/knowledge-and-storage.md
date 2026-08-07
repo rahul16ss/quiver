@@ -99,7 +99,7 @@ Quiver uses **OfficeCLI** as its native document generation engine. OfficeCLI pr
 | :--- | :--- | :--- | :--- |
 | **Native OpenXML Generation** | Builds standard `.docx`, `.xlsx`, `.pptx` matching house templates. | **SHIPPED** | `src/tools/office_doc.ts`, OfficeCLI binary |
 | **OpenXML Lineage Comments** | Evidence companion + appendix lineage shipped; inline Word comments / Excel cell notes not implemented as the default writer | **FOUNDATION** | `src/document/word_lineage.ts`, `src/evidence/tracker.ts` |
-| **Evidence Companion Hard Gate** | Refuses invalid quantitative lineage and blocks final review sign-off without a valid companion evidence file. | **SHIPPED** | `src/evidence/validator.ts`, `src/evidence/tracker.ts`, `ui/main.ts` |
+| **Evidence Companion Hard Gate** | Refuses invalid quantitative lineage and blocks final review sign-off without a valid companion evidence file. | **SHIPPED** | `src/evidence/validator.ts`, `src/evidence/tracker.ts`, browser review APIs |
 | **Local Sync Path Support** | Writes deliverables through the normal local filesystem path; Windows sync locks receive bounded retry handling and existing create/merge targets require explicit overwrite intent. | **SHIPPED (bounded)** | `src/tools/office_doc.ts`, `src/security/path_policy.ts` |
 | **SharePoint Graph Exporter** | Direct upload for small files and Graph upload sessions for larger files. Access-token authentication remains engagement-managed; OAuth refresh is not included. | **SHIPPED (integration shape)** | `src/export/dms.ts`, `SharePointExporter` class |
 | **NetDocuments Exporter** | Uploads deliverables to NetDocuments REST API. | **SHIPPED (Framework)** | `src/export/dms.ts`, `NetDocumentsExporter` class |

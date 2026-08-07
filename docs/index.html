@@ -90,14 +90,14 @@
     </ul>
 
     <h2>Data handling</h2>
-    <p>Quiver does not bake in a model endpoint. The operator configures an OpenAI-compatible endpoint via <code>LLM_API_BASE_URL</code>. Local model endpoints are supported. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. Quiver does not ship product analytics; optional update checks may contact GitHub for release info.</p>
+    <p>Quiver does not bake in a model endpoint. The sole shared cloud gateway is OpenRouter (<code>OPENROUTER_API_KEY</code> + <code>OPENROUTER_MODEL_PROFILE</code>), with per-request ZDR routing prefs enforced when that path is used. A local/private OpenAI-compatible endpoint via <code>LLM_API_BASE_URL</code> is the high-sensitivity escape hatch. A fully local configuration requires external research and remote connectors to be disabled or separately approved. Memory, sessions, documents, and the audit log live in files on your machine. Quiver does not ship product analytics; optional update checks may contact GitHub for release info.</p>
 
     <h2>Install</h2>
     <pre><code>git clone https://github.com/rahul16ss/quiver.git &amp;&amp; cd quiver
 npm install
 npm run demo:ic-memo   # flagship workflow + acceptance checks
-npm test               # full acceptance suite
-npm run gui            # desktop app</code></pre>
+npm test               # full acceptance suite + harness gate
+npm start              # loopback browser UI (harness daemon)</code></pre>
 
     <h2>Learn more</h2>
     <p class="links">

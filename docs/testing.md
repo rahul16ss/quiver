@@ -43,9 +43,10 @@ hygiene (single-key model, keychain, env allowlist), lifecycle hooks, context
 compaction, memory extraction/review/privacy, vision routing, retry policy,
 untrusted-content wrapping, path sandboxing, secret redaction, audit chain,
 diff/atomic-write safety, prompt assembly, token budgeting, tool sandbox,
-subagent recursion limits, diagnostics, Electron GUI hardening
-(sandbox/CSP/window-state/IPC), adapter conformance, config schema
+subagent recursion limits, diagnostics, browser-UI / daemon hardening
+(loopback, secret-in-fragment, origin checks), adapter conformance, config schema
 validation/migration, Homebrew formula, and the maker-checker verification discipline.
+Harness gates under `tests/harness/` run as part of `npm test`.
 
 If you believe a check is wrong, raise it in writing — do not edit the
 contract.

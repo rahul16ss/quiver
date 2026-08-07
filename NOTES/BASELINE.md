@@ -39,7 +39,7 @@ No files were deleted in the external range. The external changes replaced the e
 
 These are present before the new verification work and are not attributed to the external commit range:
 
-- `README.md` — local documentation edits, including the OpenRouter/Vertex wording change.
+- `README.md` — documentation edits for OpenRouter as sole cloud gateway (Vertex removed).
 - `docs/refactor/model-router.md` — local router documentation edits.
 - `src/harness/provider-bridge.ts` — an unfinished local chat-path routing experiment; it uses a `require_router()` workaround and its `chatModelFor()` currently does not construct/use the selected model correctly. This is a candidate for revert or a proper fix; it must not be treated as verified.
 - `workflow-packs/research/post-earnings-evidence-pack/expected-output/Post_Earnings_Run_Record.json` — dirty fixture output; origin and correctness to be verified before preserving.

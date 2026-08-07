@@ -61,7 +61,8 @@ sources are attached via `[File:]` → `processFileMarkers` (`image_url` for
 images, `file` parts for PDFs/documents) in `src/subagents/checker_vision.ts`.
 No PDF→PNG conversion or deliverable screenshots in that path. Required
 attachments that cannot encode fail closed (approval blocked). Prefer a
-multimodal (text + image + document) checker model on Ollama Cloud (or local).
+multimodal (text + image + document) checker model via OpenRouter or a local
+OpenAI-compatible endpoint.
 
 `/override` is the manual escape hatch. Customer-facing name for all of this:
 **verified before delivery** — do not use "maker-checker" with clients.

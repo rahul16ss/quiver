@@ -13,10 +13,10 @@ npm install
 ## Development
 
 ```bash
-npm test            # Checker-owned acceptance contract — must stay green
+npm test            # Checker-owned acceptance contract + harness gate — must stay green
 npx tsc --noEmit    # TypeScript clean
 npm run demo:ic-memo # Flagship workflow demo (8/8 checks, no network needed)
-npm run gui         # Launch the desktop app (Electron)
+npm start           # Loopback browser UI via harness daemon (Electron removed)
 ```
 
 ## The acceptance contract
@@ -30,13 +30,13 @@ The contract asserts against `SPEC.md` and `docs/product/user-stories.md`, not a
 1. `npm test` green
 2. `npx tsc --noEmit` clean
 3. `npm run demo:ic-memo` 8/8
-4. If you changed the GUI, do a visual walkthrough (launch → send → approval → deliverable card → session resume → settings) and read the screenshots. "Tests green" has shipped a broken GUI before.
-5. No secrets in code, commits, or diffs. API keys live in the OS keychain or `.env` (gitignored).
+4. If you changed the browser UI, do a visual walkthrough (launch → send/workflow → approval → deliverable card → session resume → settings) and read the screenshots. "Tests green" has shipped a broken UI before.
+5. No secrets in code, commits, or diffs. API keys live in the OS keychain or `.env` (gitignored). Prefer `OPENROUTER_API_KEY` for cloud; `LLM_API_*` for local/private.
 6. Commits are signed `Co-Authored-By: Quiver <quiver@convictionstudio.com>` — never an AI/Claude trailer.
 
 ## Public claims discipline
 
-Public claims (README, website, demos) are governed by the capability truth table in the Conviction Studio repo. Never claim: data stays local by default, ZDR, "compliance-ready", or "100% cited". See `AGENTS.md` for the full rules.
+Public claims (README, website, demos) are governed by the capability truth table in the Conviction Studio repo. Never claim: data stays local by default, Quiver-signed ZDR, "compliance-ready", or "100% cited". See `AGENTS.md` for the full rules.
 
 ## Architecture
 

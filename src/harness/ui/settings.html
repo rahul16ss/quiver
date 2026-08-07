@@ -31,7 +31,7 @@
     <!-- Model Provider -->
     <section class="settings-section">
       <h2>Model Provider</h2>
-      <p class="settings-help">The AI engine Quiver uses. Most people can leave this as is.</p>
+      <p class="settings-help">Prefer OpenRouter for the shared cloud gateway (<code>OPENROUTER_API_KEY</code>). Use Provider address only for a local/private OpenAI-compatible endpoint.</p>
       <label>Model <input id="modelName" class="field" placeholder="Model name from your provider" /></label>
       <label>Provider address <input id="baseUrl" class="field" placeholder="Leave empty when using the configured cloud gateway" /></label>
       <label>Checker model (optional) <input id="checkerModelName" class="field" placeholder="Optional different model for the checker" /></label>
@@ -51,7 +51,7 @@
     <section class="settings-section">
       <h2>Model credentials</h2>
       <p class="settings-help">Store provider keys in your computer's credential store. A configured remote provider may receive the context you approve.</p>
-      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="Your model provider key" /></label>
+      <label>Quiver key <input id="apiKey" class="field" type="password" placeholder="OpenRouter or local model key" /></label>
       <label>Web research key (optional) <input id="parallelApiKey" class="field" type="password" placeholder="For deep research and web search" /></label>
     </section>
 

@@ -14,23 +14,22 @@ Classification uses the requested A–E categories. This table is evidence-first
 | AC-12 | Durable jobs/leases/DLQ/alerts/ambient tick | 36 durable-job + daemon checks pass | A | Preserve; add only regressions found by live use |
 | AC-13 | Graph/Drive pagination/cursors/OAuth | Deterministic tests pass; full live E2E has live endpoint failure and live storage not run | B | Run live contract tests with actual credentials; review token refresh and permissions |
 | AC-14 | Resume idempotency | Engine tests pass | A | Preserve; inspect commit side-effect integration before claiming external storage idempotency |
-| AC-15 | Active docs and fixtures match current external catalog | README/docs dirty; `docs/refactor/model-router.md` still names old DeepSeek/GLM choices; active `docs/providers.md` still contains Vertex claims; dirty output timestamps are generated artifacts | D/E | Reconcile active docs with external model catalog; revert/regenerate timestamp-only fixture noise; remove or clearly mark stale provider docs |
+| AC-15 | Active docs and fixtures match current external catalog | Doc reconciliation pass 2026-08-07: PROJECTS.md + README + AGENTS/CLAUDE/CONTRIBUTING + docs/* + NOTES + SPEC buyer-surface language + historical banners on `docs/refactor/*`. Refactor ADRs are marked historical; live status is `NOTES/FINISH_LINE.md`. Fixture timestamp noise may still exist. | A/D | Keep docs aligned on finish-line changes; regenerate fixture timestamps only when needed |
 | AC-16 | Deterministic exits and visible live failures | Deterministic suites pass; live suite visibly returns one failure | B | Review live test behavior; retain explicit failure, never silently skip |
 | AC-17 | Ownership and commit hygiene | Working tree dirty; prior commits need trailer review; no protected pi files touched by this work | B/E | Reconcile dirty files deliberately; use required `Co-Authored-By: Quiver <quiver@convictionstudio.com>` on future commits; never modify protected pi files |
 | Tooling | Lint/build commands in release verification | `npm run lint` and `npm run build` fail because scripts are absent | C | Add minimal, appropriate scripts only if consistent with project conventions; otherwise document approved alternatives in VERIFY and release gate |
-| Chat routing | Browser chat should use intended role/model routing | `browser-bridge.ts` starts legacy `agent.ts`; provider-bridge dirty edit contains `require_router()` and `chatModelFor()` returns the existing model, not the selected profile | E/B | Revert the incomplete experiment or replace with a tested, real per-request model construction. Do not claim chat routing until an HTTP/browser-path test proves model diversity |
+| Chat routing | Browser chat should use intended role/model routing | Chat uses legacy `Agent` bound to ProductionRuntime (broker/air-gap/ExecutionContext). Per-request profile diversity for chat remains deferred — see FINISH_LINE | B | Optional: GoalContract chat turns; do not claim per-request chat model diversity until tested |
 | Plan execution | A planner-produced plan reaches maker steps | External code adds planner/checker gate, but needs branch and live-engine receipts | B | Add a trace assertion that the planner output advances to a produce step and invokes maker with `hintMime`; fix if not |
-| UI copy | Current model/provider language matches external catalog and truth table | External UI changed endpoint/model display; stale context/settings files still mention Vertex | D | Reconcile user-visible config copy with current gateway/catalog, then run visual QA |
+| UI copy | Current model/provider language matches external catalog and truth table | Docs and settings surfaces updated toward OpenRouter + local escape hatch; visual QA of browser UI still required | B | Run visual walkthrough; fix any remaining Vertex/Electron strings in UI copy |
 
 ## Progress notes (goal-seeking loop)
 
-- **2026-08-07 production composition root:** `src/harness/production-runtime.ts`
-  now wires CapabilityRegistry, Parallel (when allowed), IntegrationBroker,
-  ResearchStateStore, durable jobs, idempotency ledger, OfficeCLI probe,
-  ExecutionContext tool filter, and honest `unavailable[]`. Browser/CLI/daemon
-  workflow paths use it via `buildProductionEngine`/`startBrowserUI`. Chat still
-  uses legacy `Agent` but installs the same network guard and strips profile-
-  removed tools. See `NOTES/FINISH_LINE.md` for the remaining P0/P1 list.
+- **2026-08-07 finish-line wiring:** Chat Agent path uses `invokeUnderRuntime`
+  for network tools; ProductionRuntime binds process-wide; Parallel webhook HMAC
+  + durable idempotency; OfficeCLI edit read-back; CapabilityRegistry consulted
+  for native MIME (profiles still `not-run` until live certs). See
+  `NOTES/FINISH_LINE.md`. Doc reconciliation pass same day for PROJECTS.md and
+  active Quiver documentation surfaces.
 - AC-7 (per-step maker/checker/planner gate): NOW PROVEN. New test
   `tests/harness/32-engine-maker-checker-planner.test.ts` (11 checks) drives the
   engine with scripted models: planner advances to a produce step, maker fires

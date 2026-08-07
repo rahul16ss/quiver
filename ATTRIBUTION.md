@@ -17,13 +17,13 @@ following projects.
 - **Project:** [AionUi](https://github.com/iofficeai/aionui)
 - **Authors:** iOfficeAI, 90+ contributors
 - **License:** Apache 2.0
-- **Usage:** An early influence for Quiver's Electron host structure (main
-  process, preload IPC bridge, sandbox/CSP hardening patterns). The current
-  Quiver desktop renderer is original, from-scratch work: a transparency-first
-  three-plane surface (Context | Conversation | Activity) written in vanilla
-  JavaScript with no UI framework, rebuilt against
-  `docs/product/user-stories.md` (the design source). It is not derived from
-  AionUi's renderer, does not use React, and shares no AionUi renderer code.
+- **Usage:** An early influence for Quiver's former Electron host structure
+  (main process, preload IPC bridge, sandbox/CSP hardening patterns). Electron
+  has since been removed. The current buyer surface is a loopback browser UI
+  (`src/harness/ui/`): a transparency-first three-plane surface
+  (Context | Conversation | Activity) in vanilla JavaScript, rebuilt against
+  `docs/product/user-stories.md`. It is not derived from AionUi's renderer,
+  does not use React, and shares no AionUi renderer code.
 
 ### OfficeCLI
 
@@ -50,7 +50,7 @@ following projects.
 
 ### Other Direct Dependencies
 
-- **Electron** — MIT License — Desktop application framework
+- **Electron** — MIT License — Formerly used as the desktop host; removed. Buyer surface is now the loopback browser UI.
 - **TypeScript** — Apache 2.0 — Language
 - **tsx** — MIT License — TypeScript execution
 - **Zod** — MIT License — Schema validation

@@ -1,5 +1,15 @@
 # Quiver Refactor — Phase 0: Baseline Audit
 
+> **Historical snapshot.** This document records the production-refactor
+> baseline and phased plan as of the audit/migration period. Current engineering
+> status is **`NOTES/FINISH_LINE.md`** (HEAD `cbb0b67`, 2026-08-07): Electron /
+> `ui/` / `npm run gui` / interactive `tui.ts` are removed; the buyer surface is
+> the loopback browser UI (`src/harness/ui/`); OpenRouter is the sole shared cloud
+> gateway; Parallel is the sole public-web research gateway; production callers
+> share `buildProductionRuntime()`. Treat claims below as historical unless
+> independently confirmed against current source.
+
+
 > Source of truth: repository, tests and documentation at the audited commit.
 > This record is the agreed starting point for the production refactor. It is
 > written *before* any production code is changed so every later phase can be

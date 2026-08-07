@@ -37,7 +37,11 @@ Raw receipts are in `/tmp/`.
 2. Run UI/browser visual QA from the current external `runs.js` surface, not only static tests.
 3. Run opt-in live contract suite with real OpenRouter/Parallel/Graph/Drive/OfficeCLI credentials, or record each unavailable prerequisite explicitly.
 4. ~~Production composition root wiring~~ — `production-runtime.ts` + `35-production-runtime.test.ts` (25 checks) green as of 2026-08-07.
-5. Remaining finish-line work is listed in `NOTES/FINISH_LINE.md` (dual chat/workflow runtime, MIME live certs, scaffold workflows, Office pin, broker on Agent path).
+5. Remaining finish-line work is listed in `NOTES/FINISH_LINE.md` (live MIME
+   certs, live Parallel/Graph/Drive, OfficeCLI pins, scaffold packs, visual
+   walkthrough, optional GoalContract chat). Dual composition roots for
+   chat vs workflow are closed for production binding — chat Agent shares
+   `bindProductionRuntime` / broker / air-gap.
 
 ## Post-rebaseline defect verification (2026-08-07)
 

@@ -132,7 +132,7 @@ tells me what it does NOT know (unresolved items) instead of papering over it.
 As Marcus, I click $48.2m and see the source in place: Model_v12.xlsx,
 RevenueBuild, the cell, its value — without opening Excel. I click the
 concentration claim and see the transcript excerpt. Two clicks, ten seconds.
-- ✅ Built: lineage chips render in the desktop GUI from live agent output;
+- ✅ Built: lineage chips render in the browser UI from live agent output;
   clicking a chip opens the verification rail showing the source in place
   (Excel cell with sheet/cell/value, filing excerpt, or web URL). This is the
   moment the entire trust story exists for — the demo climax.
@@ -141,7 +141,7 @@ concentration claim and see the transcript excerpt. Two clicks, ten seconds.
 As Marcus, I mark each key figure verified / flagged / needs-analyst; the memo
 cannot be marked final while flags are open (an override is possible and
 logged). My checks become the review record that goes with the memo.
-- ✅ Built: per-document review flow in the desktop GUI — mark each figure
+- ✅ Built: per-document review flow in the browser UI — mark each figure
   verified / flagged / needs-analyst; mark-final is blocked while open flags
   exist; override is logged to a per-document tamper-evident audit chain and a
   review record is written next to the deliverable.
