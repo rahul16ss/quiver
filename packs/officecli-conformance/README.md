@@ -29,6 +29,6 @@ The corpus is described in [`corpus.json`](corpus.json). Each fixture declares:
 ## OfficeCLI is not Microsoft Office
 
 For high-stakes Excel deliverables, an optional final native-Office review/
-recalculation gate is documented in [docs/refactor/connector-runbooks.md](../../docs/refactor/connector-runbooks.md).
+recalculation gate is documented in [docs/connector-runbooks.md](../../docs/connector-runbooks.md).
 The remaining fidelity boundary is stated honestly in the deliverable's run
 record.

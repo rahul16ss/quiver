@@ -138,7 +138,7 @@ type ModelProfileRunnerRole = "planner" | "maker" | "checker" | "reviewer" | "fa
 /**
  * Shipped catalog — the production tiered profiles (ADR-001 §5 router).
  * Grounded in live OpenRouter Models API data (Aug 2026, ZDR endpoints only).
- * See docs/refactor/model-router.md for selection rationale + benchmark scores.
+ * See docs/model-router.md for selection rationale + benchmark scores.
  *
  * All profiles start `not-run`; native ingestion remains gated on the
  * CapabilityRegistry's per-MIME contract test (§6) — the router proposes,

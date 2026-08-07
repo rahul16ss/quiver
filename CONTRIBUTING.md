@@ -16,7 +16,7 @@ npm install
 npm test            # Checker-owned acceptance contract + harness gate — must stay green
 npx tsc --noEmit    # TypeScript clean
 npm run demo:ic-memo # Flagship workflow demo (8/8 checks, no network needed)
-npm start           # Loopback browser UI via harness daemon (Electron removed)
+npm start           # Loopback browser UI via harness daemon
 ```
 
 ## The acceptance contract

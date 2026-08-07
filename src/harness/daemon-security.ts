@@ -1,9 +1,7 @@
 /**
- * Daemon/browser-UI security surface — Phase 8 (ADR-009).
+ * Daemon/browser-UI security surface.
  *
- * The loopback browser UI's security helpers, owned by the harness (not the
- * Electron app). The legacy ui/security.ts re-exports these so existing
- * imports keep working during the experience-plane migration.
+ * Loopback browser UI security helpers owned by the harness daemon.
  */
 
 /** Strict Content Security Policy for the browser UI. */

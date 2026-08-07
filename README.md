@@ -6,15 +6,9 @@ Quiver provides an open-source engine for running source-backed, audit-logged do
 
 For commercial engagements, custom workflow packs, and team training, see [Conviction Studio](https://convictionstudio.com).
 
-> **Harness status (2026-08-07, `cbb0b67`).** Production composition root
-> (`buildProductionRuntime`) unifies browser UI, CLI, and daemon. **OpenRouter**
-> is the sole shared cloud model gateway (ZDR prefs per request when used);
-> **Parallel** is the sole public-web research gateway; Electron / `npm run gui`
-> / `ui/` are removed — the buyer surface is the loopback browser UI under
-> `src/harness/ui/`. Remaining external/deferred work (live MIME certs, live
-> Graph/Drive, OfficeCLI checksum pins, scaffold packs → demo-ready Office,
-> visual walkthrough) is listed in [NOTES/FINISH_LINE.md](NOTES/FINISH_LINE.md).
-> Historical refactor ADRs live under [docs/refactor/](docs/refactor/).
+> Production composition: `buildProductionRuntime`. Buyer surface: loopback
+> browser UI (`src/harness/ui/`, `npm start`). Cloud models: OpenRouter.
+> Public-web research: Parallel. Open items: [NOTES/STATUS.md](NOTES/STATUS.md).
 
 ---
 

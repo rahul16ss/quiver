@@ -187,7 +187,7 @@ export class QuiverLauncher {
    * conversational turns; workflow runs use this ExecutionEngine. Both share
    * config resolution, network guard, and (via startAgent) deployment-profile
    * tool filtering. Full chat→engine unification remains deferred — see
-   * NOTES/FINISH_LINE.md.
+   * NOTES/STATUS.md.
    */
   async startBrowserUI(opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
     // buildProductionEngine is the public engine entry; buildProductionRuntime

@@ -2,11 +2,9 @@
 
 ## Distribution Channels
 
-> **Honest status.** The buyer path is engagement-led install or a signed
-> installer once production signing keys exist (SPEC §19). Homebrew and
-> `npm install -g` are developer-convenience channels. The interactive surface
-> is the **loopback browser UI** served by the harness daemon — there is no
-> Electron app to package.
+> Buyer path: engagement-led install or a signed installer once production
+> signing keys exist (SPEC §19). Homebrew and `npm install -g` are developer
+> convenience. Interactive surface: loopback browser UI via the harness daemon.
 
 ### Homebrew (macOS) — developer convenience
 ```bash
@@ -46,7 +44,7 @@ Quiver uses semantic versioning (MAJOR.MINOR.PATCH):
 4. TypeScript compilation check: `npx tsc --noEmit`
 5. Run the three reference demos: `demo:ic-memo`, `demo:post-earnings`, `demo:portfolio-review`
 6. Daemon smoke: `npx tsx scripts/daemon_smoke.ts`
-7. Update `docs/` and `NOTES/FINISH_LINE.md` if architecture changed
+7. Update `docs/` and `NOTES/STATUS.md` if architecture changed
 8. Create GitHub release / update Homebrew formula as appropriate
 9. Verify `quiver --version` works after install
 10. Visual browser-UI walkthrough with screenshots actually read
@@ -65,6 +63,5 @@ Uninstalling removes binaries but does not touch user data or configuration unde
 
 ## Browser UI (experience plane)
 
-The interactive surface is served from `src/harness/ui/` by
-`HarnessDaemon` / `QuiverDaemon` on loopback. Electron (`ui/`, `npm run gui`)
-has been removed. See ADR-009 and `NOTES/FINISH_LINE.md`.
+Served from `src/harness/ui/` by `HarnessDaemon` / `QuiverDaemon` on loopback.
+See `NOTES/STATUS.md` for open release items.

@@ -3,8 +3,8 @@
 This document is the current technical capability matrix for the Quiver workflow engine.
 Statuses distinguish runnable foundations from capabilities that still require engagement
 configuration or additional hardening. The governing product principles are in
-[principles.md](principles.md). Engineering finish-line / remaining blockers:
-[NOTES/FINISH_LINE.md](../NOTES/FINISH_LINE.md).
+[principles.md](principles.md). Open items:
+[NOTES/STATUS.md](../NOTES/STATUS.md).
 
 ---
 
@@ -29,7 +29,7 @@ configuration or additional hardening. The governing product principles are in
 | **Mid-Tier Data Sensitivity Redaction** | Configurable | SPEC §11.2 |
 | **Daemon Autostart** | macOS launchd and Windows Task Scheduler support shipped; live Windows validation remains an owner step | SPEC §4.1 |
 | **Signed Update Infrastructure** | Foundation shipped (Ed25519 verify); production pubkey + signed manifests are release-process work | `src/updates.ts`, `docs/release.md` |
-| **Loopback Browser UI** | Working (Electron removed) | `src/harness/ui/`, `src/harness/harness-daemon.ts` |
+| **Loopback Browser UI** | Working | `src/harness/ui/`, `src/harness/harness-daemon.ts` |
 | **ProductionRuntime composition root** | Working — browser/CLI/daemon share one runtime binding | `src/harness/production-runtime.ts`, `runtime-binding.ts` |
 | **OpenRouter cloud gateway (ZDR prefs)** | Working when `OPENROUTER_API_KEY` set; fail-closed without config | `src/harness/model-client.ts`, ADR-001 |
 | **CapabilityRegistry (per-MIME)** | Wired; profiles start `not-run` until live contract certs | `src/harness/capability-registry.ts` |

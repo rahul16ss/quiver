@@ -1,19 +1,17 @@
 # Quiver Architecture
 
-> Current production composition and remaining blockers:
-> [`NOTES/FINISH_LINE.md`](../NOTES/FINISH_LINE.md). Historical refactor ADRs:
-> [`docs/refactor/`](refactor/).
+> Open items: [`NOTES/STATUS.md`](../NOTES/STATUS.md). Principles: [principles.md](principles.md).
 
 ## Overview
 
-Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; product principles and boundaries are kept in [principles.md](principles.md). The engine is built around four primary architectural systems:
+Quiver is the open, inspectable agent engine behind controlled, source-backed document workflows in finance. This document describes the engine internals; The engine is built around four primary architectural systems:
 
 1. **Filesystem Context Manager** (`src/context_manager.ts`, `src/paths.ts`)
 2. **Model Adapter & Provider Layer** (`src/adapters/`, `src/providers/`) — per-model prompting, tool-format mapping, and transport
 3. **Lifecycle Hooks Interception Engine** (`src/lifecycle.ts`)
 4. **Active Timeouts & Guardrails** (`src/agent.ts`)
 
-Dynamic tool creation (`create_tool`) was removed. The tool registry loads static, shipped tools from `src/tools/` at startup only.
+Dynamic tool creation is not supported. The tool registry loads static, shipped tools from `src/tools/` at startup only.
 
 ## Directory Structure
 
@@ -39,7 +37,7 @@ quiver/
 │   ├── watchdog.ts           # Self-health queue (findings/summary/status)
 │   ├── init.ts               # Project init / onboarding
 │   ├── (tool selection)      # model-driven (tool_choice: auto); no separate selector
-│   ├── harness/              # Production composition root + loopback browser UI (Electron removed)
+│   ├── harness/              # Production composition root + loopback browser UI
 │   ├── adapters/             # Model adapter layer (prompting, tool formats, parsing)
 │   ├── providers/            # Model provider abstraction (OpenRouter + OpenAI-compatible local)
 │   ├── security/             # Path policy, command classification, secrets, seatbelt, scratch-area, sensitivity, consent gate, ExecutionContext
@@ -61,7 +59,7 @@ quiver/
 ├── skills/                   # Skill files (investment-brief, due-diligence, …)
 ├── workflow-packs/           # Executable workflow packs (dealmaking, research, wealth)
 ├── packs/                    # Customer packs (model allowlists, workflows)
-├── NOTES/                    # Engineering handoff notes (FINISH_LINE.md)
+├── NOTES/                    # Open items only (STATUS.md)
 ├── tests/                    # Checker-owned acceptance contract + harness gate
 └── Formula/                  # Homebrew formula
 ```

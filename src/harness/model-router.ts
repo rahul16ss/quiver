@@ -18,7 +18,7 @@
  * proposes, certification disposes. Fail closed, never silently substitute OCR.
  *
  * Selection (ZDR endpoints, live OpenRouter data Aug 2026 — see
- * docs/refactor/model-router.md; FAB v2 / CorpFin v2 / EMB benchmarks):
+ * docs/model-router.md; FAB v2 / CorpFin v2 / EMB benchmarks):
  *   native-doc-frontier : anthropic/claude-opus-5   $5/$25  (reviewer/failsafe)
  *   native-doc-primary  : anthropic/claude-sonnet-5  $2/$10  (native-doc maker)
  *   native-doc-checker  : moonshotai/kimi-k3         $3/$15  (native-doc checker — Moonshot ≠ Anthropic)

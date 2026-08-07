@@ -306,7 +306,7 @@ function probeSessionErrors(seen: Set<string>): void {
 }
 
 function probeProcess(seen: Set<string>): void {
-  const r = run("pgrep", ["-fl", "quiver/src/cli.ts|quiver.*--continue|electron.*quiver"], PROJECT_DIR, 10_000);
+  const r = run("pgrep", ["-fl", "quiver/src/cli.ts|quiver.*--continue|"], PROJECT_DIR, 10_000);
   const out = (r.stdout || "").trim();
   if (!out) {
     recordOnce(seen, "process", "no-quiver-process", "warn", "no quiver CLI/electron process running (pgrep empty)");

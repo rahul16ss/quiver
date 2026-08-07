@@ -270,37 +270,3 @@ export function formatDiffForCLI(diff: string): string {
     })
     .join("\n");
 }
-
-/**
- * Format a diff for GUI side-by-side display.
- * Returns structured data for rendering.
- */
-export function formatDiffForGUI(
-  oldContent: string,
-  newContent: string,
-): { left: DiffLine[]; right: DiffLine[] } {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-  const diff = computeLineDiff(oldLines, newLines);
-
-  const left: DiffLine[] = [];
-  const right: DiffLine[] = [];
-
-  for (const line of diff) {
-    if (line.type === "hunk") {
-      left.push(line);
-      right.push(line);
-    } else if (line.type === "context") {
-      left.push(line);
-      right.push(line);
-    } else if (line.type === "remove") {
-      left.push(line);
-      right.push({ type: "context", content: "" });
-    } else if (line.type === "add") {
-      left.push({ type: "context", content: "" });
-      right.push(line);
-    }
-  }
-
-  return { left, right };
-}

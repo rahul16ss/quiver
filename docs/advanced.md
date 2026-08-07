@@ -115,7 +115,7 @@ See `.quiver/mcp.example.json`.
 ## Cloud folder sync — removed
 
 Automatic background cloud-folder sync (Google Drive / OneDrive / Dropbox /
-iCloud) was removed, not left as a disabled toggle. Use local synced M365
+iCloud) is not available. Use local synced M365
 folders or the engagement DMS export path instead.
 
 ## Vision fallback
