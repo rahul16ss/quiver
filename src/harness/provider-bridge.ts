@@ -14,7 +14,7 @@
  */
 
 import type { ModelProvider, ModelInfo, ChatRequest, ModelEvent } from "../providers/types.js";
-import { config } from "../config.js";
+
 import { ModalityRouter, type ModelRole } from "./model-router.js";
 import type { ModelProfileRegistry, ModelProfile } from "./model-profile.js";
 
@@ -44,12 +44,17 @@ export class QuiverOpenRouterProvider implements ModelProvider {
     private chatModelFactory?: (opts: ProviderBridgeOptions) => Promise<ChatModelLike>,
   ) {
     this.router = new ModalityRouter(opts.profiles.list());
-    const fallbackSlug = opts.profileSlug === "auto"
-      ? this.router.route([{ role: "user", content: "" }], "maker", "public")
-      : opts.profileSlug;
+    const fallbackSlug =
+      opts.profileSlug === "auto"
+        ? this.router.route([{ role: "user", content: "" }], "maker", "public")
+        : opts.profileSlug;
     const p = fallbackSlug ? opts.profiles.get(fallbackSlug) : undefined;
-    if (!p) throw new Error(`QuiverOpenRouterProvider: unknown or unroutable profile '${opts.profileSlug}'`);
-    if (!p.zdrEligible) throw new Error(`QuiverOpenRouterProvider: profile '${p.slug}' is not ZDR-eligible.`);
+    if (!p)
+      throw new Error(
+        `QuiverOpenRouterProvider: unknown or unroutable profile '${opts.profileSlug}'`,
+      );
+    if (!p.zdrEligible)
+      throw new Error(`QuiverOpenRouterProvider: profile '${p.slug}' is not ZDR-eligible.`);
     this.profile = p;
   }
 
@@ -71,10 +76,18 @@ export class QuiverOpenRouterProvider implements ModelProvider {
       content: Array.isArray(message?.content)
         ? message.content.map((part: any) => {
             if (part?.type === "file") {
-              return { type: "file", mimeType: part.mimeType ?? part.file?.mime_type ?? "application/pdf", data: Buffer.alloc(0) };
+              return {
+                type: "file",
+                mimeType: part.mimeType ?? part.file?.mime_type ?? "application/pdf",
+                data: Buffer.alloc(0),
+              };
             }
             if (part?.type === "image" || part?.type === "image_url") {
-              return { type: "image", mimeType: part.mimeType ?? "image/png", data: Buffer.alloc(0) };
+              return {
+                type: "image",
+                mimeType: part.mimeType ?? "image/png",
+                data: Buffer.alloc(0),
+              };
             }
             return { type: "text", text: String(part?.text ?? part ?? "") };
           })
@@ -93,7 +106,9 @@ export class QuiverOpenRouterProvider implements ModelProvider {
       contextWindowTokens: profile.contextWindowTokens,
       supportsTools: profile.supportsToolCalling,
       supportsParallelToolCalls: profile.supportsToolCalling,
-      supportsImages: profile.nativeFileInput || profile.testedNativeMimeTypes.some((m) => m.startsWith("image/")),
+      supportsImages:
+        profile.nativeFileInput ||
+        profile.testedNativeMimeTypes.some((m) => m.startsWith("image/")),
       supportsStreaming: true,
       supportsReasoningSummaries: false,
     }));
@@ -136,7 +151,13 @@ export class QuiverOpenRouterProvider implements ModelProvider {
       }
       yield { type: "done", finishReason: "stop" };
     } catch (err: any) {
-      yield { type: "error", error: err?.name === "AbortError" || signal.aborted ? "Request cancelled" : `OpenRouter stream error: ${err.message}` };
+      yield {
+        type: "error",
+        error:
+          err?.name === "AbortError" || signal.aborted
+            ? "Request cancelled"
+            : `OpenRouter stream error: ${err.message}`,
+      };
     }
   }
 }
@@ -158,16 +179,27 @@ function translateChunk(chunk: unknown): ModelEvent[] {
   }
   // Reasoning / chain-of-thought (not persisted).
   if (c?.reasoning) events.push({ type: "reasoning_delta", reasoning: c.reasoning });
-  if (c?.reasoning_content) events.push({ type: "reasoning_delta", reasoning: c.reasoning_content });
+  if (c?.reasoning_content)
+    events.push({ type: "reasoning_delta", reasoning: c.reasoning_content });
 
   const chunks: any[] = c?.tool_call_chunks ?? c?.tool_calls ?? [];
   for (const tc of chunks) {
     const idx = typeof tc.index === "number" ? tc.index : 0;
     if (tc.name) {
-      events.push({ type: "tool_call_start", toolCallId: tc.id, toolCallName: tc.name, toolCallIndex: idx });
+      events.push({
+        type: "tool_call_start",
+        toolCallId: tc.id,
+        toolCallName: tc.name,
+        toolCallIndex: idx,
+      });
     }
     if (tc.args) {
-      events.push({ type: "tool_call_delta", toolCallId: tc.id, toolCallArguments: tc.args, toolCallIndex: idx });
+      events.push({
+        type: "tool_call_delta",
+        toolCallId: tc.id,
+        toolCallArguments: tc.args,
+        toolCallIndex: idx,
+      });
     }
   }
   return events;
@@ -187,7 +219,12 @@ async function defaultChatModelFactory(opts: ProviderBridgeOptions): Promise<Cha
   return {
     async *stream(messages: unknown[], options: Record<string, unknown>): AsyncIterable<unknown> {
       const bound = options.tools ? chat.bindTools(options.tools) : chat;
-      yield* bound.stream(messages, options);
+      // LangChain's .stream() returns a PROMISE of an async iterable. It must
+      // be awaited first — `yield*` directly on the promise leaks an
+      // unhandled rejection that crashes the process on provider errors
+      // (observed: a 401 from OpenRouter took down the whole daemon).
+      const stream = await bound.stream(messages, options);
+      for await (const chunk of stream) yield chunk;
     },
   };
 }

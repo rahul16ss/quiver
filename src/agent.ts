@@ -6,13 +6,10 @@ import picocolors from "picocolors";
 import { config, needsApprovalFor } from "./config.js";
 import { processFileMarkers } from "./file_encoder.js";
 import { ToolRegistry } from "./registry.js";
+import { mcpManager } from "./mcp/client.js";
 import { loadCoreMemory } from "./state.js";
-import { statusLine, theme, formatNum, renderInlineDiff } from "./cli_ui.js";
-import {
-  generateUnifiedDiff,
-  generateFileCreationDiff,
-  isRiskyFile,
-} from "./diff.js";
+import { statusLine, theme, renderInlineDiff } from "./cli_ui.js";
+import { generateUnifiedDiff, generateFileCreationDiff, isRiskyFile } from "./diff.js";
 import {
   compactWithSummarization,
   proposeCompaction,
@@ -20,15 +17,9 @@ import {
   offloadLargeToolResults,
   needsCompaction,
   calculateKeepRecent,
-  estimateConversationTokens,
 } from "./context_manager.js";
-import {
-  loadReviewedMemoryContext,
-  assemblePrompt,
-} from "./prompt/assembler.js";
-import {
-  classifyCommand,
-} from "./security/command_policy.js";
+import { loadReviewedMemoryContext, assemblePrompt } from "./prompt/assembler.js";
+import { classifyCommand } from "./security/command_policy.js";
 import {
   mergeToolCallPassthrough,
   shapeOutboundToolCall,
@@ -36,18 +27,11 @@ import {
   type ToolCallPassthrough,
 } from "./providers/tool_call_passthrough.js";
 import { InterventionController } from "./intervention.js";
-import {
-  ApprovalCache,
-  type ApprovalKey,
-  type ApprovalScope,
-} from "./security/approval_cache.js";
+import { ApprovalCache, type ApprovalKey, type ApprovalScope } from "./security/approval_cache.js";
 import { GoalLoopEngine } from "./ambient.js";
 import { loadExampleContext, listExamples } from "./memory/examples_store.js";
 import { SECURITY_PREAMBLE } from "./prompts/security.js";
-import {
-  FileReadHistory,
-  WriteBlockedException,
-} from "./session/file_access.js";
+import { FileReadHistory } from "./session/file_access.js";
 import { getActiveProvider } from "./providers/index.js";
 import { getAdapterForModel, type HarnessAdapter } from "./adapters/index.js";
 import { type ModelInfo } from "./providers/index.js";
@@ -64,25 +48,18 @@ import {
   createDiagnosticBlock,
   formatDiagnosticBlock,
 } from "./diagnostics.js";
-import { filterByPrivacy } from "./memory/privacy.js";
+
 import {
-  parseMemoryCitations,
   validateCitations as validateCitationsImport,
   updateUsageStats,
   getAllUsageStats as getAllUsageStatsImport,
 } from "./memory/citation_parser.js";
-import {
-  getDefaultDecayConfig,
-  getArchivalCandidates,
-} from "./memory/decay.js";
+import { getDefaultDecayConfig, getArchivalCandidates } from "./memory/decay.js";
 import { redactSecrets } from "./security/secrets.js";
 import { atomicWrite, atomicWriteSync, CorruptStateError } from "./fs/atomic_write.js";
 import { EvidenceTracker } from "./evidence/tracker.js";
 import { withEvidenceTracker } from "./tools/evidence.js";
-import {
-  CheckpointManager,
-  detectCrashedSession,
-} from "./session/checkpoint.js";
+import { CheckpointManager } from "./session/checkpoint.js";
 import { calculateBackoffWithJitter } from "./logger.js";
 import { AuditChain, type AuditEntry } from "./audit_chain.js";
 import {
@@ -123,9 +100,7 @@ const RETRY_SAFE_TOOLS = new Set([
  */
 function truncateForDisplay(val: string): string {
   const cols =
-    (process.stdout.columns && process.stdout.columns > 0
-      ? process.stdout.columns
-      : 80) - 2; // small right margin
+    (process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80) - 2; // small right margin
   const max = Math.min(60, Math.max(24, cols));
   if (val.length <= max) return val;
   // Keep the last ~40% (filename/ext) and the first ~60% (dir context).
@@ -150,8 +125,8 @@ function classifyModelError(msg: string): string {
   const m = msg || "";
   if (/gcloud|reauth|invalid_grant|invalid_rapt|ACCESS_TOKEN_TYPE_UNSUPPORTED/i.test(m))
     return "Google Cloud session expired — run 'gcloud auth application-default login'";
-  if (/Provider error 401|invalid.*api.*key|unauthor/i.test(m))
-    return "Auth failed (check API key or run 'gcloud auth application-default login')";
+  if (/Provider error 401|invalid.*api.*key|unauthor|Missing Authentication header/i.test(m))
+    return "Auth failed — check the model key (OPENROUTER_API_KEY for cloud, LLM_API_KEY for local). Settings → model key, or the OS credential store.";
   if (/429|RESOURCE_EXHAUSTED|resource exhausted|rate.?limit/i.test(m))
     return "Model provider is rate-limiting — wait a moment and try again";
   if (/thought_signature|INVALID_ARGUMENT|invalid argument/i.test(m))
@@ -159,8 +134,7 @@ function classifyModelError(msg: string): string {
   if (/Provider error 40[0-9]/.test(m)) return "Request rejected by provider (HTTP 4xx)";
   if (/Provider error 4\d\d/.test(m)) return "Request rejected by provider (HTTP 4xx)";
   if (/Provider error 5\d\d/.test(m)) return "Provider error (HTTP 5xx)";
-  if (/Connection timeout|Stream stall timeout/.test(m))
-    return "Timed out waiting for model";
+  if (/Connection timeout|Stream stall timeout/.test(m)) return "Timed out waiting for model";
   if (/fetch failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|socket hang up/i.test(m))
     return "Connection failed";
   if (/aborted|cancel/i.test(m)) return "Request cancelled";
@@ -337,8 +311,7 @@ function sanitizeLogData(type: string, data: any): any {
     }
     case "tool_result": {
       const result = data?.result;
-      const resultStr =
-        typeof result === "string" ? result : safeStringify(result ?? "");
+      const resultStr = typeof result === "string" ? result : safeStringify(result ?? "");
       const redacted = redactSecrets(resultStr);
       const truncated = truncateForLog(redacted, maxChars);
       return {
@@ -380,10 +353,7 @@ export class SessionLogger {
   constructor() {
     this.sessionId = `session_${Date.now()}`;
     this.logPath = path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
-    this.auditLogPath = path.join(
-      getProjectSessionsDir(),
-      `${this.sessionId}_audit.json`,
-    );
+    this.auditLogPath = path.join(getProjectSessionsDir(), `${this.sessionId}_audit.json`);
     this.auditChain = new AuditChain();
   }
 
@@ -490,20 +460,14 @@ export class SessionLogger {
     }
     if (this.logs.length > 0) {
       try {
-        await atomicWrite(
-          this.logPath,
-          JSON.stringify(this.logs, null, 2),
-        );
+        await atomicWrite(this.logPath, JSON.stringify(this.logs, null, 2));
       } catch {
         // Fail silently — logging must never crash the agent
       }
     }
     // Tamper-evident audit chain
     try {
-      await atomicWrite(
-        this.auditLogPath,
-        this.auditChain.serialize(),
-      );
+      await atomicWrite(this.auditLogPath, this.auditChain.serialize());
     } catch {
       // Fail silently — logging must never crash the agent
     }
@@ -518,19 +482,13 @@ export class SessionLogger {
     }
     if (this.logs.length > 0) {
       try {
-        atomicWriteSync(
-          this.logPath,
-          JSON.stringify(this.logs, null, 2),
-        );
+        atomicWriteSync(this.logPath, JSON.stringify(this.logs, null, 2));
       } catch {
         // Fail silently — logging must never crash the agent
       }
     }
     try {
-      atomicWriteSync(
-        this.auditLogPath,
-        this.auditChain.serialize(),
-      );
+      atomicWriteSync(this.auditLogPath, this.auditChain.serialize());
     } catch {
       // Fail silently — logging must never crash the agent
     }
@@ -561,13 +519,7 @@ function formatDetails(toolName: string, args: any, prefix: string): string {
   }
 
   const cloned = { ...args };
-  const foldFields = [
-    "content",
-    "replacementContent",
-    "code",
-    "text",
-    "replacement",
-  ];
+  const foldFields = ["content", "replacementContent", "code", "text", "replacement"];
   const foldedDetails: { fieldName: string; originalValue: string }[] = [];
 
   for (const field of foldFields) {
@@ -642,27 +594,15 @@ async function askUserApproval(
         const fp = path.resolve(args.filePath);
         if (fsSync.existsSync(fp)) {
           const old = fsSync.readFileSync(fp, "utf8");
-          diffText = generateUnifiedDiff(
-            old,
-            String(args.content ?? ""),
-            rel(args.filePath),
-          );
+          diffText = generateUnifiedDiff(old, String(args.content ?? ""), rel(args.filePath));
         } else {
-          diffText = generateFileCreationDiff(
-            rel(args.filePath),
-            String(args.content ?? ""),
-          );
+          diffText = generateFileCreationDiff(rel(args.filePath), String(args.content ?? ""));
         }
-      } else if (
-        toolName === "replace_content" &&
-        typeof args.filePath === "string"
-      ) {
+      } else if (toolName === "replace_content" && typeof args.filePath === "string") {
         const fp = path.resolve(args.filePath);
         if (fsSync.existsSync(fp)) {
           const old = fsSync.readFileSync(fp, "utf8");
-          const next = old
-            .split(args.targetContent ?? "")
-            .join(args.replacementContent ?? "");
+          const next = old.split(args.targetContent ?? "").join(args.replacementContent ?? "");
           diffText = generateUnifiedDiff(old, next, rel(args.filePath));
         }
       } else if (toolName === "apply_patch" && typeof args.patch === "string") {
@@ -696,7 +636,9 @@ async function askUserApproval(
     }
     card({
       title: `Quiver wants to: ${displayName}`,
-      body: formatDetails(toolName, args, "").split("\n").filter((l: string) => l.trim().length > 0),
+      body: formatDetails(toolName, args, "")
+        .split("\n")
+        .filter((l: string) => l.trim().length > 0),
       footer: "Review the change above, then choose below.",
       accent: "brand",
     });
@@ -704,11 +646,7 @@ async function askUserApproval(
 
   const prompt = irreversible
     ? picocolors.bold(picocolors.red("  Confirm? (y/N): "))
-    : picocolors.bold(
-        picocolors.cyan(
-          "  Allow? (y = yes / a = all similar / N = no): ",
-        ),
-      );
+    : picocolors.bold(picocolors.cyan("  Allow? (y = yes / a = all similar / N = no): "));
 
   // All prompts — main input, approvals, confirmations — go through the
   // same shared askQuestionRaw utility, which uses the multiline editor.
@@ -804,11 +742,12 @@ class Spinner {
       // left-to-right then right-to-left (ping-pong), ~6s per direction.
       const barWidth = 8;
       const loopSec = 6;
-      const stepsPerLoop = Math.round(loopSec * 1000 / 120);
+      const stepsPerLoop = Math.round((loopSec * 1000) / 120);
       const step = this.frameIdx % (stepsPerLoop * 2);
-      const phase = step < stepsPerLoop
-        ? step / stepsPerLoop                     // left → right
-        : (stepsPerLoop * 2 - step) / stepsPerLoop; // right → left
+      const phase =
+        step < stepsPerLoop
+          ? step / stepsPerLoop // left → right
+          : (stepsPerLoop * 2 - step) / stepsPerLoop; // right → left
       const filled = Math.round(phase * barWidth);
       const bar = "■".repeat(filled) + "⬝".repeat(barWidth - filled);
       const line = `  ${picocolors.cyan(frame)} ${picocolors.gray(this.message)} ${picocolors.gray(`${elapsed}s`)} ${picocolors.cyan(bar)}`;
@@ -862,8 +801,7 @@ export class Agent {
   // file modified between read and write is never silently overwritten.
   private fileReadHistory: FileReadHistory;
   // US-13.4: consecutive-failure loop detection (3 identical failures → pause).
-  private failureTracker: ConsecutiveFailureTracker =
-    new ConsecutiveFailureTracker();
+  private failureTracker: ConsecutiveFailureTracker = new ConsecutiveFailureTracker();
   // US-2.2B: the active harness adapter for the current model (alignment layer).
   private adapter: HarnessAdapter | null = null;
   // US-2.2A: the active model provider (transport layer).
@@ -904,20 +842,14 @@ export class Agent {
   private approvalCache = new ApprovalCache();
   // Ambient self-heal + goal-loop engine: verifies completed work (tsc+tests)
   // and auto-continues the loop until healthy (US-AMBIENT). On by default.
-  private ambient = new GoalLoopEngine(
-    config.ambientMaxHealRounds,
-    config.ambientEnabled,
-  );
+  private ambient = new GoalLoopEngine(config.ambientMaxHealRounds, config.ambientEnabled);
 
   constructor(registry: ToolRegistry) {
     this.registry = registry;
     this.logger = new SessionLogger();
     this.fileReadHistory = new FileReadHistory(this.logger.getSessionId());
     // US-13.2: per-turn checkpoints + crash recovery (wired below).
-    this.checkpointManager = new CheckpointManager(
-      this.logger.getSessionId(),
-      getProjectId(),
-    );
+    this.checkpointManager = new CheckpointManager(this.logger.getSessionId(), getProjectId());
 
     // US-15.1: register the lifecycle interception engine (transparency,
     // provenance, and the maker-checker verification gate). Hooks fire at
@@ -932,7 +864,8 @@ export class Agent {
     // Product identity lives only in that skill file — do not duplicate it here.
     this.messages.push({
       role: "system",
-      content: "Quiver is starting. Canonical instructions load from the system-prompt skill on the first turn.",
+      content:
+        "Quiver is starting. Canonical instructions load from the system-prompt skill on the first turn.",
     });
   }
 
@@ -940,10 +873,7 @@ export class Agent {
   // Auto-saves conversation state to disk so it can be resumed after exit/crash.
 
   private getSessionStatePath(): string {
-    return path.join(
-      getProjectSessionsDir(),
-      `${this.logger.getSessionId()}.state.json`,
-    );
+    return path.join(getProjectSessionsDir(), `${this.logger.getSessionId()}.state.json`);
   }
 
   /** Save the current conversation state (messages + token stats) to disk. */
@@ -1071,9 +1001,7 @@ export class Agent {
         typeof m.content === "string"
           ? m.content
           : Array.isArray(m.content)
-            ? m.content
-                .map((p: any) => (p.type === "text" ? p.text : ""))
-                .join("")
+            ? m.content.map((p: any) => (p.type === "text" ? p.text : "")).join("")
             : "",
       tool_calls: m.tool_calls,
       tool_call_id: m.tool_call_id,
@@ -1089,8 +1017,7 @@ export class Agent {
       metadata: {
         total_loops: this.tokenStats.turns,
         total_tool_calls: this.tokenStats.toolCalls,
-        total_tokens:
-          this.tokenStats.inputTokens + this.tokenStats.outputTokens,
+        total_tokens: this.tokenStats.inputTokens + this.tokenStats.outputTokens,
       },
     });
   }
@@ -1118,7 +1045,10 @@ export class Agent {
     if (!s) return "{}";
     // Strip ```json ... ``` fences if the model wrapped the args.
     if (s.startsWith("```")) {
-      s = s.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/, "").trim();
+      s = s
+        .replace(/^```(?:json)?\n?/i, "")
+        .replace(/\n?```$/, "")
+        .trim();
     }
     try {
       // Validate parseability; JSON.parse accepts numbers/strings too, so
@@ -1147,9 +1077,7 @@ export class Agent {
       if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
           const id = tc?.id || `call_repaired_${repaired}`;
-          const sanitized = this.sanitizeToolCallArguments(
-            tc?.function?.arguments,
-          );
+          const sanitized = this.sanitizeToolCallArguments(tc?.function?.arguments);
           if (sanitized !== (tc?.function?.arguments ?? "")) {
             repaired++;
           }
@@ -1217,14 +1145,9 @@ export class Agent {
             typeof result?.content === "string"
               ? result.content
               : Array.isArray(result?.content)
-                ? result.content
-                    .map((p: any) => (p.type === "text" ? p.text : ""))
-                    .join("\n")
+                ? result.content.map((p: any) => (p.type === "text" ? p.text : "")).join("\n")
                 : "";
-          const clipped =
-            resultText.length > 4000
-              ? `${resultText.slice(0, 4000)}…`
-              : resultText;
+          const clipped = resultText.length > 4000 ? `${resultText.slice(0, 4000)}…` : resultText;
           lines.push(
             `[Earlier tool: ${tc.function?.name || "unknown"}(${tc.function?.arguments || "{}"})]\n${clipped}`,
           );
@@ -1281,7 +1204,7 @@ export class Agent {
           content:
             typeof m.content === "string" && m.content.length === 0
               ? null
-              : this.flattenContentForProvider(m.content) ?? null,
+              : (this.flattenContentForProvider(m.content) ?? null),
           tool_calls: m.tool_calls.map((tc) => shapeOutboundToolCall(tc)),
         };
       }
@@ -1300,12 +1223,7 @@ export class Agent {
       const content = await fs.readFile(statePath, "utf8");
       const state = JSON.parse(content);
       if (state.format !== "quiver-session-state") {
-        console.error(
-          new CorruptStateError(
-            statePath,
-            "unsupported session state format",
-          ).message,
-        );
+        console.error(new CorruptStateError(statePath, "unsupported session state format").message);
         return false;
       }
       // Restore messages (the system prompt will be rebuilt on next prompt())
@@ -1319,9 +1237,7 @@ export class Agent {
       return true;
     } catch (error: any) {
       if (error instanceof SyntaxError) {
-        console.error(
-          new CorruptStateError(statePath, "JSON could not be parsed").message,
-        );
+        console.error(new CorruptStateError(statePath, "JSON could not be parsed").message);
       } else {
         console.error(
           `Could not load session state ${statePath}: ${error?.message || String(error)}`,
@@ -1452,11 +1368,7 @@ export class Agent {
     tokensAfter: number;
   }> {
     const keep = keepLast ?? calculateKeepRecent(this.messages);
-    const result = await compactWithSummarization(
-      this.messages,
-      keep,
-      this.logger.getSessionId(),
-    );
+    const result = await compactWithSummarization(this.messages, keep, this.logger.getSessionId());
     return result;
   }
 
@@ -1490,12 +1402,9 @@ export class Agent {
   }
 
   // Load persistent memory files
-  private async loadMemory(): Promise<
-    { filename: string; sizeBytes: number; content: string }[]
-  > {
+  private async loadMemory(): Promise<{ filename: string; sizeBytes: number; content: string }[]> {
     const memoryDir = getProjectMemoryDir();
-    const results: { filename: string; sizeBytes: number; content: string }[] =
-      [];
+    const results: { filename: string; sizeBytes: number; content: string }[] = [];
 
     try {
       await fs.mkdir(memoryDir, { recursive: true });
@@ -1670,9 +1579,7 @@ export class Agent {
                 ? descMatch[1].trim()
                 : "Custom task procedure";
             const license = licenseMatch ? licenseMatch[1].trim() : "Unknown";
-            const compatibility = compatMatch
-              ? compatMatch[1].trim()
-              : "Universal";
+            const compatibility = compatMatch ? compatMatch[1].trim() : "Universal";
 
             results.push({
               id: name,
@@ -1700,19 +1607,11 @@ export class Agent {
    * Transparency of Context: the system prompt is a visible, editable file.
    * Users can see exactly what instructions the agent receives via /memory.
    */
-  private buildSystemPrompt(
-    coreMemory: any,
-    memories: any[],
-    skills: any[],
-  ): string {
+  private buildSystemPrompt(coreMemory: any, memories: any[], skills: any[]): string {
     // Load base system prompt from the packaged skill (sole product identity).
     let systemPrompt: string;
     try {
-      const promptPath = path.resolve(
-        getSkillsDir(),
-        "system-prompt",
-        "SKILL.md",
-      );
+      const promptPath = path.resolve(getSkillsDir(), "system-prompt", "SKILL.md");
       const rawContent = fsSync.readFileSync(promptPath, "utf8");
       // Strip YAML frontmatter
       systemPrompt = rawContent.replace(/^---[\s\S]*?---\s*/, "");
@@ -1759,8 +1658,6 @@ export class Agent {
     // Append MCP server instructions (if any MCP servers are connected)
     let mcpInstructions = "";
     try {
-      // Synchronous require — MCP manager is already loaded at startup
-      const { mcpManager } = require("./mcp/client.js");
       const mcpInstr = mcpManager.getInstructions();
       if (mcpInstr) {
         mcpInstructions = `--- MCP SERVER INSTRUCTIONS ---\n${mcpInstr}\n\n`;
@@ -1821,10 +1718,7 @@ export class Agent {
     savedTo: string;
   }> {
     // Step 1: Offload large tool results
-    const offloaded = await offloadLargeToolResults(
-      this.messages,
-      this.logger.getSessionId(),
-    );
+    const offloaded = await offloadLargeToolResults(this.messages, this.logger.getSessionId());
 
     // Step 2: Check if we still need compaction
     if (!needsCompaction(this.messages)) {
@@ -1836,11 +1730,7 @@ export class Agent {
     // the proposal, and apply ONLY if the user approves. Decline → the live
     // conversation stays full; the saved copy is the accessible full history.
     const keepRecent = calculateKeepRecent(this.messages);
-    const proposal = await proposeCompaction(
-      this.messages,
-      keepRecent,
-      this.logger.getSessionId(),
-    );
+    const proposal = await proposeCompaction(this.messages, keepRecent, this.logger.getSessionId());
     if (!proposal.needed) {
       return { offloaded, compacted: 0, summary: "", savedTo: "" };
     }
@@ -1879,7 +1769,8 @@ export class Agent {
               `${proposal.tokensBefore.toLocaleString("en-US")} → ${proposal.tokensAfter.toLocaleString("en-US")} tokens`,
               `Full history saved to ${shortPath}`,
             ],
-            footer: "The summary replaces old messages in this session. Your full history is preserved in the file above.",
+            footer:
+              "The summary replaces old messages in this session. Your full history is preserved in the file above.",
             accent: "brand",
           });
         }
@@ -2016,8 +1907,7 @@ export class Agent {
     // Truncate to 120 chars, preserving word boundaries
     const truncated = str.substring(0, 117);
     const lastSpace = truncated.lastIndexOf(" ");
-    const clean =
-      lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated;
+    const clean = lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated;
     return `${clean}…`;
   }
 
@@ -2026,13 +1916,8 @@ export class Agent {
   // memory, skills, tools, model, and context window usage — before the call.
   // This is the core transparency principle: the user should never wonder
   // "what did the AI see?" or "how much context is left?"
-  private printContextManifest(
-    memories: any[],
-    skills: any[],
-    coreMemory: any,
-  ): void {
+  private printContextManifest(memories: any[], skills: any[], _coreMemory: any): void {
     const dim = picocolors.gray;
-    const muted = picocolors.gray;
 
     // Estimate total context tokens (messages + system prompt)
     // Handle both string and array (vision) content
@@ -2055,30 +1940,25 @@ export class Agent {
     // Count native multimodal attachments in the latest user message
     const lastMsg = this.messages[this.messages.length - 1];
     const imageCount = Array.isArray(lastMsg?.content)
-      ? lastMsg.content.filter(
-          (p: any) => p.type === "image_url" || p.type === "file",
-        ).length
+      ? lastMsg.content.filter((p: any) => p.type === "image_url" || p.type === "file").length
       : 0;
 
     // ── Line 1: a calm summary sentence — what enters the model call ──
     // Filter out internal skills (plumbing, not business capabilities — the
     // GUI already hides these via isInternalSkill(); the CLI should too).
-    const userSkills = skills.filter(
-      (s: any) => !/system-prompt/i.test(String(s.id || "")),
-    );
+    const userSkills = skills.filter((s: any) => !/system-prompt/i.test(String(s.id || "")));
     const summaryBits: string[] = [];
     summaryBits.push(`${memories.length} memory`);
-    if (userSkills.length > 0) summaryBits.push(`${userSkills.length} skill${userSkills.length > 1 ? "s" : ""}`);
+    if (userSkills.length > 0)
+      summaryBits.push(`${userSkills.length} skill${userSkills.length > 1 ? "s" : ""}`);
     summaryBits.push(`${this.registry.getAllTools().length} tools`);
     let mcpCount = 0;
     try {
-      const { mcpManager } = require("./mcp/client.js");
       const status = mcpManager.getStatus();
       mcpCount = status.filter((s: any) => s.connected).length;
       if (mcpCount > 0) summaryBits.push(`${mcpCount} MCP`);
     } catch {}
-    if (imageCount > 0)
-      summaryBits.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
+    if (imageCount > 0) summaryBits.push(`${imageCount} image${imageCount > 1 ? "s" : ""}`);
 
     // ── Line 2: the details — what files, what model, how much context ──
     const detailBits: string[] = [];
@@ -2090,14 +1970,8 @@ export class Agent {
     }
 
     // Compact token usage: 27k/120k (23%) with a block bar
-    const compactTok = (n: number) =>
-      n >= 1000 ? Math.round(n / 1000) + "k" : String(n);
-    const tokColor =
-      pct < 60
-        ? picocolors.gray
-        : pct < 85
-          ? picocolors.yellow
-          : picocolors.red;
+    const compactTok = (n: number) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+    const tokColor = pct < 60 ? picocolors.gray : pct < 85 ? picocolors.yellow : picocolors.red;
     const barWidth = 8;
     const barFilled = Math.round((pct / 100) * barWidth);
     const bar = "■".repeat(barFilled) + "⬝".repeat(barWidth - barFilled);
@@ -2113,9 +1987,7 @@ export class Agent {
 
     // Line 2: the details — file names + skill names (only if there are any)
     if (detailBits.length > 0) {
-      console.log(
-        dim(`  `) + dim(detailBits.join(" · ")),
-      );
+      console.log(dim(`  `) + dim(detailBits.join(" · ")));
     }
   }
 
@@ -2149,12 +2021,7 @@ export class Agent {
     }
     this.promptDepth++;
     try {
-      await this.promptTurn(
-        userInput,
-        onToken,
-        onEvent,
-        engagementSensitivity,
-      );
+      await this.promptTurn(userInput, onToken, onEvent, engagementSensitivity);
     } finally {
       this.promptDepth--;
     }
@@ -2237,8 +2104,7 @@ export class Agent {
         data: {
           model: config.llmModelName,
           memory: memories.map((m: any) => m.filename).join(", ") || "—",
-          skills:
-            skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
+          skills: skills.map((s: any) => `${s.id} v${s.version}`).join(", ") || "—",
           // Structured skill list so the GUI can render real names + versions
           // in the context rail (Epic 2 §2.6 — honest surfaces).
           skillsDetail: skills.map((s: any) => ({
@@ -2263,14 +2129,9 @@ export class Agent {
     let effectiveUserInput = userInput;
     this.pendingSensitivity = null;
     try {
-      const { applySensitivityRouting, formatRedactionReceipt } = await import(
-        "./security/sensitivity.js"
-      );
-      const sensResult = applySensitivityRouting(
-        userInput,
-        undefined,
-        engagementSensitivity,
-      );
+      const { applySensitivityRouting, formatRedactionReceipt } =
+        await import("./security/sensitivity.js");
+      const sensResult = applySensitivityRouting(userInput, undefined, engagementSensitivity);
       this.pendingSensitivity = {
         route: sensResult.route,
         redactedText: sensResult.redactedText,
@@ -2314,7 +2175,11 @@ export class Agent {
         const { getLocalProvider } = await import("./providers/index.js");
         this.localProvider = getLocalProvider();
         if (!this.localProvider || !config.localLlmModelName) {
-          this.pendingSensitivity = { route: "local", redactedText: sensResult.redactedText, refused: true };
+          this.pendingSensitivity = {
+            route: "local",
+            redactedText: sensResult.redactedText,
+            refused: true,
+          };
           await this.logger.logEvent("sensitivity_refused", {
             tier: sensResult.tier,
             reason:
@@ -2328,7 +2193,10 @@ export class Agent {
             );
           }
           if (onEvent) {
-            onEvent({ type: "sensitivity_refused", data: { reason: "no local model endpoint configured" } });
+            onEvent({
+              type: "sensitivity_refused",
+              data: { reason: "no local model endpoint configured" },
+            });
             onEvent({ type: "done", data: { refused: true } });
           }
           return;
@@ -2385,13 +2253,10 @@ export class Agent {
     // is logged to the tamper-evident audit chain. When the gate is off,
     // behaviour is unchanged (the summary is informational only).
     try {
-      const { isConsentGateEnabled, renderConsentGateCompact } = await import(
-        "./security/consent_gate.js"
-      );
+      const { isConsentGateEnabled, renderConsentGateCompact } =
+        await import("./security/consent_gate.js");
       if (isConsentGateEnabled()) {
-        const systemSkill = skills.find(
-          (s: any) => s.id === "quiver-system-prompt",
-        );
+        const systemSkill = skills.find((s: any) => s.id === "quiver-system-prompt");
         const gateData = {
           systemPromptVersion: String(systemSkill?.version || "unknown"),
           memoryFiles: memories.map((m: any) => m.filename),
@@ -2425,12 +2290,10 @@ export class Agent {
         // to the model. Only an explicit approve/yes/a/y proceeds.
         const { askQuestionRaw } = await import("./utils/prompt.js");
         const raw = (
-          await askQuestionRaw(
-            picocolors.gray(
-              "  Consent gate — approve / decline / exclude: ",
-            ),
-          )
-        ).trim().toLowerCase();
+          await askQuestionRaw(picocolors.gray("  Consent gate — approve / decline / exclude: "))
+        )
+          .trim()
+          .toLowerCase();
         const action: "approve" | "decline" | "exclude" = raw.startsWith("e")
           ? "exclude"
           : /^(a|y|yes|approve|allow)$/.test(raw)
@@ -2483,9 +2346,7 @@ export class Agent {
       this.messages.pop();
       if (config.outputMode === "interactive") {
         console.log(
-          picocolors.red(
-            "\n  Consent unavailable — turn aborted. No model call was made.",
-          ),
+          picocolors.red("\n  Consent unavailable — turn aborted. No model call was made."),
         );
       }
       if (onEvent) {
@@ -2568,7 +2429,8 @@ export class Agent {
 
       // Gather current tool definitions — strip tools removed by the
       // deployment profile (air-gapped / private-network) below the prompt.
-      const { resolveDeploymentProfile, profileConfig } = await import("./security/execution_context.js");
+      const { resolveDeploymentProfile, profileConfig } =
+        await import("./security/execution_context.js");
       const removedByProfile = new Set(profileConfig(resolveDeploymentProfile()).removedTools);
       const activeTools = this.registry.getAllTools().filter((t) => !removedByProfile.has(t.name));
       const openAiDefs = activeTools.map(ToolRegistry.getOpenAIToolDefinition);
@@ -2610,7 +2472,7 @@ export class Agent {
       const turnAdapter =
         route === "local" && this.localProvider
           ? getAdapterForModel(modelInfo)
-          : this.adapter ?? getAdapterForModel(modelInfo);
+          : (this.adapter ?? getAdapterForModel(modelInfo));
       if (route !== "local" && !this.adapter) {
         this.adapter = turnAdapter;
       }
@@ -2650,9 +2512,7 @@ export class Agent {
         })
         .join(" ");
       const systemPromptStr =
-        typeof this.messages[0]?.content === "string"
-          ? (this.messages[0].content as string)
-          : "";
+        typeof this.messages[0]?.content === "string" ? (this.messages[0].content as string) : "";
       const budget = calculateBudget(
         {
           systemPrompt: systemPromptStr,
@@ -2712,9 +2572,7 @@ export class Agent {
         // crashes with "Cannot read properties of null (reading 'signal')".
         this.activeAbortController = new AbortController();
         // Rebuild outbound messages on every attempt so self-heal repairs stick.
-        let redactMessageContentFn:
-          | ((content: unknown) => unknown)
-          | null = null;
+        let redactMessageContentFn: ((content: unknown) => unknown) | null = null;
         if (route === "cloud-redacted") {
           const sens = await import("./security/sensitivity.js");
           redactMessageContentFn = sens.redactMessageContent;
@@ -2747,7 +2605,9 @@ export class Agent {
                 temperature: config.temperature,
                 ...(config.topP !== undefined ? { topP: config.topP } : {}),
                 ...(config.topK !== undefined ? { topK: config.topK } : {}),
-                ...(config.reasoningEffort !== undefined ? { reasoningEffort: config.reasoningEffort } : {}),
+                ...(config.reasoningEffort !== undefined
+                  ? { reasoningEffort: config.reasoningEffort }
+                  : {}),
                 maxTokens: adapterDefaults.maxOutputTokens,
                 stream: true,
               },
@@ -2774,15 +2634,13 @@ export class Agent {
                   accumulatedToolCalls[idx] = { arguments: "" };
                 }
                 if (ev.toolCallId) accumulatedToolCalls[idx].id = ev.toolCallId;
-                if (ev.toolCallName)
-                  accumulatedToolCalls[idx].name = ev.toolCallName;
+                if (ev.toolCallName) accumulatedToolCalls[idx].name = ev.toolCallName;
                 const bag = ev.toolCallPassthrough || ev.toolCallExtraContent;
                 if (bag) {
-                  accumulatedToolCalls[idx].passthrough =
-                    mergeToolCallPassthrough(
-                      accumulatedToolCalls[idx].passthrough,
-                      bag,
-                    );
+                  accumulatedToolCalls[idx].passthrough = mergeToolCallPassthrough(
+                    accumulatedToolCalls[idx].passthrough,
+                    bag,
+                  );
                 }
               } else if (ev.type === "tool_call_delta") {
                 const idx = ev.toolCallIndex ?? 0;
@@ -2797,11 +2655,10 @@ export class Agent {
                 }
                 const bag2 = ev.toolCallPassthrough || ev.toolCallExtraContent;
                 if (bag2) {
-                  accumulatedToolCalls[idx].passthrough =
-                    mergeToolCallPassthrough(
-                      accumulatedToolCalls[idx].passthrough,
-                      bag2,
-                    );
+                  accumulatedToolCalls[idx].passthrough = mergeToolCallPassthrough(
+                    accumulatedToolCalls[idx].passthrough,
+                    bag2,
+                  );
                 }
               } else if (ev.type === "done") {
                 // Capture finish_reason from the provider's done event.
@@ -2829,9 +2686,7 @@ export class Agent {
                 // didn't understand.
                 if (config.outputMode === "interactive") {
                   console.log(
-                    picocolors.gray(
-                      `   Unsupported event: ${ev.rawDescription || "unknown"}`,
-                    ),
+                    picocolors.gray(`   Unsupported event: ${ev.rawDescription || "unknown"}`),
                   );
                 }
                 this.logger.logEvent("unsupported_stream_event", {
@@ -2889,7 +2744,12 @@ export class Agent {
             }
             retries++;
             // Fail fast on auth failures — retrying an expired session will not succeed and wastes time
-            if (retries > maxRetries || /401|unauthenticated|ACCESS_TOKEN_TYPE_UNSUPPORTED|gcloud auth|invalid_grant|invalid_rapt/i.test(msg)) {
+            if (
+              retries > maxRetries ||
+              /401|unauthenticated|ACCESS_TOKEN_TYPE_UNSUPPORTED|gcloud auth|invalid_grant|invalid_rapt/i.test(
+                msg,
+              )
+            ) {
               throw err;
             }
             const delay = Math.min(1000 * Math.pow(2, retries), 8000);
@@ -2923,11 +2783,7 @@ export class Agent {
         // was wrong for 4xx/5xx/auth failures — the connection worked, the
         // request was rejected. Tell the user what actually happened.
         const label = classifyModelError(String(err?.message || ""));
-        console.error(
-          picocolors.red(
-            `\n[ERROR] ${label}:\n  ${err.message}`,
-          ),
-        );
+        console.error(picocolors.red(`\n[ERROR] ${label}:\n  ${err.message}`));
         await this.logger.logEvent("api_error", { error: err.message });
         throw err;
       }
@@ -2943,13 +2799,9 @@ export class Agent {
       //      malformed and cannot be executed. Retry the model call with
       //      doubled maxOutputTokens (capped at 32768) so the model has room
       //      to complete the tool call.
-      if (
-        streamFinishReason === "length" &&
-        truncationRetries < maxTruncationRetries
-      ) {
+      if (streamFinishReason === "length" && truncationRetries < maxTruncationRetries) {
         truncationRetries++;
-        const hasPartialToolCalls =
-          Object.keys(accumulatedToolCalls).length > 0;
+        const hasPartialToolCalls = Object.keys(accumulatedToolCalls).length > 0;
 
         if (hasPartialToolCalls) {
           // Case 2: truncated mid-tool-call. Retry with a larger output budget.
@@ -3008,17 +2860,13 @@ export class Agent {
           // output in history and pick up from the last sentence.
           this.messages.push({
             role: "user",
-            content:
-              "Continue from where you left off. Do not repeat what you already wrote.",
+            content: "Continue from where you left off. Do not repeat what you already wrote.",
           });
           lastAssistantContent = assistantContent;
           // Re-enter the while(true) loop for the continuation turn.
           continue;
         }
-      } else if (
-        streamFinishReason === "length" &&
-        truncationRetries >= maxTruncationRetries
-      ) {
+      } else if (streamFinishReason === "length" && truncationRetries >= maxTruncationRetries) {
         // Exhausted truncation retries — proceed with whatever we have rather
         // than looping forever. The response may be incomplete.
         if (config.outputMode === "interactive") {
@@ -3034,27 +2882,25 @@ export class Agent {
         });
       }
 
-      const toolCalls: ToolCall[] = Object.keys(accumulatedToolCalls).map(
-        (key) => {
-          const idx = parseInt(key, 10);
-          const raw = accumulatedToolCalls[idx];
-          // Self-Heal Layer A: sanitize arguments to valid JSON before they
-          // enter history. A malformed arguments string here would be echoed
-          // back to the provider on the next turn and trigger a permanent
-          // HTTP 400 "invalid tool call arguments" that no amount of retrying
-          // can fix — and would poison every subsequent prompt.
-          const sanitizedArgs = this.sanitizeToolCallArguments(raw.arguments);
-          return {
-            id: raw.id || `call_${Date.now()}_${idx}`,
-            type: "function" as const,
-            function: {
-              name: raw.name || "",
-              arguments: sanitizedArgs,
-            },
-            ...(raw.passthrough ? { passthrough: raw.passthrough } : {}),
-          };
-        },
-      );
+      const toolCalls: ToolCall[] = Object.keys(accumulatedToolCalls).map((key) => {
+        const idx = parseInt(key, 10);
+        const raw = accumulatedToolCalls[idx];
+        // Self-Heal Layer A: sanitize arguments to valid JSON before they
+        // enter history. A malformed arguments string here would be echoed
+        // back to the provider on the next turn and trigger a permanent
+        // HTTP 400 "invalid tool call arguments" that no amount of retrying
+        // can fix — and would poison every subsequent prompt.
+        const sanitizedArgs = this.sanitizeToolCallArguments(raw.arguments);
+        return {
+          id: raw.id || `call_${Date.now()}_${idx}`,
+          type: "function" as const,
+          function: {
+            name: raw.name || "",
+            arguments: sanitizedArgs,
+          },
+          ...(raw.passthrough ? { passthrough: raw.passthrough } : {}),
+        };
+      });
 
       const assistantMsg: Message = {
         role: "assistant",
@@ -3089,10 +2935,7 @@ export class Agent {
         // agent keeps working until the goal is genuinely verified complete,
         // not just until it says it is. Capped at ambientMaxHealRounds; non-
         // mutating turns (questions, read-only research) skip the gate.
-        if (
-          (mutatedThisTurn || ambientVerificationFailed) &&
-          this.ambient.isEnabled()
-        ) {
+        if ((mutatedThisTurn || ambientVerificationFailed) && this.ambient.isEnabled()) {
           if (!this.ambient.hasBudget()) {
             const message =
               "Ambient maker-checker verification did not approve the work " +
@@ -3225,7 +3068,7 @@ export class Agent {
           commandRisk = classification.risk;
           commandRequiresApproval = classification.requiresApproval;
         }
-        const needsApproval = needsApprovalFor(toolName, commandRisk);
+        const needsApproval = needsApprovalFor(toolName, commandRisk) || commandRequiresApproval;
         // Build the scoped approval-cache key for this action (US-6.4).
         const approvalKey: ApprovalKey = { toolName };
         if (toolName === "run_command" && commandRisk) {
@@ -3239,8 +3082,7 @@ export class Agent {
           // Cache by workspace-relative directory so "approve all writes under
           // src/" is a single grant, not per-file.
           try {
-            approvalKey.dir =
-              path.relative(process.cwd(), path.resolve(args.filePath)) || ".";
+            approvalKey.dir = path.relative(process.cwd(), path.resolve(args.filePath)) || ".";
           } catch {
             approvalKey.dir = String(args.filePath);
           }
@@ -3255,8 +3097,7 @@ export class Agent {
           // files, file edits outside the workspace, commands, or web tools.
           try {
             approvalKey.dir =
-              path.relative(process.cwd(), path.resolve(args.file)) ||
-              String(args.file);
+              path.relative(process.cwd(), path.resolve(args.file)) || String(args.file);
           } catch {
             approvalKey.dir = String(args.file);
           }
@@ -3275,22 +3116,15 @@ export class Agent {
             const mutPath = args.filePath ? path.resolve(args.filePath) : "";
             if (mutPath && fsSync.existsSync(mutPath)) {
               try {
-                approvalData.currentContent = fsSync.readFileSync(
-                  mutPath,
-                  "utf8",
-                );
+                approvalData.currentContent = fsSync.readFileSync(mutPath, "utf8");
               } catch {
                 /* unreadable — omit */
               }
             }
-            approvalData.proposedContent =
-              args.content ?? args.newString ?? args.new_content ?? "";
+            approvalData.proposedContent = args.content ?? args.newString ?? args.new_content ?? "";
             onEvent({ type: "approval", data: approvalData });
           }
-          const decision = await askUserApproval(
-            toolName,
-            args,
-          );
+          const decision = await askUserApproval(toolName, args);
           isApproved = decision.approved;
           this.pendingRevisionNote = decision.revisionNote;
           // Record a session-scoped approval so similar actions skip the gate.
@@ -3338,10 +3172,8 @@ export class Agent {
             resolvedPath
           ) {
             try {
-              const verify =
-                await this.fileReadHistory.verifyBeforeWrite(resolvedPath);
-              if (!verify.matches)
-                writeBlockedReason = verify.reason || "file was not read first";
+              const verify = await this.fileReadHistory.verifyBeforeWrite(resolvedPath);
+              if (!verify.matches) writeBlockedReason = verify.reason || "file was not read first";
             } catch (e: any) {
               writeBlockedReason = e.message;
             }
@@ -3358,9 +3190,7 @@ export class Agent {
             // Live progress for tool execution: replaces the old static ⟳
             // marker so long-running tools (tests, browser, research) show
             // elapsed time instead of a frozen line (Principle: Seeing).
-            const toolSpinner = new Spinner(
-              keyArg ? `${displayName} ${keyArg}` : displayName,
-            );
+            const toolSpinner = new Spinner(keyArg ? `${displayName} ${keyArg}` : displayName);
             toolSpinner.start();
             try {
               const tool = this.registry.getTool(toolName);
@@ -3381,9 +3211,7 @@ export class Agent {
                 // preview + the parser error so the model can fix the JSON.
                 if (argsParseError) {
                   const preview =
-                    rawArgsDebug.length > 300
-                      ? rawArgsDebug.slice(0, 297) + "..."
-                      : rawArgsDebug;
+                    rawArgsDebug.length > 300 ? rawArgsDebug.slice(0, 297) + "..." : rawArgsDebug;
                   result = formatDiagnosticBlock(
                     createDiagnosticBlock(
                       toolName,
@@ -3407,144 +3235,147 @@ export class Agent {
                   });
                   // Skip execution entirely; fall to result handling below.
                 } else {
-                // US-6.3: only retry-safe (read-only/idempotent) tools are
-                // auto-retried on transient failure. Destructive/shell tools
-                // execute exactly once so a transient blip can never repeat a
-                // state-changing action.
-                const retrySafe = isRetrySafe(toolName);
-                const maxAttempts = retrySafe ? 3 : 1;
-                let attempt = 0;
-                let lastErr: any = null;
-                while (true) {
-                  try {
-                    // US-9.4 / US-13.4: validate the model's tool-call arguments against
-                    // the tool's Zod schema BEFORE executing. Model text is unverified —
-                    // never run a tool on unvalidated args (a missing required field
-                    // previously produced "○ undefined" todo items). A validation
-                    // failure becomes a structured diagnostic returned to the model so
-                    // it can self-correct next turn, instead of executing with gaps.
-                    const parsedArgs = tool.parameters.safeParse(args);
-                    if (!parsedArgs.success) {
-                      const issues = parsedArgs.error.issues
-                        .map(
-                          (iss) =>
-                            `${iss.path.join(".") || "(root)"}: ${iss.message}`,
-                        )
-                        .join("; ");
-                      result = formatDiagnosticBlock(
-                        createDiagnosticBlock(
-                          toolName,
-                          args,
-                          new Error(`Invalid tool arguments: ${issues}`),
-                        ),
-                      );
-                      if (config.outputMode === "interactive") {
-                        toolSpinner.stop();
-                        statusLine(
-                          "ERROR",
-                          `${displayName} rejected invalid args — ${issues}`,
+                  // US-6.3: only retry-safe (read-only/idempotent) tools are
+                  // auto-retried on transient failure. Destructive/shell tools
+                  // execute exactly once so a transient blip can never repeat a
+                  // state-changing action.
+                  const retrySafe = isRetrySafe(toolName);
+                  const maxAttempts = retrySafe ? 3 : 1;
+                  let attempt = 0;
+                  let lastErr: any = null;
+                  while (true) {
+                    try {
+                      // US-9.4 / US-13.4: validate the model's tool-call arguments against
+                      // the tool's Zod schema BEFORE executing. Model text is unverified —
+                      // never run a tool on unvalidated args (a missing required field
+                      // previously produced "○ undefined" todo items). A validation
+                      // failure becomes a structured diagnostic returned to the model so
+                      // it can self-correct next turn, instead of executing with gaps.
+                      const parsedArgs = tool.parameters.safeParse(args);
+                      if (!parsedArgs.success) {
+                        const issues = parsedArgs.error.issues
+                          .map((iss) => `${iss.path.join(".") || "(root)"}: ${iss.message}`)
+                          .join("; ");
+                        result = formatDiagnosticBlock(
+                          createDiagnosticBlock(
+                            toolName,
+                            args,
+                            new Error(`Invalid tool arguments: ${issues}`),
+                          ),
                         );
-                      }
-                      break; // do not execute; do not retry a schema failure
-                    }
-                    args = parsedArgs.data; // apply defaults + strip unknown keys
-                    // US-15.1: route the tool call through the lifecycle interception
-                    // engine (wrap_tool_call) so the provenance audit hook — and the
-                    // opt-in maker-checker gate — actually fire in the real loop.
-                    const toolCtx: LifecycleContext = {
-                      ...lifecycleCtx,
-                      toolCall: { name: toolName, args },
-                      metadata: {
-                        changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
-                      },
-                    };
-                    const invokeTool = () =>
-                      wrapToolCall(toolCtx, async () => {
-                        // Route network/research tools through the bound
-                        // ProductionRuntime IntegrationBroker (§9). Local tools
-                        // still execute directly.
-                        const { invokeUnderRuntime, getBoundProductionRuntime } = await import(
-                          "./harness/runtime-binding.js"
-                        );
-                        const rt = getBoundProductionRuntime();
-                        if (rt || ["web_search", "scrape_url", "deep_research", "find_all", "entity_search"].includes(toolName)) {
-                          const r = await invokeUnderRuntime(toolName, args, () => tool.execute(args));
-                          if (!r.ok) throw new Error(r.error || `Tool '${toolName}' denied by runtime policy`);
-                          return r.output;
+                        if (config.outputMode === "interactive") {
+                          toolSpinner.stop();
+                          statusLine("ERROR", `${displayName} rejected invalid args — ${issues}`);
                         }
-                        return tool.execute(args);
-                      });
-                    result =
-                      toolName === "evidence"
-                        ? await withEvidenceTracker(
-                            this.evidenceTracker,
-                            invokeTool,
-                          )
-                        : await invokeTool();
-                    this.tokenStats.toolCalls++;
-                    // US-AMBIENT: remember that this turn changed files so the
-                    // completion-gate verifier knows to run a health check.
-                    if (
-                      toolName === "write_file" ||
-                      toolName === "replace_content" ||
-                      toolName === "apply_patch"
-                    ) {
-                      mutatedThisTurn = true;
-                    }
-
-                    if (toolName === "view_file" && args.filePath) {
-                      // US-6.1: record canonical path + SHA-256 + mtimeMs for
-                      // compare-and-swap verification on the next write.
-                      await this.fileReadHistory
-                        .recordRead(path.resolve(args.filePath))
-                        .catch(() => {});
-                    }
-
-                    toolSpinner.stop();
-                    if (config.outputMode === "interactive") {
-                      const { success } = await import("./cli_ui.js");
-                      success(`${displayName}${argHint}`);
-                      const preview = this.summarizeResult(result);
-                      if (preview) {
-                        process.stdout.write(picocolors.gray(`    → ${preview}\n`));
+                        break; // do not execute; do not retry a schema failure
                       }
-                    }
-                    // US-13.4: success resets the consecutive-failure loop detector.
-                    this.failureTracker.reset();
-                    lastErr = null;
-                    break;
-                  } catch (error: any) {
-                    lastErr = error;
-                    attempt++;
-                    if (attempt >= maxAttempts || !retrySafe) break;
-                    await new Promise((r) =>
-                      setTimeout(r, calculateBackoffWithJitter(attempt - 1)),
-                    );
-                  }
-                }
-                if (lastErr) {
-                  // US-13.4: structured diagnostics + consecutive-failure loop
-                  // detection. Three identical failures on the same tool pause and
-                  // alert the user so the agent never silently thrashes.
-                  const stuck = this.failureTracker.recordFailure(
-                    toolName,
-                    lastErr,
-                  );
-                  const diag = createDiagnosticBlock(toolName, args, lastErr);
-                  result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
-                  if (config.outputMode === "interactive") {
-                    toolSpinner.stop();
-                    const { error } = await import("./cli_ui.js");
-                    error(`${displayName} — ${lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message}`);
-                    if (stuck) {
-                      const { warn } = await import("./cli_ui.js");
-                      warn(
-                        `Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
+                      args = parsedArgs.data; // apply defaults + strip unknown keys
+                      // US-15.1: route the tool call through the lifecycle interception
+                      // engine (wrap_tool_call) so the provenance audit hook — and the
+                      // opt-in maker-checker gate — actually fire in the real loop.
+                      const toolCtx: LifecycleContext = {
+                        ...lifecycleCtx,
+                        toolCall: { name: toolName, args },
+                        metadata: {
+                          changeHash: `${this.logger.getSessionId()}:${loopCount}:${toolName}:${i}`,
+                        },
+                      };
+                      const invokeTool = () =>
+                        wrapToolCall(toolCtx, async () => {
+                          // Route network/research tools through the bound
+                          // ProductionRuntime IntegrationBroker (§9). Local tools
+                          // still execute directly.
+                          const { invokeUnderRuntime, getBoundProductionRuntime } =
+                            await import("./harness/runtime-binding.js");
+                          const rt = getBoundProductionRuntime();
+                          if (
+                            rt ||
+                            [
+                              "web_search",
+                              "scrape_url",
+                              "deep_research",
+                              "find_all",
+                              "entity_search",
+                            ].includes(toolName)
+                          ) {
+                            const r = await invokeUnderRuntime(toolName, args, () =>
+                              tool.execute(args),
+                            );
+                            if (!r.ok)
+                              throw new Error(
+                                r.error || `Tool '${toolName}' denied by runtime policy`,
+                              );
+                            return r.output;
+                          }
+                          return tool.execute(args);
+                        });
+                      result =
+                        toolName === "evidence"
+                          ? await withEvidenceTracker(this.evidenceTracker, invokeTool)
+                          : await invokeTool();
+                      this.tokenStats.toolCalls++;
+                      // US-AMBIENT: remember that this turn changed files so the
+                      // completion-gate verifier knows to run a health check.
+                      if (
+                        toolName === "write_file" ||
+                        toolName === "replace_content" ||
+                        toolName === "apply_patch"
+                      ) {
+                        mutatedThisTurn = true;
+                      }
+
+                      if (toolName === "view_file" && args.filePath) {
+                        // US-6.1: record canonical path + SHA-256 + mtimeMs for
+                        // compare-and-swap verification on the next write.
+                        await this.fileReadHistory
+                          .recordRead(path.resolve(args.filePath))
+                          .catch(() => {});
+                      }
+
+                      toolSpinner.stop();
+                      if (config.outputMode === "interactive") {
+                        const { success } = await import("./cli_ui.js");
+                        success(`${displayName}${argHint}`);
+                        const preview = this.summarizeResult(result);
+                        if (preview) {
+                          process.stdout.write(picocolors.gray(`    → ${preview}\n`));
+                        }
+                      }
+                      // US-13.4: success resets the consecutive-failure loop detector.
+                      this.failureTracker.reset();
+                      lastErr = null;
+                      break;
+                    } catch (error: any) {
+                      lastErr = error;
+                      attempt++;
+                      if (attempt >= maxAttempts || !retrySafe) break;
+                      await new Promise((r) =>
+                        setTimeout(r, calculateBackoffWithJitter(attempt - 1)),
                       );
                     }
                   }
-                  await this.logger.logEvent("tool_failure_diagnostic", diag);
-                }
+                  if (lastErr) {
+                    // US-13.4: structured diagnostics + consecutive-failure loop
+                    // detection. Three identical failures on the same tool pause and
+                    // alert the user so the agent never silently thrashes.
+                    const stuck = this.failureTracker.recordFailure(toolName, lastErr);
+                    const diag = createDiagnosticBlock(toolName, args, lastErr);
+                    result = `Error performing action: ${lastErr.message}\n${formatDiagnosticBlock(diag)}`;
+                    if (config.outputMode === "interactive") {
+                      toolSpinner.stop();
+                      const { error } = await import("./cli_ui.js");
+                      error(
+                        `${displayName} — ${lastErr.message.length > 200 ? lastErr.message.slice(0, 197) + "…" : lastErr.message}`,
+                      );
+                      if (stuck) {
+                        const { warn } = await import("./cli_ui.js");
+                        warn(
+                          `Detected ${this.failureTracker.maxConsecutiveFailures} identical failures of '${toolName}'. Pausing — the same action keeps failing. Reconsider the approach or fix the underlying cause.`,
+                        );
+                      }
+                    }
+                    await this.logger.logEvent("tool_failure_diagnostic", diag);
+                  }
                 } // end (no argsParseError) branch
               } // end tool-exists branch
             } finally {
@@ -3553,8 +3384,7 @@ export class Agent {
           } // end destructive action guard
         }
 
-        const resultStr =
-          typeof result === "string" ? result : safeStringify(result);
+        const resultStr = typeof result === "string" ? result : safeStringify(result);
 
         // Process [File: path] markers in tool results (e.g. from pdf_read).
         // Converts image markers into vision content parts so the model can
@@ -3639,7 +3469,8 @@ export class Agent {
                       `${srcN} sources · ${claimN} claims · ${flaggedN} flagged for review`,
                       evResult.evidencePath ? `Evidence: ${evResult.evidencePath}` : "",
                     ].filter(Boolean),
-                    footer: "Provenance logged to the audit chain. Draft for review until a professional signs off.",
+                    footer:
+                      "Provenance logged to the audit chain. Draft for review until a professional signs off.",
                     accent: "success",
                   });
                 } catch {
