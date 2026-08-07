@@ -24,6 +24,13 @@ Classification uses the requested A–E categories. This table is evidence-first
 
 ## Progress notes (goal-seeking loop)
 
+- **2026-08-07 production composition root:** `src/harness/production-runtime.ts`
+  now wires CapabilityRegistry, Parallel (when allowed), IntegrationBroker,
+  ResearchStateStore, durable jobs, idempotency ledger, OfficeCLI probe,
+  ExecutionContext tool filter, and honest `unavailable[]`. Browser/CLI/daemon
+  workflow paths use it via `buildProductionEngine`/`startBrowserUI`. Chat still
+  uses legacy `Agent` but installs the same network guard and strips profile-
+  removed tools. See `NOTES/FINISH_LINE.md` for the remaining P0/P1 list.
 - AC-7 (per-step maker/checker/planner gate): NOW PROVEN. New test
   `tests/harness/32-engine-maker-checker-planner.test.ts` (11 checks) drives the
   engine with scripted models: planner advances to a produce step, maker fires

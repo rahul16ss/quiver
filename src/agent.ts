@@ -2566,8 +2566,11 @@ export class Agent {
         historySize: this.messages.length,
       });
 
-      // Gather current tool definitions
-      const activeTools = this.registry.getAllTools();
+      // Gather current tool definitions — strip tools removed by the
+      // deployment profile (air-gapped / private-network) below the prompt.
+      const { resolveDeploymentProfile, profileConfig } = await import("./security/execution_context.js");
+      const removedByProfile = new Set(profileConfig(resolveDeploymentProfile()).removedTools);
+      const activeTools = this.registry.getAllTools().filter((t) => !removedByProfile.has(t.name));
       const openAiDefs = activeTools.map(ToolRegistry.getOpenAIToolDefinition);
 
       // US-2.2A/2.2B: resolve the active model provider (transport) and harness
@@ -3456,7 +3459,21 @@ export class Agent {
                       },
                     };
                     const invokeTool = () =>
-                      wrapToolCall(toolCtx, async () => tool.execute(args));
+                      wrapToolCall(toolCtx, async () => {
+                        // Route network/research tools through the bound
+                        // ProductionRuntime IntegrationBroker (§9). Local tools
+                        // still execute directly.
+                        const { invokeUnderRuntime, getBoundProductionRuntime } = await import(
+                          "./harness/runtime-binding.js"
+                        );
+                        const rt = getBoundProductionRuntime();
+                        if (rt || ["web_search", "scrape_url", "deep_research", "find_all", "entity_search"].includes(toolName)) {
+                          const r = await invokeUnderRuntime(toolName, args, () => tool.execute(args));
+                          if (!r.ok) throw new Error(r.error || `Tool '${toolName}' denied by runtime policy`);
+                          return r.output;
+                        }
+                        return tool.execute(args);
+                      });
                     result =
                       toolName === "evidence"
                         ? await withEvidenceTracker(

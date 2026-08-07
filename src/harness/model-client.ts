@@ -98,7 +98,15 @@ export class QuiverOpenRouterClient implements ModelClient {
     private transport: ModelTransport,
     private profiles: ModelProfileRegistry,
     private policy: PolicyEngine,
-    private opts: { siteUrl?: string; siteName?: string } = {},
+    private opts: {
+      siteUrl?: string;
+      siteName?: string;
+      /** When set, MIME certification is consulted from the CapabilityRegistry
+       *  (per-MIME immutable records) in addition to the profile flag. */
+      capabilities?: import("./capability-registry.js").CapabilityRegistry;
+      /** Runtime version string used as the CapabilityRegistry key. */
+      runtimeVersion?: string;
+    } = {},
   ) {
     this.router = new ModalityRouter(profiles.list());
   }
@@ -163,9 +171,22 @@ export class QuiverOpenRouterClient implements ModelClient {
     }
 
     // Validate native file content parts against certification — fail closed.
+    // CapabilityRegistry (when wired) is authoritative per MIME; profile flag
+    // remains as a secondary gate so either source can refuse.
     const nativeMimes = collectNativeMimes(messages);
+    const runtimeVersion = this.opts.runtimeVersion ?? "quiver-harness";
     for (const mime of nativeMimes) {
-      if (!isCertifiedFor(profile, mime)) {
+      const profileOk = isCertifiedFor(profile, mime);
+      const registryOk = this.opts.capabilities
+        ? this.opts.capabilities.isCertified(
+            "openrouter",
+            "https://openrouter.ai/api/v1",
+            profile.modelSlug,
+            runtimeVersion,
+            mime,
+          )
+        : true; // no registry → profile gate alone
+      if (!profileOk || !registryOk) {
         throw new Error(
           `Profile ${profile.slug} is not certified for native ingestion of ${mime}. ` +
             `Run the opt-in contract test; do not silently substitute OCR/text extraction.`,
@@ -244,6 +265,10 @@ export class LocalModelClient implements ModelClient {
   constructor(
     private transport: ModelTransport,
     private profiles: ModelProfileRegistry,
+    private opts: {
+      capabilities?: import("./capability-registry.js").CapabilityRegistry;
+      runtimeVersion?: string;
+    } = {},
   ) {
     this.router = new ModalityRouter(profiles.list());
   }
@@ -282,6 +307,31 @@ export class LocalModelClient implements ModelClient {
     }
     const profile = this.profiles.get(slug);
     if (!profile) throw new Error(`Unknown local model profile: ${slug}`);
+    // Native MIME on local routes also requires certification — do not claim
+    // Office/PDF support without a passed contract test for that exact route.
+    const nativeMimes = collectNativeMimes(messages);
+    const runtimeVersion = this.opts.runtimeVersion ?? "quiver-harness";
+    for (const mime of nativeMimes) {
+      const profileOk = isCertifiedFor(profile, mime);
+      const registryOk = this.opts.capabilities
+        ? this.opts.capabilities.isCertified(
+            "local-private",
+            "local",
+            profile.modelSlug,
+            runtimeVersion,
+            mime,
+          )
+        : true;
+      if (!profileOk || !registryOk) {
+        throw new Error(
+          `Local profile ${profile.slug} is not certified for native ingestion of ${mime}. ` +
+            `Run the opt-in contract test; do not silently substitute OCR/text extraction.`,
+        );
+      }
+      if (fileBytes(messages, mime) > profile.maxFileBytes) {
+        throw new Error(`File exceeds profile maxFileBytes (${profile.maxFileBytes}).`);
+      }
+    }
     const signal = options.budget?.signal ?? maybeTimeout(options.budget?.timeoutMs);
     const resp = await this.transport.invoke({
       model: profile.modelSlug,

@@ -171,7 +171,18 @@ export class OfficeCliEngine implements OfficeEngine {
       return { path: target, applied: 0, warnings: parseWarnings(res).concat([res.stderr].filter(Boolean)) };
     }
     const applied = parseAppliedCount(res);
-    return { path: target, applied, warnings: parseWarnings(res) };
+    // Read-back verification: an edit that the binary cannot re-validate is
+    // not a successful edit. Fail closed — do not report applied counts for
+    // an unchecked artifact (§10).
+    const v = await this.validate(target, opts);
+    if (!v.ok) {
+      return {
+        path: target,
+        applied: 0,
+        warnings: parseWarnings(res).concat(v.errors).concat(v.warnings),
+      };
+    }
+    return { path: target, applied, warnings: parseWarnings(res).concat(v.warnings) };
   }
 
   async validate(filePath: string, opts: OfficeOpts = {}): Promise<OfficeValidationResult> {

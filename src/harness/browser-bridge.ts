@@ -133,13 +133,34 @@ export async function loadConfig(): Promise<any> {
 
 export async function isConfigured(): Promise<boolean> {
   const { config } = await import("../config.js");
-  return Boolean(config.llmApiKey || config.llmBaseUrl);
+  // OpenRouter is a first-class cloud config; do not require the legacy
+  // LLM_API_KEY/BASE_URL pair when OPENROUTER_API_KEY is present.
+  return Boolean(
+    (config.openRouterApiKey && config.openRouterModelProfile) ||
+      config.llmApiKey ||
+      config.llmBaseUrl,
+  );
 }
 
 export async function startAgent(_config: any, _resumeLatest: boolean): Promise<void> {
   if (agent) return;
+  const { getBoundProductionRuntime } = await import("./runtime-binding.js");
+  const runtime = getBoundProductionRuntime();
+  // Prefer the bound ProductionRuntime's network guard + tool removals. If the
+  // browser UI was started without a runtime (tests), fall back to installing
+  // the guard from the deployment profile directly.
+  const {
+    resolveDeploymentProfile,
+    installNetworkGuard,
+    profileConfig,
+  } = await import("../security/execution_context.js");
+  const profile = runtime?.deploymentProfile ?? resolveDeploymentProfile();
+  installNetworkGuard(profile);
   const { globalRegistry } = await import("../registry.js");
   await globalRegistry.loadAll();
+  for (const name of profileConfig(profile).removedTools) {
+    globalRegistry.unregisterTool(name);
+  }
   registry = globalRegistry;
   const { Agent } = await import("../agent.js");
   agent = new Agent(globalRegistry);
@@ -179,10 +200,18 @@ export async function sendToAgent(text: string): Promise<void> {
   })();
 }
 
-export async function approveToolCall(_approve: boolean, _note?: string): Promise<void> {
-  // Tool approvals flow through the prompt resolver (the browser responds via
-  // /api/agent/respond). This method is kept for API parity; the actual
-  // resolution is the prompt answer ("y"/"n"/"a").
+export async function approveToolCall(_approve: boolean, _note?: string): Promise<{ ok: boolean; via: string }> {
+  // Approvals are resolved via /api/agent/respond (prompt resolver). This
+  // endpoint is retained for API parity but must not pretend it approved anything.
+  if (pendingResponses.size === 0) {
+    return { ok: false, via: "noop — no pending approval prompt; use /api/agent/respond" };
+  }
+  const ans = _approve ? "y" : "n";
+  for (const [id] of pendingResponses) {
+    resolvePrompt(id, ans);
+    return { ok: true, via: "prompt-resolver" };
+  }
+  return { ok: false, via: "noop" };
 }
 
 export async function consentRespond(decision: "approve" | "decline" | "exclude"): Promise<void> {
@@ -263,9 +292,26 @@ export async function memoryReviewAction(factId: string, action: string, content
 }
 
 // ── Context rail exclude/veto (principles §2) ────────────────────────
-export async function excludeFromRun(_memoryName: string): Promise<void> {
-  // The exclusion set is recorded on the agent; for the browser path it is
-  // surfaced in the context manifest. (The agent honors excludedMemories.)
+export async function excludeFromRun(memoryName: string): Promise<{ ok: boolean; excluded?: string; error?: string }> {
+  if (!memoryName || typeof memoryName !== "string") {
+    return { ok: false, error: "memoryName required" };
+  }
+  if (!agent) {
+    return { ok: false, error: "agent not started — exclusion not applied" };
+  }
+  // Best-effort: set on agent if it exposes excludedMemories; otherwise honest fail.
+  if (typeof agent.excludeMemory === "function") {
+    await agent.excludeMemory(memoryName);
+    return { ok: true, excluded: memoryName };
+  }
+  if (Array.isArray(agent.excludedMemories)) {
+    if (!agent.excludedMemories.includes(memoryName)) agent.excludedMemories.push(memoryName);
+    return { ok: true, excluded: memoryName };
+  }
+  return {
+    ok: false,
+    error: "exclusion surface not available on this agent build — use the context consent gate instead",
+  };
 }
 
 // ── Skills ───────────────────────────────────────────────────────────
@@ -336,9 +382,14 @@ export async function reviewOverride(filePath: string, _openFlags: number, _figu
 }
 
 // ── Workspace / workflow ─────────────────────────────────────────────
-export async function rerunWorkflow(): Promise<void> {
-  // The workflow rerun is the harness-daemon run surface; the browser UI's
-  // "Run workflow demo" button can call /api/run/start instead.
+export async function rerunWorkflow(): Promise<{ ok: boolean; error?: string; hint?: string }> {
+  // Workflow runs are owned by HarnessDaemon (/api/run/start). Do not pretend
+  // this chat-plane endpoint re-ran anything.
+  return {
+    ok: false,
+    error: "noop",
+    hint: "Use POST /api/run/start with a workflowId — /api/workflow/rerun does not execute workflows",
+  };
 }
 
 /** Read a JSON body from an incoming request. */
@@ -363,7 +414,7 @@ export async function browserApiHandler(req: { method: string; pathname: string;
   if (pathname === "/api/config" && method === "GET") return loadConfig();
   if (pathname === "/api/agent/start" && method === "POST") { await startAgent(b.config, b.resumeLatest); return { started: true }; }
   if (pathname === "/api/agent/send" && method === "POST") { await sendToAgent(b.text); return { sent: true }; }
-  if (pathname === "/api/agent/approve" && method === "POST") { await approveToolCall(b.approve, b.note); return { ok: true }; }
+  if (pathname === "/api/agent/approve" && method === "POST") return approveToolCall(b.approve, b.note);
   if (pathname === "/api/agent/consent" && method === "POST") { await consentRespond(b.decision); return { ok: true }; }
   if (pathname === "/api/agent/respond" && method === "POST") return { ok: resolvePrompt(b.id, b.answer) };
   if (pathname === "/api/agent/stop" && method === "POST") { await stopAgent(); return { ok: true }; }
@@ -381,7 +432,7 @@ export async function browserApiHandler(req: { method: string; pathname: string;
   if (pathname === "/api/memory/review" && method === "GET") return memoryReviewList();
   if (pathname === "/api/memory/review/action" && method === "POST") { await memoryReviewAction(b.factId, b.action, b.content); return { ok: true }; }
   // Exclude/veto
-  if (pathname === "/api/memory/exclude" && method === "POST") { await excludeFromRun(b.memoryName); return { ok: true }; }
+  if (pathname === "/api/memory/exclude" && method === "POST") return excludeFromRun(b.memoryName);
   // Skills
   if (pathname === "/api/skills" && method === "GET") return listSkills();
   if (pathname === "/api/skills/read" && method === "POST") return { content: await readSkill(b.skillName) };
@@ -396,7 +447,22 @@ export async function browserApiHandler(req: { method: string; pathname: string;
   if (pathname === "/api/review/markFinal" && method === "POST") return reviewMarkFinal(b.filePath, b.openFlags, b.figureStatuses);
   if (pathname === "/api/review/override" && method === "POST") return reviewOverride(b.filePath, b.openFlags, b.figureStatuses);
   // Workflow
-  if (pathname === "/api/workflow/rerun" && method === "POST") { await rerunWorkflow(); return { ok: true }; }
+  if (pathname === "/api/workflow/rerun" && method === "POST") return rerunWorkflow();
+  // Runtime honesty surface — what the bound production runtime can/cannot do.
+  if (pathname === "/api/runtime/status" && method === "GET") {
+    const { getBoundProductionRuntime } = await import("./runtime-binding.js");
+    const rt = getBoundProductionRuntime();
+    if (!rt) return { bound: false, plane: "assistant-unbound" };
+    return {
+      bound: true,
+      plane: "shared-production-runtime",
+      deploymentProfile: rt.deploymentProfile,
+      unavailable: rt.unavailable,
+      research: !!rt.research,
+      office: !!rt.office,
+      brokerIntegrations: rt.broker.list().map((d) => d.name),
+    };
+  }
   return { error: `unknown route: ${method} ${pathname}` };
 }
 

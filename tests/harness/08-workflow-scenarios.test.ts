@@ -1,10 +1,16 @@
 /**
  * Twelve workflow capability scenarios — Phase 9 acceptance (ADR-007).
  *
- * These are tests of the GENERIC harness, not twelve special-purpose agents.
- * Each scenario is a declarative WorkflowSpec; the harness evaluates the spec's
- * acceptance checks against synthetic run records (positive + negative) and
- * verifies the generic invariants: context/source selection, sensitivity
+ * HONEST SCOPE: this file tests the GENERIC harness *acceptance-check
+ * predicates* and catalog structure against fixture run records
+ * (`passingRunRecord` / `failingRunRecord`). It does NOT execute the
+ * production engine. Live engine execution of all twelve specs is covered by
+ * `28-workflow-live-engine.test.ts` (mock model/tools, real goal loop).
+ * Credential-free document demos remain the three demo-ready packs.
+ *
+ * Each scenario is a declarative WorkflowSpec; the harness evaluates the
+ * spec's acceptance checks against synthetic run records (positive + negative)
+ * and verifies the generic invariants: context/source selection, sensitivity
  * enforcement, no licensed-data substitution, native Office output,
  * formula/layout preservation, evidence locators, maker/checker separation,
  * human approval before commit, storage conflict behavior, reproducibility.

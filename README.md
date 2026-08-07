@@ -162,8 +162,9 @@ npx tsc --noEmit
 # Run unit & spec tests
 npm test
 
-# Launch desktop app (development)
-npm run gui
+# Launch the loopback browser UI (production composition root)
+npm start
+# or: npm run harness
 ```
 
 ---

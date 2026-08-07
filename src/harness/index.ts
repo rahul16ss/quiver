@@ -18,3 +18,4 @@ export * from "./research-gateway.js";
 export * from "./goal-contract.js";
 export * from "./sqlite-checkpoint.js";
 export * from "./execution-engine.js";
+export * from "./production-runtime.js";

@@ -33,10 +33,11 @@ Raw receipts are in `/tmp/`.
 
 ## Remaining verification required
 
-1. Run targeted tests for the external per-step checker rejection and planner revision branches; baseline `npm test` passing does not prove those branches are exercised.
+1. ~~Run targeted tests for the external per-step checker rejection and planner revision branches~~ — done (`32-engine-maker-checker-planner`).
 2. Run UI/browser visual QA from the current external `runs.js` surface, not only static tests.
 3. Run opt-in live contract suite with real OpenRouter/Parallel/Graph/Drive/OfficeCLI credentials, or record each unavailable prerequisite explicitly.
-4. Add a lint/check/build script or document an owner-approved alternative if the project release gate requires those commands.
+4. ~~Production composition root wiring~~ — `production-runtime.ts` + `35-production-runtime.test.ts` (25 checks) green as of 2026-08-07.
+5. Remaining finish-line work is listed in `NOTES/FINISH_LINE.md` (dual chat/workflow runtime, MIME live certs, scaffold workflows, Office pin, broker on Agent path).
 
 ## Post-rebaseline defect verification (2026-08-07)
 

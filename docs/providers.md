@@ -72,8 +72,7 @@ available. Quiver does not provide a separate Vertex or Ollama cloud path.
 ## Web research
 
 `web_search` and `scrape_url` prefer **Parallel.ai** when `PARALLEL_API_KEY` is
-set. Ollama Pro web APIs are used only when the model host is actually Ollama —
-a Vertex / Gemini credential is never treated as an Ollama Pro key.
+set. There is no Ollama-cloud research path and no Vertex research path.
 
 ## Streaming Events
 
@@ -89,7 +88,7 @@ The provider emits `ModelEvent` objects via async iterable:
 
 `getActiveProvider()` is the transport used by the real agent loop
 (`src/agent.ts`); the loop no longer performs an inline `fetch()` to
-`/chat/completions`. When Vertex is configured, the provider refreshes OAuth
-Bearer tokens before each call. `ModelEvent` carries `toolCallIndex` on
+`/chat/completions`. OpenRouter requests enforce ZDR / `data_collection=deny`
+per call via `QuiverOpenRouterProvider`. `ModelEvent` carries `toolCallIndex` on
 `tool_call_start`/`tool_call_delta` so the agent can accumulate multiple
 parallel tool calls correctly.

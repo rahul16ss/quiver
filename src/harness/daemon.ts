@@ -6,8 +6,8 @@
  * protection, secure headers, and explicit local-file root grants. It is NOT
  * exposed to the LAN by default.
  *
- * This is additive: the legacy Electron app (`ui/`) remains in place and green
- * until the experience-plane phase migrates and removes it.
+ * The Electron desktop shell has been removed. The supported interactive
+ * surface is this loopback browser UI.
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "http";
@@ -33,6 +33,14 @@ export interface DaemonOptions {
   sseHandler?: (req: IncomingMessage, res: ServerResponse) => void;
   /** The pathname the SSE handler is mounted at. */
   ssePath?: string;
+  /**
+   * Optional Parallel webhook handler. Auth is HMAC of the raw body (not the
+   * per-install secret). Receives rawBody + headers; must return { status, body }.
+   */
+  parallelWebhookHandler?: (req: {
+    rawBody: Buffer;
+    headers: IncomingMessage["headers"];
+  }) => Promise<{ status: number; body: unknown }>;
 }
 
 export class QuiverDaemon {
@@ -42,6 +50,7 @@ export class QuiverDaemon {
   private apiHandler?: DaemonOptions["apiHandler"];
   private sseHandler?: DaemonOptions["sseHandler"];
   private ssePath?: string;
+  private parallelWebhookHandler?: DaemonOptions["parallelWebhookHandler"];
 
   constructor(private opts: DaemonOptions = {}) {
     this.secret = opts.secret ?? randomBytes(32).toString("hex");
@@ -49,6 +58,7 @@ export class QuiverDaemon {
     this.apiHandler = opts.apiHandler;
     this.sseHandler = opts.sseHandler;
     this.ssePath = opts.ssePath;
+    this.parallelWebhookHandler = opts.parallelWebhookHandler;
   }
 
   /** The loopback origin the browser should open. */
@@ -109,10 +119,25 @@ export class QuiverDaemon {
     // for every state-changing (non-GET) request. GETs that return UI are
     // allowed without the secret (the browser loads the page first), but API
     // GETs still require the secret.
-    // The Origin check above already computed isStateChange.
+    // Exception: Parallel webhooks authenticate via HMAC of the raw body — they
+    // cannot carry the local daemon secret (§8 / §14).
+    const isParallelWebhook = pathname === "/api/webhooks/parallel" && req.method === "POST";
     const isApi = pathname.startsWith("/api/");
-    if ((isStateChange || isApi) && !this.checkSecret(req)) {
+    if (!isParallelWebhook && (isStateChange || isApi) && !this.checkSecret(req)) {
       return this.send(res, 401, { error: "unauthorized: missing or invalid per-install secret" });
+    }
+
+    if (isParallelWebhook) {
+      if (!this.parallelWebhookHandler) {
+        return this.send(res, 503, { error: "parallel webhook handler not configured" });
+      }
+      const rawBody = await this.readRawBody(req);
+      try {
+        const out = await this.parallelWebhookHandler({ rawBody, headers: req.headers });
+        return this.send(res, out.status, out.body);
+      } catch (err: any) {
+        return this.send(res, 400, { error: err.message });
+      }
     }
 
     if (req.method === "GET" && pathname === "/health") {
@@ -138,7 +163,7 @@ export class QuiverDaemon {
       return this.sseHandler(req, res);
     }
     // Harness API routes (secret-gated above).
-    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow") || pathname.startsWith("/api/jobs"))) {
+    if (this.apiHandler && (pathname === "/api/workflows" || pathname.startsWith("/api/run/") || pathname.startsWith("/api/agent/") || pathname.startsWith("/api/memory") || pathname.startsWith("/api/sessions") || pathname.startsWith("/api/skills") || pathname.startsWith("/api/config") || pathname.startsWith("/api/preview") || pathname.startsWith("/api/file") || pathname.startsWith("/api/evidence") || pathname.startsWith("/api/review") || pathname.startsWith("/api/workflow") || pathname.startsWith("/api/jobs") || pathname.startsWith("/api/runtime"))) {
       let body: unknown = undefined;
       if (req.method !== "GET" && req.method !== "HEAD") {
         body = await this.readBody(req);
@@ -189,6 +214,16 @@ export class QuiverDaemon {
       req.on("data", (d) => (buf += d.toString()));
       req.on("end", () => { try { resolve(buf ? JSON.parse(buf) : undefined); } catch { resolve(buf); } });
       req.on("error", () => resolve(undefined));
+    });
+  }
+
+  /** Raw body bytes — required for Parallel webhook HMAC verification. */
+  private readRawBody(req: IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (d) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", () => resolve(Buffer.alloc(0)));
     });
   }
 

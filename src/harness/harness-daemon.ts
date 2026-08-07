@@ -35,6 +35,10 @@ export interface HarnessDaemonOptions {
   /** Optional SSE handler + path (the agent event stream). */
   sseHandler?: (req: import("http").IncomingMessage, res: import("http").ServerResponse) => void;
   ssePath?: string;
+  /** Durable idempotency ledger for webhook replay (§14). */
+  idempotency?: import("./durable-job.js").DurableIdempotencyLedger;
+  /** Parallel webhook HMAC secret (PARALLEL_WEBHOOK_SECRET). */
+  parallelWebhookSecret?: string;
 }
 
 export class HarnessDaemon {
@@ -52,7 +56,59 @@ export class HarnessDaemon {
       apiHandler: async (req) => this.route(req, api, browserApi),
       sseHandler: opts.sseHandler,
       ssePath: opts.ssePath,
+      parallelWebhookHandler: opts.idempotency
+        ? (req) => this.handleParallelWebhook(req)
+        : undefined,
     });
+  }
+
+  /**
+   * Parallel Monitor webhook: HMAC-verify the raw body, durable-dedupe by
+   * event/delivery id, acknowledge. Never processes an unverified delivery.
+   */
+  private async handleParallelWebhook(req: {
+    rawBody: Buffer;
+    headers: import("http").IncomingMessage["headers"];
+  }): Promise<{ status: number; body: unknown }> {
+    const secret = this.opts.parallelWebhookSecret ?? process.env.PARALLEL_WEBHOOK_SECRET ?? "";
+    if (!secret) {
+      return { status: 503, body: { error: "PARALLEL_WEBHOOK_SECRET not configured" } };
+    }
+    const { verifyParallelWebhook } = await import("./research-gateway.js");
+    const sigHeader =
+      (Array.isArray(req.headers["x-parallel-signature"])
+        ? req.headers["x-parallel-signature"][0]
+        : req.headers["x-parallel-signature"]) ||
+      (Array.isArray(req.headers["x-webhook-signature"])
+        ? req.headers["x-webhook-signature"][0]
+        : req.headers["x-webhook-signature"]) ||
+      "";
+    if (!verifyParallelWebhook(req.rawBody, String(sigHeader), secret)) {
+      return { status: 401, body: { error: "invalid webhook signature" } };
+    }
+    let payload: any = {};
+    try {
+      payload = JSON.parse(req.rawBody.toString("utf8") || "{}");
+    } catch {
+      return { status: 400, body: { error: "invalid JSON body" } };
+    }
+    const eventId =
+      payload.event_id ||
+      payload.id ||
+      payload.delivery_id ||
+      (Array.isArray(req.headers["x-parallel-delivery-id"])
+        ? req.headers["x-parallel-delivery-id"][0]
+        : req.headers["x-parallel-delivery-id"]);
+    if (!eventId) {
+      return { status: 400, body: { error: "missing event_id / delivery_id" } };
+    }
+    const ledger = this.opts.idempotency!;
+    const first = await ledger.touch(String(eventId));
+    if (!first) {
+      return { status: 200, body: { ok: true, deduped: true, eventId } };
+    }
+    // Acknowledge; ambient job handlers may consume the event later.
+    return { status: 200, body: { ok: true, accepted: true, eventId } };
   }
 
   private async route(req: { method: string; pathname: string; body: any }, api: ReturnType<HarnessDaemon["api"]>, browserApi?: (req: { method: string; pathname: string; body: unknown }) => Promise<unknown>): Promise<unknown> {

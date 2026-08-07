@@ -85,9 +85,18 @@ async function run() {
   const workingCopy = path.join(editDir, "working.xlsx");
   fs.writeFileSync(workingCopy, Buffer.from("xlsx"));
   runner.responses["edit"] = { success: true, stdout: JSON.stringify({ applied: 3 }), stderr: "", exitCode: 0, json: { applied: 3 } };
+  runner.responses["validate"] = { success: true, stdout: "{}", stderr: "", exitCode: 0, json: {} };
   const editRes = await engine.edit(workingCopy, [{ kind: "cell", locator: "A1", value: 42 }, { kind: "cell", locator: "B2", value: "=A1*2" }], { atomic: true });
   check("OFFICE-EDIT-APPLIED-COUNT", editRes.applied === 3);
   check("OFFICE-EDIT-INVOKED-BINARY", runner.calls.some((c) => c[0] === "edit"));
+  check("OFFICE-EDIT-READBACK-VALIDATE", runner.calls.some((c) => c[0] === "validate"));
+
+  // Edit that fails read-back validation must not report applied > 0.
+  runner.calls = [];
+  runner.responses["edit"] = { success: true, stdout: JSON.stringify({ applied: 2 }), stderr: "", exitCode: 0, json: { applied: 2 } };
+  runner.responses["validate"] = { success: false, stdout: "{}", stderr: "structure broken", exitCode: 1, json: {} };
+  const editBad = await engine.edit(workingCopy, [{ kind: "cell", locator: "A1", value: 1 }]);
+  check("OFFICE-EDIT-READBACK-FAILS-CLOSED", editBad.applied === 0 && /structure broken/.test(editBad.warnings.join(" ")));
 
   // ── validate ────────────────────────────────────────────────────────
   runner.responses["validate"] = { success: true, stdout: "{}", stderr: "", exitCode: 0, json: {} };
