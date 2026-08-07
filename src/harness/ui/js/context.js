@@ -8,7 +8,7 @@ import { chatTurnCount } from "./chat.js";
 
 async function loadContextSurfaces(config) {
   if (config?.provider?.modelName) setModel(config.provider.modelName, config);
-  
+
   // Dynamically update trust level badge
   const grants = config?.autonomyGrants || "";
   let label = "Ask before acting";
@@ -82,12 +82,21 @@ function renderAttachments() {
     if (a.thumbUrl) {
       thumb = '<img class="attach-thumb" alt="" src="' + a.thumbUrl + '">';
     } else {
-      thumb = '<span class="attach-thumb attach-thumb\u2014glyph">\u2728</span>';
+      const ext = (a.name.split(".").pop() || "").toLowerCase();
+      thumb =
+        '<span class="attach-thumb attach-thumb\u2014glyph attach-ext">' +
+        escapeHtml(ext || "file") +
+        "</span>";
     }
     const display = a.name.length > 22 ? a.name.slice(0, 19) + "\u2026" : a.name;
-    chip.innerHTML = thumb +
-      '<span class="attach-name">' + escapeHtml(display) + '</span>' +
-      '<button type="button" class="attach-x" aria-label="Remove attachment" data-path="' + escapeHtml(a.path) + '">\u00d7</button>';
+    chip.innerHTML =
+      thumb +
+      '<span class="attach-name">' +
+      escapeHtml(display) +
+      "</span>" +
+      '<button type="button" class="attach-x" aria-label="Remove attachment" data-path="' +
+      escapeHtml(a.path) +
+      '">\u00d7</button>';
     box.appendChild(chip);
   }
 }
@@ -313,17 +322,17 @@ async function saveCoreMemory() {
 async function openSkillViewer(name) {
   const content = await api.readSkill(name);
   $("skillTitle").textContent = `Skill — ${name}`;
-  
+
   let body = content || "";
   let frontmatter = "";
   let version = "1.0.0";
   let purpose = "";
-  
+
   const match = body.match(/^---([\s\S]*?)---\r?\n?/);
   if (match) {
     frontmatter = match[0];
     body = content.slice(match[0].length);
-    
+
     // Parse key-value pairs from frontmatter
     const kvLines = match[1].split("\n");
     for (const line of kvLines) {
@@ -336,7 +345,7 @@ async function openSkillViewer(name) {
       }
     }
   }
-  
+
   // Update or insert a meta bar
   let metaBar = $("skillMetaBar");
   if (!metaBar) {
@@ -346,11 +355,11 @@ async function openSkillViewer(name) {
     const textarea = $("skillContent");
     textarea.parentNode.insertBefore(metaBar, textarea);
   }
-  
-  metaBar.innerHTML = 
+
+  metaBar.innerHTML =
     `<div><strong>Version:</strong> ${escapeHtml(version)}</div>` +
-    `<div><strong>Purpose:</strong> ${escapeHtml(purpose || 'No purpose defined')}</div>`;
-    
+    `<div><strong>Purpose:</strong> ${escapeHtml(purpose || "No purpose defined")}</div>`;
+
   $("skillContent").value = body;
   $("skillContent").dataset.skill = name;
   $("skillContent").dataset.frontmatter = frontmatter;
@@ -422,7 +431,8 @@ async function openPreview(filePath, title) {
       body.textContent = res?.content ?? "";
     }
   } catch (e) {
-    $("previewBody").innerHTML = `<div class="ctx-value">Preview failed: ${escapeHtml(e.message || e)}</div>`;
+    $("previewBody").innerHTML =
+      `<div class="ctx-value">Preview failed: ${escapeHtml(e.message || e)}</div>`;
   }
 }
 

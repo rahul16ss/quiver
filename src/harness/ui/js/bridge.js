@@ -2,7 +2,8 @@
 // window.quiver API. Every method maps to a daemon HTTP route (secret-gated);
 // the agent event stream is an SSE subscription. Exposes the SAME method names
 // the renderer modules call, so the rest of the UI is unchanged.
-const SECRET = window.__QUIVER_SECRET__ || new URLSearchParams(location.hash.slice(1)).get("token") || "";
+const SECRET =
+  window.__QUIVER_SECRET__ || new URLSearchParams(location.hash.slice(1)).get("token") || "";
 const h = () => ({ "X-Quiver-Secret": SECRET, "Content-Type": "application/json" });
 
 async function post(path, body) {
@@ -42,7 +43,8 @@ export const api = {
 
   // Memory review
   memoryReviewList: () => get("/api/memory/review"),
-  memoryReviewAction: (factId, action, content) => post("/api/memory/review/action", { factId, action, content }),
+  memoryReviewAction: (factId, action, content) =>
+    post("/api/memory/review/action", { factId, action, content }),
 
   // Exclude/veto
   excludeFromRun: (memoryName) => post("/api/memory/exclude", { memoryName }),
@@ -51,13 +53,18 @@ export const api = {
   consentRespond: (decision) => post("/api/agent/consent", { decision }),
 
   // Review flow
-  reviewMarkFinal: (filePath, openFlags, figureStatuses) => post("/api/review/markFinal", { filePath, openFlags, figureStatuses }),
-  reviewOverride: (filePath, openFlags, figureStatuses) => post("/api/review/override", { filePath, openFlags, figureStatuses }),
+  reviewMarkFinal: (filePath, openFlags, figureStatuses) =>
+    post("/api/review/markFinal", { filePath, openFlags, figureStatuses }),
+  reviewOverride: (filePath, openFlags, figureStatuses) =>
+    post("/api/review/override", { filePath, openFlags, figureStatuses }),
 
   // Skills
   listSkills: () => get("/api/skills"),
   readSkill: async (skillName) => (await post("/api/skills/read", { skillName })).content,
   saveSkill: (skillName, content) => post("/api/skills/save", { skillName, content }),
+
+  // Attachments (native file parts, not path text)
+  stageAttachment: (name, dataBase64) => post("/api/files/attach", { name, dataBase64 }),
 
   // Preview / deliverables
   previewFile: (filePath) => post("/api/preview", { filePath }),
@@ -87,7 +94,9 @@ export const api = {
   // Navigation (no-ops in the browser — all one page)
   loadMain: () => {},
   loadSettings: () => {},
-  loadOnboarding: () => { window.location.hash = "#onboarding"; },
+  loadOnboarding: () => {
+    window.location.hash = "#onboarding";
+  },
 
   // Events (agent → renderer) — SSE subscription.
   onAgentEvent: (cb) => subscribe("agent_event", cb),
@@ -116,7 +125,9 @@ function subscribe(kind, cb) {
   if (!streamController) {
     startEventStream();
   }
-  return () => { subs.get(kind)?.delete(cb); };
+  return () => {
+    subs.get(kind)?.delete(cb);
+  };
 }
 
 async function startEventStream() {
@@ -124,7 +135,11 @@ async function startEventStream() {
     const res = await fetch(`/api/agent/events`, {
       headers: { "x-quiver-secret": SECRET },
     });
-    if (!res.ok || !res.body) { setConnState("reconnecting"); setTimeout(startEventStream, 3000); return; }
+    if (!res.ok || !res.body) {
+      setConnState("reconnecting");
+      setTimeout(startEventStream, 3000);
+      return;
+    }
     setConnState("live");
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -146,10 +161,14 @@ async function startEventStream() {
           const ev = JSON.parse(json);
           const set = subs.get(ev.kind);
           if (set) for (const fn of set) fn(ev);
-        } catch { /* ignore malformed */ }
+        } catch {
+          /* ignore malformed */
+        }
       }
     }
-  } catch { /* reconnect */ }
+  } catch {
+    /* reconnect */
+  }
   // Reconnect after a delay (the daemon may have restarted).
   setConnState("reconnecting");
   setTimeout(startEventStream, 3000);

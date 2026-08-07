@@ -20,6 +20,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Readable } from "stream";
+import { getProjectRoot, getProjectSessionsDir } from "../paths.js";
 import type { IncomingMessage, ServerResponse } from "http";
 
 /**
@@ -39,13 +40,11 @@ function confineToDir(dir: string, requested: string): string {
 
 /** Constrain to the project sessions directory (for load/delete session). */
 function confineSessionPath(filePath: string): string {
-  const { getProjectSessionsDir } = require("../paths.js");
   return confineToDir(getProjectSessionsDir(), filePath);
 }
 
 /** Constrain to the project root (for preview/open of deliverables). */
 function confineProjectPath(filePath: string): string {
-  const { getProjectRoot } = require("../paths.js");
   return confineToDir(getProjectRoot(), filePath);
 }
 
@@ -79,7 +78,9 @@ class EventBus {
       try {
         c.write(`event: ${ev.kind}\n`);
         c.write(`data: ${JSON.stringify(ev)}\n\n`);
-      } catch { /* client gone */ }
+      } catch {
+        /* client gone */
+      }
     }
   }
 }
@@ -90,8 +91,21 @@ let promptSeq = 0;
 
 // ─── The agent + bus singletons ──────────────────────────────────────
 let agent: any = null;
-let registry: any = null;
+let chatEngine: import("./interfaces.js").ExecutionEngine | null = null;
 const bus = new EventBus();
+
+/** Mirror of the CLI's turn-refusal classification (consent/sensitivity). */
+function isTurnRefusalEvent(event: { type?: string; data?: any }): boolean {
+  if (!event || typeof event !== "object") return false;
+  if (event.type === "sensitivity_refused") return true;
+  if (event.type === "consent_declined" || event.type === "consent_exclude") return true;
+  if (event.type === "done") {
+    const d = event.data || {};
+    if (d.refused === true) return true;
+    if (d.consent === "decline" || d.consent === "exclude") return true;
+  }
+  return false;
+}
 
 /** Resolve a pending prompt (called by /api/agent/respond). */
 export function resolvePrompt(id: number, answer: string | null): boolean {
@@ -121,12 +135,11 @@ export async function loadConfig(): Promise<any> {
   const { config } = await import("../config.js");
   return {
     provider: {
-      modelName: config.openRouterModelProfile === "auto" ? "model chosen by workflow" : config.llmModelName,
+      modelName:
+        config.openRouterModelProfile === "auto" ? "model chosen by workflow" : config.llmModelName,
       baseUrl: config.llmBaseUrl || (config.openRouterApiKey ? "https://openrouter.ai/api/v1" : ""),
     },
-    autonomyGrants: config.autonomyGrants?.size
-      ? [...config.autonomyGrants].join(",")
-      : "",
+    autonomyGrants: config.autonomyGrants?.size ? [...config.autonomyGrants].join(",") : "",
     memory: { reviewQueue: true },
   };
 }
@@ -137,8 +150,8 @@ export async function isConfigured(): Promise<boolean> {
   // LLM_API_KEY/BASE_URL pair when OPENROUTER_API_KEY is present.
   return Boolean(
     (config.openRouterApiKey && config.openRouterModelProfile) ||
-      config.llmApiKey ||
-      config.llmBaseUrl,
+    config.llmApiKey ||
+    config.llmBaseUrl,
   );
 }
 
@@ -149,11 +162,8 @@ export async function startAgent(_config: any, _resumeLatest: boolean): Promise<
   // Prefer the bound ProductionRuntime's network guard + tool removals. If the
   // browser UI was started without a runtime (tests), fall back to installing
   // the guard from the deployment profile directly.
-  const {
-    resolveDeploymentProfile,
-    installNetworkGuard,
-    profileConfig,
-  } = await import("../security/execution_context.js");
+  const { resolveDeploymentProfile, installNetworkGuard, profileConfig } =
+    await import("../security/execution_context.js");
   const profile = runtime?.deploymentProfile ?? resolveDeploymentProfile();
   installNetworkGuard(profile);
   const { globalRegistry } = await import("../registry.js");
@@ -161,9 +171,26 @@ export async function startAgent(_config: any, _resumeLatest: boolean): Promise<
   for (const name of profileConfig(profile).removedTools) {
     globalRegistry.unregisterTool(name);
   }
-  registry = globalRegistry;
   const { Agent } = await import("../agent.js");
   agent = new Agent(globalRegistry);
+  // Chat turns run as GoalContracts on the production ExecutionEngine — the
+  // same control plane as workflow runs (checkpoints, traces, honest
+  // outcomes). The conversational loop is delegated as the turn executor;
+  // its consent/approval gates still run inline via the prompt resolver.
+  if (runtime) {
+    chatEngine = runtime.createChatEngine(async (contract, io) => {
+      let refused = false;
+      await agent.prompt(
+        contract.objective,
+        (token: string) => io.onToken?.(token),
+        (event: any) => {
+          if (isTurnRefusalEvent(event)) refused = true;
+          io.onEvent?.(event);
+        },
+      );
+      return { content: "", refused };
+    });
+  }
   // Install the prompt resolver: every approval/consent/main-input prompt is
   // forwarded to the browser and the answer is awaited.
   const { setPromptResolver } = await import("../utils/prompt.js");
@@ -173,21 +200,61 @@ export async function startAgent(_config: any, _resumeLatest: boolean): Promise<
     return new Promise<string | null>((resolve) => {
       pendingResponses.set(id, resolve);
       // Fail closed after 5 minutes (no silent hang).
-      setTimeout(() => {
-        if (pendingResponses.has(id)) {
-          pendingResponses.delete(id);
-          resolve(null);
-        }
-      }, 5 * 60 * 1000);
+      setTimeout(
+        () => {
+          if (pendingResponses.has(id)) {
+            pendingResponses.delete(id);
+            resolve(null);
+          }
+        },
+        5 * 60 * 1000,
+      );
     });
   });
 }
 
 export async function sendToAgent(text: string): Promise<void> {
   if (!agent) await startAgent({}, false);
-  // Run the prompt asynchronously; tokens + events flow over SSE.
+  // Run the turn asynchronously; tokens + events flow over SSE. When the
+  // production runtime is bound, the turn is a durable engine run (chat as
+  // GoalContract); the direct prompt path remains only for runtimes that
+  // predate the binding (tests).
   void (async () => {
     try {
+      if (chatEngine) {
+        const runId = `CHAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const { getBoundProductionRuntime } = await import("./runtime-binding.js");
+        const rt = getBoundProductionRuntime();
+        const outcome = await chatEngine.run(
+          {
+            runId,
+            objective: text,
+            requiredDeliverables: [],
+            definitionOfDone: [],
+            requiredSourceCategories: [],
+            dataSensitivity: "confidential-internal",
+            reviewer: "local-operator",
+            budgets: { iterations: 1 },
+            stopConditions: [],
+            createdAt: new Date().toISOString(),
+          },
+          {
+            trace: rt?.traces,
+            turnIo: {
+              onToken: (token: string) => bus.emit({ kind: "agent_token", token }),
+              onEvent: (event: unknown) => bus.emit({ kind: "agent_event", event }),
+            },
+          } as any,
+        );
+        bus.emit({
+          kind: "agent_event",
+          event: {
+            type: "done",
+            data: { runId, status: outcome.status, stopReason: outcome.stopReason },
+          },
+        });
+        return;
+      }
       await agent.prompt(
         text,
         (token: string) => bus.emit({ kind: "agent_token", token }),
@@ -200,7 +267,10 @@ export async function sendToAgent(text: string): Promise<void> {
   })();
 }
 
-export async function approveToolCall(_approve: boolean, _note?: string): Promise<{ ok: boolean; via: string }> {
+export async function approveToolCall(
+  _approve: boolean,
+  _note?: string,
+): Promise<{ ok: boolean; via: string }> {
   // Approvals are resolved via /api/agent/respond (prompt resolver). This
   // endpoint is retained for API parity but must not pretend it approved anything.
   if (pendingResponses.size === 0) {
@@ -242,7 +312,11 @@ export async function loadSession(filePath: string): Promise<any> {
 }
 export async function deleteSession(filePath: string): Promise<void> {
   const safe = confineSessionPath(filePath);
-  try { fs.rmSync(safe, { force: true }); } catch { /* ignore */ }
+  try {
+    fs.rmSync(safe, { force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 // ── Memory files (persona/project .txt) ──────────────────────────────
@@ -250,7 +324,8 @@ export async function listMemory(): Promise<any[]> {
   const { getProjectMemoryDir } = await import("../paths.js");
   const dir = getProjectMemoryDir();
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
+  return fs
+    .readdirSync(dir)
     .filter((n) => /\.(txt|md)$/i.test(n))
     .map((name) => {
       const p = path.join(dir, name);
@@ -266,7 +341,11 @@ export async function saveMemory(name: string, content: string): Promise<void> {
 }
 export async function deleteMemory(name: string): Promise<void> {
   const { getProjectMemoryDir } = await import("../paths.js");
-  try { fs.rmSync(path.join(getProjectMemoryDir(), path.basename(name)), { force: true }); } catch { /* ignore */ }
+  try {
+    fs.rmSync(path.join(getProjectMemoryDir(), path.basename(name)), { force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 // ── Core memory (identity/human/project) ─────────────────────────────
@@ -284,15 +363,22 @@ export async function memoryReviewList(): Promise<any[]> {
   const { readPendingMemoryFacts } = await import("../memory/schema.js");
   return readPendingMemoryFacts();
 }
-export async function memoryReviewAction(factId: string, action: string, content: string): Promise<void> {
-  const { acceptMemoryFact, deleteMemoryFact, updateMemoryFact } = await import("../memory/schema.js");
+export async function memoryReviewAction(
+  factId: string,
+  action: string,
+  content: string,
+): Promise<void> {
+  const { acceptMemoryFact, deleteMemoryFact, updateMemoryFact } =
+    await import("../memory/schema.js");
   if (action === "accept") await acceptMemoryFact(factId);
   else if (action === "reject" || action === "expire") await deleteMemoryFact(factId);
   else if (action === "edit") await updateMemoryFact?.(factId, { content } as any);
 }
 
 // ── Context rail exclude/veto (principles §2) ────────────────────────
-export async function excludeFromRun(memoryName: string): Promise<{ ok: boolean; excluded?: string; error?: string }> {
+export async function excludeFromRun(
+  memoryName: string,
+): Promise<{ ok: boolean; excluded?: string; error?: string }> {
   if (!memoryName || typeof memoryName !== "string") {
     return { ok: false, error: "memoryName required" };
   }
@@ -310,7 +396,8 @@ export async function excludeFromRun(memoryName: string): Promise<{ ok: boolean;
   }
   return {
     ok: false,
-    error: "exclusion surface not available on this agent build — use the context consent gate instead",
+    error:
+      "exclusion surface not available on this agent build — use the context consent gate instead",
   };
 }
 
@@ -319,7 +406,8 @@ export async function listSkills(): Promise<any[]> {
   const { getSkillsDir } = await import("../paths.js");
   const dir = getSkillsDir();
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir, { withFileTypes: true })
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => ({ id: e.name, name: e.name }));
 }
@@ -335,25 +423,108 @@ export async function saveSkill(skillName: string, content: string): Promise<voi
   fs.writeFileSync(path.join(dir, "SKILL.md"), content);
 }
 
+// ── Attachments (S3 — hand it your mess) ────────────────────────────
+// Browser File objects carry no filesystem path, so the UI uploads dropped /
+// picked files here; the daemon stages them inside the workspace and returns
+// a real path the agent turns into a NATIVE model file part via the
+// `[File: path]` marker pipeline (src/file_encoder.ts). Never a text-only
+// "read this path" instruction.
+
+/** Extensions the browser may stage for native model attachment. */
+const ATTACHABLE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "pdf",
+  "docx",
+  "xlsx",
+  "pptx",
+  "csv",
+  "txt",
+  "md",
+  "json",
+]);
+
+/** Matches MAX_IMAGE_SIZE in file_encoder.ts — the encode step refuses more. */
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+export async function stageAttachment(input: {
+  name?: string;
+  dataBase64?: string;
+}): Promise<{ path?: string; name?: string; size?: number; error?: string }> {
+  const rawName = String(input?.name ?? "");
+  const name = path.basename(rawName).replace(/[^\w.\- ()\[\]]/g, "_");
+  if (!name) return { error: "attachment is missing a file name" };
+  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  if (!ATTACHABLE_EXTENSIONS.has(ext)) {
+    return {
+      error: `unsupported attachment type '.${ext}' — supported: images, PDF, Word, Excel, PowerPoint, CSV, text, Markdown, JSON`,
+    };
+  }
+  const b64 = String(input?.dataBase64 ?? "");
+  if (!b64) return { error: "attachment payload is empty" };
+  let data: Buffer;
+  try {
+    data = Buffer.from(b64, "base64");
+  } catch {
+    return { error: "attachment payload is not valid base64" };
+  }
+  if (data.length === 0) return { error: "attachment is empty (0 bytes)" };
+  if (data.length > MAX_ATTACHMENT_BYTES) {
+    return {
+      error: `attachment is ${(data.length / 1024 / 1024).toFixed(1)}MB — the native-attachment limit is 20MB`,
+    };
+  }
+  const dir = path.join(getProjectRoot(), ".quiver", "attachments");
+  fs.mkdirSync(dir, { recursive: true });
+  const staged = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${name}`);
+  const { atomicWrite } = await import("../fs/atomic_write.js");
+  await atomicWrite(staged, data);
+  return { path: staged, name, size: data.length };
+}
+
 // ── Preview / deliverables ───────────────────────────────────────────
 export async function previewFile(filePath: string): Promise<any> {
   const safe = confineProjectPath(filePath);
   if (!fs.existsSync(safe)) return { error: "not found" };
   const buf = fs.readFileSync(safe);
   const ext = path.extname(safe).toLowerCase();
-  const type = [".docx", ".xlsx", ".pptx"].includes(ext) ? "office" : ext === ".pdf" ? "pdf" : "text";
+  const type = [".docx", ".xlsx", ".pptx"].includes(ext)
+    ? "office"
+    : ext === ".pdf"
+      ? "pdf"
+      : "text";
   return { type, name: path.basename(safe), content: buf.toString("utf8").slice(0, 20000) };
 }
 export async function openFile(filePath: string): Promise<void> {
   const safe = confineProjectPath(filePath);
   const { spawn } = await import("child_process");
-  const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "" : "xdg-open";
-  if (cmd) try { spawn(cmd, [safe], { detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+  const cmd =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "" : "xdg-open";
+  if (cmd)
+    try {
+      spawn(cmd, [safe], { detached: true, stdio: "ignore" }).unref();
+    } catch {
+      /* ignore */
+    }
 }
 export async function showInFolder(filePath: string): Promise<void> {
   const { spawn } = await import("child_process");
-  if (process.platform === "darwin") try { spawn("open", ["-R", filePath], { detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
-  else if (process.platform === "win32") try { spawn("explorer", ["/select,", filePath], { detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+  if (process.platform === "darwin")
+    try {
+      spawn("open", ["-R", filePath], { detached: true, stdio: "ignore" }).unref();
+    } catch {
+      /* ignore */
+    }
+  else if (process.platform === "win32")
+    try {
+      spawn("explorer", ["/select,", filePath], { detached: true, stdio: "ignore" }).unref();
+    } catch {
+      /* ignore */
+    }
 }
 
 // ── Evidence lineage (principles §3) ─────────────────────────────────
@@ -363,21 +534,36 @@ export async function loadEvidence(docFilePath: string): Promise<any> {
   const runRecordPath = `${base}_Run_Record.json`;
   const out: any = {};
   if (fs.existsSync(evidencePath)) out.evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-  if (fs.existsSync(runRecordPath)) out.runRecord = JSON.parse(fs.readFileSync(runRecordPath, "utf8"));
+  if (fs.existsSync(runRecordPath))
+    out.runRecord = JSON.parse(fs.readFileSync(runRecordPath, "utf8"));
   return out;
 }
 
 // ── Review flow (SPEC §8.3) ──────────────────────────────────────────
-export async function reviewMarkFinal(filePath: string, _openFlags: number, _figureStatuses?: any[]): Promise<any> {
+export async function reviewMarkFinal(
+  filePath: string,
+  _openFlags: number,
+  _figureStatuses?: any[],
+): Promise<any> {
   const { AuditChain } = await import("../audit_chain.js");
   const chain = new AuditChain();
-  chain.appendEntry("evidence", JSON.stringify({ filePath, action: "markFinal", openFlags: _openFlags }));
+  chain.appendEntry(
+    "evidence",
+    JSON.stringify({ filePath, action: "markFinal", openFlags: _openFlags }),
+  );
   return { marked: true };
 }
-export async function reviewOverride(filePath: string, _openFlags: number, _figureStatuses?: any[]): Promise<any> {
+export async function reviewOverride(
+  filePath: string,
+  _openFlags: number,
+  _figureStatuses?: any[],
+): Promise<any> {
   const { AuditChain } = await import("../audit_chain.js");
   const chain = new AuditChain();
-  chain.appendEntry("evidence", JSON.stringify({ filePath, action: "override", openFlags: _openFlags }));
+  chain.appendEntry(
+    "evidence",
+    JSON.stringify({ filePath, action: "override", openFlags: _openFlags }),
+  );
   return { overridden: true };
 }
 
@@ -397,7 +583,13 @@ export async function readBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve) => {
     let buf = "";
     req.on("data", (d) => (buf += d.toString()));
-    req.on("end", () => { try { resolve(buf ? JSON.parse(buf) : {}); } catch { resolve({}); } });
+    req.on("end", () => {
+      try {
+        resolve(buf ? JSON.parse(buf) : {});
+      } catch {
+        resolve({});
+      }
+    });
     req.on("error", () => resolve({}));
   });
 }
@@ -406,46 +598,93 @@ export { Readable };
 
 // ─── The /api/* router (mounted by the launcher as the daemon apiHandler) ──
 
-export async function browserApiHandler(req: { method: string; pathname: string; body: unknown }): Promise<unknown> {
+export async function browserApiHandler(req: {
+  method: string;
+  pathname: string;
+  body: unknown;
+}): Promise<unknown> {
   const { method, pathname, body } = req;
   const b = body as any;
   // Agent
-  if (pathname === "/api/config/isConfigured" && method === "GET") return { configured: await isConfigured() };
+  if (pathname === "/api/config/isConfigured" && method === "GET")
+    return { configured: await isConfigured() };
   if (pathname === "/api/config" && method === "GET") return loadConfig();
-  if (pathname === "/api/agent/start" && method === "POST") { await startAgent(b.config, b.resumeLatest); return { started: true }; }
-  if (pathname === "/api/agent/send" && method === "POST") { await sendToAgent(b.text); return { sent: true }; }
-  if (pathname === "/api/agent/approve" && method === "POST") return approveToolCall(b.approve, b.note);
-  if (pathname === "/api/agent/consent" && method === "POST") { await consentRespond(b.decision); return { ok: true }; }
-  if (pathname === "/api/agent/respond" && method === "POST") return { ok: resolvePrompt(b.id, b.answer) };
-  if (pathname === "/api/agent/stop" && method === "POST") { await stopAgent(); return { ok: true }; }
+  if (pathname === "/api/agent/start" && method === "POST") {
+    await startAgent(b.config, b.resumeLatest);
+    return { started: true };
+  }
+  if (pathname === "/api/agent/send" && method === "POST") {
+    await sendToAgent(b.text);
+    return { sent: true };
+  }
+  if (pathname === "/api/agent/approve" && method === "POST")
+    return approveToolCall(b.approve, b.note);
+  if (pathname === "/api/agent/consent" && method === "POST") {
+    await consentRespond(b.decision);
+    return { ok: true };
+  }
+  if (pathname === "/api/agent/respond" && method === "POST")
+    return { ok: resolvePrompt(b.id, b.answer) };
+  if (pathname === "/api/agent/stop" && method === "POST") {
+    await stopAgent();
+    return { ok: true };
+  }
   // Sessions
   if (pathname === "/api/sessions" && method === "GET") return listSessions();
   if (pathname === "/api/sessions/load" && method === "POST") return loadSession(b.filePath);
-  if (pathname === "/api/sessions/delete" && method === "POST") { await deleteSession(b.filePath); return { ok: true }; }
+  if (pathname === "/api/sessions/delete" && method === "POST") {
+    await deleteSession(b.filePath);
+    return { ok: true };
+  }
   // Memory files
   if (pathname === "/api/memory" && method === "GET") return listMemory();
-  if (pathname === "/api/memory/save" && method === "POST") { await saveMemory(b.name, b.content); return { ok: true }; }
-  if (pathname === "/api/memory/delete" && method === "POST") { await deleteMemory(b.name); return { ok: true }; }
+  if (pathname === "/api/memory/save" && method === "POST") {
+    await saveMemory(b.name, b.content);
+    return { ok: true };
+  }
+  if (pathname === "/api/memory/delete" && method === "POST") {
+    await deleteMemory(b.name);
+    return { ok: true };
+  }
   if (pathname === "/api/memory/core" && method === "GET") return loadCoreMemory();
-  if (pathname === "/api/memory/core/save" && method === "POST") { await saveCoreMemory(b.core); return { ok: true }; }
+  if (pathname === "/api/memory/core/save" && method === "POST") {
+    await saveCoreMemory(b.core);
+    return { ok: true };
+  }
   // Memory review
   if (pathname === "/api/memory/review" && method === "GET") return memoryReviewList();
-  if (pathname === "/api/memory/review/action" && method === "POST") { await memoryReviewAction(b.factId, b.action, b.content); return { ok: true }; }
+  if (pathname === "/api/memory/review/action" && method === "POST") {
+    await memoryReviewAction(b.factId, b.action, b.content);
+    return { ok: true };
+  }
   // Exclude/veto
   if (pathname === "/api/memory/exclude" && method === "POST") return excludeFromRun(b.memoryName);
   // Skills
   if (pathname === "/api/skills" && method === "GET") return listSkills();
-  if (pathname === "/api/skills/read" && method === "POST") return { content: await readSkill(b.skillName) };
-  if (pathname === "/api/skills/save" && method === "POST") { await saveSkill(b.skillName, b.content); return { ok: true }; }
+  if (pathname === "/api/skills/read" && method === "POST")
+    return { content: await readSkill(b.skillName) };
+  if (pathname === "/api/skills/save" && method === "POST") {
+    await saveSkill(b.skillName, b.content);
+    return { ok: true };
+  }
   // Preview / deliverables
+  if (pathname === "/api/files/attach" && method === "POST") return stageAttachment(b);
   if (pathname === "/api/preview" && method === "POST") return previewFile(b.filePath);
-  if (pathname === "/api/file/open" && method === "POST") { await openFile(b.filePath); return { ok: true }; }
-  if (pathname === "/api/file/showInFolder" && method === "POST") { await showInFolder(b.filePath); return { ok: true }; }
+  if (pathname === "/api/file/open" && method === "POST") {
+    await openFile(b.filePath);
+    return { ok: true };
+  }
+  if (pathname === "/api/file/showInFolder" && method === "POST") {
+    await showInFolder(b.filePath);
+    return { ok: true };
+  }
   // Evidence
   if (pathname === "/api/evidence/load" && method === "POST") return loadEvidence(b.docFilePath);
   // Review flow
-  if (pathname === "/api/review/markFinal" && method === "POST") return reviewMarkFinal(b.filePath, b.openFlags, b.figureStatuses);
-  if (pathname === "/api/review/override" && method === "POST") return reviewOverride(b.filePath, b.openFlags, b.figureStatuses);
+  if (pathname === "/api/review/markFinal" && method === "POST")
+    return reviewMarkFinal(b.filePath, b.openFlags, b.figureStatuses);
+  if (pathname === "/api/review/override" && method === "POST")
+    return reviewOverride(b.filePath, b.openFlags, b.figureStatuses);
   // Workflow
   if (pathname === "/api/workflow/rerun" && method === "POST") return rerunWorkflow();
   // Runtime honesty surface — what the bound production runtime can/cannot do.

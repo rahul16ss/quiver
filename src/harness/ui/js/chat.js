@@ -9,12 +9,7 @@ import {
   updateTurnCount,
   renderAttachments,
 } from "./context.js";
-import {
-  ensureDocumentCard,
-  handleOfficeDocResult,
-  loadEvidenceFromDisk,
-  OFFICE_MUTATING_ACTIONS,
-} from "./cards.js";
+import { ensureDocumentCard, handleOfficeDocResult, OFFICE_MUTATING_ACTIONS } from "./cards.js";
 import { docKindFor } from "./icons.js";
 import {
   showConsentGate,
@@ -22,10 +17,7 @@ import {
   showEvidenceConsentGate,
   focusContextRail,
 } from "./consent.js";
-import {
-  renderLineageChipsForDocument,
-  recordDeliverableContext,
-} from "./lineage.js";
+import { renderLineageChipsForDocument, recordDeliverableContext } from "./lineage.js";
 import { showOverlay, closeOverlay } from "./overlays.js";
 
 // ─── conversation plane ────────────────────────────────────────────────
@@ -207,7 +199,8 @@ function handleAgentEvent(ev) {
       startAssistantBubble();
       if (state.assistantBubble) {
         state.assistantBubble.textContent =
-          "I didn't send this to the model. " + reason +
+          "I didn't send this to the model. " +
+          reason +
           " Set a local model in Settings (a localhost Ollama) so high-sensitivity content is handled by your local model, then re-run.";
       }
       break;
@@ -233,7 +226,10 @@ function handleAgentEvent(ev) {
       const ok = !/^error/i.test(resultStr);
       const hint = summarizeArgs(args);
       setCurrentStatus("");
-      addActivity(`${plainToolName(name)}${hint ? " — " + hint : ""} ${ok ? "done" : "failed"}`, ok ? "ok" : "err");
+      addActivity(
+        `${plainToolName(name)}${hint ? " — " + hint : ""} ${ok ? "done" : "failed"}`,
+        ok ? "ok" : "err",
+      );
       if (name === "office_doc") {
         handleOfficeDocResult(args, ok);
       }
@@ -310,15 +306,22 @@ function renderDiff(before, after) {
   }
   if (!before && !after) {
     // Never show a blind approval: fall back to the pretty-printed arguments.
-    renderApprovalPreview(state.pendingApproval?.toolName || "", state.pendingApproval?.toolArgs || {});
+    renderApprovalPreview(
+      state.pendingApproval?.toolName || "",
+      state.pendingApproval?.toolArgs || {},
+    );
   }
 }
 function diffLine(view, sign, text, cls) {
   const row = document.createElement("div");
   row.className = "diff-line " + cls;
   row.innerHTML =
-    '<span class="diff-sign">' + sign + "</span>" +
-    '<span class="diff-text">' + escapeHtml(text) + "</span>";
+    '<span class="diff-sign">' +
+    sign +
+    "</span>" +
+    '<span class="diff-text">' +
+    escapeHtml(text) +
+    "</span>";
   view.appendChild(row);
 }
 
@@ -331,31 +334,33 @@ function summarizeArgs(args) {
   return "";
 }
 function plainToolName(name) {
-  return ({
-    view_file: "Read a file",
-    write_file: "Write a file",
-    replace_content: "Edit a file",
-    apply_patch: "Apply a patch",
-    list_dir: "List a folder",
-    glob: "Find files",
-    grep_search: "Search files",
-    run_command: "Run a command",
-    run_tests: "Run tests",
-    web_search: "Search the web",
-    scrape_url: "Read a webpage",
-    deep_research: "Run deep research",
-    find_all: "Find entities",
-    entity_search: "Search for entities",
-    browser_control: "Use the browser",
-    office_doc: "Create a document",
-    memory_append: "Save a memory",
-    memory_replace: "Update a memory",
-    github: "Use GitHub",
-    create_tool: "Create a tool",
-    subagent: "Delegate to a sub-agent",
-    todo_write: "Plan the work",
-    ask_question: "Ask you a question",
-  })[name] || name;
+  return (
+    {
+      view_file: "Read a file",
+      write_file: "Write a file",
+      replace_content: "Edit a file",
+      apply_patch: "Apply a patch",
+      list_dir: "List a folder",
+      glob: "Find files",
+      grep_search: "Search files",
+      run_command: "Run a command",
+      run_tests: "Run tests",
+      web_search: "Search the web",
+      scrape_url: "Read a webpage",
+      deep_research: "Run deep research",
+      find_all: "Find entities",
+      entity_search: "Search for entities",
+      browser_control: "Use the browser",
+      office_doc: "Create a document",
+      memory_append: "Save a memory",
+      memory_replace: "Update a memory",
+      github: "Use GitHub",
+      create_tool: "Create a tool",
+      subagent: "Delegate to a sub-agent",
+      todo_write: "Plan the work",
+      ask_question: "Ask you a question",
+    }[name] || name
+  );
 }
 function maybeDraftCard(toolName, args) {
   if (
@@ -387,7 +392,9 @@ function showApproval(data) {
     let after = data?.proposedContent ?? "";
     if (!after && name === "write_file") after = args.content ?? "";
     if (!after && name === "replace_content") {
-      after = String(before).split(args.targetContent ?? "").join(args.replacementContent ?? "");
+      after = String(before)
+        .split(args.targetContent ?? "")
+        .join(args.replacementContent ?? "");
     }
     renderDiff(before, after);
   } else {
@@ -411,8 +418,12 @@ function renderApprovalPreview(name, args) {
     const r = document.createElement("div");
     r.className = "ap-row";
     r.innerHTML =
-      '<span class="ap-label">' + escapeHtml(label) + "</span>" +
-      '<span class="ap-value">' + escapeHtml(String(value)) + "</span>";
+      '<span class="ap-label">' +
+      escapeHtml(label) +
+      "</span>" +
+      '<span class="ap-value">' +
+      escapeHtml(String(value)) +
+      "</span>";
     box.appendChild(r);
   };
   const contentBlock = (label, text) => {
@@ -422,15 +433,25 @@ function renderApprovalPreview(name, args) {
       const det = document.createElement("details");
       det.className = "ap-details";
       det.innerHTML =
-        "<summary>" + escapeHtml(label) + " (" + str.split("\n").length + " lines — click to expand)</summary>" +
-        '<pre class="ap-pre">' + escapeHtml(str) + "</pre>";
+        "<summary>" +
+        escapeHtml(label) +
+        " (" +
+        str.split("\n").length +
+        " lines — click to expand)</summary>" +
+        '<pre class="ap-pre">' +
+        escapeHtml(str) +
+        "</pre>";
       box.appendChild(det);
     } else {
       const wrap = document.createElement("div");
       wrap.className = "ap-block";
       wrap.innerHTML =
-        '<div class="ap-label">' + escapeHtml(label) + "</div>" +
-        '<pre class="ap-pre">' + escapeHtml(str) + "</pre>";
+        '<div class="ap-label">' +
+        escapeHtml(label) +
+        "</div>" +
+        '<pre class="ap-pre">' +
+        escapeHtml(str) +
+        "</pre>";
       box.appendChild(wrap);
     }
   };
@@ -445,18 +466,13 @@ function renderApprovalPreview(name, args) {
       if (args.props.text) contentBlock("Text being written", args.props.text);
       const rest = Object.entries(args.props).filter(([k]) => k !== "text");
       if (rest.length) {
-        contentBlock(
-          "Formatting",
-          rest.map(([k, v]) => `${k}: ${v}`).join("\n"),
-        );
+        contentBlock("Formatting", rest.map(([k, v]) => `${k}: ${v}`).join("\n"));
       }
     }
     if (Array.isArray(args.commands)) {
       contentBlock(
         `Operations (${args.commands.length})`,
-        args.commands
-          .map((c, i) => `${i + 1}. ${JSON.stringify(c)}`)
-          .join("\n"),
+        args.commands.map((c, i) => `${i + 1}. ${JSON.stringify(c)}`).join("\n"),
       );
     }
     if (args.template) row("Template", args.template);
@@ -465,7 +481,12 @@ function renderApprovalPreview(name, args) {
   } else if (name === "run_command") {
     contentBlock("Command", args.command || "");
     if (args.cwd) row("Folder", args.cwd);
-  } else if (name === "web_search" || name === "deep_research" || name === "entity_search" || name === "find_all") {
+  } else if (
+    name === "web_search" ||
+    name === "deep_research" ||
+    name === "entity_search" ||
+    name === "find_all"
+  ) {
     row("Query", args.query || args.topic || args.question);
   } else if (name === "scrape_url" || name === "browser_control") {
     row("URL", args.url);
@@ -487,23 +508,24 @@ function renderApprovalPreview(name, args) {
       const det = document.createElement("details");
       det.className = "ap-details";
       det.innerHTML =
-        "<summary>Full details</summary>" +
-        '<pre class="ap-pre">' + escapeHtml(pretty) + "</pre>";
+        "<summary>Full details</summary>" + '<pre class="ap-pre">' + escapeHtml(pretty) + "</pre>";
       box.appendChild(det);
     }
   }
   view.appendChild(box);
 }
 function verbForApproval(name) {
-  return ({
-    write_file: "write a file",
-    replace_content: "edit a file",
-    apply_patch: "apply a patch",
-    run_command: "run a command",
-    create_tool: "create a new tool",
-    office_doc: "create a document",
-    browser_control: "use the browser",
-  })[name] || "take an action";
+  return (
+    {
+      write_file: "write a file",
+      replace_content: "edit a file",
+      apply_patch: "apply a patch",
+      run_command: "run a command",
+      create_tool: "create a new tool",
+      office_doc: "create a document",
+      browser_control: "use the browser",
+    }[name] || "take an action"
+  );
 }
 function renderPatchPreview(patch) {
   const view = $("approvalDiff");
@@ -545,7 +567,8 @@ function requestRevision() {
 
 // ─── token bar ─────────────────────────────────────────────────────────
 function compactNumber(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0).replace(/\.0$/, "") + "M";
+  if (n >= 1_000_000)
+    return (n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0).replace(/\.0$/, "") + "M";
   if (n >= 1_000) return Math.round(n / 1_000) + "k";
   return String(n);
 }
@@ -576,8 +599,8 @@ async function sendPrompt() {
   // dropping it. The agent's InterventionController consumes it at the next
   // loop iteration — same mechanism as the CLI Esc-steering.
   if (state.turnRunning) {
-    const imageMarkers = state.attachments.map((a) => "[File: " + a.path + "]").join("\n");
-    const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
+    const fileMarkers = state.attachments.map((a) => "[File: " + a.path + "]").join("\n");
+    const message = (fileMarkers ? fileMarkers + "\n" : "") + text;
     // Show the queued steering message in the chat as a muted bubble
     const steer = document.createElement("div");
     steer.className = "msg user-msg steer-queued";
@@ -600,9 +623,9 @@ async function sendPrompt() {
     addActivity("Quiver is not ready — the agent is unavailable.", "err");
     return;
   }
-  const imageMarkers = state.attachments.map((a) => "[File: " + a.path + "]").join("\n");
-  const message = (imageMarkers ? imageMarkers + "\n" : "") + text;
-  addUserMessage(text || ("📎 " + state.attachments.map((a) => a.name).join(", ")));
+  const fileMarkers = state.attachments.map((a) => "[File: " + a.path + "]").join("\n");
+  const message = (fileMarkers ? fileMarkers + "\n" : "") + text;
+  addUserMessage(text || "📎 " + state.attachments.map((a) => a.name).join(", "));
   state.promptInput.value = "";
   // release the blob URLs we created for the thumbnails
   for (const a of state.attachments) if (a.thumbUrl) URL.revokeObjectURL(a.thumbUrl);
@@ -707,7 +730,12 @@ function autoSize() {
   state.promptInput.style.height = Math.min(180, state.promptInput.scrollHeight) + "px";
 }
 
-// ─── image / document drag-and-drop + attach ───────────────────────────
+// ─── file drag-and-drop + attach (S3 — images AND documents) ───────────
+// Browser File objects carry no filesystem path, so dropped/picked files are
+// uploaded to the loopback daemon, staged inside the workspace, and attached
+// by their staged path. The agent's [File:] pipeline turns them into NATIVE
+// model file parts (PDF/DOCX/XLSX/PPTX/images) — never a "read this path"
+// text instruction.
 function wireImageDrop() {
   const plane = $("conversation-plane");
   const overlay = $("dropOverlay");
@@ -727,25 +755,68 @@ function wireImageDrop() {
   });
   $("attachBtn").addEventListener("click", () => $("fileInput").click());
   $("fileInput").addEventListener("change", () => {
-    const f = $("fileInput").files?.[0];
-    if (f) attachDroppedFile(f.path, f.name, f.type, f);
+    const files = [...($("fileInput").files || [])];
+    for (const f of files) attachDroppedFile(f.path, f.name, f.type, f);
     $("fileInput").value = "";
   });
 }
-function attachDroppedFile(filePath, name, type, fileObj) {
-  if (!filePath) return;
+
+/** Read a browser File as base64 (chunked — btoa blows the stack on big blobs). */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("could not read file"));
+    reader.onload = () => {
+      const bytes = new Uint8Array(reader.result);
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      resolve(btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function attachDroppedFile(filePath, name, type, fileObj) {
   const isImage = (type || "").startsWith("image/") || /\.(png|jpe?g|gif|bmp|webp)$/i.test(name);
-  if (isImage) {
-    // Build a local blob: URL for a real preview thumbnail — no raw path is
-    // ever shown to the user, only the friendly file name (CSP allows blob:).
-    let thumbUrl = null;
-    try { if (fileObj) thumbUrl = URL.createObjectURL(fileObj); } catch {}
-    state.attachments.push({ path: filePath, name, thumbUrl });
-    renderAttachments();
-  } else {
-    state.promptInput.value = (state.promptInput.value ? state.promptInput.value + "\n" : "") + "Read this file: " + filePath;
-    autoSize();
+  // Build a local blob: URL thumbnail for images — no raw path is ever shown
+  // to the user, only the friendly file name (CSP allows blob:).
+  let thumbUrl = null;
+  if (isImage && fileObj) {
+    try {
+      thumbUrl = URL.createObjectURL(fileObj);
+    } catch {}
   }
+
+  // Preferred path (browser): upload the bytes; the daemon stages the file
+  // inside the workspace and returns the staged path for the [File:] marker.
+  if (fileObj && typeof fileObj.arrayBuffer === "function") {
+    try {
+      const dataBase64 = await fileToBase64(fileObj);
+      const staged = await api.stageAttachment(name, dataBase64);
+      if (!staged?.path) throw new Error(staged?.error || "staging failed");
+      state.attachments.push({ path: staged.path, name, thumbUrl });
+      renderAttachments();
+      addActivity("Attached: " + name, "tool");
+      state.promptInput.focus();
+      return;
+    } catch (e) {
+      addActivity("Could not attach " + name + ": " + (e?.message || e), "err");
+      if (thumbUrl) {
+        URL.revokeObjectURL(thumbUrl);
+      }
+      return;
+    }
+  }
+
+  // Fallback (no File bytes available — e.g. a synthetic drop with only a
+  // path): attach the on-disk path directly; the encoder still produces a
+  // native file part.
+  if (!filePath) return;
+  state.attachments.push({ path: filePath, name, thumbUrl });
+  renderAttachments();
   state.promptInput.focus();
   addActivity("Attached: " + name, "tool");
 }
