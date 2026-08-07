@@ -34,14 +34,10 @@ import type {
   RequestBudget,
   ContentPart,
 } from "./interfaces.js";
-import type { PolicyEngine, PolicyDecision } from "./interfaces.js";
-import {
-  ModelProfileRegistry,
-  isCertifiedFor,
-  type ModelProfile,
-  type NativeMime,
-} from "./model-profile.js";
+import type { PolicyEngine } from "./interfaces.js";
+import { ModelProfileRegistry, isCertifiedFor, type NativeMime } from "./model-profile.js";
 import { ModalityRouter, AUTO_PROFILE, type ModelRole } from "./model-router.js";
+import { measuredPreference } from "./routing-eval.js";
 
 // ─── Transport abstraction ────────────────────────────────────────────
 
@@ -80,8 +76,19 @@ export interface TransportRequest {
 
 export interface TransportResponse {
   content: string;
-  toolCalls?: Array<{ id: string; name: string; arguments: string; passthrough?: Record<string, unknown> }>;
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number; provider?: Record<string, unknown>; costUsd?: number };
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    arguments: string;
+    passthrough?: Record<string, unknown>;
+  }>;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    provider?: Record<string, unknown>;
+    costUsd?: number;
+  };
   finishReason?: string;
   /** The provider/model route actually used (from OpenRouter response metadata). */
   route: string;
@@ -106,9 +113,21 @@ export class QuiverOpenRouterClient implements ModelClient {
       capabilities?: import("./capability-registry.js").CapabilityRegistry;
       /** Runtime version string used as the CapabilityRegistry key. */
       runtimeVersion?: string;
+      /** Optional measured-routing evidence (routing-eval harness). When the
+       *  snapshot covers a (role, modality) cell, its Pareto winner is
+       *  preferred over the static router order; otherwise static order. */
+      routingEvidence?: import("./routing-eval.js").RoutingEvidenceStore;
+      /** Optional cost ledger: usage is recorded per call, and a
+       *  budget.costCapUsd on the request is enforced BEFORE invocation. */
+      costLedger?: import("./cost-ledger.js").CostLedger;
     } = {},
   ) {
-    this.router = new ModalityRouter(profiles.list());
+    const snapshot = opts.routingEvidence?.load() ?? null;
+    this.router = new ModalityRouter(profiles.list(), {
+      preferMeasured: snapshot
+        ? (role, modality) => measuredPreference(snapshot, role, modality)
+        : undefined,
+    });
   }
 
   listProfiles(): ModelProfileRef[] {
@@ -144,7 +163,12 @@ export class QuiverOpenRouterClient implements ModelClient {
     const sensitivity = options.sensitivity ?? "public";
     let slug = options.modelProfile;
     if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
-      const routed = this.router.route(messages, options.role ?? "maker", sensitivity, options.hintMime);
+      const routed = this.router.route(
+        messages,
+        options.role ?? "maker",
+        sensitivity,
+        options.hintMime,
+      );
       if (!routed) {
         throw new Error(
           `ModalityRouter found no eligible profile for role=${options.role ?? "maker"} ` +
@@ -167,7 +191,9 @@ export class QuiverOpenRouterClient implements ModelClient {
       throw new Error(`Policy refused model call: ${decision.reasons.join("; ")}`);
     }
     if (decision.enforcedRoute && decision.enforcedRoute !== "openrouter") {
-      throw new Error(`Policy routed this request to '${decision.enforcedRoute}', not OpenRouter. Refusing cloud egress.`);
+      throw new Error(
+        `Policy routed this request to '${decision.enforcedRoute}', not OpenRouter. Refusing cloud egress.`,
+      );
     }
 
     // Validate native file content parts against certification — fail closed.
@@ -193,10 +219,21 @@ export class QuiverOpenRouterClient implements ModelClient {
         );
       }
       if (mime === "application/pdf" && profile.pdfEngine !== "native") {
-        throw new Error(`Profile ${profile.slug} pdfEngine is not 'native'; refusing non-native PDF handling.`);
+        throw new Error(
+          `Profile ${profile.slug} pdfEngine is not 'native'; refusing non-native PDF handling.`,
+        );
       }
       if (fileBytes(messages, mime) > profile.maxFileBytes) {
         throw new Error(`File exceeds profile maxFileBytes (${profile.maxFileBytes}).`);
+      }
+    }
+
+    // Cost gate: refuse over-budget calls before they spend anything.
+    const engagementId = options.budget?.engagementId;
+    if (this.opts.costLedger && engagementId && options.budget?.costCapUsd !== undefined) {
+      const verdict = this.opts.costLedger.checkBudget(engagementId, options.budget.costCapUsd);
+      if (!verdict.allowed) {
+        throw new Error(verdict.reason ?? "engagement cost cap reached");
       }
     }
 
@@ -234,6 +271,19 @@ export class QuiverOpenRouterClient implements ModelClient {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const resp = await this.transport.invoke(req);
+        if (this.opts.costLedger && resp.usage) {
+          this.opts.costLedger.record({
+            at: new Date().toISOString(),
+            engagementId: engagementId ?? "default",
+            runId: options.budget?.runId,
+            kind: "model",
+            profileSlug: profile.slug,
+            role: options.role,
+            promptTokens: resp.usage.promptTokens,
+            completionTokens: resp.usage.completionTokens,
+            costUsd: resp.usage.costUsd ?? 0,
+          });
+        }
         return {
           content: resp.content,
           toolCalls: resp.toolCalls,
@@ -251,7 +301,9 @@ export class QuiverOpenRouterClient implements ModelClient {
         if (attempt < maxRetries) await sleep(backoffMs(attempt));
       }
     }
-    throw new Error(`Model invocation failed after ${maxRetries + 1} attempt(s): ${String((lastErr as Error)?.message ?? lastErr)}`);
+    throw new Error(
+      `Model invocation failed after ${maxRetries + 1} attempt(s): ${String((lastErr as Error)?.message ?? lastErr)}`,
+    );
   }
 }
 
@@ -301,8 +353,16 @@ export class LocalModelClient implements ModelClient {
     const sensitivity = options.sensitivity ?? "public";
     let slug = options.modelProfile;
     if (slug === AUTO_PROFILE || !this.profiles.get(slug)) {
-      const routed = this.router.route(messages, options.role ?? "maker", sensitivity, options.hintMime);
-      if (!routed) throw new Error(`ModalityRouter found no eligible local profile for role=${options.role ?? "maker"} sensitivity=${sensitivity}.`);
+      const routed = this.router.route(
+        messages,
+        options.role ?? "maker",
+        sensitivity,
+        options.hintMime,
+      );
+      if (!routed)
+        throw new Error(
+          `ModalityRouter found no eligible local profile for role=${options.role ?? "maker"} sensitivity=${sensitivity}.`,
+        );
       slug = routed;
     }
     const profile = this.profiles.get(slug);
@@ -336,7 +396,13 @@ export class LocalModelClient implements ModelClient {
     const resp = await this.transport.invoke({
       model: profile.modelSlug,
       // Local transports do not use OpenRouter provider prefs; pass through.
-      provider: { order: profile.providerOrder, allow_fallbacks: false, require_parameters: true, data_collection: "deny", zdr: true },
+      provider: {
+        order: profile.providerOrder,
+        allow_fallbacks: false,
+        require_parameters: true,
+        data_collection: "deny",
+        zdr: true,
+      },
       messages: messages.map(toTransportMessage),
       tools: options.tools,
       temperature: options.temperature,
@@ -367,7 +433,10 @@ export class LocalModelClient implements ModelClient {
 export class ChatOpenRouterTransport implements ModelTransport {
   private clientPromise: Promise<any> | null = null;
 
-  constructor(private apiKey: string, private opts: { siteUrl?: string; siteName?: string } = {}) {}
+  constructor(
+    private apiKey: string,
+    private opts: { siteUrl?: string; siteName?: string } = {},
+  ) {}
 
   private async client(): Promise<any> {
     if (!this.clientPromise) {
@@ -402,7 +471,8 @@ export class ChatOpenRouterTransport implements ModelTransport {
 
     const bound = request.tools ? client.bindTools(request.tools) : client;
     const result = await bound.invoke(lcMessages, invocation);
-    const content = typeof result.content === "string" ? result.content : stringifyContent(result.content);
+    const content =
+      typeof result.content === "string" ? result.content : stringifyContent(result.content);
     const usage = result.usage_metadata
       ? {
           promptTokens: result.usage_metadata.input_tokens ?? 0,
@@ -501,7 +571,7 @@ function stringifyContent(content: unknown): string {
   if (content == null) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.map((c: any) => (typeof c === "string" ? c : c?.text ?? "")).join("");
+    return content.map((c: any) => (typeof c === "string" ? c : (c?.text ?? ""))).join("");
   }
   return String(content);
 }

@@ -73,12 +73,18 @@ export interface ModelResult {
   routedFrom?: string;
 }
 
-/** A request budget: cancellation, timeout and retry. */
+/** A request budget: cancellation, timeout, retry, and (optionally) cost. */
 export interface RequestBudget {
   signal?: AbortSignal;
   timeoutMs?: number;
   /** Max retries on transient errors (excludes 4xx auth/policy). */
   maxRetries?: number;
+  /** Engagement scope for cost accounting (default "default"). */
+  engagementId?: string;
+  /** Hard per-engagement cost cap; the call is refused when spend reaches it. */
+  costCapUsd?: number;
+  /** Run id for cost attribution. */
+  runId?: string;
 }
 
 // ─── 1. ModelClient (knowledge plane — inference egress) ─────────────
@@ -204,10 +210,7 @@ export interface RunOutcome {
  */
 export interface ResearchGateway {
   search(query: string, opts?: ResearchOpts): Promise<ResearchSearchResult[]>;
-  extract(
-    urls: string[],
-    opts?: ResearchExtractOpts,
-  ): Promise<ResearchExtractResult[]>;
+  extract(urls: string[], opts?: ResearchExtractOpts): Promise<ResearchExtractResult[]>;
   /** Task only for genuinely broad multi-source synthesis. */
   research(input: string, opts?: ResearchTaskOpts): Promise<ResearchTaskResult>;
   monitor(spec: MonitorSpec): Promise<MonitorHandle>;
@@ -323,7 +326,9 @@ export interface MonitorSettings {
 
 export interface MonitorWebhook {
   url: string;
-  event_types?: Array<"monitor.event.detected" | "monitor.execution.completed" | "monitor.execution.failed">;
+  event_types?: Array<
+    "monitor.event.detected" | "monitor.execution.completed" | "monitor.execution.failed"
+  >;
 }
 
 export interface MonitorEvent {
@@ -341,7 +346,10 @@ export interface MonitorHandle {
   /** Cancel the monitor (GA lifecycle: status → cancelled; no delete op). */
   cancel(): Promise<void>;
   /** Retrieve events (newest first), paginated. */
-  events(opts?: { event_group_id?: string; include_completions?: boolean }): Promise<MonitorEvent[]>;
+  events(opts?: {
+    event_group_id?: string;
+    include_completions?: boolean;
+  }): Promise<MonitorEvent[]>;
 }
 
 // ─── 4. StorageProvider (work-product + knowledge planes) ────────────
@@ -355,15 +363,9 @@ export interface StorageProvider {
   readonly kind: "local" | "microsoft-graph" | "google-drive";
   /** Capabilities honestly declared (not all providers support all ops). */
   capabilities(): StorageCapabilities;
-  checkout(
-    identity: StorageIdentity,
-    opts?: StorageOpts,
-  ): Promise<StorageCheckout>;
+  checkout(identity: StorageIdentity, opts?: StorageOpts): Promise<StorageCheckout>;
   metadata(identity: StorageIdentity, opts?: StorageOpts): Promise<StorageMetadata>;
-  list(
-    folder: StorageIdentity,
-    opts?: StorageListOpts,
-  ): Promise<StorageMetadata[]>;
+  list(folder: StorageIdentity, opts?: StorageListOpts): Promise<StorageMetadata[]>;
   commit(
     workingCopy: StorageCheckout,
     candidate: { path: string; data: Buffer },
@@ -461,9 +463,15 @@ export interface StoragePollOpts extends StorageOpts {
  */
 export interface ArtifactRepository {
   /** Create an immutable source snapshot + isolated working copy. */
-  stage(source: { identity: StorageIdentity; data: Buffer; mimeType: string; path?: string }, runId: string): Promise<StagedArtifact>;
+  stage(
+    source: { identity: StorageIdentity; data: Buffer; mimeType: string; path?: string },
+    runId: string,
+  ): Promise<StagedArtifact>;
   /** Record a candidate output against a staged working copy. */
-  recordCandidate(staged: StagedArtifact, candidate: { path: string; data: Buffer; mimeType: string }): Promise<CandidateArtifact>;
+  recordCandidate(
+    staged: StagedArtifact,
+    candidate: { path: string; data: Buffer; mimeType: string },
+  ): Promise<CandidateArtifact>;
   /** Attach the evidence companion for a candidate. */
   attachEvidence(candidate: CandidateArtifact, evidence: Record<string, unknown>): Promise<void>;
   /** Compute a semantic/visual diff between source and candidate. */
@@ -498,7 +506,12 @@ export interface CandidateArtifact {
 export interface ArtifactDiff {
   semantic: string;
   visual?: string;
-  changes: Array<{ kind: "cell" | "paragraph" | "slide" | "figure"; locator: string; before?: string; after?: string }>;
+  changes: Array<{
+    kind: "cell" | "paragraph" | "slide" | "figure";
+    locator: string;
+    before?: string;
+    after?: string;
+  }>;
 }
 
 export interface ApprovalDecision {
@@ -533,7 +546,11 @@ export interface OfficeEngine {
   /** Structured read of an Office file (deterministic, not model-native). */
   read(path: string, opts?: OfficeReadOpts): Promise<OfficeStructure>;
   /** Edit a working copy (templates, deterministic merge, atomic batch). */
-  edit(workingCopyPath: string, changes: OfficeChange[], opts?: OfficeEditOpts): Promise<OfficeEditResult>;
+  edit(
+    workingCopyPath: string,
+    changes: OfficeChange[],
+    opts?: OfficeEditOpts,
+  ): Promise<OfficeEditResult>;
   validate(path: string, opts?: OfficeOpts): Promise<OfficeValidationResult>;
   /** Render–Look–Fix: render to image/PDF for visual inspection. */
   render(path: string, opts?: OfficeRenderOpts): Promise<OfficeRenderResult>;
@@ -564,7 +581,11 @@ export interface OfficeRenderOpts extends OfficeOpts {
 
 export interface OfficeStructure {
   mimeType: string;
-  sheets?: Array<{ name: string; formulas: Record<string, string>; values: Record<string, unknown> }>;
+  sheets?: Array<{
+    name: string;
+    formulas: Record<string, string>;
+    values: Record<string, unknown>;
+  }>;
   paragraphs?: Array<{ id: string; text: string }>;
   slides?: Array<{ id: string; title?: string; body?: string }>;
   warnings: string[];
@@ -605,11 +626,7 @@ export interface OfficeRenderResult {
 export interface IntegrationBroker {
   list(): IntegrationDeclaration[];
   get(name: string): Integration | undefined;
-  invoke(
-    name: string,
-    input: unknown,
-    opts?: IntegrationInvokeOpts,
-  ): Promise<IntegrationResult>;
+  invoke(name: string, input: unknown, opts?: IntegrationInvokeOpts): Promise<IntegrationResult>;
   /** Policy decision: permitted only when all conditions resolve (§9). */
   decide(name: string, opts?: IntegrationInvokeOpts): PolicyDecisionResult;
 }

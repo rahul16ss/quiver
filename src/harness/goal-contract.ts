@@ -26,6 +26,29 @@ export interface GoalContract {
   };
   stopConditions: string[];
   createdAt: string;
+  /** Engagement scope for cost accounting (defaults to the pack/customer id,
+   *  or "default"). Budget caps in `budgets.costUsd` are enforced per
+   *  engagement id, not per run — a rerun does not reset spend. */
+  engagementId?: string;
+  /**
+   * Optional fan-out work set (e.g. the same extraction over 200 filings /
+   * 40 comps). When present, a `fanout` plan step executes once per item
+   * with per-item retry, durable per-item progress, and partial-failure
+   * semantics — failed items surface as unresolved gaps, never silent skips.
+   */
+  fanOut?: FanOutSpec;
+}
+
+export interface FanOutSpec {
+  /** The unit of work repeated per item (becomes the step text prefix). */
+  task: string;
+  /** Tool the per-item handler dispatches to (e.g. "evidence", "office_doc"). */
+  toolName?: string;
+  items: Array<{ id: string; label: string; input?: Record<string, unknown> }>;
+  /** Max attempts per item before it is recorded as failed (default 2). */
+  maxItemAttempts?: number;
+  /** Max items in flight at once (default 4). */
+  concurrency?: number;
 }
 
 export interface DeliverableSpec {
@@ -64,7 +87,11 @@ export class GapLedger {
     return { entries: this.entries.map((e) => ({ ...e })), nextId: this.nextId };
   }
 
-  add(description: string, category: GapLedgerEntry["category"], waitingOn?: string): GapLedgerEntry {
+  add(
+    description: string,
+    category: GapLedgerEntry["category"],
+    waitingOn?: string,
+  ): GapLedgerEntry {
     const entry: GapLedgerEntry = {
       id: `gap-${this.nextId++}`,
       description,
@@ -90,7 +117,9 @@ export class GapLedger {
   }
 
   open(): GapLedgerEntry[] {
-    return this.entries.filter((e) => e.status === "open" || e.status === "in_progress" || e.status === "blocked");
+    return this.entries.filter(
+      (e) => e.status === "open" || e.status === "in_progress" || e.status === "blocked",
+    );
   }
 
   all(): GapLedgerEntry[] {
@@ -99,7 +128,9 @@ export class GapLedger {
 
   /** Honest summary: never claim complete while open/blocked gaps remain. */
   summary(): { complete: boolean; unresolved: string[] } {
-    const unresolved = this.open().map((e) => `${e.id}: ${e.description}${e.blocker ? ` (blocked: ${e.blocker})` : ""}`);
+    const unresolved = this.open().map(
+      (e) => `${e.id}: ${e.description}${e.blocker ? ` (blocked: ${e.blocker})` : ""}`,
+    );
     return { complete: unresolved.length === 0, unresolved };
   }
 }
@@ -116,7 +147,10 @@ export function evaluateCompletion(
 ): { status: "completed" | "partial" | "blocked"; unresolved: string[]; stopReason: string } {
   const failedChecks = doneChecks.filter((c) => !c.pass);
   const ledgerSummary = ledger.summary();
-  const unresolved = [...failedChecks.map((c) => `${c.id}: ${c.detail}`), ...ledgerSummary.unresolved];
+  const unresolved = [
+    ...failedChecks.map((c) => `${c.id}: ${c.detail}`),
+    ...ledgerSummary.unresolved,
+  ];
 
   if (unresolved.length === 0) {
     return { status: "completed", unresolved: [], stopReason: "all acceptance checks passed" };
