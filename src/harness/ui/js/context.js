@@ -53,11 +53,9 @@ async function loadContextSurfaces(config) {
       } catch {
         where = `Cloud — ${baseUrl}`;
       }
-    } else if (config?.vertexProjectId) {
-      where = `Cloud (Vertex AI) — ${config.vertexProjectId}`;
     }
     endpointEl.textContent = where;
-    endpointEl.title = baseUrl || config?.vertexProjectId || "Default provider endpoint";
+    endpointEl.title = baseUrl || "Configured workflow model route";
   }
   const wsEl = $("ctxWorkspace");
   if (wsEl) {

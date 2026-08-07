@@ -120,7 +120,10 @@ export function subscribe(res: ServerResponse): BusEvent[] {
 export async function loadConfig(): Promise<any> {
   const { config } = await import("../config.js");
   return {
-    provider: { modelName: config.llmModelName, baseUrl: config.llmBaseUrl },
+    provider: {
+      modelName: config.openRouterModelProfile === "auto" ? "model chosen by workflow" : config.llmModelName,
+      baseUrl: config.llmBaseUrl || (config.openRouterApiKey ? "https://openrouter.ai/api/v1" : ""),
+    },
     autonomyGrants: config.autonomyGrants?.size
       ? [...config.autonomyGrants].join(",")
       : "",

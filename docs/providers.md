@@ -36,50 +36,38 @@ export interface ModelInfo {
 
 ## Built-in Provider
 
-### OpenAICompatibleProvider
-Works with any OpenAI-compatible API endpoint:
-- **Vertex AI Gemini** (customer-owned GCP — recommended for native PDF/document parts)
-- Ollama (local or cloud)
-- OpenRouter (cloud)
-- OpenAI (cloud)
-- Any `/v1/chat/completions` compatible endpoint
+### OpenRouter (sole cloud gateway)
+OpenRouter is the only cloud model gateway. Quiver sends each request through
+`QuiverOpenRouterClient`/`QuiverOpenRouterProvider`, which enforce the approved
+profile, ZDR/provider policy, `data_collection=deny`, explicit provider order,
+no automatic fallback, cancellation, retries, and native-document capability
+certification.
 
-Quiver is provider-agnostic — no model name, base URL, or API key is baked into
-the source. Configure via `.env`.
+Customer model roles are configured in the engagement pack. The current
+reference lineup is:
 
-### Vertex AI (Gemini) — customer BYOK
+- planner: `openai/gpt-5.6-sol`
+- text maker: `openai/gpt-5.6-luna`
+- text checker: `google/gemini-3.5-flash`
+- native-document maker: `anthropic/claude-sonnet-5`
+- native-document checker: `moonshotai/kimi-k3`
+- reviewer/failsafe: `anthropic/claude-opus-5`
 
-**Billing rule:** every customer pays Google Cloud from **their own GCP project**.
-Quiver does **not** ship, share, or fall back to a Conviction Studio Google
-account. Inference cost lands on the engagement’s Google Cloud bill.
+Configure the gateway with `OPENROUTER_API_KEY` in the OS credential store and
+`OPENROUTER_MODEL_PROFILE=auto` (or an explicitly approved profile). Native
+PDF/Office MIME types remain fail-closed until the exact route passes its
+contract test.
 
-| Variable | Purpose |
-|---|---|
-| `VERTEX_PROJECT_ID` | Customer’s GCP project id (required for Vertex) |
-| `VERTEX_LOCATION` | `global` (default) or a region such as `us-central1` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Absolute path to the **customer’s** service-account JSON (or use ADC / `gcloud auth application-default login`) |
-| `LLM_MODEL_NAME` | Model id from the customer's provider (set in `.env` / Settings — never baked into Quiver source) |
-| `CHECKER_LLM_MODEL_NAME` | Optional different model for the checker (same rule: env/Settings only) |
-| `QUIVER_CHECKER_REMOTE_APPROVED` | Set `1` for non-Vertex remotes; Vertex BYOK auto-approves |
+### Local/private escape hatch
+For air-gapped or restricted deployments, configure an OpenAI-compatible local
+endpoint:
 
-When `VERTEX_PROJECT_ID` is set and `LLM_API_BASE_URL` is empty, Quiver builds:
+- `LLM_API_BASE_URL` — local/private provider endpoint
+- `LLM_MODEL_NAME` — local model name
+- `LLM_API_KEY` — optional local key (stored in the OS credential store when available)
 
-`https://aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/{LOCATION}/endpoints/openapi`
-
-Auth uses short-lived OAuth access tokens (`cloud-platform` scope) via
-`google-auth-library` — Vertex’s OpenAI-compat endpoint rejects static Gemini
-API keys. Optionally paste a fresh `gcloud auth print-access-token` into
-`LLM_API_KEY` as a last resort; that token is still the customer’s identity.
-
-Native multimodal path (images + PDFs as `file` / `image_url` parts) works with
-Gemini on Vertex. Memory stays in the local Quiver harness (`~/.quiver`), not
-in Google.
-
-### Other OpenAI-compat providers
-
-- `LLM_API_BASE_URL` — Provider endpoint
-- `LLM_MODEL_NAME` — Model name
-- `LLM_API_KEY` — API key (stored in the OS keychain when available)
+Restricted/MNPI policy refuses cloud routing when no approved local route is
+available. Quiver does not provide a separate Vertex or Ollama cloud path.
 
 ## Web research
 

@@ -12,8 +12,11 @@
 3. Add approved model profiles to the pack:
    ```json
    "approvedModels": [
-     { "profileSlug": "openai-gpt-4o", "roles": ["planner","maker"], "providerOrder": ["OpenAI"] },
-     { "profileSlug": "anthropic-claude-sonnet", "roles": ["checker","reviewer"], "providerOrder": ["Anthropic"] }
+     { "profileSlug": "text-planner", "roles": ["planner"], "providerOrder": ["OpenAI"] },
+     { "profileSlug": "text-maker", "roles": ["maker"], "providerOrder": ["OpenAI"] },
+     { "profileSlug": "text-checker", "roles": ["checker","reviewer"], "providerOrder": ["Google"] },
+     { "profileSlug": "native-doc-primary", "roles": ["maker","reviewer"], "providerOrder": ["Anthropic"] },
+     { "profileSlug": "native-doc-checker", "roles": ["checker"], "providerOrder": ["MoonshotAI"] }
    ]
    ```
 4. Run the opt-in native-document contract tests

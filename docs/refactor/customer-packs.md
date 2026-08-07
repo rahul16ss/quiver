@@ -19,10 +19,11 @@ is a complete, valid example. It demonstrates:
   transcripts-events (70) > portfolio-models-trackers (60) > internal-research-
   notes (50) > public-web-research (10). Open web is never a silent substitute
   for licensed data.
-- **Approved models** — `openai-gpt-4o` (planner/maker, OpenAI),
-  `anthropic-claude-sonnet` (checker/reviewer, Anthropic),
-  `local-private-default` (all roles, local) — each with an explicit provider
-  order and no automatic router.
+- **Approved models** — `text-planner` (planner, OpenAI),
+  `text-maker` (maker, OpenAI), `text-checker` (checker/reviewer, Google),
+  `native-doc-primary` (maker/reviewer, Anthropic),
+  `native-doc-checker` (checker, Moonshot), and `local-private-default` (all
+  roles, local) — each with an explicit provider order and no automatic router.
 - **Sensitivity profiles** — public (Parallel + OpenRouter ZDR),
   confidential-internal (Parallel sanitized queries only + OpenRouter ZDR),
   restricted-mnpi (no Parallel, no cloud; fail-closed to the local route).
