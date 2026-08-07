@@ -511,8 +511,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
  * OpenRouter is the sole cloud model gateway (ADR-001). A local/private
  * endpoint (LLM_API_BASE_URL) takes precedence when explicitly configured
  * (mock tests, air-gapped/MNPI work). Otherwise, when an OpenRouter key +
- * a certified profile are configured, use the QuiverOpenRouterProvider
- * bridge (ZDR-enforcing).
+ * a certified/auto profile are configured, use the QuiverOpenRouterProvider
+ * bridge (ZDR-enforcing and modality-aware per chat request).
  */
 export function getActiveProvider(): ModelProvider {
   const baseUrl = resolveMakerBaseUrl() || config.llmBaseUrl;
@@ -553,10 +553,9 @@ export function getLocalProvider(): ModelProvider | null {
 /**
  * OpenRouter provider accessor — the sole cloud model gateway (ADR-001).
  * Returns a QuiverOpenRouterProvider (bridging ChatOpenRouter to the legacy
- * ModelProvider interface with ZDR enforcement) when OPENROUTER_API_KEY and a
- * certified OPENROUTER_MODEL_PROFILE are configured; otherwise null. The final
- * getActiveProvider() flip to prefer this for cloud configs is gated on spec
- * updates. Local/private endpoints continue to use getLocalProvider().
+ * ModelProvider interface with ZDR + modality-aware routing) when
+ * OPENROUTER_API_KEY and an auto/certified profile are configured; otherwise
+ * null. Local/private endpoints continue to use getLocalProvider().
  */
 export async function getOpenRouterProvider(): Promise<ModelProvider | null> {
   if (!config.openRouterApiKey || !config.openRouterModelProfile) return null;

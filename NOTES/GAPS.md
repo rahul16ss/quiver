@@ -74,3 +74,26 @@ Classification uses the requested A–E categories. This table is evidence-first
   (459 spec + all harness), `npx tsc --noEmit` exit 0, Tier-A E2E 24/24,
   daemon smoke pass, and pseudo-TTY startup capture showed no `Question` or
   `undefined` line. New test 33 has 7 deterministic boundary checks.
+
+## User-reported CLI defect and chat-router closure (2026-08-07)
+
+- Reproduced the user's startup command from `/Users/rahul/quiver` under a
+  pseudo-TTY. Before the fix it showed the raw `google/gemini-3.6-flash` banner,
+  the legacy checker warning, and the user-observed `Question`/`undefined`
+  prompt symptom.
+- Fixed in `bab66ef`: malformed `ask_question` arguments fail closed; browser
+  prompt resolver suppresses the duplicate terminal card; OpenRouter suppresses
+  the legacy checker warning; auto-routing banner is explicit.
+- External model catalog now uses Luna (maker), Sol (planner), Gemini/Kimi
+  family-separated checkers, and native-doc maker/failsafe profiles. The legacy
+  chat bridge had previously remained single-model; that is now fixed in the
+  current working change: `QuiverOpenRouterProvider` constructs/caches a
+  per-profile model for each `auto` request, routes text to `text-maker`, and
+  routes file/image requests to `native-doc-primary`, with separate provider
+  policy on the selected profile.
+- New `34-chat-router-bridge.test.ts` proves text and file requests construct
+  distinct routed models; `npm test` from `/Users/rahul/quiver` passes 459 spec,
+  all harness, and 3 chat-router checks. This closes the previously identified
+  chat-path gap. The chat bridge is still not a checker pass; per-step
+  maker/checker gates belong to workflow execution, while chat now at least
+  uses the same modality-aware maker routing.

@@ -8,13 +8,14 @@
  *   allow_fallbacks=false, an explicit approved provider/model route from a
  *   certified ModelProfile, no automatic router.
  *
- * Additive: not wired into `getActiveProvider()` yet. The final flip (returning
- * this adapter from `getActiveProvider()` for cloud configs) is the gated last
- * step of Phase 2, after the checker-owned spec assertions are updated.
+ * Wired into `getActiveProvider()` for configured OpenRouter cloud sessions.
+ * In `profileSlug: "auto"` mode it routes each chat request through the
+ * modality-aware ModelRouter and constructs the selected profile's model.
  */
 
 import type { ModelProvider, ModelInfo, ChatRequest, ModelEvent } from "../providers/types.js";
 import { config } from "../config.js";
+import { ModalityRouter, type ModelRole } from "./model-router.js";
 import type { ModelProfileRegistry, ModelProfile } from "./model-profile.js";
 
 // ─── Injectable chat model (so the bridge is testable) ────────────────
@@ -35,54 +36,67 @@ export interface ProviderBridgeOptions {
 export class QuiverOpenRouterProvider implements ModelProvider {
   id = "openrouter";
   private profile: ModelProfile;
-  private chatModelPromise: Promise<ChatModelLike> | null = null;
+  private readonly router: ModalityRouter;
+  private readonly chatModels = new Map<string, Promise<ChatModelLike>>();
 
   constructor(
     private opts: ProviderBridgeOptions,
     private chatModelFactory?: (opts: ProviderBridgeOptions) => Promise<ChatModelLike>,
   ) {
-    // Resolve the "auto" router sentinel to a concrete profile for the chat
-    // path (which streams and cannot cheaply re-pick per message). The harness
-    // path (QuiverOpenRouterClient) does true per-call modality routing; this
-    // chat path picks the default text maker, the most common chat modality.
-    let slug = opts.profileSlug;
-    if (slug === "auto") {
-      const list = opts.profiles.list();
-      slug = list.find((p) => p.routerRole === "maker" && !p.nativeFileInput)?.slug
-        ?? list.find((p) => p.routerRole === "maker")?.slug
-        ?? list[0]?.slug;
-      if (!slug) throw new Error("QuiverOpenRouterProvider: no profiles registered for auto-routing.");
-      this.opts = { ...opts, profileSlug: slug };
-    }
-    const p = this.opts.profiles.get(this.opts.profileSlug);
-    if (!p) throw new Error(`QuiverOpenRouterProvider: unknown profile '${this.opts.profileSlug}'`);
-    if (!p.zdrEligible) throw new Error(`QuiverOpenRouterProvider: profile '${this.opts.profileSlug}' is not ZDR-eligible.`);
+    this.router = new ModalityRouter(opts.profiles.list());
+    const fallbackSlug = opts.profileSlug === "auto"
+      ? this.router.route([{ role: "user", content: "" }], "maker", "public")
+      : opts.profileSlug;
+    const p = fallbackSlug ? opts.profiles.get(fallbackSlug) : undefined;
+    if (!p) throw new Error(`QuiverOpenRouterProvider: unknown or unroutable profile '${opts.profileSlug}'`);
+    if (!p.zdrEligible) throw new Error(`QuiverOpenRouterProvider: profile '${p.slug}' is not ZDR-eligible.`);
     this.profile = p;
   }
 
-  private async chatModel(): Promise<ChatModelLike> {
-    if (!this.chatModelPromise) {
-      this.chatModelPromise = this.chatModelFactory
-        ? this.chatModelFactory(this.opts)
-        : defaultChatModelFactory(this.opts);
-    }
-    return this.chatModelPromise;
+  private async chatModelFor(profile: ModelProfile): Promise<ChatModelLike> {
+    const existing = this.chatModels.get(profile.slug);
+    if (existing) return existing;
+    const opts = { ...this.opts, profileSlug: profile.slug };
+    const created = this.chatModelFactory
+      ? this.chatModelFactory(opts)
+      : defaultChatModelFactory(opts);
+    this.chatModels.set(profile.slug, created);
+    return created;
+  }
+
+  private profileForRequest(messages: unknown[], role: ModelRole = "maker"): ModelProfile {
+    if (this.opts.profileSlug !== "auto") return this.profile;
+    const normalized = messages.map((message: any) => ({
+      role: message?.role ?? "user",
+      content: Array.isArray(message?.content)
+        ? message.content.map((part: any) => {
+            if (part?.type === "file") {
+              return { type: "file", mimeType: part.mimeType ?? part.file?.mime_type ?? "application/pdf", data: Buffer.alloc(0) };
+            }
+            if (part?.type === "image" || part?.type === "image_url") {
+              return { type: "image", mimeType: part.mimeType ?? "image/png", data: Buffer.alloc(0) };
+            }
+            return { type: "text", text: String(part?.text ?? part ?? "") };
+          })
+        : String(message?.content ?? ""),
+    }));
+    const slug = this.router.route(normalized as any, role, "public");
+    return slug ? (this.opts.profiles.get(slug) ?? this.profile) : this.profile;
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    return [
-      {
-        id: this.profile.modelSlug,
-        displayName: this.profile.modelSlug,
-        providerId: this.id,
-        contextWindowTokens: this.profile.contextWindowTokens,
-        supportsTools: this.profile.supportsToolCalling,
-        supportsParallelToolCalls: this.profile.supportsToolCalling,
-        supportsImages: this.profile.testedNativeMimeTypes.some((m) => m.startsWith("image/")),
-        supportsStreaming: true,
-        supportsReasoningSummaries: false,
-      },
-    ];
+    const profiles = this.opts.profileSlug === "auto" ? this.opts.profiles.list() : [this.profile];
+    return profiles.map((profile) => ({
+      id: profile.modelSlug,
+      displayName: profile.modelSlug,
+      providerId: this.id,
+      contextWindowTokens: profile.contextWindowTokens,
+      supportsTools: profile.supportsToolCalling,
+      supportsParallelToolCalls: profile.supportsToolCalling,
+      supportsImages: profile.nativeFileInput || profile.testedNativeMimeTypes.some((m) => m.startsWith("image/")),
+      supportsStreaming: true,
+      supportsReasoningSummaries: false,
+    }));
   }
 
   async getModelInfo(modelId: string): Promise<ModelInfo> {
@@ -91,9 +105,9 @@ export class QuiverOpenRouterProvider implements ModelProvider {
   }
 
   async *streamChat(request: ChatRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
-    // Enforce policy on every request via the provider prefs passed to the call.
+    const selected = this.profileForRequest(request.messages, "maker");
     const providerPrefs = {
-      order: this.profile.providerOrder,
+      order: selected.providerOrder,
       allow_fallbacks: false as const,
       require_parameters: true as const,
       data_collection: "deny" as const,
@@ -110,12 +124,11 @@ export class QuiverOpenRouterProvider implements ModelProvider {
 
     let model: ChatModelLike;
     try {
-      model = await this.chatModel();
+      model = await this.chatModelFor(selected);
     } catch (err: any) {
       yield { type: "error", error: `OpenRouter client init failed: ${err.message}` };
       return;
     }
-
     try {
       const stream = model.stream(request.messages, invocation);
       for await (const chunk of stream) {
@@ -123,11 +136,7 @@ export class QuiverOpenRouterProvider implements ModelProvider {
       }
       yield { type: "done", finishReason: "stop" };
     } catch (err: any) {
-      if (err?.name === "AbortError" || signal.aborted) {
-        yield { type: "error", error: "Request cancelled" };
-      } else {
-        yield { type: "error", error: `OpenRouter stream error: ${err.message}` };
-      }
+      yield { type: "error", error: err?.name === "AbortError" || signal.aborted ? "Request cancelled" : `OpenRouter stream error: ${err.message}` };
     }
   }
 }
