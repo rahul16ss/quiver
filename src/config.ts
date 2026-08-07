@@ -665,10 +665,11 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
     );
   }
   if (
-    (config.checkerModelName &&
+    !hasOpenRouter &&
+    ((config.checkerModelName &&
       !config.checkerBaseUrl &&
       !config.llmBaseUrl) ||
-    (!config.checkerModelName && config.checkerBaseUrl)
+      (!config.checkerModelName && config.checkerBaseUrl))
   ) {
     warnings.push(
       "Checker model settings are incomplete; set CHECKER_LLM_API_BASE_URL, or Quiver will use the maker endpoint when possible.",

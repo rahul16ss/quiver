@@ -322,7 +322,11 @@ async function main() {
       : config.autonomyGrants.size > 0
         ? t.cyan(` · auto`)
         : "";
-    welcome({ version: VERSION, model: config.llmModelName, modeSuffix });
+    const bannerModel =
+      config.openRouterModelProfile === "auto"
+        ? "model chosen by workflow"
+        : config.llmModelName || config.openRouterModelProfile || "configured model";
+    welcome({ version: VERSION, model: bannerModel, modeSuffix });
   }
 
   // ── Auto-update check (non-blocking, once per 24h) ──

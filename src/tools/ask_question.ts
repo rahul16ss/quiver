@@ -31,7 +31,21 @@ export const tool: Tool = {
         "Optional list of predefined choices. The user can select one or type a custom answer. If omitted, the user types a free-form answer.",
       ),
   }),
-  execute: async ({ question, header, choices }) => {
+  execute: async (args: unknown) => {
+    // Zod validates normal registry calls, but tool arguments can also arrive
+    // through provider/tool-call boundaries that are only structurally typed.
+    // Fail closed here too: never render `undefined` (or an empty question)
+    // into the terminal/browser prompt.
+    const parsed = args as { question?: unknown; header?: unknown; choices?: unknown };
+    if (typeof parsed.question !== "string" || parsed.question.trim().length === 0) {
+      return "ask_question refused: question text is missing or invalid; no prompt was shown.";
+    }
+    const question = parsed.question;
+    const header = typeof parsed.header === "string" ? parsed.header : undefined;
+    const choices = Array.isArray(parsed.choices)
+      ? parsed.choices.filter((choice): choice is string => typeof choice === "string")
+      : undefined;
+
     // In non-interactive mode, we can't ask — return a message
     if (
       process.env.QUIVER_OUTPUT_MODE === "json" ||
@@ -40,18 +54,23 @@ export const tool: Tool = {
       return `Question asked but cannot wait for answer in non-interactive mode. Question: ${question}. Choices: ${choices?.join(", ") || "N/A"}. Please re-run in interactive mode or provide the answer in your prompt.`;
     }
 
-    const label = header || "Question";
-
-    const { card } = await import("../cli_ui.js");
-    const body = [question];
-    if (choices && choices.length > 0) {
-      body.push("");
-      for (let i = 0; i < choices.length; i++) {
-        body.push(`[${i + 1}] ${choices[i]}`);
+    const { hasPromptResolver } = await import("../utils/prompt.js");
+    // Browser mode owns the question surface. Do not also render a terminal
+    // card: the old dual surface produced `Question: undefined` in the CLI
+    // while the browser was the active experience plane.
+    if (!hasPromptResolver()) {
+      const label = header || "Question";
+      const { card } = await import("../cli_ui.js");
+      const body = [question];
+      if (choices && choices.length > 0) {
+        body.push("");
+        for (let i = 0; i < choices.length; i++) {
+          body.push(`[${i + 1}] ${choices[i]}`);
+        }
+        body.push("[0] Type a custom answer");
       }
-      body.push("[0] Type a custom answer");
+      card({ title: label, body, accent: "brand" });
     }
-    card({ title: label, body, accent: "brand" });
 
     if (choices && choices.length > 0) {
       const { askQuestionRaw } = await import("../utils/prompt.js");
