@@ -37,3 +37,25 @@ Raw receipts are in `/tmp/`.
 2. Run UI/browser visual QA from the current external `runs.js` surface, not only static tests.
 3. Run opt-in live contract suite with real OpenRouter/Parallel/Graph/Drive/OfficeCLI credentials, or record each unavailable prerequisite explicitly.
 4. Add a lint/check/build script or document an owner-approved alternative if the project release gate requires those commands.
+
+## Post-rebaseline defect verification (2026-08-07)
+
+All commands below explicitly ran from `/Users/rahul/quiver`:
+
+- `npm test` → exit 0; 459 spec checks and all harness checks passed,
+  including 11 new `engine-maker-checker-planner` checks and 7 new
+  `ask_question` boundary checks.
+- `npx tsc --noEmit` → exit 0.
+- `npm run test:e2e:a` → exit 0; 24/24.
+- `npm run demo:ic-memo` → exit 0; 8/8.
+- `npx tsx scripts/daemon_smoke.ts` → exit 0; all smoke checks.
+- Pseudo-TTY `node bin/quiver.js` startup from the repo root after the fix:
+  banner shows `model chosen by workflow`; no checker-settings warning; browser
+  URL is printed; no `Question` or `undefined` line appears.
+
+Root cause fixed: runtime `ask_question` arguments can be malformed despite the
+nominal Zod schema. The tool now rejects missing/empty/non-string question text,
+and does not render a terminal card when the browser prompt resolver owns the
+question. The warning is suppressed when OpenRouter is configured, and the
+interactive banner no longer displays the raw legacy `LLM_MODEL_NAME` as the
+active routed model.
