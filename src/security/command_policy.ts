@@ -67,13 +67,7 @@ const RISK_PATTERNS: RiskPattern[] = [
   },
   {
     band: "privileged",
-    patterns: [
-      /\bsudo\b/i,
-      /\bchmod\b/i,
-      /\bchown\b/i,
-      /\bchgrp\b/i,
-      /\bsetfacl\b/i,
-    ],
+    patterns: [/\bsudo\b/i, /\bchmod\b/i, /\bchown\b/i, /\bchgrp\b/i, /\bsetfacl\b/i],
     reason: "Privileged command — modifies system permissions or runs as root",
   },
   {
@@ -189,10 +183,7 @@ export const DEFAULT_BLOCKED_PATTERNS: string[] = [
  * @param command - The raw shell command string
  * @returns Classification with risk band, reason, approval requirement, and hash
  */
-export function classifyCommand(
-  command: string,
-  cwd?: string,
-): CommandClassification {
+export function classifyCommand(command: string, cwd?: string): CommandClassification {
   // Bind the approval key to (command + working directory) so an approval in
   // one project never auto-approves the same command in another (US-6.2).
   const hashInput = cwd ? `${command}\0${path.resolve(cwd)}` : command;
@@ -203,11 +194,11 @@ export function classifyCommand(
   // like r""m, r''m, or $'rm' is detected as the actual command "rm".
   // This closes the quote-splitting bypass (CWE-78 - shell injection).
   const normalized = trimmed
-    .replace(/\$'([^']*)'/g, "$1")   // $'rm' -> rm (ANSI-C quoting)
-    .replace(/'([^']*)'/g, "$1")    // r'm' -> rm (single-quote splitting)
-    .replace(/"([^"]*)"/g, "$1")    // r"m" -> rm (double-quote splitting, non-empty)
-    .replace(/""/g, "")              // r""m -> rm (empty double-quote splitting)
-    .replace(/\\(.)/g, "$1")        // r\m -> rm (backslash-escaped chars)
+    .replace(/\$'([^']*)'/g, "$1") // $'rm' -> rm (ANSI-C quoting)
+    .replace(/'([^']*)'/g, "$1") // r'm' -> rm (single-quote splitting)
+    .replace(/"([^"]*)"/g, "$1") // r"m" -> rm (double-quote splitting, non-empty)
+    .replace(/""/g, "") // r""m -> rm (empty double-quote splitting)
+    .replace(/\\(.)/g, "$1"); // r\m -> rm (backslash-escaped chars)
 
   // Check for hard-blocked patterns first (against both raw and normalized)
   for (const blocked of DEFAULT_BLOCKED_PATTERNS) {

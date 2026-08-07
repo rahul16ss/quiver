@@ -137,10 +137,7 @@ export async function readAllMemoryFacts(): Promise<MemoryFact[]> {
     try {
       facts.push(JSON.parse(line) as MemoryFact);
     } catch {
-      throw new CorruptStateError(
-        factsPath,
-        `invalid JSON on facts line ${index + 1}`,
-      );
+      throw new CorruptStateError(factsPath, `invalid JSON on facts line ${index + 1}`);
     }
   }
   return facts;
@@ -172,9 +169,7 @@ export async function updateMemoryFact(
 ): Promise<void> {
   await enqueueMemoryWrite(async () => {
     const facts = await readAllMemoryFacts();
-    const updated = facts.map((f) =>
-      f.id === factId ? { ...f, ...updates } : f,
-    );
+    const updated = facts.map((f) => (f.id === factId ? { ...f, ...updates } : f));
 
     const factsPath = getFactsPath();
     const content = updated.map((f) => JSON.stringify(f)).join("\n") + "\n";

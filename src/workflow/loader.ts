@@ -236,10 +236,7 @@ export function discoverWorkflows(packsDir: string): WorkflowDefinition[] {
  * @param packsDir - Root workflow-packs directory
  * @returns The matching WorkflowDefinition, or null if not found
  */
-export function findWorkflow(
-  name: string,
-  packsDir: string,
-): WorkflowDefinition | null {
+export function findWorkflow(name: string, packsDir: string): WorkflowDefinition | null {
   const all = discoverWorkflows(packsDir);
   return all.find((w) => w.name === name) || null;
 }

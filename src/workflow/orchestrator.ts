@@ -24,7 +24,6 @@ import type {
   WorkflowRun,
   WorkflowPhase,
   PhaseResult,
-  RunStatus,
   WorkflowEvent,
   WorkflowEventType,
 } from "./types.js";
@@ -76,10 +75,7 @@ function loadRun(runId: string): WorkflowRun | null {
   try {
     return JSON.parse(fs.readFileSync(p, "utf8")) as WorkflowRun;
   } catch (error: any) {
-    throw new CorruptStateError(
-      p,
-      `JSON parse failed: ${error?.message || String(error)}`,
-    );
+    throw new CorruptStateError(p, `JSON parse failed: ${error?.message || String(error)}`);
   }
 }
 
@@ -97,11 +93,7 @@ export function onWorkflowEvent(listener: EventListener): () => void {
   };
 }
 
-function emit(
-  type: WorkflowEventType,
-  run: WorkflowRun,
-  data: Record<string, unknown> = {},
-): void {
+function emit(type: WorkflowEventType, run: WorkflowRun, data: Record<string, unknown> = {}): void {
   const event: WorkflowEvent = {
     type,
     run_id: run.run_id,
@@ -166,9 +158,9 @@ async function executeDiscover(
         `Business purpose: ${def.business_purpose}\n` +
         `Available inputs: ${existingInputs.join(", ")}\n` +
         `Missing inputs: ${missingInputs.join(", ") || "none"}\n` +
-      `Identify the decision context, additional inputs needed, sensitivity concerns, ` +
-      `and any data gaps. Confirm readiness only when the supplied evidence is sufficient; ` +
-      `do not invent missing facts or imply that a deliverable is verified.`,
+        `Identify the decision context, additional inputs needed, sensitivity concerns, ` +
+        `and any data gaps. Confirm readiness only when the supplied evidence is sufficient; ` +
+        `do not invent missing facts or imply that a deliverable is verified.`,
       { phase: "discover", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -200,8 +192,8 @@ async function executeMap(
       `You are the Associate in the MAP phase of the "${def.name}" workflow.\n` +
         `Map these deliverable sections to the available input sources:\n  - ${sections}\n` +
         `Inputs: ${run.inputs.map((i) => path.basename(i)).join(", ")}\n` +
-      `For each section, identify the source file and location that provides the ` +
-      `required data, flag unsupported sections, and distinguish facts from analysis.`,
+        `For each section, identify the source file and location that provides the ` +
+        `required data, flag unsupported sections, and distinguish facts from analysis.`,
       { phase: "map", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -255,16 +247,15 @@ async function executeBuild(
         `${templateInfo}\n` +
         `Deliverable sections: ${def.deliverable_sections.join(", ")}\n` +
         `Inputs available: ${run.inputs.map((i) => path.basename(i)).join(", ")}\n` +
-      `Build a reviewable draft. Use the evidence tool to register every source, ` +
-      `record every material quantitative claim, label estimates and unresolved ` +
-      `items, and use OfficeCLI to produce the output files. Do not call the ` +
-      `document final until validation and the independent checker pass.`,
+        `Build a reviewable draft. Use the evidence tool to register every source, ` +
+        `record every material quantitative claim, label estimates and unresolved ` +
+        `items, and use OfficeCLI to produce the output files. Do not call the ` +
+        `document final until validation and the independent checker pass.`,
       { phase: "build", workflow: def, run },
     );
     output += agentOutput;
   } else {
-    const message =
-      "No agent callback — build phase cannot produce a verified deliverable.";
+    const message = "No agent callback — build phase cannot produce a verified deliverable.";
     output += message;
     errors.push(message);
   }
@@ -344,9 +335,7 @@ function verifyExcelLineageAgainstWorkbooks(
 ): { pass: boolean; detail: string } {
   const claims = models.flatMap((m) =>
     m.claims.filter(
-      (c) =>
-        c.verification?.type === "excel_cell" ||
-        c.verification?.type === "excel_derived",
+      (c) => c.verification?.type === "excel_cell" || c.verification?.type === "excel_derived",
     ),
   ) as ClaimRecord[];
   if (claims.length === 0) {
@@ -375,9 +364,7 @@ function verifyExcelLineageAgainstWorkbooks(
           );
         }
       } catch (e: any) {
-        failures.push(
-          `${claim.claim_id}: cell re-read failed (${e?.message || String(e)})`,
-        );
+        failures.push(`${claim.claim_id}: cell re-read failed (${e?.message || String(e)})`);
       }
     } else if (v.type === "excel_derived") {
       const der = v as ExcelDerivedVerification;
@@ -387,16 +374,8 @@ function verifyExcelLineageAgainstWorkbooks(
         continue;
       }
       try {
-        const num = readCellNumeric(
-          wb,
-          der.numerator.sheet,
-          der.numerator.cell,
-        );
-        const den = readCellNumeric(
-          wb,
-          der.denominator.sheet,
-          der.denominator.cell,
-        );
+        const num = readCellNumeric(wb, der.numerator.sheet, der.numerator.cell);
+        const den = readCellNumeric(wb, der.denominator.sheet, der.denominator.cell);
         checked++;
         if (
           !num.ok ||
@@ -409,9 +388,7 @@ function verifyExcelLineageAgainstWorkbooks(
           );
         }
       } catch (e: any) {
-        failures.push(
-          `${claim.claim_id}: derived re-read failed (${e?.message || String(e)})`,
-        );
+        failures.push(`${claim.claim_id}: derived re-read failed (${e?.message || String(e)})`);
       }
     }
   }
@@ -440,17 +417,13 @@ function readAcceptanceChecks(checklistPath: string): AcceptanceCheck[] {
     .map((block) => {
       const id = block.match(/^\s*-\s*id:\s*(.+)$/m)?.[1]?.trim();
       const name = block.match(/^\s*name:\s*(.+)$/m)?.[1]?.trim() || "";
-      const description =
-        block.match(/^\s*description:\s*(.+)$/m)?.[1]?.trim() || "";
+      const description = block.match(/^\s*description:\s*(.+)$/m)?.[1]?.trim() || "";
       return id ? { id, name, description } : null;
     })
     .filter((check): check is AcceptanceCheck => !!check);
 }
 
-function outputFilesForRun(
-  def: WorkflowDefinition,
-  run: WorkflowRun,
-): string[] {
+function outputFilesForRun(def: WorkflowDefinition, run: WorkflowRun): string[] {
   const outputDir = def.outputs?.directory
     ? path.join(def.packRoot, def.outputs.directory)
     : def.packRoot;
@@ -475,18 +448,14 @@ async function evaluateAcceptanceCheck(
   outputFiles: string[],
   def: WorkflowDefinition,
 ): Promise<{ pass: boolean; detail: string }> {
-  const officeFiles = outputFiles.filter((file) =>
-    /\.(docx|xlsx|pptx)$/i.test(file),
-  );
+  const officeFiles = outputFiles.filter((file) => /\.(docx|xlsx|pptx)$/i.test(file));
   const evidence = await Promise.all(
     officeFiles.map(async (file) => ({
       validation: await validateEvidenceFile(file),
       loaded: await readEvidenceFile(file),
     })),
   );
-  const validEvidence = evidence.filter(
-    (result) => result.validation.valid && result.loaded.model,
-  );
+  const validEvidence = evidence.filter((result) => result.validation.valid && result.loaded.model);
   const models = validEvidence
     .map((result) => result.loaded.model)
     .filter((model): model is NonNullable<typeof model> => !!model);
@@ -538,9 +507,7 @@ async function evaluateAcceptanceCheck(
     }
     const unresolved = models.flatMap((model) =>
       model.claims.filter(
-        (claim) =>
-          claim.relationship === "unresolved" ||
-          claim.review_status === "unresolved",
+        (claim) => claim.relationship === "unresolved" || claim.review_status === "unresolved",
       ),
     );
     if (unresolved.length === 0) {
@@ -615,12 +582,7 @@ async function executeVerify(
       } else {
         const outputFiles = outputFilesForRun(def, run);
         for (const check of checks) {
-          const result = await evaluateAcceptanceCheck(
-            check,
-            run,
-            outputFiles,
-            def,
-          );
+          const result = await evaluateAcceptanceCheck(check, run, outputFiles, def);
           checkResults.push({ id: check.id, ...result });
           if (!result.pass) {
             errors.push(`Check ${check.id} failed: ${result.detail}`);
@@ -638,7 +600,9 @@ async function executeVerify(
         `Use the actual acceptance results below; do not override a failed or ` +
         `unsupported check with an opinion.\n` +
         `Checks to verify:\n` +
-        checkResults.map((c) => `  - ${c.id}: ${c.pass ? "PASS" : "FAIL"} (${c.detail})`).join("\n") +
+        checkResults
+          .map((c) => `  - ${c.id}: ${c.pass ? "PASS" : "FAIL"} (${c.detail})`)
+          .join("\n") +
         `\nFor each check, explain the supplied evidence or the missing evidence. ` +
         `A zero-check or infrastructure failure is not approval.`,
       { phase: "verify", workflow: def, run },
@@ -670,9 +634,9 @@ async function executeTrain(
     const agentOutput = await agent(
       `You are the Associate in the TRAIN phase of the "${def.name}" workflow.\n` +
         `Document the key decisions, data interpretations, and manual steps ` +
-      `performed during this workflow run so a new analyst can replicate the process. ` +
-      `Separate reusable process lessons from engagement-specific facts; candidate ` +
-      `lessons remain pending review.`,
+        `performed during this workflow run so a new analyst can replicate the process. ` +
+        `Separate reusable process lessons from engagement-specific facts; candidate ` +
+        `lessons remain pending review.`,
       { phase: "train", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -719,8 +683,8 @@ async function executeHandover(
     const agentOutput = await agent(
       `You are the Associate in the HANDOVER phase of the "${def.name}" workflow.\n` +
         `Review the generated runbook and add any firm-specific maintenance notes ` +
-      `or recurring schedule recommendations. Keep authentication, sensitivity, ` +
-      `and reviewer ownership explicit; do not imply that a template is production-ready.`,
+        `or recurring schedule recommendations. Keep authentication, sensitivity, ` +
+        `and reviewer ownership explicit; do not imply that a template is production-ready.`,
       { phase: "handover", workflow: def, run },
     );
     output += `\nAgent: ${agentOutput}`;
@@ -777,9 +741,7 @@ function generateRunbook(def: WorkflowDefinition, run: WorkflowRun): string {
     const end = new Date(phase.completed_at).getTime();
     const durationMs = end - start;
     const durationStr =
-      durationMs < 1000
-        ? `${durationMs}ms`
-        : `${(durationMs / 1000).toFixed(1)}s`;
+      durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`;
     sections.push(`| ${phase.phase} | ${phase.status} | ${durationStr} |`);
   }
   sections.push("");
@@ -798,8 +760,12 @@ function generateRunbook(def: WorkflowDefinition, run: WorkflowRun): string {
 
   sections.push(`## Maintenance\n`);
   sections.push(`- Re-run this workflow when new input data is available.`);
-  sections.push(`- If source file structures change, update \`expected-structure.json\` to pass drift checks.`);
-  sections.push(`- Review acceptance checklist (${def.acceptance_checks || "N/A"}) before sign-off.\n`);
+  sections.push(
+    `- If source file structures change, update \`expected-structure.json\` to pass drift checks.`,
+  );
+  sections.push(
+    `- Review acceptance checklist (${def.acceptance_checks || "N/A"}) before sign-off.\n`,
+  );
 
   return sections.join("\n");
 }
@@ -808,11 +774,7 @@ function generateRunbook(def: WorkflowDefinition, run: WorkflowRun): string {
 
 const PHASE_EXECUTORS: Record<
   WorkflowPhase,
-  (
-    def: WorkflowDefinition,
-    run: WorkflowRun,
-    agent?: AgentCallback,
-  ) => Promise<PhaseResult>
+  (def: WorkflowDefinition, run: WorkflowRun, agent?: AgentCallback) => Promise<PhaseResult>
 > = {
   discover: executeDiscover,
   map: executeMap,
@@ -847,13 +809,7 @@ export async function executeWorkflow(
   def: WorkflowDefinition,
   options: OrchestratorOptions = {},
 ): Promise<WorkflowRun> {
-  const {
-    agent,
-    trigger = "manual",
-    skipPhases = [],
-    resumeRunId,
-    triggerInput,
-  } = options;
+  const { agent, trigger = "manual", skipPhases = [], resumeRunId, triggerInput } = options;
 
   // Create or resume a run
   let run: WorkflowRun;
@@ -892,9 +848,7 @@ export async function executeWorkflow(
 
   // Determine which phases to run
   const completedPhases = new Set(run.phases.map((p) => p.phase));
-  const phasesToRun = PHASE_ORDER.filter(
-    (p) => !completedPhases.has(p) && !skipPhases.includes(p),
-  );
+  const phasesToRun = PHASE_ORDER.filter((p) => !completedPhases.has(p) && !skipPhases.includes(p));
 
   for (const phase of phasesToRun) {
     run.current_phase = phase;
@@ -957,9 +911,7 @@ export async function executeWorkflow(
     });
   } catch (error: any) {
     const harvestError = error?.message || String(error);
-    console.warn(
-      `Workflow memory harvest failed for ${run.run_id}: ${harvestError}`,
-    );
+    console.warn(`Workflow memory harvest failed for ${run.run_id}: ${harvestError}`);
     emit("workflow:completed", run, {
       harvested_memory_candidates: 0,
       memory_harvest_error: harvestError,
@@ -989,17 +941,12 @@ export function listRuns(workflowName?: string): WorkflowRun[] {
       }
     } catch (error: any) {
       console.warn(
-        new CorruptStateError(
-          path.join(dir, file),
-          error?.message || String(error),
-        ).message,
+        new CorruptStateError(path.join(dir, file), error?.message || String(error)).message,
       );
     }
   }
 
-  return runs.sort(
-    (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
-  );
+  return runs.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
 }
 
 /**

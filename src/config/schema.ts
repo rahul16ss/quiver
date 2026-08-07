@@ -95,7 +95,10 @@ export function validateConfig(config: any): ValidationResult {
     if (!config.model.model_name) errors.push("model.model_name is required");
     // base_url (local endpoint) is optional — cloud inference goes through
     // OpenRouter (OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE).
-    if (typeof config.model.max_context_tokens !== "number" || config.model.max_context_tokens <= 0) {
+    if (
+      typeof config.model.max_context_tokens !== "number" ||
+      config.model.max_context_tokens <= 0
+    ) {
       errors.push("model.max_context_tokens must be a positive number");
     }
   }
@@ -139,7 +142,12 @@ export function getSettingsSections(): { id: string; label: string; fields: Sett
       id: "model",
       label: "Model Provider",
       fields: [
-        { key: "provider", label: "Provider", type: "select", options: ["custom", "openrouter", "openai"] },
+        {
+          key: "provider",
+          label: "Provider",
+          type: "select",
+          options: ["custom", "openrouter", "openai"],
+        },
         { key: "model_name", label: "Model Name", type: "text" },
         { key: "base_url", label: "Base URL", type: "text" },
         { key: "api_key_ref", label: "API Key", type: "secret" },

@@ -41,8 +41,6 @@ export function resolveCheckerBaseUrl(): string {
  * Resolve the Bearer token for an OpenAI-compatible endpoint. With Vertex gone,
  * this is simply the static LLM_API_KEY (local endpoints typically ignore it).
  */
-export async function resolveLlmBearerToken(_opts?: {
-  forceVertex?: boolean;
-}): Promise<string> {
+export async function resolveLlmBearerToken(_opts?: { forceVertex?: boolean }): Promise<string> {
   return config.llmApiKey || "";
 }

@@ -15,7 +15,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     aliases: ["/a", "/tier"],
     desc: "Trust tiers & grants (tier observe→yolo, add/remove grants, sandbox)",
   },
-  { name: "/session", aliases: ["/s", "/cost", "/history", "/hi"], desc: "Show session stats (+ /session full for message history)" },
+  {
+    name: "/session",
+    aliases: ["/s", "/cost", "/history", "/hi"],
+    desc: "Show session stats (+ /session full for message history)",
+  },
   { name: "/version", aliases: ["/v"], desc: "Show Quiver version" },
   { name: "/config", aliases: ["/c"], desc: "Show configuration" },
   { name: "/clear", aliases: [], desc: "Clear terminal screen" },

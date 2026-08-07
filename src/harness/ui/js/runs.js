@@ -50,16 +50,24 @@ export async function initWorkflows() {
     const active = await api.listActiveRuns();
     if (active.length > 0) {
       const runId = active[active.length - 1];
-      addActivity("Quiver kept working while you were away — reattached to the running workflow.", "tool");
+      addActivity(
+        "Quiver kept working while you were away — reattached to the running workflow.",
+        "tool",
+      );
       followRun(runId, "the workflow");
     }
-  } catch { /* daemon without the harness API — chat-only mode */ }
+  } catch {
+    /* daemon without the harness API — chat-only mode */
+  }
 }
 
 /** Start a pack workflow and follow it live. */
 async function startWorkflow(workflowId, name) {
   if (activeRunId) {
-    addActivity("A workflow is already running — review or stop it before starting another.", "warn");
+    addActivity(
+      "A workflow is already running — review or stop it before starting another.",
+      "warn",
+    );
     return;
   }
   addActivity(`Workflow started: ${name}`, "tool");
@@ -67,10 +75,12 @@ async function startWorkflow(workflowId, name) {
   // The start request settles only when the run completes/pauses, so don't
   // await it here — follow live state via /api/run/active + /api/run/state.
   const startPromise = api.startWorkflowRun(workflowId);
-  startPromise.then((outcome) => settleRun(workflowId, name, outcome)).catch((e) => {
-    addActivity(`Workflow error: ${e?.message ?? e}`, "err");
-    stopFollowing();
-  });
+  startPromise
+    .then((outcome) => settleRun(workflowId, name, outcome))
+    .catch((e) => {
+      addActivity(`Workflow error: ${e?.message ?? e}`, "err");
+      stopFollowing();
+    });
   // Discover the run id once the daemon registers the in-flight run.
   for (let i = 0; i < 10; i++) {
     await sleep(500);
@@ -81,9 +91,14 @@ async function startWorkflow(workflowId, name) {
         followRun(mine[mine.length - 1], name);
         return;
       }
-    } catch { /* keep waiting */ }
+    } catch {
+      /* keep waiting */
+    }
   }
-  addActivity("Could not attach to the workflow's live progress — it will report when done.", "warn");
+  addActivity(
+    "Could not attach to the workflow's live progress — it will report when done.",
+    "warn",
+  );
 }
 
 /** Poll run state; surface phase changes, approvals, and completion. */
@@ -104,8 +119,13 @@ async function pollRun(runId, name) {
   if (!snap) return;
   if (snap.currentPhase && snap.currentPhase !== lastPhase) {
     lastPhase = snap.currentPhase;
-    const open = (snap.gapLedger ?? []).filter((g) => g.status === "open" || g.status === "blocked").length;
-    addActivity(`Workflow ${name}: ${phaseLabel(snap.currentPhase)}${open ? ` — ${open} open item${open === 1 ? "" : "s"}` : ""}`, "tool");
+    const open = (snap.gapLedger ?? []).filter(
+      (g) => g.status === "open" || g.status === "blocked",
+    ).length;
+    addActivity(
+      `Workflow ${name}: ${phaseLabel(snap.currentPhase)}${open ? ` — ${open} open item${open === 1 ? "" : "s"}` : ""}`,
+      "tool",
+    );
   }
   const pending = snap.pendingApprovals ?? [];
   if (pending.length > 0 && !decided.has(runId)) {
@@ -124,12 +144,18 @@ function settleRun(workflowId, name, outcome) {
   const status = outcome?.status ?? "unknown";
   const artifacts = outcome?.artifacts ?? [];
   if (status === "completed") {
-    addActivity(`Workflow ${name}: complete — ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"} ready for review.`, "tool");
+    addActivity(
+      `Workflow ${name}: complete — ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"} ready for review.`,
+      "tool",
+    );
   } else if (status === "paused") {
     addActivity(`Workflow ${name}: waiting for your review.`, "warn");
   } else {
     const remaining = (outcome?.unresolved ?? []).slice(0, 3).join("; ");
-    addActivity(`Workflow ${name}: ended ${status}${remaining ? ` — still open: ${remaining}` : ""}.`, "warn");
+    addActivity(
+      `Workflow ${name}: ended ${status}${remaining ? ` — still open: ${remaining}` : ""}.`,
+      "warn",
+    );
   }
   if (state.statusDot) state.statusDot.className = "status-dot idle";
 }
@@ -149,19 +175,29 @@ function showRunApproval(runId, name, summary) {
   const title = $("runApprovalTitle");
   const sum = $("runApprovalSummary");
   if (title) title.textContent = `${name} — ready for your review`;
-  if (sum) sum.textContent = summary || "All acceptance checks passed. Approve the result to commit it, or send it back.";
+  if (sum)
+    sum.textContent =
+      summary || "All acceptance checks passed. Approve the result to commit it, or send it back.";
   overlay.hidden = false;
   wireOnce("runApproveBtn", "click", async () => {
     overlay.hidden = true;
     decided.add(runId); // never re-prompt for a decided run
     addActivity("You approved the workflow result — committing.", "tool");
-    try { await api.approveRun(runId); } catch (e) { addActivity(`Approve failed: ${e?.message ?? e}`, "err"); }
+    try {
+      await api.approveRun(runId);
+    } catch (e) {
+      addActivity(`Approve failed: ${e?.message ?? e}`, "err");
+    }
   });
   wireOnce("runRejectBtn", "click", async () => {
     overlay.hidden = true;
     decided.add(runId);
     addActivity("You sent the workflow back for rework.", "warn");
-    try { await api.rejectRun(runId); } catch (e) { addActivity(`Reject failed: ${e?.message ?? e}`, "err"); }
+    try {
+      await api.rejectRun(runId);
+    } catch (e) {
+      addActivity(`Reject failed: ${e?.message ?? e}`, "err");
+    }
   });
 }
 
@@ -201,7 +237,12 @@ function phaseLabel(phase) {
     runEvaluate: "evaluating",
     runApprove: "awaiting your review",
   };
-  return labels[phase] ?? String(phase).replace(/^node\./, "").replace(/_/g, " ");
+  return (
+    labels[phase] ??
+    String(phase)
+      .replace(/^node\./, "")
+      .replace(/_/g, " ")
+  );
 }
 
 function sleep(ms) {

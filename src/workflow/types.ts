@@ -12,13 +12,7 @@
 
 export type WorkflowFamily = "dealmaking" | "research" | "wealth";
 
-export type WorkflowPhase =
-  | "discover"
-  | "map"
-  | "build"
-  | "verify"
-  | "train"
-  | "handover";
+export type WorkflowPhase = "discover" | "map" | "build" | "verify" | "train" | "handover";
 
 export const PHASE_ORDER: readonly WorkflowPhase[] = [
   "discover",
@@ -48,12 +42,7 @@ export interface WorkflowDefinition {
   retrieval?: { mode: "static" | "dynamic"; network_access: "none" | "public" | "authenticated" };
   /** Data sensitivity level */
   data_sensitivity:
-    | "synthetic"
-    | "public"
-    | "internal"
-    | "confidential"
-    | "client-confidential"
-    | "mnpi";
+    "synthetic" | "public" | "internal" | "confidential" | "client-confidential" | "mnpi";
   /** Expected deliverable sections */
   deliverable_sections: string[];
   /** Review role description */
@@ -92,13 +81,7 @@ export interface WatchSpec {
 
 // ─── Workflow Run State ──────────────────────────────────────────────
 
-export type RunStatus =
-  | "pending"
-  | "running"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type RunStatus = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 export interface PhaseResult {
   phase: WorkflowPhase;
@@ -144,7 +127,17 @@ export interface WorkflowRun {
 
 // ─── Multi-Role Review ───────────────────────────────────────────────
 
-export type ReviewRole = "analyst" | "senior_analyst" | "vp" | "principal" | "partner" | "ic_member" | "pm" | "cio" | "advisor" | "custom";
+export type ReviewRole =
+  | "analyst"
+  | "senior_analyst"
+  | "vp"
+  | "principal"
+  | "partner"
+  | "ic_member"
+  | "pm"
+  | "cio"
+  | "advisor"
+  | "custom";
 
 export interface ReviewDecision {
   role: ReviewRole;

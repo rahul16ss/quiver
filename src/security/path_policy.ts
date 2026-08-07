@@ -11,7 +11,7 @@
 
 import * as path from "path";
 import * as os from "os";
-import { realpathSync, existsSync } from "fs";
+import { realpathSync } from "fs";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -71,11 +71,7 @@ export const DEFAULT_BLOCKED_PATHS: string[] = [
 /**
  * Global blocked home-directory paths — resolved against the user's home.
  */
-export const DEFAULT_BLOCKED_HOME_PATHS: string[] = [
-  ".ssh/",
-  ".aws/",
-  ".config/",
-];
+export const DEFAULT_BLOCKED_HOME_PATHS: string[] = [".ssh/", ".aws/", ".config/"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -100,7 +96,10 @@ function matchesGlob(filePath: string, globs: string[]): boolean {
     // Handle directory patterns ending with /
     if (glob.endsWith("/")) {
       const dirPattern = glob.slice(0, -1);
-      if (filePath.includes(`/`) && filePath.split("/").some((seg) => matchesGlob(seg, [dirPattern]))) {
+      if (
+        filePath.includes(`/`) &&
+        filePath.split("/").some((seg) => matchesGlob(seg, [dirPattern]))
+      ) {
         return true;
       }
       // Also check if the path starts with the directory
@@ -222,11 +221,7 @@ function isBlockedHomePath(resolvedPath: string): boolean {
     // Use path.sep boundary to prevent false positives:
     // "/Users/rahul/.ssh" should block "/Users/rahul/.ssh/keys" but
     // should NOT block "/Users/rahul/.ssh_backup" or "/Users/rahul/.sshrc"
-    if (
-      resolvedPath === blockedAbs ||
-      resolvedPath.startsWith(blockedAbs + path.sep)
-    )
-      return true;
+    if (resolvedPath === blockedAbs || resolvedPath.startsWith(blockedAbs + path.sep)) return true;
   }
   return false;
 }
@@ -274,7 +269,7 @@ export function resolveAndAssertPathAllowed(
   if (matchesGlob(basename, allBlocked) || matchesGlob(relativeToWorkspace, allBlocked)) {
     throw new Error(
       `Path '${inputPath}' is blocked by security policy (matches blocked glob). ` +
-      `This protects sensitive files like .env, credentials, and VCS internals.`,
+        `This protects sensitive files like .env, credentials, and VCS internals.`,
     );
   }
 
@@ -286,7 +281,7 @@ export function resolveAndAssertPathAllowed(
   if (isBlockedHomePath(realPath)) {
     throw new Error(
       `Path '${inputPath}' is blocked — it resolves to a sensitive home directory ` +
-      `(.ssh, .aws, .config) which is never accessible.`,
+        `(.ssh, .aws, .config) which is never accessible.`,
     );
   }
 
@@ -307,8 +302,7 @@ export function resolveAndAssertPathAllowed(
       if (scope === "home") {
         const home = os.homedir();
         const relHome = path.relative(home, realPath);
-        const insideHome =
-          !relHome.startsWith("..") && !path.isAbsolute(relHome);
+        const insideHome = !relHome.startsWith("..") && !path.isAbsolute(relHome);
         if (!insideHome) {
           throw new Error(
             `Path '${inputPath}' resolves outside the workspace and outside the ` +
@@ -337,8 +331,8 @@ export function resolveAndAssertPathAllowed(
     if (!matchesGlob(relativeToWorkspace, allowGlobs) && !matchesGlob(basename, allowGlobs)) {
       throw new Error(
         `Path '${inputPath}' is outside the ${operation} allow-list for this ` +
-        `policy (allowed globs: ${allowGlobs.join(", ")}). ` +
-        `Add the path to the allow list or clear it to permit all workspace paths.`,
+          `policy (allowed globs: ${allowGlobs.join(", ")}). ` +
+          `Add the path to the allow list or clear it to permit all workspace paths.`,
       );
     }
   }

@@ -15,7 +15,9 @@ function excludeFromRun(memoryName, itemEl) {
     addActivity(`Excluded from next run: ${memoryName}`, "warn");
   }
   // Record the exclusion via IPC so the agent loop knows
-  try { api.excludeFromRun?.(memoryName); } catch {}
+  try {
+    api.excludeFromRun?.(memoryName);
+  } catch {}
 }
 
 function showConsentGate(manifestData) {
@@ -26,17 +28,31 @@ function showConsentGate(manifestData) {
   // pre-formatted strings. Handle both.
   const model = manifestData?.model || "—";
   const memRaw = manifestData?.memoryFiles || manifestData?.memory || [];
-  const mem = Array.isArray(memRaw) ? (memRaw.length ? `${memRaw.length} file${memRaw.length === 1 ? "" : "s"}: ${memRaw.join(", ")}` : "none") : String(memRaw || "—");
+  const mem = Array.isArray(memRaw)
+    ? memRaw.length
+      ? `${memRaw.length} file${memRaw.length === 1 ? "" : "s"}: ${memRaw.join(", ")}`
+      : "none"
+    : String(memRaw || "—");
   const skillsRaw = manifestData?.skills || manifestData?.skillsDetail || [];
-  const skills = Array.isArray(skillsRaw) ? (skillsRaw.length ? skillsRaw.map((s) => `${s.id} v${s.version}`).join(", ") : "none") : String(skillsRaw || "—");
+  const skills = Array.isArray(skillsRaw)
+    ? skillsRaw.length
+      ? skillsRaw.map((s) => `${s.id} v${s.version}`).join(", ")
+      : "none"
+    : String(skillsRaw || "—");
   const toolsRaw = manifestData?.toolNames || [];
-  const toolCount = manifestData?.toolCount || (Array.isArray(toolsRaw) ? toolsRaw.length : manifestData?.tools || 0);
-  const tools = Array.isArray(toolsRaw) && toolsRaw.length ? `${toolCount} tools: ${toolsRaw.join(", ")}` : `${toolCount || "—"} tools`;
+  const toolCount =
+    manifestData?.toolCount ||
+    (Array.isArray(toolsRaw) ? toolsRaw.length : manifestData?.tools || 0);
+  const tools =
+    Array.isArray(toolsRaw) && toolsRaw.length
+      ? `${toolCount} tools: ${toolsRaw.join(", ")}`
+      : `${toolCount || "—"} tools`;
   const tier = manifestData?.trustTier ? ` · tier: ${manifestData.trustTier}` : "";
   const tokens = manifestData?.tokenEstimate ? ` · ${manifestData.tokenEstimate}` : "";
-  const excluded = state.excludedFromRun.size > 0
-    ? `<div class="ap-row"><span class="ap-label">Excluded from this run:</span><span class="ap-value">${escapeHtml([...state.excludedFromRun].join(", "))}</span></div>`
-    : "";
+  const excluded =
+    state.excludedFromRun.size > 0
+      ? `<div class="ap-row"><span class="ap-label">Excluded from this run:</span><span class="ap-value">${escapeHtml([...state.excludedFromRun].join(", "))}</span></div>`
+      : "";
   summary.innerHTML =
     `<div class="ap-row"><span class="ap-label">Model:</span><span class="ap-value">${escapeHtml(model)}${escapeHtml(tier)}${escapeHtml(tokens)}</span></div>` +
     `<div class="ap-row"><span class="ap-label">Memory:</span><span class="ap-value">${escapeHtml(mem)}</span></div>` +
@@ -78,7 +94,8 @@ function showCompactionGate(data) {
   if (!summary) return;
   const removed = data?.removedCount ?? "?";
   const kept = data?.keptRecent ?? "?";
-  const before = data?.tokensBefore != null ? Number(data.tokensBefore).toLocaleString("en-US") : "?";
+  const before =
+    data?.tokensBefore != null ? Number(data.tokensBefore).toLocaleString("en-US") : "?";
   const after = data?.tokensAfter != null ? Number(data.tokensAfter).toLocaleString("en-US") : "?";
   const saved = data?.savedTo || "—";
   summary.innerHTML =

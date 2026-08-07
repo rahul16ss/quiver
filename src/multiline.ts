@@ -84,10 +84,7 @@ export async function promptUser(
  * Single-line prompt — approvals, confirmations, mid-run steering.
  * Uses @clack/prompts `text` in both TTY and non-TTY. Returns "" on cancel.
  */
-export async function promptLine(
-  _rl: unknown,
-  promptText: string,
-): Promise<string> {
+export async function promptLine(_rl: unknown, promptText: string): Promise<string> {
   const cleanPrompt = promptText.replace(ANSI_RE, "");
 
   // Non-TTY (pipes, CI, GUI --json IPC): @clack `text` cancels immediately on a
@@ -197,10 +194,7 @@ function strWidth(s: string): number {
 
 // ─── Custom raw-mode TTY editor ─────────────────────────────────────────────
 
-async function editLine(
-  promptText: string,
-  prefill?: string,
-): Promise<string | null> {
+async function editLine(promptText: string, prefill?: string): Promise<string | null> {
   const stdin = process.stdin as NodeJS.Socket & {
     setRawMode?(mode: boolean): void;
   };
@@ -397,7 +391,7 @@ async function editLine(
   function historyNext(): void {
     if (hist.length === 0 || histIndex === hist.length) return;
     histIndex += 1;
-    buffer = histIndex === hist.length ? draft : hist[histIndex] ?? "";
+    buffer = histIndex === hist.length ? draft : (hist[histIndex] ?? "");
     cursor = buffer.length;
   }
 
@@ -464,9 +458,7 @@ async function editLine(
   function menuExactMatch(): boolean {
     const q = buffer.trim().toLowerCase();
     if (!q) return false;
-    return SLASH_COMMANDS.some(
-      (sc) => sc.name === q || sc.aliases.includes(q),
-    );
+    return SLASH_COMMANDS.some((sc) => sc.name === q || sc.aliases.includes(q));
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
@@ -494,8 +486,7 @@ async function editLine(
     const beforeLines = before.split("\n");
     const cLine = beforeLines.length - 1;
     const cColText = beforeLines[beforeLines.length - 1];
-    const colInLine =
-      (cLine === 0 ? promptWidth : contWidth) + strWidth(cColText);
+    const colInLine = (cLine === 0 ? promptWidth : contWidth) + strWidth(cColText);
 
     // ── Windowing (huge-paste UX) ────────────────────────────────────────
     // Drawing the whole buffer on every keystroke floods the terminal on a
@@ -638,8 +629,7 @@ async function editLine(
     if (menu.length > 0) {
       endRow = drawnRows;
     } else {
-      endRow =
-        lastDrawnW > 0 && lastDrawnW % c === 0 ? drawnRows : drawnRows - 1;
+      endRow = lastDrawnW > 0 && lastDrawnW % c === 0 ? drawnRows : drawnRows - 1;
     }
 
     stdout.write("\r");

@@ -17,13 +17,13 @@ import type { ModelInfo } from "../providers/types.js";
 // ─── Types ───────────────────────────────────────────────────────────
 
 export interface TokenBudget {
-  system: number;      // T_sys — system prompt tokens
-  memory: number;      // T_mem — memory context tokens
-  tools: number;       // T_tools — tool definitions tokens
-  buffer: number;      // T_buf — conversation buffer tokens
-  reserve: number;    // T_reserve — reserved for model output
-  total: number;      // Sum of all above
-  maxContext: number;  // C_max — model context window
+  system: number; // T_sys — system prompt tokens
+  memory: number; // T_mem — memory context tokens
+  tools: number; // T_tools — tool definitions tokens
+  buffer: number; // T_buf — conversation buffer tokens
+  reserve: number; // T_reserve — reserved for model output
+  total: number; // Sum of all above
+  maxContext: number; // C_max — model context window
   compactionThreshold: number; // 0.85 × C_max
   utilization: number; // total / maxContext (0-1)
   needsCompaction: boolean;

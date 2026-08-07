@@ -1,5 +1,3 @@
-import { promises as fs } from "fs";
-import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";

@@ -29,10 +29,7 @@ import * as fs from "fs/promises";
 import { AuditChain } from "../logger.js";
 import { buildScratchpad } from "./scratchpad_helpers.js";
 import { classifyCommand } from "../security/command_policy.js";
-import {
-  resolveTargetedChecks,
-  serializeCheckFilter,
-} from "./checker_filter.js";
+import { resolveTargetedChecks, serializeCheckFilter } from "./checker_filter.js";
 import { validateEvidenceFile } from "../evidence/tracker.js";
 import { compare as compareBenchmark } from "../document/bar_critic.js";
 import { config } from "../config.js";
@@ -66,9 +63,7 @@ export async function validateEvidenceForDocument(
   if (result.missing) {
     return {
       valid: false,
-      problems: result.problems.length
-        ? result.problems
-        : ["Evidence.json companion is missing"],
+      problems: result.problems.length ? result.problems : ["Evidence.json companion is missing"],
       evidencePath: result.evidencePath,
     };
   }
@@ -120,26 +115,6 @@ export interface CheckerResult {
 // If .quiver/acceptance.md exists → non-code workspace (run structural checks).
 // Otherwise → fallback (basic file validation).
 
-type WorkspaceType = "code" | "acceptance-md" | "fallback";
-
-async function detectWorkspaceType(
-  workspaceRoot: string,
-): Promise<WorkspaceType> {
-  try {
-    await fs.access(path.join(workspaceRoot, "tests", "run_tests.ts"));
-    return "code";
-  } catch {
-    /* not a code project */
-  }
-  try {
-    await fs.access(path.join(workspaceRoot, ".quiver", "acceptance.md"));
-    return "acceptance-md";
-  } catch {
-    /* no acceptance.md */
-  }
-  return "fallback";
-}
-
 // ─── Structural checks for non-code workspaces ────────────────────────
 // Deterministic checks that don't require a test framework. These validate
 // basic file integrity: exists, non-empty, valid UTF-8, no obvious secrets,
@@ -148,11 +123,7 @@ async function detectWorkspaceType(
 interface StructuralCheck {
   id: string;
   description: string;
-  fn: (
-    workspaceRoot: string,
-    toolName?: string,
-    toolArgs?: any,
-  ) => Promise<boolean>;
+  fn: (workspaceRoot: string, toolName?: string, toolArgs?: any) => Promise<boolean>;
 }
 
 const STRUCTURAL_CHECKS: StructuralCheck[] = [
@@ -208,8 +179,7 @@ const STRUCTURAL_CHECKS: StructuralCheck[] = [
   },
   {
     id: "FILE-NO-PLACEHOLDERS",
-    description:
-      "written file must not contain TODO/FIXME/XXX/PLACEHOLDER markers",
+    description: "written file must not contain TODO/FIXME/XXX/PLACEHOLDER markers",
     fn: async (_root, toolName, toolArgs) => {
       if (!toolName || !toolArgs) return false;
       if (toolName !== "write_file") return true;
@@ -236,13 +206,8 @@ interface AcceptanceCriterion {
   section: string;
 }
 
-async function parseAcceptanceMd(
-  workspaceRoot: string,
-): Promise<AcceptanceCriterion[]> {
-  const content = await fs.readFile(
-    path.join(workspaceRoot, ".quiver", "acceptance.md"),
-    "utf8",
-  );
+async function parseAcceptanceMd(workspaceRoot: string): Promise<AcceptanceCriterion[]> {
+  const content = await fs.readFile(path.join(workspaceRoot, ".quiver", "acceptance.md"), "utf8");
   const criteria: AcceptanceCriterion[] = [];
   let currentSection = "General";
   let counter = 0;
@@ -304,9 +269,7 @@ async function runAcceptanceMdChecks(
   }
 
   const failedChecks = criteria.map(
-    (c) =>
-      `ACCEPTANCE-MD-UNSUPPORTED/${c.section}/${c.id}` +
-      (structuralOk ? "" : "+STRUCTURAL"),
+    (c) => `ACCEPTANCE-MD-UNSUPPORTED/${c.section}/${c.id}` + (structuralOk ? "" : "+STRUCTURAL"),
   );
   return {
     passed: 0,
@@ -399,8 +362,7 @@ export async function runChecker(
   const _sandboxReadOnly = sandbox.readOnly;
   const _sandboxNoNetwork = sandbox.noNetwork;
   const _sandboxNoEnv = sandbox.noEnv;
-  const targeted =
-    toolName && toolArgs ? resolveTargetedChecks(toolName, toolArgs) : null;
+  const targeted = toolName && toolArgs ? resolveTargetedChecks(toolName, toolArgs) : null;
 
   // ── Step 1: Gather deterministic evidence ──────────────────────────
 
@@ -408,8 +370,18 @@ export async function runChecker(
 
   // 1a. Run npm test suite if it exists (code projects)
   const hasTestSuite = await fileExists(path.join(workspaceRoot, "tests", "run_tests.ts"));
-  let testResults: { ran: boolean; passed: number; failed: number; total: number; failedChecks: string[] } = {
-    ran: false, passed: 0, failed: 0, total: 0, failedChecks: [],
+  let testResults: {
+    ran: boolean;
+    passed: number;
+    failed: number;
+    total: number;
+    failedChecks: string[];
+  } = {
+    ran: false,
+    passed: 0,
+    failed: 0,
+    total: 0,
+    failedChecks: [],
   };
 
   if (hasTestSuite) {
@@ -419,7 +391,9 @@ export async function runChecker(
       failed += testResults.failed;
       total += testResults.total;
       failedChecks.push(...testResults.failedChecks);
-      evidence.push(`Acceptance tests: ${testResults.passed}/${testResults.total} passed${testResults.failedChecks.length ? ` (failed: ${testResults.failedChecks.join(", ")})` : ""}.`);
+      evidence.push(
+        `Acceptance tests: ${testResults.passed}/${testResults.total} passed${testResults.failedChecks.length ? ` (failed: ${testResults.failedChecks.join(", ")})` : ""}.`,
+      );
     } else {
       failed++;
       total++;
@@ -435,7 +409,9 @@ export async function runChecker(
     failed += structResult.failed;
     total += structResult.total;
     failedChecks.push(...structResult.failedChecks);
-    evidence.push(`Structural checks: ${structResult.passed}/${structResult.total} passed${structResult.failedChecks.length ? ` (failed: ${structResult.failedChecks.join(", ")})` : ""}.`);
+    evidence.push(
+      `Structural checks: ${structResult.passed}/${structResult.total} passed${structResult.failedChecks.length ? ` (failed: ${structResult.failedChecks.join(", ")})` : ""}.`,
+    );
   }
 
   // 1c. Evidence validation (for office_doc writes)
@@ -446,7 +422,9 @@ export async function runChecker(
       failedChecks.push(...evResult.problems.map((p) => `EVIDENCE/${p}`));
       failed += evResult.problems.length;
       total += evResult.problems.length;
-      evidence.push(`Evidence validation: ${evResult.problems.length} problem(s) — ${evResult.problems.join("; ")}.`);
+      evidence.push(
+        `Evidence validation: ${evResult.problems.length} problem(s) — ${evResult.problems.join("; ")}.`,
+      );
     } else {
       evidence.push("Evidence validation: all claims sourced or flagged.");
     }
@@ -473,9 +451,7 @@ export async function runChecker(
       failedChecks.push(failure);
       failed++;
       total++;
-      evidence.push(
-        `Bar comparison: failed to run (${err?.message || String(err)}).`,
-      );
+      evidence.push(`Bar comparison: failed to run (${err?.message || String(err)}).`);
     }
   }
 
@@ -490,8 +466,7 @@ export async function runChecker(
   const checkerModel = config.checkerModelName;
   const checkerBaseUrl = resolveCheckerBaseUrl() || config.checkerBaseUrl;
   const checkerConfigured = Boolean(checkerModel && checkerBaseUrl);
-  const checkerRemoteApproved =
-    process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1";
+  const checkerRemoteApproved = process.env.QUIVER_CHECKER_REMOTE_APPROVED === "1";
   let checkerModelUnavailable = false;
   let checkerIsLocal = false;
   try {
@@ -544,9 +519,11 @@ export async function runChecker(
   // If either says revise/reject, the final verdict is revise/reject.
 
   const deterministicVerdict: CheckerVerdict =
-    total > 0 && failed === 0 ? "approve" :
-    total > 0 && failed > 0 ? "revise" :
-    "reject" as CheckerVerdict; // no deterministic checks ran → not verified
+    total > 0 && failed === 0
+      ? "approve"
+      : total > 0 && failed > 0
+        ? "revise"
+        : ("reject" as CheckerVerdict); // no deterministic checks ran → not verified
 
   let verdict: CheckerVerdict;
   if (modelVerdict) {
@@ -581,7 +558,12 @@ export async function runChecker(
 // ─── Helper: file exists ──────────────────────────────────────────────
 
 async function fileExists(p: string): Promise<boolean> {
-  try { await fs.access(p); return true; } catch { return false; }
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Helper: read deliverable content (truncated) ──────────────────────
@@ -601,27 +583,34 @@ async function runAcceptanceTestSuite(
   workspaceRoot: string,
   sandbox: typeof CHECKER_SANDBOX,
   targeted: ReturnType<typeof resolveTargetedChecks> | null,
-): Promise<{ ran: boolean; passed: number; failed: number; total: number; failedChecks: string[] }> {
+): Promise<{
+  ran: boolean;
+  passed: number;
+  failed: number;
+  total: number;
+  failedChecks: string[];
+}> {
   const scratchDir = await buildScratchpad(workspaceRoot);
   // Ensure templates/ is present
   try {
     await fs.access(path.join(scratchDir, "templates"));
   } catch {
-    try { await fs.cp(path.join(workspaceRoot, "templates"), path.join(scratchDir, "templates"), { recursive: true }); } catch {}
+    try {
+      await fs.cp(path.join(workspaceRoot, "templates"), path.join(scratchDir, "templates"), {
+        recursive: true,
+      });
+    } catch {}
   }
 
-  const childEnv = createIsolatedEnv(
-    ["PATH", "USER", "LANG", "TERM"],
-    {
-      scratchDir,
-      protectedDir: workspaceRoot,
-      overrides: {
-        LANG: process.env.LANG || "en_US.UTF-8",
-        TERM: process.env.TERM || "dumb",
-        QUIVER_NO_COLOR: "1",
-      },
+  const childEnv = createIsolatedEnv(["PATH", "USER", "LANG", "TERM"], {
+    scratchDir,
+    protectedDir: workspaceRoot,
+    overrides: {
+      LANG: process.env.LANG || "en_US.UTF-8",
+      TERM: process.env.TERM || "dumb",
+      QUIVER_NO_COLOR: "1",
     },
-  );
+  });
   if (config.checkerModelName) childEnv["CHECKER_LLM_MODEL_NAME"] = config.checkerModelName;
   if (config.checkerBaseUrl) childEnv["CHECKER_LLM_API_BASE_URL"] = config.checkerBaseUrl;
   if (sandbox.noEnv) childEnv["QUIVER_CHECKER_NO_ENV"] = "1";
@@ -649,10 +638,17 @@ async function runAcceptanceTestSuite(
       child.stderr?.on("data", (d) => (buf += d.toString()));
       child.on("exit", () => resolve(buf));
       child.on("error", () => resolve(buf));
-      setTimeout(() => { try { child.kill("SIGKILL"); } catch {} resolve(buf); }, 180000);
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+        resolve(buf);
+      }, 180000);
     });
 
-    const failMatch = out.match(/(\d+)\/(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+FAILED/);
+    const failMatch = out.match(
+      /(\d+)\/(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+FAILED/,
+    );
     const passMatch = out.match(/All\s+(\d+)\s+(?:targeted\s+)?spec\s+acceptance\s+checks\s+met/);
     if (passMatch) {
       const total = parseInt(passMatch[1], 10);
@@ -732,7 +728,9 @@ interface ModelEvalInput {
   workspaceRoot?: string;
 }
 
-async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: CheckerVerdict; reasoning: string }> {
+async function runModelEvaluation(
+  input: ModelEvalInput,
+): Promise<{ verdict: CheckerVerdict; reasoning: string }> {
   const systemPrompt =
     `You are the VP CHECKER — a structurally isolated verifier that independently evaluates the Associate (maker)'s work. ` +
     `You never certify your own work and you never treat a saved file as final by itself.\n\n` +
@@ -788,22 +786,17 @@ async function runModelEvaluation(input: ModelEvalInput): Promise<{ verdict: Che
     throw new Error("Checker model did not return JSON");
   }
   const parsed = JSON.parse(jsonMatch[0]);
-  const verdict = (["approve", "revise", "reject"].includes(parsed.verdict) ? parsed.verdict : "revise") as CheckerVerdict;
+  const verdict = (
+    ["approve", "revise", "reject"].includes(parsed.verdict) ? parsed.verdict : "revise"
+  ) as CheckerVerdict;
   const reasoning = String(parsed.reasoning || "No reasoning provided").substring(0, 500);
-  const visionNote =
-    vision.imageCount > 0
-      ? ` [vision: ${vision.imageCount} image(s)]`
-      : "";
+  const visionNote = vision.imageCount > 0 ? ` [vision: ${vision.imageCount} image(s)]` : "";
   return { verdict, reasoning: reasoning + visionNote };
 }
 
 // ─── Audit + override (US-15.4) ───────────────────────────────────────
 
-const CHECKER_AUDIT_FILE = path.join(
-  os.homedir(),
-  ".quiver",
-  "checker_audit.json",
-);
+const CHECKER_AUDIT_FILE = path.join(os.homedir(), ".quiver", "checker_audit.json");
 
 async function logCheckerVerdict(result: CheckerResult): Promise<void> {
   try {
@@ -901,8 +894,7 @@ export function isHighRisk(toolName: string, toolArgs?: any): boolean {
 
   // For run_command, classify the actual command string
   if (toolName === "run_command") {
-    const commandStr: string =
-      typeof toolArgs?.command === "string" ? toolArgs.command : "";
+    const commandStr: string = typeof toolArgs?.command === "string" ? toolArgs.command : "";
     if (!commandStr) return true;
 
     const classification = classifyCommand(commandStr);

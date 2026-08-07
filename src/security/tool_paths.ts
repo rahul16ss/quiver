@@ -61,7 +61,9 @@ export function assertToolPathAllowed(
   if (config.sandboxDisabled) {
     const absolutePath = path.resolve(filePath);
     let realPath = absolutePath;
-    try { realPath = realpathSync(absolutePath); } catch {}
+    try {
+      realPath = realpathSync(absolutePath);
+    } catch {}
     // Even with the sandbox off, GUI-spawned sessions may never write into
     // Quiver's own installation tree (QUIVER_PROTECTED_DIR) — the
     // self-modification guard is not bypassable from the app (Epic 2 §2.5).
@@ -105,7 +107,9 @@ export function assertToolPathAllowed(
       if (scratchPath) {
         ensureScratchDir(workspaceRoot);
         const scratchParent = path.dirname(scratchPath);
-        try { mkdirSync(scratchParent, { recursive: true }); } catch {}
+        try {
+          mkdirSync(scratchParent, { recursive: true });
+        } catch {}
         return {
           inputPath: filePath,
           absolutePath: scratchPath,

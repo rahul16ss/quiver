@@ -29,7 +29,7 @@
 
 import picocolors from "picocolors";
 import { config } from "./config.js";
-import { theme } from "./cli_ui.js";
+
 import { isHighRisk, runChecker } from "./subagents/checker.js";
 
 // ─── Hook Types ───────────────────────────────────────────────────────
@@ -82,9 +82,7 @@ export interface HookResult {
   abortReason?: string;
 }
 
-export type HookFn = (
-  ctx: LifecycleContext,
-) => Promise<HookResult | void> | HookResult | void;
+export type HookFn = (ctx: LifecycleContext) => Promise<HookResult | void> | HookResult | void;
 
 interface HookEntry {
   id: string;
@@ -110,12 +108,7 @@ export class LifecycleHookRegistry {
    * @param fn - The hook function to execute.
    * @param description - Human-readable description for transparency.
    */
-  register(
-    stage: LifecycleStage,
-    id: string,
-    fn: HookFn,
-    description: string = "",
-  ): void {
+  register(stage: LifecycleStage, id: string, fn: HookFn, description: string = ""): void {
     const entry: HookEntry = { id, stage, fn, description };
     if (!this.hooks.has(stage)) {
       this.hooks.set(stage, []);
@@ -228,9 +221,7 @@ export class LifecycleHookRegistry {
         // Non-security hooks: log and continue
         if (config.outputMode === "interactive") {
           process.stderr.write(
-            picocolors.yellow(
-              `  Hook '${entry.id}' at ${stage} threw: ${error.message}\n`,
-            ),
+            picocolors.yellow(`  Hook '${entry.id}' at ${stage} threw: ${error.message}\n`),
           );
         }
       }
@@ -341,8 +332,7 @@ export function registerBuiltinHooks(
       // self-certify. Ambient characteristic of the harness (no opt-out).
       if (ctx.toolCall && isHighRisk(ctx.toolCall.name, ctx.toolCall.args)) {
         const changeHash = String(
-          ctx.metadata?.changeHash ??
-            `${ctx.sessionId}:${ctx.loopCount}:${ctx.toolCall.name}`,
+          ctx.metadata?.changeHash ?? `${ctx.sessionId}:${ctx.loopCount}:${ctx.toolCall.name}`,
         );
         const verdict = await runChecker(
           changeHash,
@@ -417,9 +407,7 @@ export async function wrapModelCall(
   // BEFORE_MODEL: fire hooks that inspect/modify the context payload
   const beforeResult = await lifecycleRegistry.fire("BEFORE_MODEL", ctx);
   if (beforeResult.abort) {
-    throw new Error(
-      `Pipeline aborted at BEFORE_MODEL: ${beforeResult.abortReason}`,
-    );
+    throw new Error(`Pipeline aborted at BEFORE_MODEL: ${beforeResult.abortReason}`);
   }
   if (beforeResult.shortCircuit) {
     return beforeResult.value;
@@ -428,9 +416,7 @@ export async function wrapModelCall(
   // wrap_model_call: fire hooks that audit the inference step
   const wrapResult = await lifecycleRegistry.fire("wrap_model_call", ctx);
   if (wrapResult.abort) {
-    throw new Error(
-      `Pipeline aborted at wrap_model_call: ${wrapResult.abortReason}`,
-    );
+    throw new Error(`Pipeline aborted at wrap_model_call: ${wrapResult.abortReason}`);
   }
   if (wrapResult.shortCircuit) {
     ctx.modelResponse = wrapResult.value;
@@ -497,7 +483,7 @@ export async function wrapToolCall(
     }
     throw new Error(
       `Pipeline aborted at wrap_tool_call: ${wrapResult.abortReason}` +
-      (rollbackError ? ` (rollback also failed: ${rollbackError})` : ""),
+        (rollbackError ? ` (rollback also failed: ${rollbackError})` : ""),
     );
   }
 

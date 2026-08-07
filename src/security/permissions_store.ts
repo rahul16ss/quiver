@@ -24,13 +24,7 @@ export interface PersistedPermissions {
 }
 
 function storePath(): string {
-  return path.join(
-    os.homedir(),
-    ".quiver",
-    "projects",
-    getProjectId(),
-    "permissions.json",
-  );
+  return path.join(os.homedir(), ".quiver", "projects", getProjectId(), "permissions.json");
 }
 
 /**
@@ -46,9 +40,7 @@ export async function loadPermissions(): Promise<PersistedPermissions | null> {
     if (!data || typeof data !== "object") return null;
     return {
       tier: data.tier ?? null,
-      grantOverrides: Array.isArray(data.grantOverrides)
-        ? data.grantOverrides
-        : undefined,
+      grantOverrides: Array.isArray(data.grantOverrides) ? data.grantOverrides : undefined,
       savedAt: data.savedAt ?? new Date().toISOString(),
     };
   } catch {

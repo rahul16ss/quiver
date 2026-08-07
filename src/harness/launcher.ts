@@ -38,7 +38,9 @@ export interface LauncherState {
  * the daemon (workflow allowlist) call this so the SAME pack drives the whole
  * production browser path — model routing AND runnable workflows.
  */
-export async function resolveProductionPack(): Promise<import("./customer-pack.js").CustomerPack | undefined> {
+export async function resolveProductionPack(): Promise<
+  import("./customer-pack.js").CustomerPack | undefined
+> {
   return resolveProductionPackImpl();
 }
 
@@ -50,7 +52,8 @@ export async function resolveProductionPack(): Promise<import("./customer-pack.j
  * error when no provider is configured — never substitutes a mock success.
  *
  * Demo transports exist only behind buildDemoEngine() (tests) and are visibly
- * labelled. No production caller may use buildDemoEngine().
+ * labelled. No production caller may use buildDemoEngine(). Chat-mode engines
+ * come from ProductionRuntime.createChatEngine().
  */
 export async function buildProductionEngine(
   pack?: import("./customer-pack.js").CustomerPack,
@@ -59,7 +62,8 @@ export async function buildProductionEngine(
     // Install the below-app-layer network guard at the production entry
     // (also installed inside buildProductionRuntime; this keeps the launcher
     // composition root explicitly responsible for air-gap enforcement).
-    const { resolveDeploymentProfile, installNetworkGuard } = await import("../security/execution_context.js");
+    const { resolveDeploymentProfile, installNetworkGuard } =
+      await import("../security/execution_context.js");
     installNetworkGuard(resolveDeploymentProfile());
     const runtime = await buildProductionRuntime({ pack });
     return runtime.engine;
@@ -81,6 +85,7 @@ export async function buildProductionEngine(
  * Exists solely so harness tests can exercise the goal-loop state machine
  * without a live model. Visibly labelled; no production caller.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- acceptance-pinned: the contract requires this labelled demo seam to exist, unreachable from production
 async function buildDemoEngine(): Promise<import("./interfaces.js").ExecutionEngine> {
   const DEMO_ENGINE = true; // labelled sentinel — no production caller (ADR-009 §5)
   void DEMO_ENGINE;
@@ -88,23 +93,47 @@ async function buildDemoEngine(): Promise<import("./interfaces.js").ExecutionEng
   const { SqliteCheckpointSaver } = await import("./sqlite-checkpoint.js");
   const { ModelProfileRegistry, starterCatalog } = await import("./model-profile.js");
   const { LocalModelClient } = await import("./model-client.js");
-  const saver = new SqliteCheckpointSaver(path.join(os.homedir(), ".quiver", "harness-checkpoints.db"));
+  const saver = new SqliteCheckpointSaver(
+    path.join(os.homedir(), ".quiver", "harness-checkpoints.db"),
+  );
   const profiles = new ModelProfileRegistry();
   for (const pp of starterCatalog()) profiles.register(pp);
-  const mockTransport = { async invoke() { return { content: "OK all met", route: "local", usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } }; } };
+  const mockTransport = {
+    async invoke() {
+      return {
+        content: "OK all met",
+        route: "local",
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      };
+    },
+  };
   const model = new LocalModelClient(mockTransport, profiles);
-  const tools = { available: () => ["office_doc", "evidence", "deep_research"], async call(n: string, a: Record<string, unknown>) { return { ok: true, output: `${n}:${a.step}`, evidenceRefs: [`e-${a.step}`] }; } };
+  const tools = {
+    available: () => ["office_doc", "evidence", "deep_research"],
+    async call(n: string, a: Record<string, unknown>) {
+      return { ok: true, output: `${n}:${a.step}`, evidenceRefs: [`e-${a.step}`] };
+    },
+  };
   return new QuiverExecutionEngine(saver, model, tools as any, { maxIterations: 20 });
 }
 
 export class QuiverLauncher {
-  constructor(private statePath: string = path.join(os.homedir(), ".quiver", "daemon-state.json")) {}
+  constructor(
+    private statePath: string = path.join(os.homedir(), ".quiver", "daemon-state.json"),
+  ) {}
 
-  async start(opts: { roots?: string[]; port?: number; uiDir?: string } = {}): Promise<LauncherState> {
+  async start(
+    opts: { roots?: string[]; port?: number; uiDir?: string } = {},
+  ): Promise<LauncherState> {
     const secret = loadOrCreateSecret();
     const daemon = new QuiverDaemon({ secret, roots: opts.roots, uiDir: opts.uiDir });
     const { port, origin } = await daemon.listen(opts.port);
-    const state: LauncherState = { pid: process.pid, port, origin, startedAt: new Date().toISOString() };
+    const state: LauncherState = {
+      pid: process.pid,
+      port,
+      origin,
+      startedAt: new Date().toISOString(),
+    };
     fs.mkdirSync(path.dirname(this.statePath), { recursive: true });
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
     return state;
@@ -171,8 +200,15 @@ export class QuiverLauncher {
     if (opts.open !== false) {
       const { spawn } = await import("child_process");
       const url = `${origin}/#token=${encodeURIComponent(secret)}`;
-      const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-      try { spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref(); } catch {}
+      const cmd =
+        process.platform === "darwin"
+          ? "open"
+          : process.platform === "win32"
+            ? "start"
+            : "xdg-open";
+      try {
+        spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref();
+      } catch {}
     }
     return state;
   }
@@ -189,7 +225,9 @@ export class QuiverLauncher {
    * tool filtering. Full chat→engine unification remains deferred — see
    * NOTES/STATUS.md.
    */
-  async startBrowserUI(opts: { uiDir?: string; port?: number; open?: boolean } = {}): Promise<LauncherState> {
+  async startBrowserUI(
+    opts: { uiDir?: string; port?: number; open?: boolean } = {},
+  ): Promise<LauncherState> {
     // buildProductionEngine is the public engine entry; buildProductionRuntime
     // is the full composition root (jobs, broker, research, capabilities).
     const pack = await resolveProductionPack();
@@ -204,7 +242,12 @@ export class QuiverLauncher {
     }
     return this.startHarness(
       engine,
-      { ...opts, jobs: runtime.jobs, idempotency: runtime.idempotency, unavailable: runtime.unavailable },
+      {
+        ...opts,
+        jobs: runtime.jobs,
+        idempotency: runtime.idempotency,
+        unavailable: runtime.unavailable,
+      },
       pack ?? runtime.pack,
     );
   }
@@ -226,13 +269,23 @@ export class QuiverLauncher {
   }
 
   /** Diagnostics: check daemon reachability + connector presence. */
-  async diagnostics(): Promise<{ daemonReachable: boolean; secret: boolean; roots: string[]; unavailable?: string[] }> {
+  async diagnostics(): Promise<{
+    daemonReachable: boolean;
+    secret: boolean;
+    roots: string[];
+    unavailable?: string[];
+  }> {
     const st = this.status();
     if (!st) return { daemonReachable: false, secret: false, roots: [] };
     try {
       const res = await fetch(`${st.origin}/health`);
-      const j = await res.json() as { status?: string };
-      return { daemonReachable: j.status === "ok", secret: true, roots: [], unavailable: st.unavailable };
+      const j = (await res.json()) as { status?: string };
+      return {
+        daemonReachable: j.status === "ok",
+        secret: true,
+        roots: [],
+        unavailable: st.unavailable,
+      };
     } catch {
       return { daemonReachable: false, secret: true, roots: [], unavailable: st.unavailable };
     }
@@ -242,7 +295,11 @@ export class QuiverLauncher {
   registerWorkspace(root: string): void {
     const rootsPath = this.statePath.replace("daemon-state.json", "workspace-roots.json");
     let roots: string[] = [];
-    try { roots = JSON.parse(fs.readFileSync(rootsPath, "utf8")); } catch { roots = []; }
+    try {
+      roots = JSON.parse(fs.readFileSync(rootsPath, "utf8"));
+    } catch {
+      roots = [];
+    }
     const abs = path.resolve(root);
     if (!roots.includes(abs)) roots.push(abs);
     fs.writeFileSync(rootsPath, JSON.stringify(roots, null, 2));
@@ -271,7 +328,12 @@ export async function runLauncherCli(args: string[]): Promise<number> {
       }
       const state = await launcher.startHarness(
         runtime.engine,
-        { open: true, jobs: runtime.jobs, idempotency: runtime.idempotency, unavailable: runtime.unavailable },
+        {
+          open: true,
+          jobs: runtime.jobs,
+          idempotency: runtime.idempotency,
+          unavailable: runtime.unavailable,
+        },
         runtime.pack,
       );
       console.log(`Quiver harness daemon on ${state.origin} (pid ${state.pid}) — opening browser…`);
@@ -279,7 +341,9 @@ export async function runLauncherCli(args: string[]): Promise<number> {
     }
     case "status": {
       const st = launcher.status();
-      console.log(st ? `running on ${st.origin} (pid ${st.pid}, since ${st.startedAt})` : "not running");
+      console.log(
+        st ? `running on ${st.origin} (pid ${st.pid}, since ${st.startedAt})` : "not running",
+      );
       return 0;
     }
     case "open": {
@@ -299,7 +363,9 @@ export async function runLauncherCli(args: string[]): Promise<number> {
     }
     case "help":
     case undefined:
-      console.log("quiver-daemon [start|harness|status|open|diagnostics|register-workspace <path>]");
+      console.log(
+        "quiver-daemon [start|harness|status|open|diagnostics|register-workspace <path>]",
+      );
       return 0;
     default:
       console.error(`unknown command: ${cmd}`);
@@ -312,10 +378,12 @@ export async function runLauncherCli(args: string[]): Promise<number> {
 // commands (status/open/diagnostics/register-workspace) have no server handle,
 // so the event loop drains and the process exits naturally.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runLauncherCli(process.argv.slice(2)).then((code) => {
-    if (code !== 0) process.exit(code);
-  }).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  runLauncherCli(process.argv.slice(2))
+    .then((code) => {
+      if (code !== 0) process.exit(code);
+    })
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
 }

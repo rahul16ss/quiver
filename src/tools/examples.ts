@@ -6,7 +6,12 @@
  */
 import { z } from "zod";
 import { Tool } from "../registry.js";
-import { promoteExample, listExamples, removeExample, loadExampleContext } from "../memory/examples_store.js";
+import {
+  promoteExample,
+  listExamples,
+  removeExample,
+  loadExampleContext,
+} from "../memory/examples_store.js";
 
 export const tool: Tool = {
   name: "examples",
@@ -14,9 +19,17 @@ export const tool: Tool = {
     "Episodic examples store (SPEC §7.4): promote a praised deliverable into a retrievable example the agent consults on future runs. " +
     "Actions: 'promote' (capture structure + provenance), 'list' (show the store), 'remove' <id>, 'context' (the loaded examples as episodic memory).",
   parameters: z.object({
-    action: z.enum(["promote", "list", "remove", "context"]).describe("promote|list|remove|context"),
-    filePath: z.string().optional().describe("Path to the finished deliverable to promote (required for 'promote')."),
-    note: z.string().optional().describe("Why this deliverable is a good example (required for 'promote')."),
+    action: z
+      .enum(["promote", "list", "remove", "context"])
+      .describe("promote|list|remove|context"),
+    filePath: z
+      .string()
+      .optional()
+      .describe("Path to the finished deliverable to promote (required for 'promote')."),
+    note: z
+      .string()
+      .optional()
+      .describe("Why this deliverable is a good example (required for 'promote')."),
     id: z.string().optional().describe("Example id to remove (required for 'remove')."),
   }),
   async execute(args) {
@@ -32,7 +45,9 @@ export const tool: Tool = {
     }
     if (args.action === "remove") {
       if (!args.id) return "Error: id is required for remove.";
-      return removeExample(args.id) ? `Removed example ${args.id}.` : `No example with id ${args.id}.`;
+      return removeExample(args.id)
+        ? `Removed example ${args.id}.`
+        : `No example with id ${args.id}.`;
     }
     // promote
     if (!args.filePath) return "Error: filePath is required for promote.";

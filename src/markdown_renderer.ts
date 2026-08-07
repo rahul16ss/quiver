@@ -21,7 +21,7 @@
  *    stdout is a TTY (interactive), so piped / JSON / CI output stays raw.
  */
 
-import { theme, type QuiverTheme, supportsColor } from "./cli_ui.js";
+import { theme, type QuiverTheme } from "./cli_ui.js";
 import wrapAnsi from "wrap-ansi";
 import stringWidth from "string-width";
 
@@ -133,9 +133,7 @@ export class TerminalMarkdownRenderer {
 
     if ((m = line.match(/^\s{0,3}>\s?(.*)$/))) {
       const text = m[1];
-      this.stream.write(
-        this.t.muted("  │ ") + this.t.dim(this.t.italic(this.inline(text))) + "\n",
-      );
+      this.stream.write(this.t.muted("  │ ") + this.t.dim(this.t.italic(this.inline(text))) + "\n");
       return;
     }
 
@@ -150,9 +148,7 @@ export class TerminalMarkdownRenderer {
       const level = Math.floor(indent.length / 2);
       const text = m[3];
       const bullet = level === 0 ? this.t.cyan("•") : this.t.muted("◦");
-      this.stream.write(
-        `${indent}${bullet} ${this.inlineAndWrap(text, indent.length + 2)}\n`,
-      );
+      this.stream.write(`${indent}${bullet} ${this.inlineAndWrap(text, indent.length + 2)}\n`);
       return;
     }
     if ((m = line.match(/^(\s*)(\d+)\.\s+(.*)$/))) {
@@ -202,7 +198,10 @@ export class TerminalMarkdownRenderer {
     const wrapWidth = Math.max(20, this.width - indent);
     const wrapped = wrapAnsi(styled, wrapWidth, { hard: true });
     const pad = " ".repeat(indent);
-    return wrapped.split("\n").map((l, i) => i === 0 ? l : pad + l).join("\n");
+    return wrapped
+      .split("\n")
+      .map((l, i) => (i === 0 ? l : pad + l))
+      .join("\n");
   }
 
   /** GFM table row split (handles leading/trailing pipes, escaped pipes). */
@@ -232,12 +231,14 @@ export class TerminalMarkdownRenderer {
     }
     const sep = "│";
     const renderRow = (cells: string[], isHeader: boolean) => {
-      const out = cells.map((cell, i) => {
-        const s = this.inline(cell);
-        const pad = " ".repeat(Math.max(0, widths[i] - stringWidth(cell)));
-        const left = isHeader ? this.t.bold(s) : s;
-        return ` ${left}${pad} `;
-      }).join(sep);
+      const out = cells
+        .map((cell, i) => {
+          const s = this.inline(cell);
+          const pad = " ".repeat(Math.max(0, widths[i] - stringWidth(cell)));
+          const left = isHeader ? this.t.bold(s) : s;
+          return ` ${left}${pad} `;
+        })
+        .join(sep);
       this.stream.write("  " + sep + out + sep + "\n");
     };
     // Header

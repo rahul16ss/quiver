@@ -108,19 +108,13 @@ function parsePatch(patchText: string): PatchFile[] {
     // (which would silently consume the next real line — M8).
     if (
       currentHunk &&
-      (line.startsWith(" ") ||
-        line.startsWith("+") ||
-        line.startsWith("-") ||
-        line === "")
+      (line.startsWith(" ") || line.startsWith("+") || line.startsWith("-") || line === "")
     ) {
       if (line === "") {
         const next = lines[i + 1];
         const interior =
           next !== undefined &&
-          (next.startsWith(" ") ||
-            next.startsWith("+") ||
-            next.startsWith("-") ||
-            next === "");
+          (next.startsWith(" ") || next.startsWith("+") || next.startsWith("-") || next === "");
         if (!interior) {
           // trailing artifact / separator — end the hunk here
           currentHunk = null;
@@ -164,9 +158,7 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
   // New file creation
   if (patch.oldPath === null && patch.newPath !== null) {
     const newContent = patch.hunks
-      .flatMap((h) =>
-        h.lines.filter((l) => l.startsWith("+")).map((l) => l.substring(1)),
-      )
+      .flatMap((h) => h.lines.filter((l) => l.startsWith("+")).map((l) => l.substring(1)))
       .join("\n");
     await atomicWrite(resolvedPath, newContent + "\n");
     return `Created new file: ${resolvedPath}`;
@@ -183,7 +175,12 @@ async function applyPatchFile(patch: PatchFile): Promise<string> {
   let readPath = resolvedPath;
   if (isScratchModeActive() && patch.oldPath) {
     const realAbs = path.resolve(patch.oldPath);
-    if (await fs.stat(resolvedPath).then(() => true).catch(() => false)) {
+    if (
+      await fs
+        .stat(resolvedPath)
+        .then(() => true)
+        .catch(() => false)
+    ) {
       readPath = resolvedPath; // scratch copy exists — continue editing
     } else {
       readPath = realAbs; // read from real file
@@ -282,9 +279,7 @@ export const tool: Tool = {
           const result = await applyPatchFile(file);
           results.push(result);
         } catch (error: any) {
-          results.push(
-            `Error patching ${file.newPath || file.oldPath}: ${error.message}`,
-          );
+          results.push(`Error patching ${file.newPath || file.oldPath}: ${error.message}`);
         }
       }
 

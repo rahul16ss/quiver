@@ -15,9 +15,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { executeWorkflow, onWorkflowEvent, type AgentCallback } from "./orchestrator.js";
-import { findWorkflow, discoverWorkflows } from "./loader.js";
-import type { WorkflowEvent } from "./types.js";
+import { executeWorkflow, type AgentCallback } from "./orchestrator.js";
+import { findWorkflow } from "./loader.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -75,7 +74,7 @@ function fieldMatches(field: string, value: number, max: number): boolean {
   return false;
 }
 
-function partMatches(part: string, value: number, max: number): boolean {
+function partMatches(part: string, value: number, _max: number): boolean {
   // Wildcard
   if (part === "*") return true;
 
@@ -149,12 +148,7 @@ export class WorkflowScheduler {
   /**
    * Add a new schedule.
    */
-  addSchedule(
-    workflow: string,
-    cron: string,
-    packsDir: string,
-    label?: string,
-  ): ScheduleEntry {
+  addSchedule(workflow: string, cron: string, packsDir: string, label?: string): ScheduleEntry {
     const store = loadStore();
 
     const entry: ScheduleEntry = {

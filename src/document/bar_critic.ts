@@ -35,6 +35,7 @@
  */
 
 import { promises as fs } from "fs";
+import { existsSync } from "fs";
 import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -109,9 +110,8 @@ export function getBenchmarkDir(workspaceRoot: string): string | null {
   const dir = path.join(workspaceRoot, ".quiver", "benchmark");
   // Synchronous existence check for callers that need a quick gate.
   try {
-    const fsSync = require("fs");
-    if (!fsSync.existsSync(dir)) return null;
-    if (!fsSync.existsSync(path.join(dir, "bar.json"))) return null;
+    if (!existsSync(dir)) return null;
+    if (!existsSync(path.join(dir, "bar.json"))) return null;
     return dir;
   } catch {
     return null;
@@ -150,9 +150,9 @@ async function readStructure(filePath: string): Promise<DocStructure> {
   // outline --json → headings (section coverage)
   const outline = await runOfficeCli(["view", filePath, "outline", "--json"]);
   const outlineData = JSON.parse(outline.stdout);
-  const headings: string[] = (outlineData?.data?.headings ?? []).map(
-    (h: any) => String(h.text || "").trim(),
-  ).filter((s: string) => s.length > 0);
+  const headings: string[] = (outlineData?.data?.headings ?? [])
+    .map((h: any) => String(h.text || "").trim())
+    .filter((s: string) => s.length > 0);
 
   // stats --json → words, paragraphs, tables
   const stats = await runOfficeCli(["view", filePath, "stats", "--json"]);
@@ -171,7 +171,11 @@ async function readStructure(filePath: string): Promise<DocStructure> {
  * collapse whitespace. Lets "Executive Summary" match "Executive summary".
  */
 function normalizeHeading(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -179,7 +183,10 @@ function normalizeHeading(s: string): string {
  * normalized substring match). Drafts that add sections the benchmark
  * lacks are fine; drafts that omit benchmark sections are the gap.
  */
-function sectionCoverage(draftHeadings: string[], benchmarkHeadings: string[]): { ratio: number; missing: string[] } {
+function sectionCoverage(
+  draftHeadings: string[],
+  benchmarkHeadings: string[],
+): { ratio: number; missing: string[] } {
   if (benchmarkHeadings.length === 0) return { ratio: 1, missing: [] };
   const draftNorm = new Set(draftHeadings.map(normalizeHeading));
   const draftJoined = draftHeadings.map(normalizeHeading).join(" | ");
@@ -281,14 +288,20 @@ export async function compare(
 
   const wordRatio = benchmark.words > 0 ? draft.words / benchmark.words : 1;
   if (wordRatio < minRatio) {
-    gaps.push(`BAR/length: draft ${draft.words} words is ${wordRatio.toFixed(2)}x benchmark ${benchmark.words} (< ${minRatio}x — too short)`);
+    gaps.push(
+      `BAR/length: draft ${draft.words} words is ${wordRatio.toFixed(2)}x benchmark ${benchmark.words} (< ${minRatio}x — too short)`,
+    );
   } else if (wordRatio > maxRatio) {
-    gaps.push(`BAR/length: draft ${draft.words} words is ${wordRatio.toFixed(2)}x benchmark ${benchmark.words} (> ${maxRatio}x — too long)`);
+    gaps.push(
+      `BAR/length: draft ${draft.words} words is ${wordRatio.toFixed(2)}x benchmark ${benchmark.words} (> ${maxRatio}x — too long)`,
+    );
   }
 
   const tableParity = benchmark.tables > 0 ? draft.tables / benchmark.tables : 1;
   if (tableParity < minTables) {
-    gaps.push(`BAR/table-parity: draft has ${draft.tables} table(s) vs benchmark ${benchmark.tables} (parity ${tableParity.toFixed(2)} < ${minTables})`);
+    gaps.push(
+      `BAR/table-parity: draft has ${draft.tables} table(s) vs benchmark ${benchmark.tables} (parity ${tableParity.toFixed(2)} < ${minTables})`,
+    );
   }
 
   const met = gaps.length === 0;

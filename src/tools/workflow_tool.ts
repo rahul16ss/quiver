@@ -24,7 +24,7 @@ import { WorkflowScheduler, isValidCron, describeCron } from "../workflow/schedu
 import { WorkflowWatcher } from "../workflow/watcher.js";
 import { reviewManager } from "../workflow/review.js";
 import { generateHandover, writeHandover } from "../workflow/handover.js";
-import type { WorkflowDefinition, WorkflowPhase } from "../workflow/types.js";
+import type { WorkflowPhase } from "../workflow/types.js";
 
 // ─── Default packs directory ──────────────────────────────────────────
 
@@ -35,9 +35,7 @@ let activeAgentCallback: AgentCallback | undefined;
  * watched workflow runs. The CLI owns the Agent; this module only holds the
  * runtime adapter so workflow services do not create a second model loop.
  */
-export function setWorkflowAgentCallback(
-  callback: AgentCallback | undefined,
-): void {
+export function setWorkflowAgentCallback(callback: AgentCallback | undefined): void {
   activeAgentCallback = callback;
 }
 
@@ -71,30 +69,18 @@ export const tool: Tool = {
         "handover",
       ])
       .describe("The workflow action to perform"),
-    workflow: z
-      .string()
-      .optional()
-      .describe("Workflow name (e.g., 'investment-committee-memo')"),
-    run_id: z
-      .string()
-      .optional()
-      .describe("Workflow run ID (for status/cancel/review/handover)"),
+    workflow: z.string().optional().describe("Workflow name (e.g., 'investment-committee-memo')"),
+    run_id: z.string().optional().describe("Workflow run ID (for status/cancel/review/handover)"),
     cron: z
       .string()
       .optional()
       .describe("Cron expression for schedule action (e.g., '0 8 * * 1' for Monday 8am)"),
-    watch_dir: z
-      .string()
-      .optional()
-      .describe("Directory to watch for file triggers"),
+    watch_dir: z.string().optional().describe("Directory to watch for file triggers"),
     watch_pattern: z
       .string()
       .optional()
       .describe("File glob pattern for watch triggers (e.g., '*.xlsx')"),
-    reviewer: z
-      .string()
-      .optional()
-      .describe("Reviewer name for review decisions"),
+    reviewer: z.string().optional().describe("Reviewer name for review decisions"),
     review_role: z
       .string()
       .optional()
@@ -103,14 +89,8 @@ export const tool: Tool = {
       .enum(["approved", "rejected", "commented"])
       .optional()
       .describe("Review decision"),
-    comment: z
-      .string()
-      .optional()
-      .describe("Review comment"),
-    skip_phases: z
-      .array(z.string())
-      .optional()
-      .describe("Phases to skip during execution"),
+    comment: z.string().optional().describe("Review comment"),
+    skip_phases: z.array(z.string()).optional().describe("Phases to skip during execution"),
   }),
   execute: async (args: any) => {
     const packsDir = defaultPacksDir();
@@ -246,12 +226,7 @@ export const tool: Tool = {
           };
         }
         const scheduler = new WorkflowScheduler(activeAgentCallback);
-        const entry = scheduler.addSchedule(
-          args.workflow,
-          args.cron,
-          packsDir,
-          args.comment,
-        );
+        const entry = scheduler.addSchedule(args.workflow, args.cron, packsDir, args.comment);
         return {
           status: "ok",
           schedule_id: entry.id,

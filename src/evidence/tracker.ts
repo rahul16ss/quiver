@@ -23,12 +23,8 @@ import {
   type SourceRecord,
   type ClaimRecord,
   type RunRecord,
-  type RunRecordInput,
 } from "./model.js";
-import {
-  readEvidenceFile,
-  validateEvidenceModel,
-} from "./validator.js";
+import { readEvidenceFile, validateEvidenceModel } from "./validator.js";
 
 export class EvidenceFinalizationError extends Error {
   constructor(
@@ -38,9 +34,7 @@ export class EvidenceFinalizationError extends Error {
       summary: string;
     },
   ) {
-    super(
-      `Evidence finalization blocked: ${validation.problems.join("; ")}`,
-    );
+    super(`Evidence finalization blocked: ${validation.problems.join("; ")}`);
     this.name = "EvidenceFinalizationError";
   }
 }
@@ -75,10 +69,7 @@ export class EvidenceTracker {
     return { source_id: source.source_id, registered: true };
   }
 
-  excludeSource(
-    sourceId: string,
-    reason: string,
-  ): { source_id: string; excluded: boolean } {
+  excludeSource(sourceId: string, reason: string): { source_id: string; excluded: boolean } {
     if (this.finalized) {
       return { source_id: sourceId, excluded: false };
     }
@@ -190,9 +181,7 @@ export class EvidenceTracker {
       }
     }
     const approvedSourceIds = new Set(
-      [...this.sources.values()]
-        .filter((s) => s.approved)
-        .map((s) => s.source_id),
+      [...this.sources.values()].filter((s) => s.approved).map((s) => s.source_id),
     );
     // Explicitly excluded only — unapproved/pending is NOT the same as excluded.
     const excludedSourceIds = new Set(this.excludedSources.keys());
@@ -203,9 +192,7 @@ export class EvidenceTracker {
         claim.review_status === "flagged" ||
         claim.review_status === "unresolved";
       if (claim.source_ids.length === 0 && !isExplicitlyUnresolved) {
-        problems.push(
-          `${claim.claim_id} has no source references and is not marked unresolved`,
-        );
+        problems.push(`${claim.claim_id} has no source references and is not marked unresolved`);
       }
       for (const sourceId of claim.source_ids) {
         if (!this.sources.has(sourceId)) {
@@ -215,32 +202,22 @@ export class EvidenceTracker {
       // Check for excluded source references
       for (const srcId of claim.source_ids) {
         if (excludedSourceIds.has(srcId)) {
-          problems.push(
-            `${claim.claim_id} cites an excluded source (${srcId})`,
-          );
+          problems.push(`${claim.claim_id} cites an excluded source (${srcId})`);
         }
       }
 
       if (!claim.is_quantitative) continue;
 
-      const hasApprovedSource = claim.source_ids.some((id) =>
-        approvedSourceIds.has(id),
-      );
-      const isFlagged =
-        claim.review_status === "flagged" ||
-        claim.review_status === "unresolved";
+      const hasApprovedSource = claim.source_ids.some((id) => approvedSourceIds.has(id));
+      const isFlagged = claim.review_status === "flagged" || claim.review_status === "unresolved";
 
       if (!hasApprovedSource && !isFlagged) {
-        problems.push(
-          `${claim.claim_id} has no approved source and is not flagged/unresolved`,
-        );
+        problems.push(`${claim.claim_id} has no approved source and is not flagged/unresolved`);
       }
     }
 
     const totalClaims = this.claims.size;
-    const quantClaims = [...this.claims.values()].filter(
-      (c) => c.is_quantitative,
-    ).length;
+    const quantClaims = [...this.claims.values()].filter((c) => c.is_quantitative).length;
     const flaggedClaims = [...this.claims.values()].filter(
       (c) => c.review_status === "flagged" || c.review_status === "unresolved",
     ).length;
@@ -288,9 +265,10 @@ export class EvidenceTracker {
       date_line: dateLine,
       claims: [...this.claims.values()],
       sources: [...this.sources.values()],
-      sources_excluded: [...this.excludedSources.entries()].map(
-        ([source_id, reason]) => ({ source_id, reason }),
-      ),
+      sources_excluded: [...this.excludedSources.entries()].map(([source_id, reason]) => ({
+        source_id,
+        reason,
+      })),
       review_status: "draft_for_review",
       generated_at: now,
       generated_by: "live_agent",
@@ -304,9 +282,7 @@ export class EvidenceTracker {
       });
     }
 
-    const baseName = docFileName
-      ? docFileName.replace(/\.(docx|xlsx|pptx)$/, "")
-      : "Document";
+    const baseName = docFileName ? docFileName.replace(/\.(docx|xlsx|pptx)$/, "") : "Document";
     const evidenceFileName = `${baseName}_Evidence.json`;
     const runRecordFileName = `${baseName}_Run_Record.json`;
 
@@ -324,9 +300,10 @@ export class EvidenceTracker {
         file,
         sha256,
       })),
-      sources_excluded: [...this.excludedSources.entries()].map(
-        ([source_id, reason]) => ({ source_id, reason }),
-      ),
+      sources_excluded: [...this.excludedSources.entries()].map(([source_id, reason]) => ({
+        source_id,
+        reason,
+      })),
     };
 
     const runRecordPath = path.join(outputDir, runRecordFileName);

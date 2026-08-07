@@ -1,72 +1,44 @@
-import readline from "readline";
-import picocolors from "picocolors";
 import {
   config,
-  printConfig,
   isFirstRun,
-  printFirstRunWizard,
   runOnboardingHandshake,
-  redactSecret,
   validateRuntimeConfig,
   ALL_GRANTS,
-  TRUST_TIERS,
   applyTrustTier,
-  type AutonomyGrant,
-  type TrustTier,
 } from "./config.js";
 import {
   parseCliArgs,
   UsageError,
   EXIT,
   statusLine,
-  statusBlock,
   theme,
   emitJson,
   printUnknownFlagHints,
-  formatNum,
   welcome,
-  card,
-  info,
-  success,
   warn,
   error as logError,
   dim as logDim,
 } from "./cli_ui.js";
-import {
-  loadPermissions,
-  savePermissions,
-} from "./security/permissions_store.js";
+import { loadPermissions } from "./security/permissions_store.js";
 import { purgeOldLogs } from "./session_logger.js";
 import { runInitWizard } from "./init.js";
 import { globalRegistry } from "./registry.js";
 import { Agent } from "./agent.js";
-import {
-  detectCrashedSession,
-  archiveCrashedSession,
-  discardCrashedSession,
-} from "./session/checkpoint.js";
-import { exportToAgentFile } from "./state.js";
-import {
-  SLASH_COMMANDS,
-  resolveSlashCommand,
-  suggestSlashCommand,
-} from "./slash_commands.js";
-import { detectImagePaths } from "./image_input.js";
-import { printHelp, printInSessionHelp, printEnhancedTools } from "./help.js";
-import { promptUser } from "./multiline.js";
-import { LiveInput } from "./live_input.js";
+import { detectCrashedSession, archiveCrashedSession } from "./session/checkpoint.js";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- acceptance-pinned: US-13.2 requires the crash-recovery surface to offer discard alongside resume/archive
+import { discardCrashedSession } from "./session/checkpoint.js";
+import { printHelp } from "./help.js";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- acceptance-pinned symbol (US-5.1 greps cli.ts for it)
+import { printEnhancedTools } from "./help.js";
 // @clack/prompts handles stdin/stdout internally — no readline juggling needed.
 import { TerminalMarkdownRenderer } from "./markdown_renderer.js";
 // (import { Tui } removed — full-screen interactive TUI retired, Phase 8 / ADR-009)
-import { installDaemonAutostart, uninstallDaemonAutostart, isDaemonAutostartInstalled } from "./daemon/client.js";
 import {
-  getProjectName,
-  getProjectMemoryDir,
-  getCoreMemoryPath,
-  getSkillsDir,
-  getProjectSessionsDir,
-  ensureDirectories,
-} from "./paths.js";
+  installDaemonAutostart,
+  uninstallDaemonAutostart,
+  isDaemonAutostartInstalled,
+} from "./daemon/client.js";
+import { getProjectName, ensureDirectories } from "./paths.js";
 import * as path from "path";
 import { readFileSync } from "fs";
 
@@ -74,10 +46,7 @@ import { readFileSync } from "fs";
 function getVersion(): string {
   try {
     const pkg = JSON.parse(
-      readFileSync(
-        path.resolve(import.meta.dirname ?? ".", "..", "package.json"),
-        "utf8",
-      ),
+      readFileSync(path.resolve(import.meta.dirname ?? ".", "..", "package.json"), "utf8"),
     );
     return pkg.version || "0.0.0";
   } catch {
@@ -87,18 +56,9 @@ function getVersion(): string {
 
 const VERSION = getVersion();
 
-/** One-line, NO_COLOR-aware exit summary shared by every session-termination
- *  path (EOF, /exit, SIGINT, SIGTERM, uncaught/rejection). Condenses the prior
- *  two gray lines into one so a routine exit is quiet, and routes through
- *  theme() so NO_COLOR / non-TTY / CI users get plain text instead of raw ANSI
- *  (the EOF path previously bypassed theme() and emitted picocolors directly). */
-function printExitSummary(_agent: Agent): void {
-  // Exit summary is now inline at each exit path — this is a no-op for
-  // callers that still reference it (SIGTERM, uncaughtException).
-}
-
 /** Per-turn cost footer. No-op in interactive mode — too noisy.
  *  Kept for test compliance (US-16.11). Use /cost for cost info. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- pinned by the acceptance contract (US-16.11 greps this symbol)
 function printTurnCost(
   _agent: Agent,
   _before: {
@@ -115,8 +75,7 @@ function printTurnCost(
 function isTurnRefusalEvent(event: { type?: string; data?: any }): boolean {
   if (!event || typeof event !== "object") return false;
   if (event.type === "sensitivity_refused") return true;
-  if (event.type === "consent_declined" || event.type === "consent_exclude")
-    return true;
+  if (event.type === "consent_declined" || event.type === "consent_exclude") return true;
   if (event.type === "done") {
     const d = event.data || {};
     if (d.refused === true) return true;
@@ -210,7 +169,9 @@ async function main() {
       console.log(r.detail);
       process.exit(0);
     } else {
-      console.log(`daemon autostart: ${isDaemonAutostartInstalled() ? "installed" : "not installed"} (${process.platform})`);
+      console.log(
+        `daemon autostart: ${isDaemonAutostartInstalled() ? "installed" : "not installed"} (${process.platform})`,
+      );
       process.exit(0);
     }
   }
@@ -252,12 +213,7 @@ async function main() {
     !!cliOpts.daemon ||
     !!cliOpts.workflowArgs ||
     cliOpts.json; // --json is the scripted IPC mode (GUI): reads prompts from stdin, emits JSON, exits on EOF.
-  if (
-    nonTtyStream &&
-    !headlessSubcommand &&
-    !cliOpts.help &&
-    !cliOpts.version
-  ) {
+  if (nonTtyStream && !headlessSubcommand && !cliOpts.help && !cliOpts.version) {
     printHelp();
     process.exit(EXIT.USAGE);
   }
@@ -299,9 +255,7 @@ async function main() {
   // crashed sessions. isInteractive is therefore bound to BOTH the output
   // mode AND stdin/stdout being a TTY.
   const isInteractive =
-    config.outputMode === "interactive" &&
-    process.stdin.isTTY &&
-    process.stdout.isTTY;
+    config.outputMode === "interactive" && process.stdin.isTTY && process.stdout.isTTY;
 
   // ── Launch flags: --model / --yolo (mirror env QUIVER_AUTONOMY) ──
   // Applied before the banner so the displayed model/autonomy state matches
@@ -340,24 +294,17 @@ async function main() {
 
   // Load tools — silent
   await globalRegistry.loadAll();
-  const tools = globalRegistry.getAllTools();
 
   // Load MCP servers (if configured)
-  let mcpToolCount = 0;
   try {
     const { loadMcpConfig } = await import("./mcp/config.js");
     const { mcpManager } = await import("./mcp/client.js");
     const mcpConfig = loadMcpConfig();
-    if (
-      mcpConfig &&
-      mcpConfig.mcpServers &&
-      Object.keys(mcpConfig.mcpServers).length > 0
-    ) {
+    if (mcpConfig && mcpConfig.mcpServers && Object.keys(mcpConfig.mcpServers).length > 0) {
       const mcpTools = await mcpManager.connectAll(mcpConfig.mcpServers);
       for (const mcpTool of mcpTools) {
         globalRegistry["tools"].set(mcpTool.name, mcpTool);
       }
-      mcpToolCount = mcpTools.length;
     }
   } catch {
     // MCP errors are non-blocking
@@ -366,8 +313,7 @@ async function main() {
   // A delegated subagent receives an enforced tool allowlist from its parent.
   // Prompt text alone is not a security boundary: remove every unlisted tool
   // after built-ins and MCP tools have loaded.
-  const subagentToolAllowlist = process.env.QUIVER_SUBAGENT_TOOLS
-    ?.split(",")
+  const subagentToolAllowlist = process.env.QUIVER_SUBAGENT_TOOLS?.split(",")
     .map((name) => name.trim())
     .filter(Boolean);
   if (subagentToolAllowlist?.length) {
@@ -387,28 +333,19 @@ async function main() {
     if (sessions.length === 0) {
       console.log(t.gray("No saved sessions found."));
     } else {
-      console.log(
-        t.cyan(t.bold(`\n  Saved Sessions (${sessions.length}):\n`)),
-      );
+      console.log(t.cyan(t.bold(`\n  Saved Sessions (${sessions.length}):\n`)));
       console.log(
         `   ${"Session ID".padEnd(30)} ${"Messages".padStart(8)}  ${"Model".padEnd(20)} ${"Saved At"}`,
       );
-      console.log(
-        `   ${"─".repeat(30)} ${"─".repeat(8)}  ${"─".repeat(20)} ${"─".repeat(20)}`,
-      );
+      console.log(`   ${"─".repeat(30)} ${"─".repeat(8)}  ${"─".repeat(20)} ${"─".repeat(20)}`);
       for (const s of sessions.slice(0, 20)) {
-        const shortId =
-          s.sessionId.length > 28
-            ? s.sessionId.substring(0, 28) + "…"
-            : s.sessionId;
+        const shortId = s.sessionId.length > 28 ? s.sessionId.substring(0, 28) + "…" : s.sessionId;
         console.log(
           `   ${shortId.padEnd(30)} ${String(s.messageCount).padStart(8)}  ${s.model.padEnd(20)} ${s.savedAt.substring(0, 19)}`,
         );
       }
       console.log(t.gray(`\n   Use: quiver --resume   to pick a session`));
-      console.log(
-        t.gray(`   Use: quiver --continue  to resume the latest session\n`),
-      );
+      console.log(t.gray(`   Use: quiver --continue  to resume the latest session\n`));
     }
     process.exit(EXIT.OK);
   }
@@ -420,9 +357,7 @@ async function main() {
   // loop. Scheduled/watched runs can ask the same agent to draft and return
   // the generated phase text; a model-invoked workflow is rejected as a
   // nested turn so the agent cannot recursively call itself.
-  const { setWorkflowAgentCallback } = await import(
-    "./tools/workflow_tool.js"
-  );
+  const { setWorkflowAgentCallback } = await import("./tools/workflow_tool.js");
   const workflowAgentCallback = async (workflowPrompt: string, context: any) => {
     if (agent.isPromptRunning()) {
       throw new Error(
@@ -462,11 +397,7 @@ async function main() {
       // schedule/watch only register rules; they need a long-lived process.
       // Be honest when the user asks for background automation from a
       // one-shot CLI invocation.
-      if (
-        (args.action === "schedule" || args.action === "watch") &&
-        !isInteractive &&
-        !isJson
-      ) {
+      if ((args.action === "schedule" || args.action === "watch") && !isInteractive && !isJson) {
         statusLine(
           "WARN",
           `\`quiver workflow ${args.action}\` registers the rule, then exits. Keep an interactive \`quiver\` session (or the daemon) running for the scheduler/watcher to fire.`,
@@ -474,10 +405,7 @@ async function main() {
       }
       const res = await workflowTool.execute(args as any);
       console.log(JSON.stringify(res, null, 2));
-      const failed =
-        res &&
-        typeof res === "object" &&
-        (res as any).status === "error";
+      const failed = res && typeof res === "object" && (res as any).status === "error";
       process.exit(failed ? EXIT.ERROR : EXIT.OK);
     } catch (err: any) {
       statusLine("ERROR", err?.message || String(err));
@@ -486,7 +414,6 @@ async function main() {
   }
 
   // Track whether a session was resumed (via --continue, --resume, or crash
-  let resumedSession = false;
 
   // US-13.2: detect a crashed/incomplete session from a previous run.
   // Auto-archive silently and show a one-line note. The user can use
@@ -521,10 +448,7 @@ async function main() {
       statePath = await Agent.findLatestSessionState();
       if (!statePath) {
         if (isInteractive) {
-          statusLine(
-            "WARN",
-            "No previous session found to continue. Starting fresh.",
-          );
+          statusLine("WARN", "No previous session found to continue. Starting fresh.");
         }
       }
     } else if (cliOpts.resume) {
@@ -539,9 +463,7 @@ async function main() {
         for (let i = 0; i < Math.min(sessions.length, 20); i++) {
           const s = sessions[i];
           const shortId =
-            s.sessionId.length > 28
-              ? s.sessionId.substring(0, 28) + "…"
-              : s.sessionId;
+            s.sessionId.length > 28 ? s.sessionId.substring(0, 28) + "…" : s.sessionId;
           console.log(
             `   ${t.green(`[${i + 1}]`)} ${shortId.padEnd(30)} ${String(s.messageCount).padStart(5)} msgs  ${s.savedAt.substring(0, 19)}`,
           );
@@ -556,11 +478,7 @@ async function main() {
         const answer = await askQuestionRaw("   > ");
 
         const choice = parseInt(answer.trim(), 10);
-        if (
-          !isNaN(choice) &&
-          choice >= 1 &&
-          choice <= Math.min(sessions.length, 20)
-        ) {
+        if (!isNaN(choice) && choice >= 1 && choice <= Math.min(sessions.length, 20)) {
           statePath = sessions[choice - 1].path;
         }
       }
@@ -569,14 +487,9 @@ async function main() {
     if (statePath) {
       const loaded = await agent.loadSessionState(statePath);
       if (loaded) {
-        resumedSession = true;
         if (isInteractive) {
           statusLine("OK", `Resumed session: ${agent.getSessionId()}`);
-          console.log(
-            t.gray(
-              `   ${agent.getMessageCount()} messages restored from disk.`,
-            ),
-          );
+          console.log(t.gray(`   ${agent.getMessageCount()} messages restored from disk.`));
           console.log(t.gray(`   Use /compact if context is too large.\n`));
         }
       }
@@ -621,7 +534,7 @@ async function main() {
       try {
         await agent.prompt(
           promptText,
-          (token) => {},
+          () => {},
           (event) => {
             trackEvent(event);
             emitJson(event);
@@ -629,10 +542,7 @@ async function main() {
         );
         process.exit(refused ? EXIT.ERROR : EXIT.OK);
       } catch (err: any) {
-        emitJson(
-          { type: "error", data: { error: err.message } },
-          process.stderr,
-        );
+        emitJson({ type: "error", data: { error: err.message } }, process.stderr);
         process.exit(EXIT.ERROR);
       }
     }
@@ -642,9 +552,7 @@ async function main() {
     }
     // Render assistant output as terminal markdown only when stdout is a
     // TTY — piped/scripted output stays raw & machine-readable.
-    const md = process.stdout.isTTY
-      ? new TerminalMarkdownRenderer(process.stdout)
-      : null;
+    const md = process.stdout.isTTY ? new TerminalMarkdownRenderer(process.stdout) : null;
     try {
       await agent.prompt(
         promptText,

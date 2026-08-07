@@ -23,10 +23,7 @@ export interface Message {
   content:
     | string
     | null
-    | Array<
-        | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
-      >;
+    | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
@@ -34,14 +31,7 @@ export interface Message {
 
 /** Events emitted during prompt execution for GUI consumption. */
 export interface AgentEvent {
-  type:
-    | "token"
-    | "tool_call"
-    | "tool_result"
-    | "approval"
-    | "done"
-    | "error"
-    | "context_manifest";
+  type: "token" | "tool_call" | "tool_result" | "approval" | "done" | "error" | "context_manifest";
   data: {
     text?: string;
     toolName?: string;

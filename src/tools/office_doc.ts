@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { existsSync, readFileSync, copyFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import { Tool } from "../registry.js";
@@ -33,78 +33,72 @@ async function findOfficeCli(): Promise<string | null> {
 
 // ─── Command Execution ───────────────────────────────────────────────
 
-function runOfficeCli(
-  args: string[],
-  cwd?: string,
-  timeoutMs?: number,
-): Promise<OfficeCliResult> {
-  return new Promise(async (resolve) => {
-    const binary = await findOfficeCli();
-    if (!binary) {
-      const installHint =
-        process.platform === "win32"
-          ? "Install the official Windows binary (PowerShell installer or Scoop): https://github.com/iOfficeAI/OfficeCLI"
-          : "Install it with: curl -fsSL https://d.officecli.ai/install.sh | bash";
-      resolve({
-        success: false,
-        stdout: "",
-        stderr: `OfficeCLI is not installed. ${installHint} You can also set QUIVER_OFFICECLI_PATH.`,
-        exitCode: 127,
-      });
-      return;
-    }
+function runOfficeCli(args: string[], cwd?: string, timeoutMs?: number): Promise<OfficeCliResult> {
+  return new Promise((resolve) => {
+    void (async () => {
+      const binary = await findOfficeCli();
+      if (!binary) {
+        const installHint =
+          process.platform === "win32"
+            ? "Install the official Windows binary (PowerShell installer or Scoop): https://github.com/iOfficeAI/OfficeCLI"
+            : "Install it with: curl -fsSL https://d.officecli.ai/install.sh | bash";
+        resolve({
+          success: false,
+          stdout: "",
+          stderr: `OfficeCLI is not installed. ${installHint} You can also set QUIVER_OFFICECLI_PATH.`,
+          exitCode: 127,
+        });
+        return;
+      }
 
-    const maxBuffer = 1024 * 1024 * 10; // 10MB
-    const maxAttempts = process.platform === "win32" ? 3 : 1;
-    const lockPattern =
-      /being used by another process|sharing violation|access is denied|file is locked/i;
+      const maxBuffer = 1024 * 1024 * 10; // 10MB
+      const maxAttempts = process.platform === "win32" ? 3 : 1;
+      const lockPattern =
+        /being used by another process|sharing violation|access is denied|file is locked/i;
 
-    const attempt = (attemptNumber: number): void => {
-      execFile(
-        binary,
-        args,
-        {
-          maxBuffer,
-          cwd: cwd || process.cwd(),
-          timeout: timeoutMs || 30000,
-        },
-        (error, stdout, stderr) => {
-          const exitCode = error
-            ? typeof error.code === "number"
-              ? error.code
-              : 1
-            : 0;
-          const result: OfficeCliResult = {
-            success: exitCode === 0,
-            stdout: stdout.trim(),
-            stderr: stderr.trim(),
-            exitCode,
-          };
+      const attempt = (attemptNumber: number): void => {
+        execFile(
+          binary,
+          args,
+          {
+            maxBuffer,
+            cwd: cwd || process.cwd(),
+            timeout: timeoutMs || 30000,
+          },
+          (error, stdout, stderr) => {
+            const exitCode = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+            const result: OfficeCliResult = {
+              success: exitCode === 0,
+              stdout: stdout.trim(),
+              stderr: stderr.trim(),
+              exitCode,
+            };
 
-          // OneDrive/SharePoint sync can briefly hold a document lock.
-          if (
-            !result.success &&
-            attemptNumber < maxAttempts &&
-            lockPattern.test(`${result.stderr}\n${result.stdout}`)
-          ) {
-            setTimeout(() => attempt(attemptNumber + 1), 250 * attemptNumber);
-            return;
-          }
-
-          // Try to parse JSON output if --json was passed
-          if (args.includes("--json") && stdout) {
-            try {
-              result.json = JSON.parse(stdout);
-            } catch {
-              // Not JSON, leave as text
+            // OneDrive/SharePoint sync can briefly hold a document lock.
+            if (
+              !result.success &&
+              attemptNumber < maxAttempts &&
+              lockPattern.test(`${result.stderr}\n${result.stdout}`)
+            ) {
+              setTimeout(() => attempt(attemptNumber + 1), 250 * attemptNumber);
+              return;
             }
-          }
 
-          resolve(result);
-        },
-      );
-    };
-    attempt(1);
+            // Try to parse JSON output if --json was passed
+            if (args.includes("--json") && stdout) {
+              try {
+                result.json = JSON.parse(stdout);
+              } catch {
+                // Not JSON, leave as text
+              }
+            }
+
+            resolve(result);
+          },
+        );
+      };
+      attempt(1);
+    })();
   });
 }
 
@@ -164,15 +158,11 @@ export const tool: Tool = {
       .describe("The OfficeCLI operation to perform."),
     file: z
       .string()
-      .describe(
-        "Path to the Office document (.docx, .xlsx, or .pptx). Can be relative to cwd.",
-      ),
+      .describe("Path to the Office document (.docx, .xlsx, or .pptx). Can be relative to cwd."),
     parent: z
       .string()
       .optional()
-      .describe(
-        "Parent path for add operations (e.g., /body, /slide[1], /Sheet1).",
-      ),
+      .describe("Parent path for add operations (e.g., /body, /slide[1], /Sheet1)."),
     path: z
       .string()
       .optional()
@@ -200,42 +190,21 @@ export const tool: Tool = {
     mode: z
       .string()
       .optional()
-      .describe(
-        "View mode for view action: text, outline, stats, issues, annotated, html.",
-      ),
-    selector: z
-      .string()
-      .optional()
-      .describe("CSS-like selector for query operations."),
-    template: z
-      .string()
-      .optional()
-      .describe("Template file path for merge action."),
+      .describe("View mode for view action: text, outline, stats, issues, annotated, html."),
+    selector: z.string().optional().describe("CSS-like selector for query operations."),
+    template: z.string().optional().describe("Template file path for merge action."),
     data: z
       .string()
       .optional()
-      .describe(
-        "JSON data file path for merge action (replaces {{key}} placeholders).",
-      ),
-    source: z
-      .string()
-      .optional()
-      .describe("Source CSV/TSV file path for import action."),
-    format: z
-      .string()
-      .optional()
-      .describe("Format for help action: docx, xlsx, pptx, or all."),
+      .describe("JSON data file path for merge action (replaces {{key}} placeholders)."),
+    source: z.string().optional().describe("Source CSV/TSV file path for import action."),
+    format: z.string().optional().describe("Format for help action: docx, xlsx, pptx, or all."),
     element: z
       .string()
       .optional()
-      .describe(
-        "Element name for help action (e.g., paragraph, table, slide).",
-      ),
+      .describe("Element name for help action (e.g., paragraph, table, slide)."),
     json: z.boolean().optional().describe("Output results as JSON when true."),
-    cwd: z
-      .string()
-      .optional()
-      .describe("Working directory. Defaults to current directory."),
+    cwd: z.string().optional().describe("Working directory. Defaults to current directory."),
     stage: z
       .boolean()
       .optional()
@@ -263,13 +232,9 @@ export const tool: Tool = {
     const _operation = _writeActions.has(args.action) ? "write" : "read";
     let _resolvedFile: string | undefined;
     try {
-      const _checkPath =
-        args.file || args.filePath || args.directory || args.path || "";
+      const _checkPath = args.file || args.filePath || args.directory || args.path || "";
       if (_checkPath) {
-        const _resolved = assertToolPathAllowed(
-          _checkPath,
-          _operation as "read" | "write",
-        );
+        const _resolved = assertToolPathAllowed(_checkPath, _operation as "read" | "write");
         _resolvedFile = _resolved.absolutePath;
       }
       // Validate additional file paths (template, source) through the policy
@@ -310,7 +275,6 @@ export const tool: Tool = {
     if (args.stage === true && _writeActions.has(action) && file) {
       try {
         const { LocalArtifactRepository } = await import("../harness/artifact-repository.js");
-        const { createHash } = await import("crypto");
         const stagingRoot = path.join(args.cwd || process.cwd(), ".quiver", "office-staging");
         const repo = new LocalArtifactRepository(stagingRoot);
         const srcData = existsSync(file) ? readFileSync(file) : Buffer.alloc(0);
@@ -419,8 +383,7 @@ export const tool: Tool = {
         // Line/row limits
         if (props?.start) cliArgs.push("--start", String(props.start));
         if (props?.end) cliArgs.push("--end", String(props.end));
-        if (props?.maxLines)
-          cliArgs.push("--max-lines", String(props.maxLines));
+        if (props?.maxLines) cliArgs.push("--max-lines", String(props.maxLines));
         // Page filter for docx/pptx
         if (props?.page) cliArgs.push("--page", String(props.page));
         // Issue type filter for issues mode
@@ -445,21 +408,17 @@ export const tool: Tool = {
         if (props?.to) cliArgs.push("--to", String(props.to));
         if (props?.after) cliArgs.push("--after", String(props.after));
         if (props?.before) cliArgs.push("--before", String(props.before));
-        if (props?.index !== undefined)
-          cliArgs.push("--index", String(props.index));
+        if (props?.index !== undefined) cliArgs.push("--index", String(props.index));
         break;
 
       case "swap":
-        if (!elemPath)
-          return "Error: 'path' is required for swap action (first path).";
-        if (!props?.path2)
-          return "Error: 'props.path2' is required for swap action (second path).";
+        if (!elemPath) return "Error: 'path' is required for swap action (first path).";
+        if (!props?.path2) return "Error: 'props.path2' is required for swap action (second path).";
         cliArgs.push("swap", file, elemPath, String(props.path2));
         break;
 
       case "batch":
-        if (!commands)
-          return "Error: 'commands' array is required for batch action.";
+        if (!commands) return "Error: 'commands' array is required for batch action.";
         cliArgs.push("batch", file);
         if (useJson) cliArgs.push("--json");
         // Pass commands via --commands flag as JSON string
@@ -480,22 +439,18 @@ export const tool: Tool = {
 
       case "merge":
         if (!template) return "Error: 'template' is required for merge action.";
-        if (!data)
-          return "Error: 'data' (JSON data file path) is required for merge action.";
+        if (!data) return "Error: 'data' (JSON data file path) is required for merge action.";
         // officecli merge <template> <output> --data <data.json>
         // Replaces {{key}} placeholders in the template with values from the JSON data file.
         // Supports nested paths like {{items[0].name}} and {{company.revenue}}.
         cliArgs.push("merge", template, file, "--data", data);
         // Allow overwriting existing output file
-        if (props?.force === "true" || props?.force === true)
-          cliArgs.push("--force");
+        if (props?.force === "true" || props?.force === true) cliArgs.push("--force");
         break;
 
       case "import":
-        if (!parent)
-          return "Error: 'parent' (parent-path) is required for import action.";
-        if (!source)
-          return "Error: 'source' (CSV/TSV file path) is required for import action.";
+        if (!parent) return "Error: 'parent' (parent-path) is required for import action.";
+        if (!source) return "Error: 'source' (CSV/TSV file path) is required for import action.";
         cliArgs.push("import", file, parent, source);
         break;
 
@@ -511,7 +466,14 @@ export const tool: Tool = {
         ? `\n[staged] workingCopy=${file} sourceHash=${stagedSourceHash ?? ""}`
         : "";
       if (result.json) {
-        return JSON.stringify({ ...result.json, ...(staged ? { staged: true, workingCopy: file, sourceHash: stagedSourceHash } : {}) }, null, 2);
+        return JSON.stringify(
+          {
+            ...result.json,
+            ...(staged ? { staged: true, workingCopy: file, sourceHash: stagedSourceHash } : {}),
+          },
+          null,
+          2,
+        );
       }
       return (result.stdout || "Operation completed successfully.") + stagedNote;
     }
@@ -528,11 +490,15 @@ export const tool: Tool = {
 function extToMimeOffice(p: string): string {
   const ext = path.extname(p).toLowerCase();
   switch (ext) {
-    case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    case ".pdf": return "application/pdf";
-    default: return "application/octet-stream";
+    case ".docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case ".xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case ".pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    case ".pdf":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
   }
 }
-

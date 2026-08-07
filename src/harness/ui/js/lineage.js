@@ -11,9 +11,14 @@ function renderLineageChip(claim) {
   chip.dataset.sourceIds = (claim.source_ids || []).join(",");
   chip.dataset.reviewStatus = claim.review_status || "unverified";
   chip.title = `Source: ${(claim.source_ids || []).join(", ") || "unsourced"}`;
-  const icon = claim.review_status === "verified" ? STATUS_ICONS.ok :
-               claim.review_status === "flagged" ? STATUS_ICONS.flagged :
-               claim.review_status === "needs_analyst" ? STATUS_ICONS.needs : STATUS_ICONS.pending;
+  const icon =
+    claim.review_status === "verified"
+      ? STATUS_ICONS.ok
+      : claim.review_status === "flagged"
+        ? STATUS_ICONS.flagged
+        : claim.review_status === "needs_analyst"
+          ? STATUS_ICONS.needs
+          : STATUS_ICONS.pending;
   chip.innerHTML = `<span class="lineage-chip-icon">${icon}</span><span class="lineage-chip-text">${escapeHtml(claim.claim_text || claim.rendered_text || "")}</span>`;
   chip.addEventListener("click", () => openVerificationRail(claim));
   return chip;
@@ -52,7 +57,8 @@ function renderSourceInRail(sid, source) {
   const src = document.createElement("div");
   src.className = "source-panel";
   if (!source) {
-    src.innerHTML = `<div class="ap-label">Source: ${escapeHtml(sid)}</div>` +
+    src.innerHTML =
+      `<div class="ap-label">Source: ${escapeHtml(sid)}</div>` +
       `<div class="ap-value muted">Source details not available.</div>`;
     return src;
   }
@@ -67,17 +73,33 @@ function renderSourceInRail(sid, source) {
     body =
       `<div class="ap-row"><span class="ap-label">Excel cell</span><span class="ap-value">${escapeHtml(cellRef)}</span></div>` +
       `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(file)}</span></div>` +
-      (value ? `<div class="ap-row"><span class="ap-label">Cell value</span><span class="ap-value code">${escapeHtml(value)}</span></div>` : "") +
-      (loc.description ? `<div class="ap-row"><span class="ap-label">Formula / notes</span><span class="ap-value code">${escapeHtml(loc.description)}</span></div>` : "") +
+      (value
+        ? `<div class="ap-row"><span class="ap-label">Cell value</span><span class="ap-value code">${escapeHtml(value)}</span></div>`
+        : "") +
+      (loc.description
+        ? `<div class="ap-row"><span class="ap-label">Formula / notes</span><span class="ap-value code">${escapeHtml(loc.description)}</span></div>`
+        : "") +
       `<div class="ctx-hint">Dependents are read back from the model via officecli; the cited value must match the cell's current value.</div>`;
-  } else if (type === "filing" || type === "transcript" || type === "internal_note" || type === "research_report" || type === "news") {
+  } else if (
+    type === "filing" ||
+    type === "transcript" ||
+    type === "internal_note" ||
+    type === "research_report" ||
+    type === "news"
+  ) {
     const file = source.file || "";
     const where = [loc.section, loc.page ? `p.${loc.page}` : null].filter(Boolean).join(" · ");
     const excerpt = source.excerpt || "";
     body =
-      (file ? `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(file)}</span></div>` : "") +
-      (where ? `<div class="ap-row"><span class="ap-label">Location</span><span class="ap-value">${escapeHtml(where)}</span></div>` : "") +
-      (excerpt ? `<div class="ap-excerpt">${escapeHtml(excerpt)}</div>` : `<div class="ap-value muted">No excerpt recorded.</div>`);
+      (file
+        ? `<div class="ap-row"><span class="ap-label">File</span><span class="ap-value">${escapeHtml(file)}</span></div>`
+        : "") +
+      (where
+        ? `<div class="ap-row"><span class="ap-label">Location</span><span class="ap-value">${escapeHtml(where)}</span></div>`
+        : "") +
+      (excerpt
+        ? `<div class="ap-excerpt">${escapeHtml(excerpt)}</div>`
+        : `<div class="ap-value muted">No excerpt recorded.</div>`);
   } else if (type === "web" || loc.url) {
     const url = loc.url || "";
     body =
@@ -101,10 +123,13 @@ function openVerificationRail(claim) {
   const body = $("verificationRailBody");
   const sourceIds = claim.source_ids || [];
   if (!sourceIds.length) {
-    body.innerHTML = '<div class="ctx-value muted">No sources recorded for this figure — this is an unsourced claim.</div>';
+    body.innerHTML =
+      '<div class="ctx-value muted">No sources recorded for this figure — this is an unsourced claim.</div>';
   } else {
     body.innerHTML = "";
-    const sources = (state.currentReviewDocument && state.documentSources.get(state.currentReviewDocument)) || new Map();
+    const sources =
+      (state.currentReviewDocument && state.documentSources.get(state.currentReviewDocument)) ||
+      new Map();
     for (const sid of sourceIds) {
       body.appendChild(renderSourceInRail(sid, sources.get(sid)));
     }
@@ -126,7 +151,8 @@ function openVerificationRail(claim) {
 // review record that goes with the memo.
 
 function reviewStatusFor(filePath) {
-  if (!state.documentReviewStatus.has(filePath)) state.documentReviewStatus.set(filePath, new Map());
+  if (!state.documentReviewStatus.has(filePath))
+    state.documentReviewStatus.set(filePath, new Map());
   return state.documentReviewStatus.get(filePath);
 }
 
@@ -150,7 +176,10 @@ function markVerified() {
   state.currentVerificationClaim.review_status = "verified";
   updateLineageChipStatus(cid, "verified");
   refreshFinalRow();
-  addActivity(`Figure verified: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "ok");
+  addActivity(
+    `Figure verified: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`,
+    "ok",
+  );
 }
 
 function markFlagged() {
@@ -161,7 +190,10 @@ function markFlagged() {
   state.currentVerificationClaim.review_status = "flagged";
   updateLineageChipStatus(cid, "flagged");
   refreshFinalRow();
-  addActivity(`Figure flagged: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "warn");
+  addActivity(
+    `Figure flagged: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`,
+    "warn",
+  );
 }
 
 function markNeedsAnalyst() {
@@ -172,14 +204,22 @@ function markNeedsAnalyst() {
   state.currentVerificationClaim.review_status = "needs_analyst";
   updateLineageChipStatus(cid, "needs_analyst");
   refreshFinalRow();
-  addActivity(`Figure needs analyst: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`, "warn");
+  addActivity(
+    `Figure needs analyst: ${state.currentVerificationClaim.claim_text?.slice(0, 50) || cid}`,
+    "warn",
+  );
 }
 
 function updateLineageChipStatus(claimId, status) {
   const chip = document.querySelector(`.lineage-chip[data-claim-id="${claimId}"]`);
   if (!chip) return;
   chip.dataset.reviewStatus = status;
-  const icon = status === "verified" ? STATUS_ICONS.ok : status === "flagged" ? STATUS_ICONS.flagged : STATUS_ICONS.needs;
+  const icon =
+    status === "verified"
+      ? STATUS_ICONS.ok
+      : status === "flagged"
+        ? STATUS_ICONS.flagged
+        : STATUS_ICONS.needs;
   const iconEl = chip.querySelector(".lineage-chip-icon");
   if (iconEl) iconEl.innerHTML = icon;
 }
@@ -195,7 +235,9 @@ function refreshFinalRow() {
   if (!finalBtn || !overrideBtn) return;
   const blocked = openFlags > 0 && !overridden;
   finalBtn.classList.toggle("disabled", blocked);
-  finalBtn.title = blocked ? "Resolve open flags first, or override (logged)" : "Mark this document final";
+  finalBtn.title = blocked
+    ? "Resolve open flags first, or override (logged)"
+    : "Mark this document final";
   overrideBtn.hidden = openFlags === 0 || overridden;
 }
 
@@ -204,23 +246,40 @@ function refreshFinalRow() {
 // checks are logged to the tamper-evident audit chain via IPC.
 function markFinalForCurrentDocument() {
   const doc = state.currentReviewDocument;
-  if (!doc) { addActivity("Open a figure first to review this document.", "warn"); return; }
+  if (!doc) {
+    addActivity("Open a figure first to review this document.", "warn");
+    return;
+  }
   const openFlags = openFlagsFor(doc);
   const overridden = state.documentOverrideLogged.get(doc) === true;
   if (openFlags > 0 && !overridden) {
-    addActivity(`Cannot mark final — ${openFlags} open flag(s). Resolve them, or override (the override is logged).`, "err");
+    addActivity(
+      `Cannot mark final — ${openFlags} open flag(s). Resolve them, or override (the override is logged).`,
+      "err",
+    );
     refreshFinalRow();
     return false;
   }
-  api.reviewMarkFinal(doc, openFlags, figureStatusesFor(doc)).then((res) => {
-    if (!res || res.blocked || res.logged === false) {
-      addActivity(`Cannot mark final — ${res?.error || "evidence or review validation failed."}`, "err");
-      return;
-    }
-    state.documentMarkedFinal.set(doc, true);
-    addActivity(overridden ? "Document marked final with override — open flags explicitly overridden (logged)" : "Document marked final — all figures verified (logged)", overridden ? "warn" : "ok");
-    markCardFinal(doc);
-  }).catch(() => addActivity("Could not log the final decision.", "err"));
+  api
+    .reviewMarkFinal(doc, openFlags, figureStatusesFor(doc))
+    .then((res) => {
+      if (!res || res.blocked || res.logged === false) {
+        addActivity(
+          `Cannot mark final — ${res?.error || "evidence or review validation failed."}`,
+          "err",
+        );
+        return;
+      }
+      state.documentMarkedFinal.set(doc, true);
+      addActivity(
+        overridden
+          ? "Document marked final with override — open flags explicitly overridden (logged)"
+          : "Document marked final — all figures verified (logged)",
+        overridden ? "warn" : "ok",
+      );
+      markCardFinal(doc);
+    })
+    .catch(() => addActivity("Could not log the final decision.", "err"));
   return true;
 }
 
@@ -228,17 +287,26 @@ function overrideFinalForCurrentDocument() {
   const doc = state.currentReviewDocument;
   if (!doc) return;
   const openFlags = openFlagsFor(doc);
-  api.reviewOverride(doc, openFlags, figureStatusesFor(doc)).then((res) => {
-    if (!res || res.blocked || res.logged === false) {
-      addActivity(`Could not log the override — ${res?.error || "evidence or review validation failed."}`, "err");
-      return;
-    }
-    state.documentOverrideLogged.set(doc, true);
-    addActivity("Override logged — open flags explicitly overridden by reviewer (audit chain).", "warn");
-    refreshFinalRow();
-    // Mark final now that the override is logged.
-    markFinalForCurrentDocument();
-  }).catch(() => addActivity("Could not log the override.", "err"));
+  api
+    .reviewOverride(doc, openFlags, figureStatusesFor(doc))
+    .then((res) => {
+      if (!res || res.blocked || res.logged === false) {
+        addActivity(
+          `Could not log the override — ${res?.error || "evidence or review validation failed."}`,
+          "err",
+        );
+        return;
+      }
+      state.documentOverrideLogged.set(doc, true);
+      addActivity(
+        "Override logged — open flags explicitly overridden by reviewer (audit chain).",
+        "warn",
+      );
+      refreshFinalRow();
+      // Mark final now that the override is logged.
+      markFinalForCurrentDocument();
+    })
+    .catch(() => addActivity("Could not log the override.", "err"));
 }
 
 function markCardFinal(filePath) {
@@ -268,7 +336,8 @@ function openDeliverableContext(filePath) {
   const body = $("deliverableContextBody");
   title.textContent = `Context used for ${filePath.split("/").pop()}`;
   if (!record) {
-    body.innerHTML = '<div class="ctx-value muted">No context record available for this document.</div>';
+    body.innerHTML =
+      '<div class="ctx-value muted">No context record available for this document.</div>';
   } else {
     body.innerHTML = "";
     // Show input files

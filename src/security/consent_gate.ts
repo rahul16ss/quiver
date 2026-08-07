@@ -21,7 +21,6 @@
  * feedback. This v1 is the pre-action summary rendered from manifest data.
  */
 
-import * as path from "path";
 import { config, TrustTier } from "../config.js";
 
 export interface ConsentGateData {
@@ -77,23 +76,15 @@ export function setConsentGateEnabled(enabled: boolean): void {
 export function renderConsentGate(data: ConsentGateData): string {
   const lines: string[] = [];
   lines.push("┌─ Consent Gate ──────────────────────────────────────────────┐");
-  lines.push(
-    "│                                                              │",
-  );
-  lines.push(
-    "│  BEFORE THIS ACTION, the AI will see:                        │",
-  );
-  lines.push(
-    "│                                                              │",
-  );
+  lines.push("│                                                              │");
+  lines.push("│  BEFORE THIS ACTION, the AI will see:                        │");
+  lines.push("│                                                              │");
 
   // Layer A: Framing
   lines.push(
     `│  A. Framing   system-prompt v${data.systemPromptVersion}                         │`,
   );
-  lines.push(
-    "│                safety policy (auditable)                     │",
-  );
+  lines.push("│                safety policy (auditable)                     │");
 
   // Layer B: Memory
   const memCount = data.memoryFiles.length;
@@ -105,9 +96,7 @@ export function renderConsentGate(data: ConsentGateData): string {
 
   // Layer C: Skills & tools
   const skillsStr =
-    data.skills.length > 0
-      ? data.skills.map((s) => `${s.id} v${s.version}`).join(" · ")
-      : "none";
+    data.skills.length > 0 ? data.skills.map((s) => `${s.id} v${s.version}`).join(" · ") : "none";
   lines.push(`│  C. Skills    ${truncate(skillsStr, 48).padEnd(48)} │`);
   lines.push(
     `│     Tools     ${data.toolCount} tools${data.mcpServerCount > 0 ? ` · ${data.mcpServerCount} MCP` : ""}`.padEnd(
@@ -116,16 +105,12 @@ export function renderConsentGate(data: ConsentGateData): string {
   );
 
   // Layer D: Conversation
-  const compactStr =
-    data.compactedCount > 0 ? ` (compacted ${data.compactedCount}×)` : "";
-  lines.push(
-    `│  D. Convo     ${data.turnCount} turns${compactStr}`.padEnd(63) + "│",
-  );
+  const compactStr = data.compactedCount > 0 ? ` (compacted ${data.compactedCount}×)` : "";
+  lines.push(`│  D. Convo     ${data.turnCount} turns${compactStr}`.padEnd(63) + "│");
 
   // Layer E: Inputs
   const reqPreview = truncate(data.userRequestPreview, 40);
-  const webStr =
-    data.webSourceCount > 0 ? ` · ${data.webSourceCount} web sources` : "";
+  const webStr = data.webSourceCount > 0 ? ` · ${data.webSourceCount} web sources` : "";
   lines.push(`│  E. Inputs    "${reqPreview}"${webStr}`.padEnd(63) + "│");
 
   // Layer F: Operational metadata
@@ -133,20 +118,13 @@ export function renderConsentGate(data: ConsentGateData): string {
   const scratchStr = data.scratchMode ? " · scratch mode" : "";
   lines.push(`│  F. Ops       model: ${data.modelName}`.padEnd(63) + "│");
   lines.push(
-    `│                tier: ${tierStr}${scratchStr} · ${data.tokenEstimate} tokens`.padEnd(
-      63,
-    ) + "│",
+    `│                tier: ${tierStr}${scratchStr} · ${data.tokenEstimate} tokens`.padEnd(63) +
+      "│",
   );
 
-  lines.push(
-    "│                                                              │",
-  );
-  lines.push(
-    "│  [1] Approve   [2] Edit memory   [3] Decline   [Enter] Skip  │",
-  );
-  lines.push(
-    "└──────────────────────────────────────────────────────────────┘",
-  );
+  lines.push("│                                                              │");
+  lines.push("│  [1] Approve   [2] Edit memory   [3] Decline   [Enter] Skip  │");
+  lines.push("└──────────────────────────────────────────────────────────────┘");
 
   return lines.join("\n");
 }

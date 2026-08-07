@@ -20,10 +20,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import path from "path";
 import { Tool } from "../registry.js";
 import { config } from "../config.js";
-import {
-  EvidenceFinalizationError,
-  EvidenceTracker,
-} from "../evidence/tracker.js";
+import { EvidenceFinalizationError, EvidenceTracker } from "../evidence/tracker.js";
 import type {
   SourceRecord,
   ClaimRecord,
@@ -45,10 +42,7 @@ export function getEvidenceTracker(): EvidenceTracker {
   return tracker;
 }
 
-export function withEvidenceTracker<T>(
-  tracker: EvidenceTracker,
-  callback: () => T,
-): T {
+export function withEvidenceTracker<T>(tracker: EvidenceTracker, callback: () => T): T {
   return trackerContext.run(tracker, callback);
 }
 
@@ -81,11 +75,9 @@ async function requireHumanEvidenceConsent(prompt: string): Promise<boolean> {
         accent: "brand",
       });
     }
-    const ans = (await askQuestionRaw(
-      config.outputMode === "interactive"
-        ? "  Approve? [Y/n]: "
-        : "",
-    ))
+    const ans = (
+      await askQuestionRaw(config.outputMode === "interactive" ? "  Approve? [Y/n]: " : "")
+    )
       .trim()
       .toLowerCase();
     if (config.outputMode === "interactive") {
@@ -103,10 +95,7 @@ async function requireHumanEvidenceConsent(prompt: string): Promise<boolean> {
  * active agent session are reported as unregistered rather than silently
  * pretending that lineage exists.
  */
-export function registerConnectorProvenance(
-  provenance: Provenance,
-  sensitivity: string,
-): boolean {
+export function registerConnectorProvenance(provenance: Provenance, sensitivity: string): boolean {
   try {
     const sourceId = [
       "vendor",
@@ -191,15 +180,11 @@ export const tool: Tool = {
     file: z
       .string()
       .optional()
-      .describe(
-        "File path for the source. Used with register_source or register_input.",
-      ),
+      .describe("File path for the source. Used with register_source or register_input."),
     as_of: z
       .string()
       .optional()
-      .describe(
-        "As-of date for the source (YYYY-MM-DD). Used with register_source.",
-      ),
+      .describe("As-of date for the source (YYYY-MM-DD). Used with register_source."),
     location: z
       .string()
       .optional()
@@ -218,16 +203,11 @@ export const tool: Tool = {
       .describe(
         "Ignored on register_source (maker cannot self-approve). Use action approve_source after human consent.",
       ),
-    excerpt: z
-      .string()
-      .optional()
-      .describe("Excerpt from the source. Used with register_source."),
+    excerpt: z.string().optional().describe("Excerpt from the source. Used with register_source."),
     extracted_value: z
       .string()
       .optional()
-      .describe(
-        "Value extracted from the source (e.g., '48200000'). Used with register_source.",
-      ),
+      .describe("Value extracted from the source (e.g., '48200000'). Used with register_source."),
     exclusion_reason: z
       .string()
       .optional()
@@ -235,15 +215,11 @@ export const tool: Tool = {
     claim_id: z
       .string()
       .optional()
-      .describe(
-        "Claim ID (e.g., CLM-001). Required for record_claim and update_claim.",
-      ),
+      .describe("Claim ID (e.g., CLM-001). Required for record_claim and update_claim."),
     rendered_text: z
       .string()
       .optional()
-      .describe(
-        "The text as it appears in the document. Used with record_claim.",
-      ),
+      .describe("The text as it appears in the document. Used with record_claim."),
     source_ids: z
       .array(z.string())
       .optional()
@@ -269,9 +245,7 @@ export const tool: Tool = {
     review_note: z
       .string()
       .optional()
-      .describe(
-        "Note explaining the review status. Used with record_claim or update_claim.",
-      ),
+      .describe("Note explaining the review status. Used with record_claim or update_claim."),
     verification: z
       .string()
       .optional()
@@ -294,18 +268,9 @@ export const tool: Tool = {
       .describe(
         "Document filename (e.g., 'Project_Alder_IC_Memo.docx'). Used with finalize to name the evidence file.",
       ),
-    company: z
-      .string()
-      .optional()
-      .describe("Company name. Used with finalize."),
-    workflow: z
-      .string()
-      .optional()
-      .describe("Workflow name. Used with finalize."),
-    subtitle: z
-      .string()
-      .optional()
-      .describe("Document subtitle. Used with finalize."),
+    company: z.string().optional().describe("Company name. Used with finalize."),
+    workflow: z.string().optional().describe("Workflow name. Used with finalize."),
+    subtitle: z.string().optional().describe("Document subtitle. Used with finalize."),
   }),
 
   execute: async (args: any) => {
@@ -314,10 +279,8 @@ export const tool: Tool = {
     switch (args.action) {
       // ─── register_source ─────────────────────────────────────────────
       case "register_source": {
-        if (!args.source_id)
-          return "Error: source_id is required for register_source.";
-        if (!args.source_type)
-          return "Error: source_type is required for register_source.";
+        if (!args.source_id) return "Error: source_id is required for register_source.";
+        if (!args.source_type) return "Error: source_type is required for register_source.";
         if (!args.title) return "Error: title is required for register_source.";
 
         let location: SourceRecord["location"] = {};
@@ -340,13 +303,9 @@ export const tool: Tool = {
           // Source approval is a human/VP gate — the maker model cannot
           // self-approve sources via tool args (principles: enforced approval).
           approved: false,
-          ...(args.extracted_value
-            ? { extracted_value: args.extracted_value }
-            : {}),
+          ...(args.extracted_value ? { extracted_value: args.extracted_value } : {}),
           ...(args.excerpt ? { excerpt: args.excerpt } : {}),
-          ...(args.exclusion_reason
-            ? { exclusion_reason: args.exclusion_reason }
-            : {}),
+          ...(args.exclusion_reason ? { exclusion_reason: args.exclusion_reason } : {}),
         };
 
         const result = tracker.registerSource(source);
@@ -357,8 +316,7 @@ export const tool: Tool = {
 
       // ─── approve_source (human/VP only) ─────────────────────────────
       case "approve_source": {
-        if (!args.source_id)
-          return "Error: source_id is required for approve_source.";
+        if (!args.source_id) return "Error: source_id is required for approve_source.";
         const consented = await requireHumanEvidenceConsent(
           `Approve source ${args.source_id} for quantitative citation?`,
         );
@@ -373,15 +331,11 @@ export const tool: Tool = {
 
       // ─── exclude_source ──────────────────────────────────────────────
       case "exclude_source": {
-        if (!args.source_id)
-          return "Error: source_id is required for exclude_source.";
+        if (!args.source_id) return "Error: source_id is required for exclude_source.";
         if (!args.exclusion_reason)
           return "Error: exclusion_reason is required for exclude_source.";
 
-        const result = tracker.excludeSource(
-          args.source_id,
-          args.exclusion_reason,
-        );
+        const result = tracker.excludeSource(args.source_id, args.exclusion_reason);
         return result.excluded
           ? `✓ Source ${result.source_id} excluded: ${args.exclusion_reason}`
           : `Error: Could not exclude source ${result.source_id}.`;
@@ -389,12 +343,9 @@ export const tool: Tool = {
 
       // ─── record_claim ────────────────────────────────────────────────
       case "record_claim": {
-        if (!args.claim_id)
-          return "Error: claim_id is required for record_claim.";
-        if (!args.rendered_text)
-          return "Error: rendered_text is required for record_claim.";
-        if (!args.source_ids)
-          return "Error: source_ids is required for record_claim.";
+        if (!args.claim_id) return "Error: claim_id is required for record_claim.";
+        if (!args.rendered_text) return "Error: rendered_text is required for record_claim.";
+        if (!args.source_ids) return "Error: source_ids is required for record_claim.";
 
         let verification: ClaimRecord["verification"] | undefined;
         if (args.verification) {
@@ -441,10 +392,8 @@ export const tool: Tool = {
 
       // ─── update_claim ───────────────────────────────────────────────
       case "update_claim": {
-        if (!args.claim_id)
-          return "Error: claim_id is required for update_claim.";
-        if (!args.review_status)
-          return "Error: review_status is required for update_claim.";
+        if (!args.claim_id) return "Error: claim_id is required for update_claim.";
+        if (!args.review_status) return "Error: review_status is required for update_claim.";
 
         if (args.review_status === "verified") {
           const consented = await requireHumanEvidenceConsent(
@@ -496,8 +445,15 @@ export const tool: Tool = {
 
       // ─── finalize ───────────────────────────────────────────────────
       case "finalize": {
-        tracker.setMetadata({ workflow: args.workflow, company: args.company, title: args.title, subtitle: args.subtitle });
-        const docPath = args.doc_file ? path.join(args.output_dir || "", args.doc_file) : args.output_dir || "";
+        tracker.setMetadata({
+          workflow: args.workflow,
+          company: args.company,
+          title: args.title,
+          subtitle: args.subtitle,
+        });
+        const docPath = args.doc_file
+          ? path.join(args.output_dir || "", args.doc_file)
+          : args.output_dir || "";
         let result;
         try {
           result = tracker.finalize(args.output_dir || "", args.doc_file, {
@@ -505,24 +461,81 @@ export const tool: Tool = {
           });
         } catch (error) {
           if (error instanceof EvidenceFinalizationError) {
-            return JSON.stringify({
-              ok: false,
-              action: "finalize",
-              docPath,
-              evidencePath: null,
-              runRecord: null,
-              claims: tracker.getClaims(),
-              sources: tracker.getSources(),
-              validation: error.validation,
-              error: error.message,
-            }, null, 2);
+            return JSON.stringify(
+              {
+                ok: false,
+                action: "finalize",
+                docPath,
+                evidencePath: null,
+                runRecord: null,
+                claims: tracker.getClaims(),
+                sources: tracker.getSources(),
+                validation: error.validation,
+                error: error.message,
+              },
+              null,
+              2,
+            );
           }
-          return `Error: Evidence finalization failed: ${String(error)}`;
+          return JSON.stringify({
+            ok: false,
+            action: "finalize",
+            docPath,
+            evidencePath: null,
+            runRecord: null,
+            claims: tracker.getClaims(),
+            sources: tracker.getSources(),
+            validation: null,
+            error: `Evidence finalization failed: ${String(error)}`,
+          });
         }
         // SPEC §8.1: append a "Lineage & Sources" appendix (endnote form) to the .docx.
         const { appendLineageForTracker } = await import("../document/word_lineage.js");
-        const lineageAppendix = await appendLineageForTracker(docPath, tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, review_status: c.review_status, is_quantitative: c.is_quantitative })), tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, file: s.file, location: s.location })));
-        const structured = { ok: !!(result.evidencePath), action: "finalize", docPath, evidencePath: result.evidencePath, runRecord: result.runRecordPath, claims: tracker.getClaims().map((c) => ({ claim_id: c.claim_id, rendered_text: c.rendered_text, source_ids: c.source_ids, is_quantitative: c.is_quantitative, review_status: c.review_status, relationship: c.relationship })), sources: tracker.getSources().map((s) => ({ source_id: s.source_id, title: s.title, source_type: s.source_type, file: s.file, location: s.location, approved: s.approved, excerpt: s.excerpt, extracted_value: s.extracted_value, sensitivity: s.sensitivity })), excludedSources: tracker.getExcludedSources().map((e) => e.source_id), validation: result.validation, lineageAppendix };
+        const lineageAppendix = await appendLineageForTracker(
+          docPath,
+          tracker.getClaims().map((c) => ({
+            claim_id: c.claim_id,
+            rendered_text: c.rendered_text,
+            source_ids: c.source_ids,
+            review_status: c.review_status,
+            is_quantitative: c.is_quantitative,
+          })),
+          tracker.getSources().map((s) => ({
+            source_id: s.source_id,
+            title: s.title,
+            file: s.file,
+            location: s.location,
+          })),
+        );
+        const structured = {
+          ok: !!result.evidencePath,
+          action: "finalize",
+          docPath,
+          evidencePath: result.evidencePath,
+          runRecord: result.runRecordPath,
+          claims: tracker.getClaims().map((c) => ({
+            claim_id: c.claim_id,
+            rendered_text: c.rendered_text,
+            source_ids: c.source_ids,
+            is_quantitative: c.is_quantitative,
+            review_status: c.review_status,
+            relationship: c.relationship,
+          })),
+          sources: tracker.getSources().map((s) => ({
+            source_id: s.source_id,
+            title: s.title,
+            source_type: s.source_type,
+            file: s.file,
+            location: s.location,
+            approved: s.approved,
+            excerpt: s.excerpt,
+            extracted_value: s.extracted_value,
+            sensitivity: s.sensitivity,
+          })),
+          excludedSources: tracker.getExcludedSources().map((e) => e.source_id),
+          validation: result.validation,
+          lineageAppendix,
+        };
         return JSON.stringify(structured, null, 2);
       }
 

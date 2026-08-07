@@ -85,10 +85,7 @@ export interface ModelProvider {
   id: string;
   listModels(): Promise<ModelInfo[]>;
   getModelInfo(modelId: string): Promise<ModelInfo>;
-  streamChat(
-    request: ChatRequest,
-    signal: AbortSignal,
-  ): AsyncIterable<ModelEvent>;
+  streamChat(request: ChatRequest, signal: AbortSignal): AsyncIterable<ModelEvent>;
   countTokens?(input: TokenCountInput): Promise<TokenCountResult>;
 }
 
@@ -122,7 +119,6 @@ export function describeUnknownChunk(chunk: unknown): string {
     const keys = Object.keys(obj).slice(0, 10);
     const hasChoices = Array.isArray(obj.choices);
     const hasDelta = hasChoices && obj.choices[0]?.delta;
-    const hasUsage = !!obj.usage;
     const hasError = !!obj.error;
 
     if (hasError) {
@@ -156,11 +152,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   private baseUrl: string;
   private apiKey: string;
 
-  constructor(
-    id: string,
-    baseUrl: string,
-    apiKey: string,
-  ) {
+  constructor(id: string, baseUrl: string, apiKey: string) {
     this.id = id;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
@@ -206,10 +198,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
   }
 
-  async *streamChat(
-    request: ChatRequest,
-    signal: AbortSignal,
-  ): AsyncIterable<ModelEvent> {
+  async *streamChat(request: ChatRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
     // ── Timeout protection ──────────────────────────────────────────────
     // Without timeouts, a stalled API or a model processing a huge context
     // hangs the agent forever — the user sees no output and kills the process.
@@ -221,12 +210,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const onExternalAbort = () => timeoutController.abort();
     signal.addEventListener("abort", onExternalAbort);
 
-    let connectionTimer: ReturnType<typeof setTimeout> | null = setTimeout(
-      () => {
-        timeoutController.abort(new Error("Connection timeout (45s)"));
-      },
-      CONNECTION_TIMEOUT_MS,
-    );
+    let connectionTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      timeoutController.abort(new Error("Connection timeout (45s)"));
+    }, CONNECTION_TIMEOUT_MS);
 
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
     const resetStallTimer = () => {
@@ -252,7 +238,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
           temperature: request.temperature ?? 0.7,
           ...(request.topP !== undefined ? { top_p: request.topP } : {}),
           ...(request.topK !== undefined ? { top_k: request.topK } : {}),
-          ...(request.reasoningEffort !== undefined ? { reasoning_effort: request.reasoningEffort } : {}),
+          ...(request.reasoningEffort !== undefined
+            ? { reasoning_effort: request.reasoningEffort }
+            : {}),
           max_tokens: request.maxTokens,
           stream: true,
         }),
@@ -367,9 +355,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
                 const idx = typeof tc.index === "number" ? tc.index : 0;
                 // Pass through unknown tool_call fields verbatim — never drop
                 // provider-required echo bags (transport concern only).
-                const passthrough = extractToolCallPassthrough(
-                  tc as Record<string, unknown>,
-                );
+                const passthrough = extractToolCallPassthrough(tc as Record<string, unknown>);
                 if (tc.function?.name) {
                   yield {
                     type: "tool_call_start",
@@ -399,11 +385,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
                   };
                 }
                 // Passthrough-only chunk (name/args already streamed).
-                if (
-                  passthrough &&
-                  !tc.function?.name &&
-                  !tc.function?.arguments
-                ) {
+                if (passthrough && !tc.function?.name && !tc.function?.arguments) {
                   yield {
                     type: "tool_call_delta",
                     toolCallId: tc.id,
@@ -470,9 +452,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (err.name === "AbortError") {
         yield {
           type: "error",
-          error: signal.aborted
-            ? "Request cancelled"
-            : "Stream stalled — no data for 120s",
+          error: signal.aborted ? "Request cancelled" : "Stream stalled — no data for 120s",
         };
       } else {
         yield { type: "error", error: `Stream error: ${err.message}` };
@@ -529,7 +509,11 @@ function tryOpenRouterProvider(): ModelProvider | null {
   try {
     const profiles = new ModelProfileRegistry();
     for (const p of starterCatalog()) profiles.register(p);
-    return new QuiverOpenRouterProvider({ apiKey: config.openRouterApiKey, profiles, profileSlug: config.openRouterModelProfile });
+    return new QuiverOpenRouterProvider({
+      apiKey: config.openRouterApiKey,
+      profiles,
+      profileSlug: config.openRouterModelProfile,
+    });
   } catch {
     return null;
   }

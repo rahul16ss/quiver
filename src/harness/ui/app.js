@@ -67,7 +67,9 @@ function maybeShowWorkspaceWarning(config) {
   banner.hidden = false;
   $("workspaceWarningDismiss")?.addEventListener("click", () => {
     banner.hidden = true;
-    try { localStorage.setItem(DISMISS_KEY, "1"); } catch {}
+    try {
+      localStorage.setItem(DISMISS_KEY, "1");
+    } catch {}
   });
 }
 

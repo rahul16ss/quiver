@@ -19,13 +19,12 @@
 
 import type {
   MaterialClaim,
-  PointInTime,
   SourceLocator,
   FiscalPeriod,
   FigureBasis,
   FigureStatus,
 } from "./domain.js";
-import type { SensitivityProfile, SourceCategory } from "./interfaces.js";
+import type { SensitivityProfile } from "./interfaces.js";
 
 export type ClaimKind = "actual" | "estimate" | "guidance" | "assumption" | "derived";
 
@@ -109,7 +108,9 @@ export class ResearchStateStore {
    * Record a new claim version. Non-destructive: appends a version with
    * supersedes = previous latest version. Returns the new version record.
    */
-  recordClaim(input: Omit<ClaimVersion, "version" | "supersedes" | "contradictedBy">): ClaimVersion {
+  recordClaim(
+    input: Omit<ClaimVersion, "version" | "supersedes" | "contradictedBy">,
+  ): ClaimVersion {
     const existing = this.claims.get(input.claimId) ?? [];
     const version = existing.length + 1;
     const prev = existing[existing.length - 1];
@@ -172,7 +173,11 @@ export class ResearchStateStore {
    * Whether a conclusion recorded at `conclusionDate` was based only on
    * information available at that time (no future-leaked evidence).
    */
-  basedOnAvailableEvidence(claimId: string, conclusionDate: string, evidenceClaimIds: string[]): boolean {
+  basedOnAvailableEvidence(
+    claimId: string,
+    conclusionDate: string,
+    evidenceClaimIds: string[],
+  ): boolean {
     return evidenceClaimIds.every((eid) => {
       const asOf = this.asOf(eid, conclusionDate);
       return asOf !== null; // every piece of evidence was known by conclusionDate
@@ -208,13 +213,20 @@ export class ResearchStateStore {
   }
 }
 
-function valuesDiffer(a: NonNullable<ClaimVersion["value"]>, b: NonNullable<ClaimVersion["value"]>): boolean {
+function valuesDiffer(
+  a: NonNullable<ClaimVersion["value"]>,
+  b: NonNullable<ClaimVersion["value"]>,
+): boolean {
   return a.value !== b.value || a.currency !== b.currency || a.scale !== b.scale;
 }
 
 // ─── Helpers to build claims from the legacy MaterialClaim ────────────
 
-export function claimFromMaterial(mc: MaterialClaim, kind: ClaimKind, recordedTime: string): Omit<ClaimVersion, "version" | "supersedes" | "contradictedBy"> {
+export function claimFromMaterial(
+  mc: MaterialClaim,
+  kind: ClaimKind,
+  recordedTime: string,
+): Omit<ClaimVersion, "version" | "supersedes" | "contradictedBy"> {
   return {
     claimId: mc.id,
     validTime: mc.pointInTime.asOf,
@@ -222,7 +234,9 @@ export function claimFromMaterial(mc: MaterialClaim, kind: ClaimKind, recordedTi
     fiscalPeriod: mc.pointInTime.fiscalPeriod,
     kind,
     claim: mc.claim,
-    value: mc.value ? { value: mc.value.value, currency: mc.value.currency, scale: mc.value.scale } : undefined,
+    value: mc.value
+      ? { value: mc.value.value, currency: mc.value.currency, scale: mc.value.scale }
+      : undefined,
     status: mc.status,
     source: mc.source,
     sensitivity: mc.sensitivity,

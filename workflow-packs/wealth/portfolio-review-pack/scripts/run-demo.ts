@@ -33,7 +33,7 @@ export function runPortfolioReviewDemo(): boolean {
 
   const holdingsText = fs.readFileSync(holdingsFile, "utf8");
   const ipsText = fs.readFileSync(ipsFile, "utf8");
-  const benchmarkText = fs.readFileSync(benchmarkFile, "utf8");
+  fs.readFileSync(benchmarkFile, "utf8"); // validates the fixture exists
 
   const aaplBreach = holdingsText.includes("AAPL,Apple Inc.,Public Equity,6.5%");
   const msftBreach = holdingsText.includes("MSFT,Microsoft Corp.,Public Equity,7.2%");

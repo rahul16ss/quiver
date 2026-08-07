@@ -14,13 +14,9 @@
  */
 
 import { ChildProcess, spawn } from "child_process";
+import { z } from "zod";
 import { Tool } from "../registry.js";
-import {
-  McpServerConfig,
-  StdioServerConfig,
-  HttpServerConfig,
-  isHttpConfig,
-} from "./config.js";
+import { McpServerConfig, StdioServerConfig, HttpServerConfig, isHttpConfig } from "./config.js";
 import { registerConnectorProvenance } from "../tools/evidence.js";
 import { wrapUntrustedContent } from "../prompts/security.js";
 
@@ -57,10 +53,7 @@ interface McpToolResult {
 export class McpConnection {
   private proc: ChildProcess | null = null;
   private nextId = 1;
-  private pending = new Map<
-    number,
-    { resolve: (v: any) => void; reject: (e: any) => void }
-  >();
+  private pending = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>();
   private pendingTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private buffer = "";
   public instructions: string | undefined;
@@ -108,20 +101,14 @@ export class McpConnection {
       });
 
       this.proc.on("error", (err) => {
-        reject(
-          new Error(
-            `Failed to spawn MCP server "${this.name}": ${err.message}`,
-          ),
-        );
+        reject(new Error(`Failed to spawn MCP server "${this.name}": ${err.message}`));
       });
 
       this.proc.on("exit", (code) => {
         this.connected = false;
         // Reject any pending requests
         for (const [, { reject }] of this.pending) {
-          reject(
-            new Error(`MCP server "${this.name}" exited with code ${code}`),
-          );
+          reject(new Error(`MCP server "${this.name}" exited with code ${code}`));
         }
         this.pending.clear();
       });
@@ -174,10 +161,7 @@ export class McpConnection {
   }
 
   private handleMessage(msg: any): void {
-    if (
-      msg.id !== undefined &&
-      (msg.result !== undefined || msg.error !== undefined)
-    ) {
+    if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
       // Response to a request
       const handler = this.pending.get(msg.id);
       if (handler) {
@@ -189,9 +173,7 @@ export class McpConnection {
           this.pendingTimers.delete(msg.id);
         }
         if (msg.error) {
-          handler.reject(
-            new Error(`MCP error [${msg.error.code}]: ${msg.error.message}`),
-          );
+          handler.reject(new Error(`MCP error [${msg.error.code}]: ${msg.error.message}`));
         } else {
           handler.resolve(msg.result);
         }
@@ -216,11 +198,7 @@ export class McpConnection {
         if (this.pending.has(id)) {
           this.pending.delete(id);
           this.pendingTimers.delete(id);
-          reject(
-            new Error(
-              `MCP request "${method}" to "${this.name}" timed out (30s)`,
-            ),
-          );
+          reject(new Error(`MCP request "${method}" to "${this.name}" timed out (30s)`));
         }
       }, 30000);
       this.pendingTimers.set(id, timer);
@@ -307,10 +285,7 @@ export class McpConnection {
     }
   }
 
-  async callTool(
-    name: string,
-    args: Record<string, any>,
-  ): Promise<McpToolResult> {
+  async callTool(name: string, args: Record<string, any>): Promise<McpToolResult> {
     if (isHttpConfig(this.config)) {
       return this.httpRpc("tools/call", { name, arguments: args });
     } else {
@@ -342,35 +317,31 @@ export class McpManager {
    */
   async connectAll(servers: Record<string, McpServerConfig>): Promise<Tool[]> {
     const tools: Tool[] = [];
-    const connectionPromises = Object.entries(servers).map(
-      async ([name, cfg]) => {
-        try {
-          const conn = new McpConnection(name, cfg);
-          await conn.connect();
-          this.connections.set(name, conn);
+    const connectionPromises = Object.entries(servers).map(async ([name, cfg]) => {
+      try {
+        const conn = new McpConnection(name, cfg);
+        await conn.connect();
+        this.connections.set(name, conn);
 
-          const mcpTools = await conn.listTools();
+        const mcpTools = await conn.listTools();
 
-          if (conn.instructions) {
-            console.log(`  [mcp:${name}] ${mcpTools.length} tools available`);
-          } else {
-            console.log(`  [mcp:${name}] ${mcpTools.length} tools available`);
-          }
-
-          for (const mcpTool of mcpTools) {
-            // Prefix tool name with server name to avoid collisions
-            const quiverToolName = `mcp_${name}_${mcpTool.name}`;
-            this.toolToServer.set(quiverToolName, name);
-
-            tools.push(this.wrapMcpTool(quiverToolName, name, mcpTool, conn));
-          }
-        } catch (err: any) {
-          console.warn(
-            `    MCP server "${name}" failed to connect: ${err.message}`,
-          );
+        if (conn.instructions) {
+          console.log(`  [mcp:${name}] ${mcpTools.length} tools available`);
+        } else {
+          console.log(`  [mcp:${name}] ${mcpTools.length} tools available`);
         }
-      },
-    );
+
+        for (const mcpTool of mcpTools) {
+          // Prefix tool name with server name to avoid collisions
+          const quiverToolName = `mcp_${name}_${mcpTool.name}`;
+          this.toolToServer.set(quiverToolName, name);
+
+          tools.push(this.wrapMcpTool(quiverToolName, name, mcpTool, conn));
+        }
+      } catch (err: any) {
+        console.warn(`    MCP server "${name}" failed to connect: ${err.message}`);
+      }
+    });
 
     await Promise.all(connectionPromises);
     return tools;
@@ -387,16 +358,12 @@ export class McpManager {
     mcpTool: McpToolDef,
     conn: McpConnection,
   ): Tool {
-    // Build a permissive Zod schema from the MCP inputSchema
-    const { z } = require("zod");
-
+    // Build a permissive Zod schema from the MCP inputSchema.
     // Create a schema that accepts any object — the MCP server validates
     const schema = z
       .object({})
       .passthrough()
-      .describe(
-        mcpTool.description || `MCP tool: ${mcpTool.name} (from ${serverName})`,
-      );
+      .describe(mcpTool.description || `MCP tool: ${mcpTool.name} (from ${serverName})`);
 
     return {
       name: quiverName,
@@ -423,9 +390,7 @@ export class McpManager {
           const result = await conn.callTool(mcpTool.name, callArgs);
 
           if (result.isError) {
-            const errorText = result.content
-              ?.map((c) => c.text || "")
-              .join("\n");
+            const errorText = result.content?.map((c) => c.text || "").join("\n");
             return `MCP tool "${mcpTool.name}" returned an error: ${errorText || "Unknown error"}`;
           }
 
@@ -433,8 +398,7 @@ export class McpManager {
           const parts =
             result.content?.map((c) => {
               if (c.type === "text") return c.text || "";
-              if (c.type === "image")
-                return `[Image data: ${c.mimeType || "unknown"}]`;
+              if (c.type === "image") return `[Image data: ${c.mimeType || "unknown"}]`;
               if (c.type === "resource") return `[Resource: ${c.data || ""}]`;
               return c.text || JSON.stringify(c);
             }) || [];
@@ -482,8 +446,7 @@ export class McpManager {
   getStatus(): Array<{ name: string; tools: number; connected: boolean }> {
     return Array.from(this.connections.entries()).map(([name, conn]) => ({
       name,
-      tools: Array.from(this.toolToServer.values()).filter((s) => s === name)
-        .length,
+      tools: Array.from(this.toolToServer.values()).filter((s) => s === name).length,
       connected: conn.connected,
     }));
   }
@@ -492,9 +455,7 @@ export class McpManager {
    * Close all MCP connections.
    */
   async closeAll(): Promise<void> {
-    const closePromises = Array.from(this.connections.values()).map((c) =>
-      c.close(),
-    );
+    const closePromises = Array.from(this.connections.values()).map((c) => c.close());
     await Promise.all(closePromises);
     this.connections.clear();
     this.toolToServer.clear();

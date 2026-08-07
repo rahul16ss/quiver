@@ -35,7 +35,7 @@ $("onbStartBtn").addEventListener("click", async () => {
       if (!saved) throw new Error("Could not save the workspace settings securely.");
     }
     await api.loadMain();
-  } catch (e) {
+  } catch {
     btn.disabled = false;
     btn.textContent = "Get started";
     let err = document.getElementById("onbError");

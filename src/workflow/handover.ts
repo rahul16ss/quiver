@@ -14,12 +14,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import type {
-  WorkflowDefinition,
-  WorkflowRun,
-  HandoverPackage,
-  DocumentReview,
-} from "./types.js";
+import type { WorkflowDefinition, WorkflowRun, HandoverPackage, DocumentReview } from "./types.js";
 import { reviewManager } from "./review.js";
 
 // ─── Handover Generator ───────────────────────────────────────────────
@@ -27,10 +22,7 @@ import { reviewManager } from "./review.js";
 /**
  * Generate a complete handover package from a workflow run.
  */
-export function generateHandover(
-  def: WorkflowDefinition,
-  run: WorkflowRun,
-): HandoverPackage {
+export function generateHandover(def: WorkflowDefinition, run: WorkflowRun): HandoverPackage {
   const review = reviewManager.getReview(run.run_id);
   const runbook = buildRunbook(def, run, review);
 
@@ -53,10 +45,7 @@ export function generateHandover(
 /**
  * Write a handover package to disk.
  */
-export function writeHandover(
-  handover: HandoverPackage,
-  outputDir: string,
-): string {
+export function writeHandover(handover: HandoverPackage, outputDir: string): string {
   fs.mkdirSync(outputDir, { recursive: true });
 
   // Write the runbook as Markdown
@@ -122,12 +111,7 @@ function buildRunbook(
   lines.push("## 4. Execution Steps");
   lines.push("");
   for (const phase of run.phases) {
-    const emoji =
-      phase.status === "completed"
-        ? "✅"
-        : phase.status === "failed"
-          ? "❌"
-          : "⏭️";
+    const emoji = phase.status === "completed" ? "✅" : phase.status === "failed" ? "❌" : "⏭️";
     lines.push(`### ${emoji} Phase: ${titleCase(phase.phase)}`);
     lines.push("");
     if (phase.output) {
@@ -151,10 +135,7 @@ function buildRunbook(
     const start = new Date(phase.started_at).getTime();
     const end = new Date(phase.completed_at).getTime();
     const duration = end - start;
-    const durationStr =
-      duration < 1000
-        ? `${duration}ms`
-        : `${(duration / 1000).toFixed(1)}s`;
+    const durationStr = duration < 1000 ? `${duration}ms` : `${(duration / 1000).toFixed(1)}s`;
     lines.push(`_Duration: ${durationStr}_`);
     lines.push("");
   }
@@ -180,9 +161,7 @@ function buildRunbook(
     lines.push("| Role | Decision | Reviewer | Comment |");
     lines.push("|------|----------|----------|---------|");
     for (const dec of review.decisions) {
-      lines.push(
-        `| ${dec.role} | ${dec.decision} | ${dec.reviewer} | ${dec.comment || "—"} |`,
-      );
+      lines.push(`| ${dec.role} | ${dec.decision} | ${dec.reviewer} | ${dec.comment || "—"} |`);
     }
     const pendingRoles = review.required_reviewers.filter(
       (r) => !review.decisions.some((d) => d.role === r),
@@ -263,15 +242,11 @@ function buildMaintenanceNotes(def: WorkflowDefinition): string {
     );
   }
 
-  notes.push(
-    "- Quiver version and OfficeCLI must be kept up to date for template compatibility.",
-  );
+  notes.push("- Quiver version and OfficeCLI must be kept up to date for template compatibility.");
 
   return notes.join("\n");
 }
 
 function titleCase(str: string): string {
-  return str
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return str.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }

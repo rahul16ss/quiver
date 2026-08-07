@@ -63,12 +63,10 @@ export class ToolRegistry {
         !file.endsWith(".d.ts") &&
         !INFRA_NON_TOOL.some((n) => file.startsWith(n));
 
-      const loadPromises = files
-        .filter(isToolFile)
-        .map(async file => {
-          const filePath = path.join(this.toolsDir, file);
-          await this.loadToolFile(filePath);
-        });
+      const loadPromises = files.filter(isToolFile).map(async (file) => {
+        const filePath = path.join(this.toolsDir, file);
+        await this.loadToolFile(filePath);
+      });
 
       await Promise.all(loadPromises);
     } catch (error) {
@@ -85,7 +83,7 @@ export class ToolRegistry {
       // Resolve path and convert to file:/// URL
       const resolvedPath = path.resolve(filePath);
       const fileUrl = pathToFileURL(resolvedPath).href;
-      
+
       // Cache-bust by appending timestamp query parameter
       const importUrl = `${fileUrl}?t=${Date.now()}`;
       const module = await import(importUrl);
@@ -96,8 +94,15 @@ export class ToolRegistry {
       }
 
       const tool: Tool = module.tool;
-      if (!tool.name || !tool.description || !tool.parameters || typeof tool.execute !== "function") {
-        console.warn(`  Skipped ${path.basename(filePath)}: Exported 'tool' object has invalid structure.`);
+      if (
+        !tool.name ||
+        !tool.description ||
+        !tool.parameters ||
+        typeof tool.execute !== "function"
+      ) {
+        console.warn(
+          `  Skipped ${path.basename(filePath)}: Exported 'tool' object has invalid structure.`,
+        );
         return null;
       }
 
@@ -148,7 +153,7 @@ export class ToolRegistry {
   }
 
   private static zodPropertyToJsonSchema(prop: ZodTypeAny): any {
-    let type = prop._def.typeName;
+    const type = prop._def.typeName;
     const description = prop.description;
 
     // Unwrap optionals / defaults

@@ -10,10 +10,7 @@
 
 import { z } from "zod";
 import type { Tool } from "../registry.js";
-import {
-  globalConnectorRegistry,
-  loadConnectors,
-} from "../connectors/framework.js";
+import { globalConnectorRegistry, loadConnectors } from "../connectors/framework.js";
 import { registerConnectorProvenance } from "./evidence.js";
 
 let connectorsLoaded = false;
@@ -41,9 +38,7 @@ const dataQuerySchema = z.object({
   identifier: z
     .string()
     .optional()
-    .describe(
-      "Entity identifier (for 'fetch' action, e.g., ticker, CIK, series ID)",
-    ),
+    .describe("Entity identifier (for 'fetch' action, e.g., ticker, CIK, series ID)"),
   fields: z
     .array(z.string())
     .optional()
@@ -69,7 +64,9 @@ export const tool: Tool = {
 
     const { action, connector, query, identifier, fields, data_sensitivity } = args;
 
-    const blockedExternalCall = (connectors: Array<{ name: string; sendsIdentifiers: boolean }>) => {
+    const blockedExternalCall = (
+      connectors: Array<{ name: string; sendsIdentifiers: boolean }>,
+    ) => {
       const blocked = connectors
         .filter((c) => c.sendsIdentifiers)
         .map((c) => c.name)
@@ -143,11 +140,7 @@ export const tool: Tool = {
         const blocked = blockedExternalCall([connectorInstance]);
         if (blocked) return { content: `Error: ${blocked}` };
         try {
-          const result = await globalConnectorRegistry.fetch(
-            connector,
-            identifier,
-            fields,
-          );
+          const result = await globalConnectorRegistry.fetch(connector, identifier, fields);
           const provenance = `Source: ${result.provenance.vendor} / ${result.provenance.dataset} @ ${result.provenance.timestamp}${result.cachedAt ? " (cached)" : ""}`;
           const evidenceRegistered = registerConnectorProvenance(
             result.provenance,

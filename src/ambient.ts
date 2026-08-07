@@ -108,8 +108,7 @@ export class GoalLoopEngine {
     const failedChecks = notVerified
       ? [...res.failedChecks, "CHECKER-EMPTY-RESULT"]
       : res.failedChecks;
-    const healthy =
-      !notVerified && res.verdict === "approve" && res.failed === 0;
+    const healthy = !notVerified && res.verdict === "approve" && res.failed === 0;
     const failedList = failedChecks.length ? failedChecks.join(", ") : "none";
     const diagnostics =
       `Maker-checker completion verdict: ${res.verdict.toUpperCase()} ` +

@@ -16,7 +16,6 @@ import * as path from "path";
 import * as os from "os";
 import { executeWorkflow, type AgentCallback } from "./orchestrator.js";
 import { discoverWorkflows } from "./loader.js";
-import type { WorkflowDefinition } from "./types.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -169,7 +168,7 @@ export class WorkflowWatcher {
    */
   stop(): void {
     this.running = false;
-    for (const [id, watchers] of this.watchers) {
+    for (const [, watchers] of this.watchers) {
       for (const w of watchers) {
         try {
           w.close();
@@ -286,10 +285,7 @@ export class WorkflowWatcher {
         triggerInput: filePath,
       });
     } catch (err: any) {
-      console.error(
-        `WorkflowWatcher: workflow "${rule.workflow}" failed:`,
-        err?.message || err,
-      );
+      console.error(`WorkflowWatcher: workflow "${rule.workflow}" failed:`, err?.message || err);
     } finally {
       this.processing.delete(processingKey);
     }

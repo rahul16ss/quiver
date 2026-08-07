@@ -82,10 +82,7 @@ export async function renderDocument(
   options: Partial<RenderLookFixConfig> = {},
 ): Promise<{ pngPath: string; step: RlfStep }> {
   const tmpDir = os.tmpdir();
-  const pngPath = path.join(
-    tmpDir,
-    `quiver-render-${Date.now()}.png`,
-  );
+  const pngPath = path.join(tmpDir, `quiver-render-${Date.now()}.png`);
 
   const args = [
     "view",
@@ -153,9 +150,13 @@ export async function checkDocument(
     const issuesData = JSON.parse(issuesResult.stdout);
 
     if (Array.isArray(issuesData.issues)) {
-      issues.push(...issuesData.issues.map((i: any) =>
-        typeof i === "string" ? i : `${i.type || "issue"}: ${i.message || i.description || JSON.stringify(i)}`,
-      ));
+      issues.push(
+        ...issuesData.issues.map((i: any) =>
+          typeof i === "string"
+            ? i
+            : `${i.type || "issue"}: ${i.message || i.description || JSON.stringify(i)}`,
+        ),
+      );
     } else if (issuesData.count && issuesData.count > 0) {
       issues.push(`${issuesData.count} issues found`);
     }

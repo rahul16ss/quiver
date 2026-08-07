@@ -100,8 +100,7 @@ export function sanitizeLogData(type: string, data: any): any {
     }
     case "tool_result": {
       const result = data?.result;
-      const resultStr =
-        typeof result === "string" ? result : safeStringify(result ?? "");
+      const resultStr = typeof result === "string" ? result : safeStringify(result ?? "");
       const redacted = redactSecrets(resultStr);
       const truncated = truncateForLog(redacted, maxChars);
       return {
@@ -146,10 +145,7 @@ export class SessionLogger {
   constructor() {
     this.sessionId = `session_${Date.now()}`;
     this.logPath = path.join(getProjectSessionsDir(), `${this.sessionId}.json`);
-    this.auditLogPath = path.join(
-      getProjectSessionsDir(),
-      `${this.sessionId}_audit.json`,
-    );
+    this.auditLogPath = path.join(getProjectSessionsDir(), `${this.sessionId}_audit.json`);
     this.auditChain = new AuditChain();
   }
 
@@ -244,7 +240,8 @@ export class SessionLogger {
    * overridden by the reviewer.
    */
   public logReviewDecision(decision: {
-    action: "marked_final" | "override" | "figure_verified" | "figure_flagged" | "figure_needs_analyst";
+    action:
+      "marked_final" | "override" | "figure_verified" | "figure_flagged" | "figure_needs_analyst";
     deliverablePath: string;
     claimId?: string;
     openFlags?: number;
@@ -287,22 +284,14 @@ export class SessionLogger {
     // Session log (event timeline)
     if (this.logs.length > 0) {
       try {
-        await fs.writeFile(
-          this.logPath,
-          JSON.stringify(this.logs, null, 2),
-          "utf8",
-        );
+        await fs.writeFile(this.logPath, JSON.stringify(this.logs, null, 2), "utf8");
       } catch {
         // Fail silently — logging must never crash the agent
       }
     }
     // Tamper-evident audit chain
     try {
-      await fs.writeFile(
-        this.auditLogPath,
-        this.auditChain.serialize(),
-        "utf8",
-      );
+      await fs.writeFile(this.auditLogPath, this.auditChain.serialize(), "utf8");
     } catch {
       // Fail silently — logging must never crash the agent
     }
@@ -317,21 +306,13 @@ export class SessionLogger {
     }
     if (this.logs.length > 0) {
       try {
-        fsSync.writeFileSync(
-          this.logPath,
-          JSON.stringify(this.logs, null, 2),
-          "utf8",
-        );
+        fsSync.writeFileSync(this.logPath, JSON.stringify(this.logs, null, 2), "utf8");
       } catch {
         // Fail silently — logging must never crash the agent
       }
     }
     try {
-      fsSync.writeFileSync(
-        this.auditLogPath,
-        this.auditChain.serialize(),
-        "utf8",
-      );
+      fsSync.writeFileSync(this.auditLogPath, this.auditChain.serialize(), "utf8");
     } catch {
       // Fail silently — logging must never crash the agent
     }
@@ -461,14 +442,8 @@ export async function purgeOldLogs(olderThanDays: number): Promise<number> {
       sessionsDir,
       (f) => f.endsWith(".json") && !f.includes("checkpoint"),
     );
-    purged += await purgeInDir(
-      path.join(sessionsDir, "compacted"),
-      (f) => f.endsWith(".json"),
-    );
-    purged += await purgeInDir(
-      path.join(sessionsDir, "checkpoints"),
-      (f) => f.endsWith(".json"),
-    );
+    purged += await purgeInDir(path.join(sessionsDir, "compacted"), (f) => f.endsWith(".json"));
+    purged += await purgeInDir(path.join(sessionsDir, "checkpoints"), (f) => f.endsWith(".json"));
     purged += await purgeInDir(
       path.join(sessionsDir, "offloaded"),
       (f) => f.endsWith(".txt") || f.endsWith(".json"),
@@ -523,9 +498,8 @@ export function formatLogListForCLI(logs: LogMetadata[]): string {
   const lines: string[] = [`Session Logs (${logs.length}):`, ""];
 
   for (const log of logs.slice(0, 20)) {
-    const size = log.sizeBytes > 1024
-      ? `${(log.sizeBytes / 1024).toFixed(1)}KB`
-      : `${log.sizeBytes}B`;
+    const size =
+      log.sizeBytes > 1024 ? `${(log.sizeBytes / 1024).toFixed(1)}KB` : `${log.sizeBytes}B`;
     const date = log.mtime.toISOString().split("T")[0];
     lines.push(`  ${log.sessionId}  ${size.padEnd(8)}  ${log.eventCount} events  ${date}`);
   }

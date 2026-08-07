@@ -19,13 +19,19 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   await fs.mkdir(scratchDir, { recursive: true });
 
   // Copy source, test, and ui directories
-  for (const dir of ["src", "tests", "ui", "docs", "Formula", "branding", "bin", "skills", "templates"]) {
+  for (const dir of [
+    "src",
+    "tests",
+    "ui",
+    "docs",
+    "Formula",
+    "branding",
+    "bin",
+    "skills",
+    "templates",
+  ]) {
     try {
-      await fs.cp(
-        path.join(workspaceRoot, dir),
-        path.join(scratchDir, dir),
-        { recursive: true },
-      );
+      await fs.cp(path.join(workspaceRoot, dir), path.join(scratchDir, dir), { recursive: true });
     } catch {
       /* best-effort copy */
     }
@@ -34,10 +40,7 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   // Copy config files needed for tsc / tsx
   for (const file of ["package.json", "tsconfig.json"]) {
     try {
-      await fs.copyFile(
-        path.join(workspaceRoot, file),
-        path.join(scratchDir, file),
-      );
+      await fs.copyFile(path.join(workspaceRoot, file), path.join(scratchDir, file));
     } catch {
       /* best-effort */
     }
@@ -50,11 +53,9 @@ export async function buildScratchpad(workspaceRoot: string): Promise<string> {
   // and the checker gets 0/0 results, causing a deadlock where the fix
   // can't be applied because the checker blocks it.
   try {
-    await fs.cp(
-      path.join(workspaceRoot, "node_modules"),
-      path.join(scratchDir, "node_modules"),
-      { recursive: true },
-    );
+    await fs.cp(path.join(workspaceRoot, "node_modules"), path.join(scratchDir, "node_modules"), {
+      recursive: true,
+    });
   } catch {
     // The checker will report an infrastructure failure if dependencies are
     // unavailable; it must not convert this into approval.

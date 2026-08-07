@@ -20,10 +20,7 @@
 export type DeploymentProfile = "connected-zdr" | "private-network" | "air-gapped";
 
 export type DataClassification =
-  | "public"
-  | "confidential-internal"
-  | "restricted-mnpi"
-  | "highly-sensitive";
+  "public" | "confidential-internal" | "restricted-mnpi" | "highly-sensitive";
 
 export type NetworkZone = "loopback" | "private-network" | "public-internet";
 
@@ -140,13 +137,20 @@ export function resolveDeploymentProfile(env?: string): DeploymentProfile {
  * block the public internet; only loopback (and, for private-network, hosts
  * on an explicit allowlist) are reachable.
  */
-export function isHostReachable(host: string, profile: DeploymentProfile, privateAllowlist: string[] = []): boolean {
+export function isHostReachable(
+  host: string,
+  profile: DeploymentProfile,
+  privateAllowlist: string[] = [],
+): boolean {
   const h = host.toLowerCase();
   const isLoopback = h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
   if (profile === "connected-zdr") return true;
   if (profile === "air-gapped") return isLoopback;
   // private-network: loopback + explicit allowlist
-  return isLoopback || privateAllowlist.some((a) => h === a.toLowerCase() || h.endsWith("." + a.toLowerCase()));
+  return (
+    isLoopback ||
+    privateAllowlist.some((a) => h === a.toLowerCase() || h.endsWith("." + a.toLowerCase()))
+  );
 }
 
 /**
@@ -157,13 +161,16 @@ export function isHostReachable(host: string, profile: DeploymentProfile, privat
  * the guard rejects the request before it leaves the process. The guard is
  * no-op for connected-zdr.
  */
-export function installNetworkGuard(profile: DeploymentProfile, privateAllowlist: string[] = []): () => void {
+export function installNetworkGuard(
+  profile: DeploymentProfile,
+  privateAllowlist: string[] = [],
+): () => void {
   if (profile === "connected-zdr") return () => {};
   const originalFetch = globalThis.fetch;
   const guard = async (input: any, init?: any) => {
     let urlStr: string;
     try {
-      urlStr = typeof input === "string" ? input : input?.url ?? String(input);
+      urlStr = typeof input === "string" ? input : (input?.url ?? String(input));
     } catch {
       urlStr = String(input);
     }
@@ -186,7 +193,9 @@ export function installNetworkGuard(profile: DeploymentProfile, privateAllowlist
   // Preserve statics (Response, Request, etc.) and the original reference.
   (guard as any).originalFetch = originalFetch;
   globalThis.fetch = guard as any;
-  return () => { globalThis.fetch = originalFetch; };
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
 }
 
 // ─── Context builder ─────────────────────────────────────────────────
@@ -218,7 +227,12 @@ export function buildExecutionContext(init: ExecutionContextInit): ExecutionCont
     actor: init.actor,
     dataClassification: init.dataClassification,
     deploymentProfile: profile,
-    allowedZone: profile === "air-gapped" ? "loopback" : profile === "private-network" ? "private-network" : "public-internet",
+    allowedZone:
+      profile === "air-gapped"
+        ? "loopback"
+        : profile === "private-network"
+          ? "private-network"
+          : "public-internet",
     sourceAcls: {
       allowedCategories: init.allowedCategories ?? [],
       deniedCategories: init.deniedCategories ?? [],
@@ -236,8 +250,15 @@ export function buildExecutionContext(init: ExecutionContextInit): ExecutionCont
  * context's tool permissions. External tools are removed in air-gapped /
  * private-network profiles — not merely discouraged.
  */
-export function filterToolsByContext<T extends { name: string }>(tools: T[], ctx: ExecutionContext): T[] {
+export function filterToolsByContext<T extends { name: string }>(
+  tools: T[],
+  ctx: ExecutionContext,
+): T[] {
   const removed = ctx.toolPermissions.removed;
   if (ctx.toolPermissions.allowed.size === 0 && removed.size === 0) return tools;
-  return tools.filter((t) => !removed.has(t.name) && (ctx.toolPermissions.allowed.size === 0 || ctx.toolPermissions.allowed.has(t.name)));
+  return tools.filter(
+    (t) =>
+      !removed.has(t.name) &&
+      (ctx.toolPermissions.allowed.size === 0 || ctx.toolPermissions.allowed.has(t.name)),
+  );
 }

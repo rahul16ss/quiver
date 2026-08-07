@@ -85,8 +85,10 @@ export class SharePointExporter implements DmsExporter {
     return "Set SHAREPOINT_GRAPH_ENDPOINT, SHAREPOINT_SITE_ID, SHAREPOINT_DRIVE_ID, SHAREPOINT_ACCESS_TOKEN (Microsoft Graph).";
   }
   async export(meta: DmsExportMeta): Promise<DmsExportResult> {
-    if (!this.isConfigured()) return { ok: false, detail: `SharePoint not configured. ${this.configHint()}` };
-    if (!fs.existsSync(meta.deliverablePath)) return { ok: false, detail: `local file not found: ${meta.deliverablePath}` };
+    if (!this.isConfigured())
+      return { ok: false, detail: `SharePoint not configured. ${this.configHint()}` };
+    if (!fs.existsSync(meta.deliverablePath))
+      return { ok: false, detail: `local file not found: ${meta.deliverablePath}` };
     const buf = fs.readFileSync(meta.deliverablePath);
     const url = `${this.graphEndpoint}/sites/${this.siteId}/drives/${this.driveId}/root:/${encodeURIComponent(meta.name)}:/content`;
     try {
@@ -96,10 +98,22 @@ export class SharePointExporter implements DmsExporter {
       if (buf.byteLength > 4 * 1024 * 1024) {
         return await this.uploadLargeFile(url, buf, meta.name);
       }
-      const res = await fetch(url, { method: "PUT", headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/octet-stream" }, body: buf });
-      if (!res.ok) return { ok: false, detail: `SharePoint upload failed: ${res.status} ${res.statusText}` };
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/octet-stream",
+        },
+        body: buf,
+      });
+      if (!res.ok)
+        return { ok: false, detail: `SharePoint upload failed: ${res.status} ${res.statusText}` };
       const json: any = await res.json();
-      return { ok: true, url: json?.webUrl, detail: `Uploaded to SharePoint: ${json?.webUrl ?? url}` };
+      return {
+        ok: true,
+        url: json?.webUrl,
+        detail: `Uploaded to SharePoint: ${json?.webUrl ?? url}`,
+      };
     } catch (e: any) {
       return { ok: false, detail: `SharePoint upload error: ${e?.message || e}` };
     }
@@ -182,18 +196,29 @@ export class NetDocumentsExporter implements DmsExporter {
     return "Set NETDOCS_CABINET_ID, NETDOCS_API_BASE, NETDOCS_ACCESS_TOKEN (NetDocuments REST).";
   }
   async export(meta: DmsExportMeta): Promise<DmsExportResult> {
-    if (!this.isConfigured()) return { ok: false, detail: `NetDocuments not configured. ${this.configHint()}` };
-    if (!fs.existsSync(meta.deliverablePath)) return { ok: false, detail: `local file not found: ${meta.deliverablePath}` };
+    if (!this.isConfigured())
+      return { ok: false, detail: `NetDocuments not configured. ${this.configHint()}` };
+    if (!fs.existsSync(meta.deliverablePath))
+      return { ok: false, detail: `local file not found: ${meta.deliverablePath}` };
     const buf = fs.readFileSync(meta.deliverablePath);
     try {
       const res = await fetch(`${this.apiBase}/cabinets/${this.cabinetId}/documents`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/octet-stream", "X-Doc-Name": meta.name },
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/octet-stream",
+          "X-Doc-Name": meta.name,
+        },
         body: buf,
       });
-      if (!res.ok) return { ok: false, detail: `NetDocuments upload failed: ${res.status} ${res.statusText}` };
+      if (!res.ok)
+        return { ok: false, detail: `NetDocuments upload failed: ${res.status} ${res.statusText}` };
       const json: any = await res.json();
-      return { ok: true, url: json?.url, detail: `Uploaded to NetDocuments: ${json?.url ?? json?.id ?? "ok"}` };
+      return {
+        ok: true,
+        url: json?.url,
+        detail: `Uploaded to NetDocuments: ${json?.url ?? json?.id ?? "ok"}`,
+      };
     } catch (e: any) {
       return { ok: false, detail: `NetDocuments upload error: ${e?.message || e}` };
     }

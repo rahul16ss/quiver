@@ -10,7 +10,7 @@ function renderMarkdownToHtml(text) {
   let codeLang = "";
   let inList = false;
   let listType = ""; // "ul" or "ol"
-  
+
   function closeList() {
     if (inList) {
       html += `</${listType}>`;
@@ -23,7 +23,7 @@ function renderMarkdownToHtml(text) {
     // ── Inside code block ──
     if (inCode) {
       if (line.trim().startsWith("```")) {
-        html += `<pre><code class="language-${codeLang || 'plaintext'}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
+        html += `<pre><code class="language-${codeLang || "plaintext"}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
         inCode = false;
         codeContent = [];
         codeLang = "";
@@ -104,9 +104,9 @@ function renderMarkdownToHtml(text) {
   }
 
   closeList();
-  
+
   if (inCode) {
-    html += `<pre><code class="language-${codeLang || 'plaintext'}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
+    html += `<pre><code class="language-${codeLang || "plaintext"}">${escapeHtml(codeContent.join("\n"))}</code></pre>`;
   }
 
   return html;
@@ -115,17 +115,18 @@ function renderMarkdownToHtml(text) {
 function renderInlineMarkdown(text) {
   if (!text) return "";
   let escaped = escapeHtml(text);
-  
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(~~[^~]+~~)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*]+\*)|(_[^_]+_)/g;
+
+  const pattern =
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(~~[^~]+~~)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*]+\*)|(_[^_]+_)/g;
   let out = "";
   let last = 0;
   let mm;
-  
+
   while ((mm = pattern.exec(escaped))) {
     out += escaped.slice(last, mm.index);
     last = mm.index + mm[0].length;
     const tok = mm[0];
-    
+
     if (tok.startsWith("`")) {
       out += `<code>${tok.slice(1, -1)}</code>`;
     } else if (tok.startsWith("**")) {
@@ -149,7 +150,7 @@ function renderInlineMarkdown(text) {
       out += tok;
     }
   }
-  
+
   out += escaped.slice(last);
   return out;
 }

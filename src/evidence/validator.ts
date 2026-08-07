@@ -8,11 +8,7 @@
 
 import * as fs from "fs/promises";
 import * as path from "path";
-import type {
-  ClaimRecord,
-  EvidenceModel,
-  SourceRecord,
-} from "./model.js";
+import type { ClaimRecord, EvidenceModel, SourceRecord } from "./model.js";
 
 const SOURCE_TYPES = new Set([
   "excel_model",
@@ -27,42 +23,25 @@ const SOURCE_TYPES = new Set([
   "other",
 ]);
 const RELATIONSHIPS = new Set(["sourced", "derived", "estimate", "unresolved"]);
-const REVIEW_STATUSES = new Set([
-  "verified",
-  "needs_analyst",
-  "flagged",
-  "unresolved",
-]);
+const REVIEW_STATUSES = new Set(["verified", "needs_analyst", "flagged", "unresolved"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function requiredString(
-  value: Record<string, unknown>,
-  key: string,
-  problems: string[],
-): void {
+function requiredString(value: Record<string, unknown>, key: string, problems: string[]): void {
   if (typeof value[key] !== "string" || !value[key].trim()) {
     problems.push(`${key} must be a non-empty string`);
   }
 }
 
-function stringField(
-  value: Record<string, unknown>,
-  key: string,
-  problems: string[],
-): void {
+function stringField(value: Record<string, unknown>, key: string, problems: string[]): void {
   if (typeof value[key] !== "string") {
     problems.push(`${key} must be a string`);
   }
 }
 
-function validateSource(
-  value: unknown,
-  index: number,
-  problems: string[],
-): value is SourceRecord {
+function validateSource(value: unknown, index: number, problems: string[]): value is SourceRecord {
   if (!isRecord(value)) {
     problems.push(`sources[${index}] must be an object`);
     return false;
@@ -82,11 +61,7 @@ function validateSource(
   return true;
 }
 
-function validateClaim(
-  value: unknown,
-  index: number,
-  problems: string[],
-): value is ClaimRecord {
+function validateClaim(value: unknown, index: number, problems: string[]): value is ClaimRecord {
   if (!isRecord(value)) {
     problems.push(`claims[${index}] must be an object`);
     return false;
@@ -118,15 +93,24 @@ function validateClaim(
 /**
  * Validate the persisted EvidenceModel shape without trusting a type cast.
  */
-export function validateEvidenceModel(
-  value: unknown,
-): { valid: boolean; problems: string[]; model?: EvidenceModel } {
+export function validateEvidenceModel(value: unknown): {
+  valid: boolean;
+  problems: string[];
+  model?: EvidenceModel;
+} {
   const problems: string[] = [];
   if (!isRecord(value)) {
     return { valid: false, problems: ["evidence must be a JSON object"] };
   }
 
-  for (const key of ["label", "workflow", "workflow_version", "as_of", "date_line", "generated_at"]) {
+  for (const key of [
+    "label",
+    "workflow",
+    "workflow_version",
+    "as_of",
+    "date_line",
+    "generated_at",
+  ]) {
     requiredString(value, key, problems);
   }
   for (const key of ["company", "title", "subtitle"]) {

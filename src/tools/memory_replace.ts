@@ -6,9 +6,12 @@ import { getProjectMemoryDir } from "../paths.js";
 
 export const tool: Tool = {
   name: "memory_replace",
-  description: "Rewrites or replaces the full content of a persistent memory file in the memory directory (e.g., to restructure notes or update profile variables).",
+  description:
+    "Rewrites or replaces the full content of a persistent memory file in the memory directory (e.g., to restructure notes or update profile variables).",
   parameters: z.object({
-    filename: z.string().describe("The name of the memory file to overwrite (e.g., 'human.txt', 'persona.txt')."),
+    filename: z
+      .string()
+      .describe("The name of the memory file to overwrite (e.g., 'human.txt', 'persona.txt')."),
     content: z.string().describe("The new content to write to the memory file."),
   }),
   execute: async ({ filename, content }) => {

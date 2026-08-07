@@ -25,15 +25,11 @@ export const tool: Tool = {
       .describe(
         "Natural-language description of the entities to find. E.g. 'Find all AI startups that raised Series A in 2024'.",
       ),
-    entity_type: z
-      .enum(["companies", "people"])
-      .describe("Type of entity to search for."),
+    entity_type: z.enum(["companies", "people"]).describe("Type of entity to search for."),
     match_conditions: z
       .array(
         z.object({
-          name: z
-            .string()
-            .describe("Short name for the match condition (snake_case)."),
+          name: z.string().describe("Short name for the match condition (snake_case)."),
           description: z
             .string()
             .describe(
@@ -57,17 +53,9 @@ export const tool: Tool = {
       .min(5)
       .max(1000)
       .optional()
-      .describe(
-        "Maximum number of matches to find (5-1000). May return fewer. Defaults to 20.",
-      ),
+      .describe("Maximum number of matches to find (5-1000). May return fewer. Defaults to 20."),
   }),
-  execute: async ({
-    objective,
-    entity_type,
-    match_conditions,
-    generator,
-    match_limit,
-  }) => {
+  execute: async ({ objective, entity_type, match_conditions, generator, match_limit }) => {
     const apiKey = config.parallelApiKey;
     if (!apiKey) {
       return "Error: PARALLEL_API_KEY is not set in the configuration (.env). FindAll requires a Parallel.ai API key.";
@@ -78,24 +66,21 @@ export const tool: Tool = {
 
     try {
       // Step 1: Create the FindAll run
-      const createResponse = await fetch(
-        `${PARALLEL_BASE}/v1beta/findall/runs`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            objective,
-            entity_type,
-            match_conditions,
-            generator: selectedGenerator,
-            match_limit: selectedLimit,
-          }),
-          signal: AbortSignal.timeout(30000),
+      const createResponse = await fetch(`${PARALLEL_BASE}/v1beta/findall/runs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
         },
-      );
+        body: JSON.stringify({
+          objective,
+          entity_type,
+          match_conditions,
+          generator: selectedGenerator,
+          match_limit: selectedLimit,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
       if (!createResponse.ok) {
         const errorText = await createResponse.text();
@@ -119,16 +104,13 @@ export const tool: Tool = {
           await sleep(pollIntervalMs);
         }
 
-        const statusResponse = await fetch(
-          `${PARALLEL_BASE}/v1beta/findall/runs/${findallId}`,
-          {
-            method: "GET",
-            headers: {
-              "x-api-key": apiKey,
-            },
-            signal: AbortSignal.timeout(15000),
+        const statusResponse = await fetch(`${PARALLEL_BASE}/v1beta/findall/runs/${findallId}`, {
+          method: "GET",
+          headers: {
+            "x-api-key": apiKey,
           },
-        );
+          signal: AbortSignal.timeout(15000),
+        });
 
         if (!statusResponse.ok) {
           const errorText = await statusResponse.text();
@@ -201,9 +183,7 @@ function formatFindAllResult(data: any): string {
   lines.push("");
 
   const matched = candidates.filter((c: any) => c.match_status === "matched");
-  const unmatched = candidates.filter(
-    (c: any) => c.match_status === "unmatched",
-  );
+  const unmatched = candidates.filter((c: any) => c.match_status === "unmatched");
 
   if (matched.length > 0) {
     lines.push(`### Matched Entities (${matched.length})\n`);

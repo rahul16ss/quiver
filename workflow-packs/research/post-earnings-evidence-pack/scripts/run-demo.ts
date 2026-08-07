@@ -33,7 +33,7 @@ export function runPostEarningsDemo(): boolean {
 
   const earningsText = fs.readFileSync(earningsFile, "utf8");
   const transcriptText = fs.readFileSync(transcriptFile, "utf8");
-  const consensusText = fs.readFileSync(consensusFile, "utf8");
+  fs.readFileSync(consensusFile, "utf8"); // validates the fixture exists
 
   // Verify key figures
   const revenueMatch = earningsText.includes("$124.5 million");

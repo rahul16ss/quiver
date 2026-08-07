@@ -3,7 +3,7 @@ import * as path from "path";
 import { exec, execFile } from "child_process";
 import { z } from "zod";
 import picocolors from "picocolors";
-import { Tool } from "../registry.js"
+import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 /**
@@ -20,9 +20,7 @@ function hasPrettier(): Promise<boolean> {
 /**
  * Runs prettier on a file path using execFile (no shell interpolation).
  */
-function runPrettier(
-  filePath: string,
-): Promise<{ code: number; stdout: string; stderr: string }> {
+function runPrettier(filePath: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     execFile(
       "npx",
@@ -163,9 +161,7 @@ export const tool: Tool = {
   parameters: z.object({
     filePath: z
       .string()
-      .describe(
-        "The absolute or relative path of the TypeScript/JavaScript file to format.",
-      ),
+      .describe("The absolute or relative path of the TypeScript/JavaScript file to format."),
   }),
   execute: async ({ filePath }) => {
     // Path-policy guard (US-9.2): reject sensitive paths
@@ -198,18 +194,12 @@ export const tool: Tool = {
         formatted = await fs.readFile(resolvedPath, "utf8");
         method = "prettier";
       } else {
-        console.log(
-          picocolors.yellow(
-            `     Prettier failed, falling back to built-in formatter.`,
-          ),
-        );
+        console.log(picocolors.yellow(`     Prettier failed, falling back to built-in formatter.`));
         formatted = customFormat(original);
         method = "built-in (prettier fallback)";
       }
     } else {
-      console.log(
-        picocolors.gray(`   Formatting with built-in formatter...`),
-      );
+      console.log(picocolors.gray(`   Formatting with built-in formatter...`));
       formatted = customFormat(original);
       method = "built-in";
     }
@@ -219,9 +209,7 @@ export const tool: Tool = {
       await fs.writeFile(resolvedPath, formatted, "utf8");
       const linesChanged = formatted.split("\n").length;
       console.log(
-        picocolors.green(
-          `   Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`,
-        ),
+        picocolors.green(`   Formatted ${resolvedPath} (${linesChanged} lines, method: ${method})`),
       );
       return JSON.stringify(
         {
@@ -235,9 +223,7 @@ export const tool: Tool = {
         2,
       );
     } else {
-      console.log(
-        picocolors.green(`   File already well-formatted (${method}).`),
-      );
+      console.log(picocolors.green(`   File already well-formatted (${method}).`));
       return JSON.stringify(
         {
           success: true,

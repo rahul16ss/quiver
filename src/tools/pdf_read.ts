@@ -43,8 +43,8 @@ async function detectBackend(): Promise<string | null> {
   // 1. Check PyMuPDF (fitz) via python3
   try {
     execFileSync("python3", ["-c", "import fitz; print(fitz.version[0])"], {
-        stdio: "pipe",
-        timeout: 5000,
+      stdio: "pipe",
+      timeout: 5000,
     });
     cachedBackend = "pymupdf";
     return cachedBackend;
@@ -74,7 +74,10 @@ async function getPdfPageCount(filePath: string): Promise<number> {
     try {
       const { stdout } = await execFileAsync(
         "python3",
-        ["-c", `import fitz; doc=fitz.open("${filePath.replace(/"/g, '\\"')}"); print(doc.page_count); doc.close()`],
+        [
+          "-c",
+          `import fitz; doc=fitz.open("${filePath.replace(/"/g, '\\"')}"); print(doc.page_count); doc.close()`,
+        ],
         { timeout: 10000 },
       );
       return parseInt(stdout.trim(), 10) || 0;
@@ -99,10 +102,10 @@ async function getPdfPageCount(filePath: string): Promise<number> {
 // ─── Rendering ────────────────────────────────────────────────────────
 
 /**
-* Render PDF pages to PNG using PyMuPDF.
-* Writes a Python script to a temp file and executes it — safer than
-* inline string interpolation for paths with special characters.
-*/
+ * Render PDF pages to PNG using PyMuPDF.
+ * Writes a Python script to a temp file and executes it — safer than
+ * inline string interpolation for paths with special characters.
+ */
 async function renderWithPyMuPDF(
   filePath: string,
   startPage: number,
@@ -162,13 +165,17 @@ async function renderWithPyMuPDF(
     };
   } finally {
     // Clean up the script file
-    try { fs.unlinkSync(scriptPath); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(scriptPath);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 /**
-* Render PDF pages to PNG using pdftoppm (poppler).
-*/
+ * Render PDF pages to PNG using pdftoppm (poppler).
+ */
 async function renderWithPdftoppm(
   filePath: string,
   startPage: number,
@@ -179,9 +186,12 @@ async function renderWithPdftoppm(
   const prefix = path.join(outputDir, "page");
   const args = [
     "-png",
-    "-r", String(dpi),
-    "-f", String(startPage),
-    "-l", String(endPage),
+    "-r",
+    String(dpi),
+    "-f",
+    String(startPage),
+    "-l",
+    String(endPage),
     filePath,
     prefix,
   ];
@@ -189,22 +199,23 @@ async function renderWithPdftoppm(
   await execFileAsync("pdftoppm", args, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 });
 
   // pdftoppm names files like page-01.png, page-02.png, etc.
-  const files = fs.readdirSync(outputDir)
-  .filter(f => f.startsWith("page-") && f.endsWith(".png"))
-  .sort();
+  const files = fs
+    .readdirSync(outputDir)
+    .filter((f) => f.startsWith("page-") && f.endsWith(".png"))
+    .sort();
 
   const totalPages = await getPdfPageCount(filePath);
   const pages = files.map((f, idx) => {
-      const pngPath = path.join(outputDir, f);
-      // We don't have dimensions from pdftoppm, so we'll read them from the PNG header
-      const stat = fs.statSync(pngPath);
-      return {
-        pageNumber: startPage + idx,
-        pngPath,
-        width: 0, // unknown without parsing PNG
-        height: 0,
-        _size: stat.size,
-      };
+    const pngPath = path.join(outputDir, f);
+    // We don't have dimensions from pdftoppm, so we'll read them from the PNG header
+    const stat = fs.statSync(pngPath);
+    return {
+      pageNumber: startPage + idx,
+      pngPath,
+      width: 0, // unknown without parsing PNG
+      height: 0,
+      _size: stat.size,
+    };
   });
 
   return {
@@ -245,8 +256,7 @@ export async function renderPdfPages(
 
   const dpi = options.dpi ?? 150;
   const outputDir =
-    options.outputDir ||
-    path.join(os.tmpdir(), `quiver-pdf-checker-${process.pid}-${Date.now()}`);
+    options.outputDir || path.join(os.tmpdir(), `quiver-pdf-checker-${process.pid}-${Date.now()}`);
   fs.mkdirSync(outputDir, { recursive: true });
 
   const startPage = pages[0];
@@ -259,7 +269,9 @@ export async function renderPdfPages(
   const pageSet = new Set(pages);
   const filtered = renderResult.pages.filter((p) => pageSet.has(p.pageNumber));
   if (filtered.length === 0) {
-    throw new Error(`PDF render produced no pages for ${path.basename(resolved)} (requested ${pages.join(",")})`);
+    throw new Error(
+      `PDF render produced no pages for ${path.basename(resolved)} (requested ${pages.join(",")})`,
+    );
   }
   return {
     pngPaths: filtered.map((p) => p.pngPath),
@@ -273,36 +285,34 @@ export async function renderPdfPages(
 export const tool: Tool = {
   name: "pdf_read",
   description:
-  "Read PDF files by rendering pages to images for multimodal vision. " +
-  "The model sees the page as an image, preserving tables, charts, layout, and visual context. " +
-  "Returns [File: path] markers for each rendered page — the agent loop encodes these as vision content. " +
-  "Use this to read SEC filings, transcripts, research reports, presentations, or any PDF document. " +
-  "Supports page ranges (e.g., read pages 5-10 of a 200-page filing).",
+    "Read PDF files by rendering pages to images for multimodal vision. " +
+    "The model sees the page as an image, preserving tables, charts, layout, and visual context. " +
+    "Returns [File: path] markers for each rendered page — the agent loop encodes these as vision content. " +
+    "Use this to read SEC filings, transcripts, research reports, presentations, or any PDF document. " +
+    "Supports page ranges (e.g., read pages 5-10 of a 200-page filing).",
 
   parameters: z.object({
-      file: z
-      .string()
-      .describe("Path to the PDF file. Can be relative to cwd."),
-      pages: z
+    file: z.string().describe("Path to the PDF file. Can be relative to cwd."),
+    pages: z
       .string()
       .optional()
       .describe(
         "Page range to read. Formats: '1' (single page), '1-5' (range), '1,3,5' (specific pages), 'all' (entire document). " +
-        "Defaults to '1-5' (first 5 pages) to avoid rendering huge documents. Use 'all' only when you need the entire PDF.",
+          "Defaults to '1-5' (first 5 pages) to avoid rendering huge documents. Use 'all' only when you need the entire PDF.",
       ),
-      dpi: z
+    dpi: z
       .number()
       .optional()
       .describe(
         "Render resolution in DPI. Higher = sharper but larger images. " +
-        "Default 150 (good for text + tables). Use 200-300 for detailed tables or small text.",
+          "Default 150 (good for text + tables). Use 200-300 for detailed tables or small text.",
       ),
-      maxPages: z
+    maxPages: z
       .number()
       .optional()
       .describe(
         "Maximum number of pages to render in a single call. Default 10. " +
-        "Prevents accidentally rendering 500-page filings. Call the tool again for the next batch.",
+          "Prevents accidentally rendering 500-page filings. Call the tool again for the next batch.",
       ),
   }),
 
@@ -360,10 +370,10 @@ export const tool: Tool = {
     } else if (pageArg.includes(",")) {
       // Specific pages: 1,3,5
       pagesToRender = pageArg
-      .split(",")
-      .map((p: string) => parseInt(p.trim(), 10))
-      .filter((p: number) => !isNaN(p) && p >= 1 && p <= totalPages)
-      .slice(0, maxPages);
+        .split(",")
+        .map((p: string) => parseInt(p.trim(), 10))
+        .filter((p: number) => !isNaN(p) && p >= 1 && p <= totalPages)
+        .slice(0, maxPages);
     } else if (pageArg.includes("-")) {
       // Range: 1-5
       const [startStr, endStr] = pageArg.split("-");
@@ -418,7 +428,9 @@ export const tool: Tool = {
     const lines: string[] = [];
     lines.push(`PDF: ${path.basename(filePath)}`);
     lines.push(`Total pages: ${renderResult.totalPages}`);
-    lines.push(`Rendered: ${renderResult.pages.length} page(s) [${pagesToRender[0]}${pagesToRender.length > 1 ? `–${pagesToRender[pagesToRender.length - 1]}` : ""}]`);
+    lines.push(
+      `Rendered: ${renderResult.pages.length} page(s) [${pagesToRender[0]}${pagesToRender.length > 1 ? `–${pagesToRender[pagesToRender.length - 1]}` : ""}]`,
+    );
     lines.push(`Backend: ${renderResult.backend} (${dpi} DPI)`);
     lines.push("");
 
@@ -433,7 +445,9 @@ export const tool: Tool = {
 
     if (pagesToRender[pagesToRender.length - 1] < totalPages) {
       const nextPage = pagesToRender[pagesToRender.length - 1] + 1;
-      lines.push(`--- More pages available. Call pdf_read again with pages: "${nextPage}-${Math.min(nextPage + maxPages - 1, totalPages)}" to continue. ---`);
+      lines.push(
+        `--- More pages available. Call pdf_read again with pages: "${nextPage}-${Math.min(nextPage + maxPages - 1, totalPages)}" to continue. ---`,
+      );
     }
 
     return lines.join("\n");

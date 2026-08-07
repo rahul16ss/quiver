@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
 import picocolors from "picocolors";
-import { Tool } from "../registry.js"
+import { Tool } from "../registry.js";
 import { assertToolPathAllowed } from "../security/tool_paths.js";
 import { getProjectSessionsDir } from "../paths.js";
 
@@ -201,10 +201,7 @@ async function findLatestSessionLog(sessionsDir: string): Promise<string | null>
   try {
     const files = await fs.readdir(sessionsDir);
     const sessionFiles = files
-      .filter(
-        (f) =>
-          f.startsWith("session_") && (f.endsWith(".jsonl") || f.endsWith(".json"))
-      )
+      .filter((f) => f.startsWith("session_") && (f.endsWith(".jsonl") || f.endsWith(".json")))
       .sort();
 
     if (sessionFiles.length === 0) return null;
@@ -222,7 +219,9 @@ export const tool: Tool = {
     sessionFile: z
       .string()
       .optional()
-      .describe("Optional: specific session log file path to parse. Defaults to the latest session in .sessions/."),
+      .describe(
+        "Optional: specific session log file path to parse. Defaults to the latest session in .sessions/.",
+      ),
   }),
   execute: async ({ sessionFile }) => {
     // Path-policy guard (US-9.2): reject sensitive paths
@@ -248,7 +247,7 @@ export const tool: Tool = {
           error: "No session log files found in .sessions/ directory.",
         },
         null,
-        2
+        2,
       );
     }
 
@@ -262,7 +261,7 @@ export const tool: Tool = {
           error: `Session log file not found: ${targetFile}`,
         },
         null,
-        2
+        2,
       );
     }
 
@@ -279,7 +278,7 @@ export const tool: Tool = {
           error: `Failed to parse session log ${targetFile}: ${err?.message || err}`,
         },
         null,
-        2
+        2,
       );
     }
 
@@ -290,26 +289,89 @@ export const tool: Tool = {
     console.log(picocolors.cyan(`   ╭──────────────────────────────────────────────╮`));
     console.log(picocolors.cyan(`   │          📊 SESSION TOKEN SUMMARY             │`));
     console.log(picocolors.cyan(`   ├──────────────────────────────────────────────┤`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Session ID:     `) + picocolors.green(summary.sessionId));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Duration:       `) + picocolors.white(`${summary.durationSeconds}s`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Total Events:   `) + picocolors.white(`${summary.totalEvents}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Turns:          `) + picocolors.white(`${summary.turns}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`User Inputs:    `) + picocolors.white(`${summary.userInputs}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Assistant Resp: `) + picocolors.white(`${summary.assistantResponses}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Tool Calls:     `) + picocolors.white(`${summary.toolCalls}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Tool Results:   `) + picocolors.white(`${summary.toolResults}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`API Errors:     `) + (summary.apiErrors > 0 ? picocolors.red(`${summary.apiErrors}`) : picocolors.green(`${summary.apiErrors}`)));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Max History:    `) + picocolors.white(`${summary.maxHistorySize} msgs`));
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Session ID:     `) +
+        picocolors.green(summary.sessionId),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Duration:       `) +
+        picocolors.white(`${summary.durationSeconds}s`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Total Events:   `) +
+        picocolors.white(`${summary.totalEvents}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Turns:          `) +
+        picocolors.white(`${summary.turns}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`User Inputs:    `) +
+        picocolors.white(`${summary.userInputs}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Assistant Resp: `) +
+        picocolors.white(`${summary.assistantResponses}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Tool Calls:     `) +
+        picocolors.white(`${summary.toolCalls}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Tool Results:   `) +
+        picocolors.white(`${summary.toolResults}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`API Errors:     `) +
+        (summary.apiErrors > 0
+          ? picocolors.red(`${summary.apiErrors}`)
+          : picocolors.green(`${summary.apiErrors}`)),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Max History:    `) +
+        picocolors.white(`${summary.maxHistorySize} msgs`),
+    );
     console.log(picocolors.cyan(`   ├──────────────────────────────────────────────┤`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.bold(picocolors.yellow(`TOKEN ESTIMATES (heuristic ~4 chars/token)`)));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Input Tokens:   `) + picocolors.magenta(`${summary.estimatedInputTokens.toLocaleString()}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Output Tokens:  `) + picocolors.magenta(`${summary.estimatedOutputTokens.toLocaleString()}`));
-    console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Total Tokens:   `) + picocolors.bold(picocolors.magenta(`${summary.estimatedTotalTokens.toLocaleString()}`)));
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.bold(picocolors.yellow(`TOKEN ESTIMATES (heuristic ~4 chars/token)`)),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Input Tokens:   `) +
+        picocolors.magenta(`${summary.estimatedInputTokens.toLocaleString()}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Output Tokens:  `) +
+        picocolors.magenta(`${summary.estimatedOutputTokens.toLocaleString()}`),
+    );
+    console.log(
+      picocolors.cyan(`   │ `) +
+        picocolors.gray(`Total Tokens:   `) +
+        picocolors.bold(picocolors.magenta(`${summary.estimatedTotalTokens.toLocaleString()}`)),
+    );
     console.log(picocolors.cyan(`   ├──────────────────────────────────────────────┤`));
     if (summary.toolsUsed.length > 0) {
-      console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Tools Used:     `) + picocolors.green(summary.toolsUsed.join(", ")));
+      console.log(
+        picocolors.cyan(`   │ `) +
+          picocolors.gray(`Tools Used:     `) +
+          picocolors.green(summary.toolsUsed.join(", ")),
+      );
     } else {
-      console.log(picocolors.cyan(`   │ `) + picocolors.gray(`Tools Used:     `) + picocolors.yellow("None"));
+      console.log(
+        picocolors.cyan(`   │ `) + picocolors.gray(`Tools Used:     `) + picocolors.yellow("None"),
+      );
     }
     console.log(picocolors.cyan(`   ╰──────────────────────────────────────────────╯`));
 

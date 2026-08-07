@@ -10,12 +10,7 @@
  */
 
 /** OpenAI-compat keys Quiver already understands and manages itself. */
-const MANAGED_TOOL_CALL_KEYS = new Set([
-  "id",
-  "type",
-  "function",
-  "index",
-]);
+const MANAGED_TOOL_CALL_KEYS = new Set(["id", "type", "function", "index"]);
 
 export type ToolCallPassthrough = Record<string, unknown>;
 

@@ -1,11 +1,8 @@
-import { $, escapeHtml } from "./dom.js";
+import { escapeHtml } from "./dom.js";
 import { api, state } from "./state.js";
-import { DOC_KINDS, docKindFor, OFFICE_MUTATING_ACTIONS } from "./icons.js";
+import { docKindFor, OFFICE_MUTATING_ACTIONS } from "./icons.js";
 import { addActivity } from "./activity.js";
-import {
-  hideEmpty,
-  scrollChat,
-} from "./chat.js";
+import { hideEmpty, scrollChat } from "./chat.js";
 import { openPreview } from "./context.js";
 import {
   renderLineageChipsForDocument,
@@ -21,10 +18,20 @@ function ensureDocumentCard(filePath) {
   const card = document.createElement("div");
   card.className = "draft-card";
   card.innerHTML =
-    '<div class="draft-icon ' + kind.iconClass + '">' + kind.svg + "</div>" +
+    '<div class="draft-icon ' +
+    kind.iconClass +
+    '">' +
+    kind.svg +
+    "</div>" +
     '<div class="draft-meta">' +
-    '<div class="draft-title">Creating ' + escapeHtml(name) + "…</div>" +
-    '<div class="draft-sub">' + escapeHtml(kind.label) + " · " + escapeHtml(filePath) + "</div>" +
+    '<div class="draft-title">Creating ' +
+    escapeHtml(name) +
+    "…</div>" +
+    '<div class="draft-sub">' +
+    escapeHtml(kind.label) +
+    " · " +
+    escapeHtml(filePath) +
+    "</div>" +
     '<div class="draft-actions" hidden>' +
     '<button type="button" class="ghost-btn doc-open">Open</button>' +
     '<button type="button" class="ghost-btn doc-reveal">Show in Folder</button>' +
@@ -114,7 +121,23 @@ async function loadEvidenceFromDisk(filePath) {
     card?.classList.remove("evidence-pending", "evidence-invalid");
     card?.classList.add("ready");
     if (actions) actions.hidden = false;
-    if (sub) sub.textContent = `${kind.label} · draft · evidence validated`;
+    if (sub) {
+      // S7: the card should feel like receiving work — name what you're
+      // getting: how many figures are sourced and how many still need you.
+      const claims = Array.isArray(result.claims) ? result.claims : [];
+      const open = claims.filter(
+        (c) =>
+          c.relationship === "unresolved" ||
+          c.review_status === "flagged" ||
+          c.review_status === "needs_analyst",
+      ).length;
+      const sourced =
+        claims.length > 0
+          ? ` · ${claims.length} figure${claims.length === 1 ? "" : "s"} sourced`
+          : "";
+      const toReview = open > 0 ? ` · ${open} to review` : "";
+      sub.textContent = `${kind.label} · draft · evidence validated${sourced}${toReview}`;
+    }
   } catch {
     card?.classList.remove("ready", "evidence-pending");
     card?.classList.add("evidence-invalid");
@@ -127,9 +150,4 @@ async function loadEvidenceFromDisk(filePath) {
   }
 }
 
-export {
-  ensureDocumentCard,
-  handleOfficeDocResult,
-  loadEvidenceFromDisk,
-  OFFICE_MUTATING_ACTIONS,
-};
+export { ensureDocumentCard, handleOfficeDocResult, loadEvidenceFromDisk, OFFICE_MUTATING_ACTIONS };

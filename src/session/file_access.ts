@@ -120,7 +120,8 @@ export class FileReadHistory {
     if (currentHash !== record.sha256) {
       return {
         matches: false,
-        reason: `File '${filePath}' has been modified since it was last read (hash mismatch). ` +
+        reason:
+          `File '${filePath}' has been modified since it was last read (hash mismatch). ` +
           `Re-read the file before writing to avoid overwriting changes.`,
       };
     }
@@ -128,7 +129,8 @@ export class FileReadHistory {
     if (Math.abs(stat.mtimeMs - record.mtimeMs) > 100) {
       return {
         matches: false,
-        reason: `File '${filePath}' modification time has changed since it was last read. ` +
+        reason:
+          `File '${filePath}' modification time has changed since it was last read. ` +
           `Re-read the file before writing.`,
       };
     }

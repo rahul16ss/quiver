@@ -7,11 +7,7 @@
  * never promotes model prose directly into active memory.
  */
 
-import {
-  appendMemoryFact,
-  createMemoryFact,
-  readAllMemoryFacts,
-} from "./schema.js";
+import { appendMemoryFact, createMemoryFact, readAllMemoryFacts } from "./schema.js";
 import type { MemoryPrivacy } from "./schema.js";
 import type { WorkflowDefinition, WorkflowRun } from "../workflow/types.js";
 import { redactSecrets } from "../security/secrets.js";
@@ -22,7 +18,8 @@ export interface HarvestResult {
   candidates: string[];
 }
 
-const CANDIDATE_LINE = /^\s*(?:[-*]\s*)?(?:decision|key decision|house (?:rule|style)|lesson|constraint|preference)\s*:\s*(.+)$/gim;
+const CANDIDATE_LINE =
+  /^\s*(?:[-*]\s*)?(?:decision|key decision|house (?:rule|style)|lesson|constraint|preference)\s*:\s*(.+)$/gim;
 
 function extractCandidates(run: WorkflowRun): string[] {
   const text = run.phases

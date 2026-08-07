@@ -92,7 +92,6 @@ function escapeSeatbeltPath(p: string): string {
 
 export function generateSeatbeltProfile(profile: SandboxProfile): string {
   const ws = escapeSeatbeltPath(profile.workspaceRoot);
-  const home = escapeSeatbeltPath(os.homedir());
 
   // Sensitive home paths that are always denied (even reads)
   const sensitivePaths = [

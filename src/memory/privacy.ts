@@ -29,10 +29,7 @@ export interface PrivacyFilterOptions {
  * @param options - Privacy filter options
  * @returns Filtered facts that are safe to include in context
  */
-export function filterByPrivacy(
-  facts: MemoryFact[],
-  options: PrivacyFilterOptions,
-): MemoryFact[] {
+export function filterByPrivacy(facts: MemoryFact[], options: PrivacyFilterOptions): MemoryFact[] {
   return facts.filter((fact) => {
     switch (fact.privacy) {
       case "public":

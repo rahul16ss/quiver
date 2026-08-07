@@ -2,9 +2,11 @@ import { $ } from "./dom.js";
 import { state } from "./state.js";
 
 function getFocusable(root) {
-  return [...root.querySelectorAll(
-    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )].filter((el) => !el.hidden && el.offsetParent !== null);
+  return [
+    ...root.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ].filter((el) => !el.hidden && el.offsetParent !== null);
 }
 
 function trapFocus(e) {
@@ -65,8 +67,8 @@ function confirmDialog({ title, message, confirmLabel = "Confirm", danger = fals
       host.hidden = true;
       host.innerHTML =
         '<div class="app-dialog-card" role="document">' +
-        "<h3 id=\"appDialogTitle\"></h3>" +
-        "<p id=\"appDialogMessage\"></p>" +
+        '<h3 id="appDialogTitle"></h3>' +
+        '<p id="appDialogMessage"></p>' +
         '<div class="app-dialog-actions">' +
         '<button type="button" class="ghost-btn" id="appDialogCancel">Cancel</button>' +
         '<button type="button" class="primary-btn" id="appDialogConfirm">Confirm</button>' +
@@ -98,17 +100,20 @@ function confirmDialog({ title, message, confirmLabel = "Confirm", danger = fals
 document.addEventListener("keydown", (e) => {
   trapFocus(e);
   if (e.key !== "Escape") return;
-  if (state.pendingApproval || state.consentGateActive || state.compactionGateActive || state.evidenceConsentActive) return;
+  if (
+    state.pendingApproval ||
+    state.consentGateActive ||
+    state.compactionGateActive ||
+    state.evidenceConsentActive
+  )
+    return;
   const open = [...document.querySelectorAll(".overlay:not([hidden]), .app-dialog:not([hidden])")];
   const top = open[open.length - 1];
   if (top?.id) closeOverlay(top.id, true);
-  else if (top) { top.hidden = true; state.activeOverlayTrap = null; }
+  else if (top) {
+    top.hidden = true;
+    state.activeOverlayTrap = null;
+  }
 });
 
-export {
-  getFocusable,
-  trapFocus,
-  showOverlay,
-  closeOverlay,
-  confirmDialog,
-};
+export { getFocusable, trapFocus, showOverlay, closeOverlay, confirmDialog };

@@ -58,7 +58,11 @@ function officecli(args: string[]): string {
 function officecliJson(args: string[]): any {
   // officecli --json wraps the payload as { data: ... } (see examples/.../lib.ts).
   const out = officecli([...args, "--json"]);
-  try { return JSON.parse(out).data; } catch { return JSON.parse(out); }
+  try {
+    return JSON.parse(out).data;
+  } catch {
+    return JSON.parse(out);
+  }
 }
 
 /** Load expected-structure.json (returns null if absent — drift check skipped). */
@@ -82,12 +86,18 @@ export function checkDrift(expected: ExpectedStructure, sourcesDir: string): Dri
       let sheetExists = false;
       try {
         const data = officecliJson(["get", file, `/${sheet.name}`]);
-        sheetExists = !!data && (data.matches === undefined || data.matches >= 1 || data.path || data.results);
+        sheetExists =
+          !!data && (data.matches === undefined || data.matches >= 1 || data.path || data.results);
       } catch {
         sheetExists = false;
       }
       if (!sheetExists) {
-        mismatches.push({ source: `${excel.file}/${sheet.name}`, expected: "sheet present", actual: "missing", reason: "sheet/tab not found — the model structure changed" });
+        mismatches.push({
+          source: `${excel.file}/${sheet.name}`,
+          expected: "sheet present",
+          actual: "missing",
+          reason: "sheet/tab not found — the model structure changed",
+        });
         continue;
       }
       for (const c of sheet.cells || []) {
@@ -95,15 +105,30 @@ export function checkDrift(expected: ExpectedStructure, sourcesDir: string): Dri
           const data = officecliJson(["get", file, `/${sheet.name}/${c.cell}`]);
           const text = data?.results?.[0]?.text ?? "";
           if (c.expected_text !== undefined && text !== c.expected_text) {
-            mismatches.push({ source: `${excel.file}/${sheet.name}!${c.cell}`, expected: c.expected_text, actual: text, reason: "cell value changed since the workflow was authored" });
+            mismatches.push({
+              source: `${excel.file}/${sheet.name}!${c.cell}`,
+              expected: c.expected_text,
+              actual: text,
+              reason: "cell value changed since the workflow was authored",
+            });
           } else if (c.expected_raw !== undefined) {
             const num = Number(String(text).replace(/[^0-9.\-]/g, ""));
             if (!Number.isFinite(num) || Math.abs(num - c.expected_raw) > 1e-6) {
-              mismatches.push({ source: `${excel.file}/${sheet.name}!${c.cell}`, expected: String(c.expected_raw), actual: text, reason: "cell numeric value drifted" });
+              mismatches.push({
+                source: `${excel.file}/${sheet.name}!${c.cell}`,
+                expected: String(c.expected_raw),
+                actual: text,
+                reason: "cell numeric value drifted",
+              });
             }
           }
         } catch (e: any) {
-          mismatches.push({ source: `${excel.file}/${sheet.name}!${c.cell}`, expected: "cell present", actual: "read error", reason: e?.message || String(e) });
+          mismatches.push({
+            source: `${excel.file}/${sheet.name}!${c.cell}`,
+            expected: "cell present",
+            actual: "read error",
+            reason: e?.message || String(e),
+          });
         }
       }
     }
@@ -111,14 +136,24 @@ export function checkDrift(expected: ExpectedStructure, sourcesDir: string): Dri
   for (const f of expected.filings || []) {
     const file = path.join(sourcesDir, path.basename(f.file));
     if (!fs.existsSync(file)) {
-      mismatches.push({ source: f.file, expected: "file present", actual: "missing", reason: "filing input not found" });
+      mismatches.push({
+        source: f.file,
+        expected: "file present",
+        actual: "missing",
+        reason: "filing input not found",
+      });
       continue;
     }
     if (f.sections && f.sections.length) {
       const text = fs.readFileSync(file, "utf8");
       for (const sec of f.sections) {
         if (!text.includes(sec)) {
-          mismatches.push({ source: f.file, expected: `section "${sec}"`, actual: "absent", reason: "expected section not found — the filing structure changed" });
+          mismatches.push({
+            source: f.file,
+            expected: `section "${sec}"`,
+            actual: "absent",
+            reason: "expected section not found — the filing structure changed",
+          });
         }
       }
     }

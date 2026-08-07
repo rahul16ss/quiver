@@ -22,9 +22,7 @@ export function detectImagePaths(input: string): string {
   for (const match of matches) {
     const p = match[1] || match[2] || match[3] || match[4];
     if (p) {
-      const expanded = p.startsWith("~/")
-        ? p.replace("~", process.env.HOME || "")
-        : p;
+      const expanded = p.startsWith("~/") ? p.replace("~", process.env.HOME || "") : p;
       if (existsSync(expanded)) {
         paths.push(expanded);
       }

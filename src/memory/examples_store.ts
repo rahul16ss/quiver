@@ -40,7 +40,11 @@ function officecli(args: string[]): string {
   const bin = findBinary("officecli");
   if (!bin) return "";
   try {
-    return execFileSync(bin, args, { encoding: "utf8", maxBuffer: 10 * 1024 * 1024, timeout: 30000 });
+    return execFileSync(bin, args, {
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 30000,
+    });
   } catch {
     return "";
   }
@@ -58,34 +62,38 @@ function kindOf(file: string): ExampleRecord["kind"] {
  * structure (officecli view outline) + the Evidence.json provenance if it
  * sits alongside the deliverable. Returns the record (or null on failure).
  */
-export function promoteExample(
-  deliverablePath: string,
-  note: string,
-): ExampleRecord | null {
+export function promoteExample(deliverablePath: string, note: string): ExampleRecord | null {
   if (!fs.existsSync(deliverablePath)) return null;
   const dir = examplesDir();
   fs.mkdirSync(dir, { recursive: true });
   const base = path.basename(deliverablePath);
   const id = `${Date.now()}-${base.replace(/\.(docx|xlsx|pptx)$/, "")}`;
   // Structure: officecli view outline (best-effort; empty if officecli absent).
-  const structure = officecli(["view", deliverablePath, "outline"]).trim() || "(structure unavailable — officecli not found)";
+  const structure =
+    officecli(["view", deliverablePath, "outline"]).trim() ||
+    "(structure unavailable — officecli not found)";
   // Provenance: the Evidence.json alongside the deliverable, if present.
   const evidencePath = deliverablePath.replace(/\.(docx|xlsx|pptx)$/, "_Evidence.json");
   let provenance = "(no Evidence.json alongside the deliverable)";
   if (fs.existsSync(evidencePath)) {
     try {
       const ev = JSON.parse(fs.readFileSync(evidencePath, "utf8"));
-      provenance = `${(ev.claims || []).length} claims, ${(ev.sources || []).length} sources` +
+      provenance =
+        `${(ev.claims || []).length} claims, ${(ev.sources || []).length} sources` +
         (ev.review_status ? `, status: ${ev.review_status}` : "");
     } catch {
       provenance = "(Evidence.json present but unreadable)";
     }
   }
   const record: ExampleRecord = {
-    id, name: base, kind: kindOf(deliverablePath),
+    id,
+    name: base,
+    kind: kindOf(deliverablePath),
     promotedAt: new Date().toISOString(),
     sourceDeliverable: deliverablePath,
-    structure, provenance, note,
+    structure,
+    provenance,
+    note,
   };
   fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(record, null, 2), "utf8");
   return record;
@@ -95,9 +103,16 @@ export function promoteExample(
 export function listExamples(): ExampleRecord[] {
   const dir = examplesDir();
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
+  return fs
+    .readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
-    .map((f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as ExampleRecord; } catch { return null; } })
+    .map((f) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as ExampleRecord;
+      } catch {
+        return null;
+      }
+    })
     .filter((x): x is ExampleRecord => !!x && !!x.id);
 }
 
@@ -109,8 +124,9 @@ export function listExamples(): ExampleRecord[] {
 export function loadExampleContext(): string {
   const examples = listExamples();
   if (!examples.length) return "";
-  const lines = examples.map((e) =>
-    `[Example: ${e.name} (${e.kind}) — ${e.provenance}]\nWhy praised: ${e.note}\nStructure:\n${e.structure.slice(0, 800)}\n`,
+  const lines = examples.map(
+    (e) =>
+      `[Example: ${e.name} (${e.kind}) — ${e.provenance}]\nWhy praised: ${e.note}\nStructure:\n${e.structure.slice(0, 800)}\n`,
   );
   return `--- EPISODIC EXAMPLES (promoted past deliverables) ---\n${lines.join("\n")}`;
 }

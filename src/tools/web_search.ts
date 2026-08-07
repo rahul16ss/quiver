@@ -43,15 +43,11 @@ export const tool: Tool = {
 
       const data: any = await response.json();
       const results = (data.results || []).map((item: any, idx: number) => {
-        const excerpts = (item.excerpts || [])
-          .map((ex: string) => `- ${ex}`)
-          .join("\n");
+        const excerpts = (item.excerpts || []).map((ex: string) => `- ${ex}`).join("\n");
         return `[Result ${idx + 1}]\nTitle: ${item.title || "No Title"}\nURL: ${item.url}\nExcerpts:\n${excerpts || "No excerpts available."}`;
       });
 
-      return results.length > 0
-        ? results.join("\n\n")
-        : "No search results found.";
+      return results.length > 0 ? results.join("\n\n") : "No search results found.";
     } catch (error: any) {
       return `Error performing Parallel web search: ${error.message}`;
     }

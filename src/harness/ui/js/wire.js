@@ -100,9 +100,9 @@ function wireButtons() {
     renderAttachments();
   });
 
-  document.querySelectorAll("[data-close]").forEach((b) =>
-    b.addEventListener("click", () => closeOverlay(b.dataset.close)),
-  );
+  document
+    .querySelectorAll("[data-close]")
+    .forEach((b) => b.addEventListener("click", () => closeOverlay(b.dataset.close)));
   // Click outside the card closes an overlay.
   document.querySelectorAll(".overlay").forEach((o) =>
     o.addEventListener("click", (e) => {
@@ -159,7 +159,8 @@ function wireButtons() {
           const sub = card.querySelector(".draft-sub");
           const actions = card.querySelector(".draft-actions");
           if (titleEl) titleEl.textContent = "Project Alder IC Memo";
-          if (sub) sub.textContent = `Workflow demo · ${result.checks || 8}/8 checks · checking evidence…`;
+          if (sub)
+            sub.textContent = `Workflow demo · ${result.checks || 8}/8 checks · checking evidence…`;
           if (actions) actions.hidden = true;
           card.classList.remove("ready", "evidence-invalid", "canceled");
           card.classList.add("evidence-pending");
@@ -171,10 +172,14 @@ function wireButtons() {
           });
           // Wire Open/Reveal if the demo returned an absolute path
           if (result.outputPath) {
-            card.querySelector(".doc-open")?.addEventListener("click", async (e) => {
-              e.stopPropagation();
-              await api.openFile(result.outputPath);
-            }, { once: true });
+            card.querySelector(".doc-open")?.addEventListener(
+              "click",
+              async (e) => {
+                e.stopPropagation();
+                await api.openFile(result.outputPath);
+              },
+              { once: true },
+            );
           }
         } else {
           addActivity("Workflow failed — " + (result?.output || "").slice(0, 120), "err");

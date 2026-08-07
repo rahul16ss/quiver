@@ -17,7 +17,8 @@ function executeCmd(command: string): Promise<{ code: number; stdout: string; st
 
 export const tool: Tool = {
   name: "run_tests",
-  description: "Runs TypeScript compilation check (tsc --noEmit) and the unit tests suite to validate codebase integrity. Returns test outcomes and errors.",
+  description:
+    "Runs TypeScript compilation check (tsc --noEmit) and the unit tests suite to validate codebase integrity. Returns test outcomes and errors.",
   parameters: z.object({}),
   execute: async () => {
     console.log(picocolors.gray(`   Validating codebase (run_tests)...`));
@@ -27,13 +28,17 @@ export const tool: Tool = {
     const tscRes = await executeCmd("npx tsc --noEmit");
     if (tscRes.code !== 0) {
       console.log(picocolors.red(`   └─ Compilation failed.`));
-      return JSON.stringify({
-        success: false,
-        phase: "compilation",
-        error: "TypeScript compilation failed.",
-        stdout: tscRes.stdout,
-        stderr: tscRes.stderr,
-      }, null, 2);
+      return JSON.stringify(
+        {
+          success: false,
+          phase: "compilation",
+          error: "TypeScript compilation failed.",
+          stdout: tscRes.stdout,
+          stderr: tscRes.stderr,
+        },
+        null,
+        2,
+      );
     }
 
     // 2. Run npm test
@@ -41,20 +46,28 @@ export const tool: Tool = {
     const testRes = await executeCmd("npm test");
     if (testRes.code !== 0) {
       console.log(picocolors.red(`      Tests failed.`));
-      return JSON.stringify({
-        success: false,
-        phase: "test",
-        error: "Unit tests failed.",
-        stdout: testRes.stdout,
-        stderr: testRes.stderr,
-      }, null, 2);
+      return JSON.stringify(
+        {
+          success: false,
+          phase: "test",
+          error: "Unit tests failed.",
+          stdout: testRes.stdout,
+          stderr: testRes.stderr,
+        },
+        null,
+        2,
+      );
     }
 
     console.log(picocolors.green(`      Codebase is clean and all tests passed.`));
-    return JSON.stringify({
-      success: true,
-      phase: "all",
-      stdout: testRes.stdout,
-    }, null, 2);
+    return JSON.stringify(
+      {
+        success: true,
+        phase: "all",
+        stdout: testRes.stdout,
+      },
+      null,
+      2,
+    );
   },
 };

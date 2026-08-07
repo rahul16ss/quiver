@@ -11,7 +11,12 @@ import * as fsSync from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { getProjectSessionsDir } from "../paths.js";
-import { SessionManager, type SessionFile, type SessionMessage, type ApprovalRecord } from "./schema.js";
+import {
+  SessionManager,
+  type SessionFile,
+  type SessionMessage,
+  type ApprovalRecord,
+} from "./schema.js";
 import type { FileReadRecord } from "./file_access.js";
 import { atomicWrite, CorruptStateError } from "../fs/atomic_write.js";
 
@@ -67,8 +72,7 @@ export class CheckpointManager {
       adapter: state.adapter,
       timestamp,
     });
-    const prevHash =
-      state.auditHash || this.getLatestAuditHash() || "0".repeat(64);
+    const prevHash = state.auditHash || this.getLatestAuditHash() || "0".repeat(64);
     const chainHash = crypto
       .createHash("sha256")
       .update(prevHash + actionPayload)
@@ -121,19 +125,14 @@ export class CheckpointManager {
     if (!fsSync.existsSync(this.checkpointDir)) return null;
     const latest = fsSync
       .readdirSync(this.checkpointDir)
-      .filter((file) =>
-        file.startsWith(`${this.sessionId}_checkpoint_`) &&
-        file.endsWith(".json"),
-      )
+      .filter((file) => file.startsWith(`${this.sessionId}_checkpoint_`) && file.endsWith(".json"))
       .sort()
       .pop();
     if (!latest) return null;
 
     const latestPath = path.join(this.checkpointDir, latest);
     try {
-      const checkpoint = JSON.parse(
-        fsSync.readFileSync(latestPath, "utf8"),
-      ) as SessionFile;
+      const checkpoint = JSON.parse(fsSync.readFileSync(latestPath, "utf8")) as SessionFile;
       this.lastCheckpointPath = latestPath;
       return checkpoint.metadata?.audit_chain_hash || null;
     } catch (error: any) {
@@ -341,9 +340,7 @@ export async function detectCrashedSession(projectId: string): Promise<CrashDete
       if (Array.isArray(parsed)) {
         // Log-file format: look for a "session_end" event entry
         isComplete = parsed.some(
-          (entry: any) =>
-            entry?.type === "session_end" ||
-            entry?.data?.type === "session_end",
+          (entry: any) => entry?.type === "session_end" || entry?.data?.type === "session_end",
         );
       } else if (parsed && typeof parsed === "object") {
         // SessionFile format: check metadata.session_end

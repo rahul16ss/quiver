@@ -19,7 +19,6 @@
  */
 
 import { promises as fs } from "fs";
-import * as fsSync from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import { getProjectMemoryDir } from "../paths.js";
@@ -172,10 +171,7 @@ export async function rollbackToVersion(
 /**
  * Get the content of a specific version.
  */
-export async function getVersionContent(
-  filename: string,
-  version: number,
-): Promise<string | null> {
+export async function getVersionContent(filename: string, version: number): Promise<string | null> {
   try {
     return await fs.readFile(getSnapshotPath(filename, version), "utf8");
   } catch {
@@ -232,9 +228,7 @@ export async function formatHistoryForCLI(filename: string): Promise<string> {
   lines.push(`Version history for ${filename}:`);
   lines.push("─".repeat(60));
   for (const v of history) {
-    lines.push(
-      `  v${v.version} · ${v.timestamp} · ${v.size}b · ${v.reason}`,
-    );
+    lines.push(`  v${v.version} · ${v.timestamp} · ${v.size}b · ${v.reason}`);
   }
   lines.push("");
   lines.push(`Use /memory-rollback ${filename} <version> to restore a version`);

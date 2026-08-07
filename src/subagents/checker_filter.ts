@@ -156,14 +156,15 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "GUI-EVIDENCE-LOAD-IPC",
   ],
   // Browser-UI harness API
-  "src/harness/harness-daemon.ts": ["GUI-IPC-CONTRACT", "GUI-EVIDENCE-LOAD-PRELOAD", "PRELOAD-CORE-API-PRESENT"],
+  "src/harness/harness-daemon.ts": [
+    "GUI-IPC-CONTRACT",
+    "GUI-EVIDENCE-LOAD-PRELOAD",
+    "PRELOAD-CORE-API-PRESENT",
+  ],
   // Browser-UI index.html
   "src/harness/ui/index.html": ["GUI-OUTFIT-TYPOGRAPHY", "GUI-DIFF-APPROVAL"],
   // Browser-UI app.js
-  "src/harness/ui/app.js": [
-    "GUI-EVIDENCE-LOAD-FROM-DISK",
-    "GUI-EVIDENCE-LOAD-CALLSITE",
-  ],
+  "src/harness/ui/app.js": ["GUI-EVIDENCE-LOAD-FROM-DISK", "GUI-EVIDENCE-LOAD-CALLSITE"],
   // CLI
   "src/cli.ts": [
     "CRASH-NO-AUTO-DISCARD",
@@ -185,15 +186,9 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   // Diff
   "src/diff.ts": ["DIFF-UNIFIED-HEADERS", "DIFF-RISKY-FILES"],
   // Atomic write
-  "src/fs/atomic_write.ts": [
-    "ATOMIC-WRITE-ROLLBACK",
-    "WIRE-ATOMIC-WRITE-TOOLS",
-  ],
+  "src/fs/atomic_write.ts": ["ATOMIC-WRITE-ROLLBACK", "WIRE-ATOMIC-WRITE-TOOLS"],
   // Prompt assembler
-  "src/prompt/assembler.ts": [
-    "PROMPT-ASSEMBLY-SECTIONS",
-    "WIRE-PROMPT-ASSEMBLER",
-  ],
+  "src/prompt/assembler.ts": ["PROMPT-ASSEMBLY-SECTIONS", "WIRE-PROMPT-ASSEMBLER"],
   // Context budget
   "src/context/budget.ts": ["BUDGET-85-THRESHOLD", "WIRE-TOKEN-BUDGET"],
   // Tool sandbox
@@ -220,11 +215,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "VISION-CONFIG-WIRED",
     "VISION-SIZE-LIMIT",
   ],
-  "src/image_input.ts": [
-    "VISION-EXIF-REDACTED",
-    "VISION-DOWNSCALE",
-    "VISION-SIZE-LIMIT",
-  ],
+  "src/image_input.ts": ["VISION-EXIF-REDACTED", "VISION-DOWNSCALE", "VISION-SIZE-LIMIT"],
   // Retry
   "src/tool_retry.ts": ["RETRY-IDEMPOTENT-ONLY", "RETRY-BACKOFF-MATH"],
   // Security prompts
@@ -242,10 +233,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "ADAPTER-CITATION-STYLE",
   ],
   // Context manager
-  "src/context_manager.ts": [
-    "COMPACTION-ARCHIVES-FULL-LOG",
-    "COMPACTION-RETAINS-RECENT-TOOL-MSG",
-  ],
+  "src/context_manager.ts": ["COMPACTION-ARCHIVES-FULL-LOG", "COMPACTION-RETAINS-RECENT-TOOL-MSG"],
   // Session manager
   "src/session/manager.ts": [
     "SESSION-LIST-METADATA",
@@ -303,9 +291,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
   // Homebrew
   "Formula/quiver.rb": ["HOMEBREW-REAL-SHA256"],
   // Provider URL/auth helpers (local OpenAI-compatible endpoint).
-  "src/providers/vertex_auth.ts": [
-    "WIRE-PROVIDER-ADAPTER",
-  ],
+  "src/providers/vertex_auth.ts": ["WIRE-PROVIDER-ADAPTER"],
   "src/providers/tool_call_passthrough.ts": [
     "WIRE-PROVIDER-ADAPTER",
     "SELF-HEAL-REPAIR-METHOD",
@@ -325,10 +311,7 @@ const FILE_TO_CHECKS: Record<string, string[]> = {
     "APPROVAL-CACHE-SCOPED-BEHAVIOR",
     "APPROVAL-CACHE-ONCE-NOT-CACHED",
   ],
-  "src/paths.ts": [
-    "SKILLS-SEED-ALL-PACKAGED",
-    "FIRST-RUN-CORE-JSON",
-  ],
+  "src/paths.ts": ["SKILLS-SEED-ALL-PACKAGED", "FIRST-RUN-CORE-JSON"],
 };
 
 /**
@@ -479,18 +462,10 @@ const ALWAYS_ON_CHECKS = [
  * @param toolArgs - The tool's arguments (may contain filePath, command, etc.)
  * @returns TargetedChecks with the check IDs to run
  */
-export function resolveTargetedChecks(
-  toolName: string,
-  toolArgs?: any,
-): TargetedChecks {
+export function resolveTargetedChecks(toolName: string, toolArgs?: any): TargetedChecks {
   // For run_command, use the tool-based mapping
   if (toolName === "run_command") {
-    const checks = [
-      ...new Set([
-        ...(TOOL_TO_CHECKS["run_command"] || []),
-        ...ALWAYS_ON_CHECKS,
-      ]),
-    ];
+    const checks = [...new Set([...(TOOL_TO_CHECKS["run_command"] || []), ...ALWAYS_ON_CHECKS])];
     return {
       checkIds: checks,
       full: false,
@@ -536,8 +511,7 @@ export function resolveTargetedChecks(
   // Combine file-specific checks with always-on checks, deduplicated
   const checks = [...new Set([...fileChecks, ...ALWAYS_ON_CHECKS])];
 
-  const viaPrefix =
-    !FILE_TO_CHECKS[normalized] || FILE_TO_CHECKS[normalized].length === 0;
+  const viaPrefix = !FILE_TO_CHECKS[normalized] || FILE_TO_CHECKS[normalized].length === 0;
   return {
     checkIds: checks,
     full: false,

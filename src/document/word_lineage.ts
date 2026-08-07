@@ -84,7 +84,10 @@ export async function appendLineageAppendix(
     if (/"success":\s*false/i.test(stdout)) {
       return { ok: false, detail: `officecli batch reported a failure:\n${stdout}` };
     }
-    return { ok: true, detail: `Lineage appendix appended (${entries.length} figures) to ${path.basename(docPath)}` };
+    return {
+      ok: true,
+      detail: `Lineage appendix appended (${entries.length} figures) to ${path.basename(docPath)}`,
+    };
   } catch (err: any) {
     return { ok: false, detail: `lineage appendix failed: ${err?.message || err}` };
   }
@@ -95,24 +98,47 @@ export async function appendLineageAppendix(
  * appendix. Quantitative claims first, then flagged/unresolved.
  */
 export function entriesFromEvidence(
-  claims: Array<{ claim_id: string; rendered_text: string; source_ids: string[]; review_status: string; is_quantitative: boolean }>,
-  sources: Array<{ source_id: string; title: string; file: string; location?: { sheet?: string; cell?: string; section?: string; page?: number; url?: string } }>,
+  claims: Array<{
+    claim_id: string;
+    rendered_text: string;
+    source_ids: string[];
+    review_status: string;
+    is_quantitative: boolean;
+  }>,
+  sources: Array<{
+    source_id: string;
+    title: string;
+    file: string;
+    location?: { sheet?: string; cell?: string; section?: string; page?: number; url?: string };
+  }>,
 ): LineageEntry[] {
   const locStr = (sid: string): string => {
     const s = sources.find((x) => x.source_id === sid);
     if (!s) return sid;
     const loc = s.location || {};
     const where =
-      [loc.sheet && `${loc.sheet}!${loc.cell || ""}`, loc.section, loc.page ? `p.${loc.page}` : "", loc.url]
-        .filter(Boolean).join(" · ") || s.file || sid;
+      [
+        loc.sheet && `${loc.sheet}!${loc.cell || ""}`,
+        loc.section,
+        loc.page ? `p.${loc.page}` : "",
+        loc.url,
+      ]
+        .filter(Boolean)
+        .join(" · ") ||
+      s.file ||
+      sid;
     return `${s.file || s.title}${where ? ` · ${where}` : ""}`;
   };
   const statusFor = (r: string): string =>
-    r === "verified" ? "sourced · verified"
-    : r === "flagged" ? "flagged"
-    : r === "needs_analyst" ? "needs analyst"
-    : r === "unresolved" ? "unresolved"
-    : "sourced";
+    r === "verified"
+      ? "sourced · verified"
+      : r === "flagged"
+        ? "flagged"
+        : r === "needs_analyst"
+          ? "needs analyst"
+          : r === "unresolved"
+            ? "unresolved"
+            : "sourced";
   const sorted = [...claims].sort((a, b) => Number(b.is_quantitative) - Number(a.is_quantitative));
   return sorted.map((c) => ({
     figure: c.rendered_text || c.claim_id,
@@ -129,7 +155,13 @@ export function entriesFromEvidence(
  */
 export async function appendLineageForTracker(
   docPath: string,
-  claims: Array<{ claim_id: string; rendered_text: string; source_ids: string[]; review_status: string; is_quantitative: boolean }>,
+  claims: Array<{
+    claim_id: string;
+    rendered_text: string;
+    source_ids: string[];
+    review_status: string;
+    is_quantitative: boolean;
+  }>,
   sources: Array<{ source_id: string; title: string; file: string; location?: any }>,
 ): Promise<{ ok: boolean; detail: string }> {
   try {

@@ -26,7 +26,7 @@ import {
   type LogMetadata,
 } from "./session_logger.js";
 import { redactSecrets } from "./security/secrets.js";
-import { config } from "./config.js";
+
 import { getProjectSessionsDir } from "./paths.js";
 import { promises as fs } from "fs";
 import * as fsSync from "fs";
@@ -66,7 +66,11 @@ export class Logger {
    * Log a tool execution with diagnostic telemetry.
    */
   logToolCall(toolName: string, args: Record<string, any>, result?: any, error?: Error): void {
-    const payload = safeStringify({ tool: toolName, args: this.redactArgs(args), error: error?.message });
+    const payload = safeStringify({
+      tool: toolName,
+      args: this.redactArgs(args),
+      error: error?.message,
+    });
     this.auditChain.appendEntry("tool_call", payload);
     this.sessionLogger.logEvent("tool_result", {
       tool: toolName,
@@ -97,9 +101,19 @@ export class Logger {
    * Log a command execution.
    */
   logCommand(command: string, riskClass: string, approved: boolean, exitCode?: number): void {
-    const payload = safeStringify({ command: redactSecrets(command), risk: riskClass, approved, exitCode });
+    const payload = safeStringify({
+      command: redactSecrets(command),
+      risk: riskClass,
+      approved,
+      exitCode,
+    });
     this.auditChain.appendEntry("command_exec", payload);
-    this.sessionLogger.logEvent("command_exec", { command: redactSecrets(command), risk: riskClass, approved, exitCode });
+    this.sessionLogger.logEvent("command_exec", {
+      command: redactSecrets(command),
+      risk: riskClass,
+      approved,
+      exitCode,
+    });
   }
 
   /**
@@ -168,12 +182,6 @@ export class Logger {
    * W(n) = min(W_max, W_base × 2^n) + J
    */
   logRetry(toolName: string, attempt: number, delayMs: number, error: Error): void {
-    const payload = safeStringify({
-      tool: toolName,
-      attempt,
-      delayMs,
-      error: error.message,
-    });
     this.sessionLogger.logEvent("tool_retry", {
       tool: toolName,
       attempt,

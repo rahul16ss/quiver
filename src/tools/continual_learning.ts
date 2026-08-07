@@ -98,9 +98,7 @@ async function countTotalTurns(): Promise<number> {
         const content = await fs.readFile(path.join(sessionsDir, f), "utf8");
         const events = JSON.parse(content);
         if (Array.isArray(events)) {
-          totalTurns += events.filter(
-            (e: any) => e.type === "turn_start",
-          ).length;
+          totalTurns += events.filter((e: any) => e.type === "turn_start").length;
         }
       } catch {
         // Skip corrupt files
@@ -115,9 +113,7 @@ async function countTotalTurns(): Promise<number> {
 /**
  * Find new or changed session log files since the last index update.
  */
-async function findChangedTranscripts(
-  index: TranscriptIndex,
-): Promise<string[]> {
+async function findChangedTranscripts(index: TranscriptIndex): Promise<string[]> {
   const sessionsDir = getProjectSessionsDir();
   const changed: string[] = [];
   try {
@@ -153,10 +149,7 @@ interface ExtractedSignal {
  * facts.jsonl — the user reviews it via /memory review before it enters
  * active context.
  */
-function extractPatternsFromEvents(
-  events: any[],
-  sessionFilename: string,
-): ExtractedSignal[] {
+function extractPatternsFromEvents(events: any[], sessionFilename: string): ExtractedSignal[] {
   const signals: ExtractedSignal[] = [];
 
   for (let i = 0; i < events.length; i++) {
@@ -237,15 +230,11 @@ export const tool: Tool = {
     minTurns: z
       .number()
       .optional()
-      .describe(
-        `Minimum completed turns since last run. Default: ${DEFAULT_MIN_TURNS}.`,
-      ),
+      .describe(`Minimum completed turns since last run. Default: ${DEFAULT_MIN_TURNS}.`),
     minMinutes: z
       .number()
       .optional()
-      .describe(
-        `Minimum minutes since last run. Default: ${DEFAULT_MIN_MINUTES}.`,
-      ),
+      .describe(`Minimum minutes since last run. Default: ${DEFAULT_MIN_MINUTES}.`),
   }),
   execute: async ({ action, minTurns, minMinutes }) => {
     const minT = minTurns || DEFAULT_MIN_TURNS;
@@ -270,9 +259,7 @@ export const tool: Tool = {
           const totalTurns = await countTotalTurns();
           const now = Date.now();
           const minutesSinceLastRun =
-            state.lastRunAtMs > 0
-              ? Math.round((now - state.lastRunAtMs) / 60000)
-              : -1;
+            state.lastRunAtMs > 0 ? Math.round((now - state.lastRunAtMs) / 60000) : -1;
           const turnsSinceLastRun = totalTurns - state.lastRunTurns;
           const existingFacts = await readAllMemoryFacts();
           const pendingFacts = existingFacts.filter((f) => !f.reviewed);
@@ -281,20 +268,16 @@ export const tool: Tool = {
             {
               cadence: {
                 lastRunAt:
-                  state.lastRunAtMs > 0
-                    ? new Date(state.lastRunAtMs).toISOString()
-                    : "never",
+                  state.lastRunAtMs > 0 ? new Date(state.lastRunAtMs).toISOString() : "never",
                 minutesSinceLastRun,
                 turnsSinceLastRun,
                 minTurnsRequired: minT,
                 minMinutesRequired: minM,
-                canRun:
-                  turnsSinceLastRun >= minT && minutesSinceLastRun >= minM,
+                canRun: turnsSinceLastRun >= minT && minutesSinceLastRun >= minM,
               },
               index: {
                 totalTranscripts: Object.keys(index).length,
-                processed: Object.values(index).filter((v) => v.processed)
-                  .length,
+                processed: Object.values(index).filter((v) => v.processed).length,
               },
               totalTurns,
               memoryPipeline: {
@@ -313,13 +296,10 @@ export const tool: Tool = {
           const totalTurns = await countTotalTurns();
           const now = Date.now();
           const minutesSinceLastRun =
-            state.lastRunAtMs > 0
-              ? (now - state.lastRunAtMs) / 60000
-              : Infinity;
+            state.lastRunAtMs > 0 ? (now - state.lastRunAtMs) / 60000 : Infinity;
           const turnsSinceLastRun = totalTurns - state.lastRunTurns;
 
-          const canRun =
-            turnsSinceLastRun >= minT && minutesSinceLastRun >= minM;
+          const canRun = turnsSinceLastRun >= minT && minutesSinceLastRun >= minM;
 
           return JSON.stringify(
             {
@@ -338,7 +318,6 @@ export const tool: Tool = {
         }
 
         case "run": {
-          const state = await loadCadenceState();
           const index = await loadIndex();
           const totalTurns = await countTotalTurns();
 
@@ -359,10 +338,7 @@ export const tool: Tool = {
 
           for (const filename of changedFiles) {
             try {
-              const content = await fs.readFile(
-                path.join(sessionsDir, filename),
-                "utf8",
-              );
+              const content = await fs.readFile(path.join(sessionsDir, filename), "utf8");
               const events = JSON.parse(content);
               if (Array.isArray(events)) {
                 const signals = extractPatternsFromEvents(events, filename);
@@ -382,8 +358,7 @@ export const tool: Tool = {
             existingFacts.map((f) => f.content.substring(0, 60).toLowerCase()),
           );
           const newSignals = allSignals.filter(
-            (s) =>
-              !existingContents.has(s.content.substring(0, 60).toLowerCase()),
+            (s) => !existingContents.has(s.content.substring(0, 60).toLowerCase()),
           );
 
           // Enqueue each new signal as a PENDING MemoryFact
@@ -411,9 +386,7 @@ export const tool: Tool = {
           // Build transparency report
           const report: string[] = [];
           report.push("╔══ Continual Learning Report ════════════════════╗");
-          report.push(
-            `║  Processed ${changedFiles.length} new/changed transcript(s)`,
-          );
+          report.push(`║  Processed ${changedFiles.length} new/changed transcript(s)`);
           report.push(
             `║  Extracted ${allSignals.length} signal(s), ${newSignals.length} new (not already in facts.jsonl)`,
           );

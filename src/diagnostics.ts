@@ -104,9 +104,7 @@ export function formatDiagnosticBlock(block: DiagnosticBlock): string {
     }
   }
 
-  lines.push(
-    `Input Args: ${JSON.stringify(block.input_args, null, 2).substring(0, 2000)}`,
-  );
+  lines.push(`Input Args: ${JSON.stringify(block.input_args, null, 2).substring(0, 2000)}`);
 
   return lines.join("\n");
 }
@@ -116,11 +114,7 @@ export function formatDiagnosticBlock(block: DiagnosticBlock): string {
 /**
  * Generate suggested remedies based on the error type and tool.
  */
-function suggestRemedies(
-  toolName: string,
-  errorMessage: string,
-  errorType: string,
-): string[] {
+function suggestRemedies(toolName: string, errorMessage: string, errorType: string): string[] {
   const remedies: string[] = [];
   const lowerMsg = errorMessage.toLowerCase();
 
@@ -130,27 +124,18 @@ function suggestRemedies(
     lowerMsg.includes("does not exist") ||
     lowerMsg.includes("not found")
   ) {
-    remedies.push(
-      "Verify the file path exists. Use list_dir or glob to find the correct path.",
-    );
-    remedies.push(
-      "If creating a new file, ensure the parent directory exists.",
-    );
+    remedies.push("Verify the file path exists. Use list_dir or glob to find the correct path.");
+    remedies.push("If creating a new file, ensure the parent directory exists.");
   }
 
   // Permission denied
   if (lowerMsg.includes("permission denied") || lowerMsg.includes("eacces")) {
-    remedies.push(
-      "Check file permissions. The file may be read-only or owned by another user.",
-    );
+    remedies.push("Check file permissions. The file may be read-only or owned by another user.");
     remedies.push("Ensure the file is inside the workspace sandbox.");
   }
 
   // Write blocked (read-before-write)
-  if (
-    lowerMsg.includes("not read first") ||
-    lowerMsg.includes("writeblocked")
-  ) {
+  if (lowerMsg.includes("not read first") || lowerMsg.includes("writeblocked")) {
     remedies.push("Use view_file to read the file before modifying it.");
     remedies.push("This is a safety guard to prevent blind edits.");
   }
@@ -168,17 +153,13 @@ function suggestRemedies(
 
   // Path sandbox
   if (lowerMsg.includes("outside") && lowerMsg.includes("workspace")) {
-    remedies.push(
-      "The path resolves outside the workspace. Use a path inside the workspace root.",
-    );
+    remedies.push("The path resolves outside the workspace. Use a path inside the workspace root.");
   }
 
   // Blocked path
   if (
     lowerMsg.includes("blocked") &&
-    (lowerMsg.includes(".env") ||
-      lowerMsg.includes(".git") ||
-      lowerMsg.includes("secret"))
+    (lowerMsg.includes(".env") || lowerMsg.includes(".git") || lowerMsg.includes("secret"))
   ) {
     remedies.push(
       "This file is blocked by security policy (sensitive file). Use a different file.",
@@ -191,27 +172,19 @@ function suggestRemedies(
     lowerMsg.includes("privileged") ||
     lowerMsg.includes("exfiltration")
   ) {
-    remedies.push(
-      "The command was classified as high-risk. Consider a safer alternative.",
-    );
+    remedies.push("The command was classified as high-risk. Consider a safer alternative.");
     remedies.push("If this is intentional, the user must approve the command.");
   }
 
   // Compilation errors
-  if (
-    errorType === "SyntaxError" ||
-    lowerMsg.includes("syntax") ||
-    lowerMsg.includes("compile")
-  ) {
+  if (errorType === "SyntaxError" || lowerMsg.includes("syntax") || lowerMsg.includes("compile")) {
     remedies.push("Check for syntax errors in the generated code.");
     remedies.push("Verify TypeScript types are correct.");
   }
 
   // Timeout
   if (lowerMsg.includes("timeout") || lowerMsg.includes("timed out")) {
-    remedies.push(
-      "The operation timed out. Try breaking the task into smaller steps.",
-    );
+    remedies.push("The operation timed out. Try breaking the task into smaller steps.");
     remedies.push("Check if the model or service is responding slowly.");
   }
 
@@ -221,9 +194,7 @@ function suggestRemedies(
     lowerMsg.includes("network") ||
     lowerMsg.includes("econnrefused")
   ) {
-    remedies.push(
-      "Check network connectivity and that the service is running.",
-    );
+    remedies.push("Check network connectivity and that the service is running.");
     remedies.push("Verify the API base URL is correct in .env.");
   }
 
@@ -241,19 +212,10 @@ function suggestRemedies(
 /**
  * Redact sensitive values from args before including in diagnostic blocks.
  */
-function redactArgs(
-  args: Record<string, any> | undefined | null,
-): Record<string, any> {
+function redactArgs(args: Record<string, any> | undefined | null): Record<string, any> {
   if (!args) return {};
   const redacted: Record<string, any> = {};
-  const sensitiveKeys = [
-    "apiKey",
-    "api_key",
-    "password",
-    "token",
-    "secret",
-    "key",
-  ];
+  const sensitiveKeys = ["apiKey", "api_key", "password", "token", "secret", "key"];
 
   for (const [key, value] of Object.entries(args)) {
     if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {

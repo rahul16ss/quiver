@@ -3,10 +3,7 @@ import { z } from "zod";
 import picocolors from "picocolors";
 import { Tool } from "../registry.js";
 import { classifyCommand, targetsOutsideWorkspace } from "../security/command_policy.js";
-import {
-  createSandboxProfile,
-  spawnSandboxed,
-} from "../security/seatbelt.js";
+import { createSandboxProfile, spawnSandboxed } from "../security/seatbelt.js";
 
 export const tool: Tool = {
   name: "run_command",
@@ -19,15 +16,11 @@ export const tool: Tool = {
     cwd: z
       .string()
       .optional()
-      .describe(
-        "Working directory for the command. Defaults to current directory.",
-      ),
+      .describe("Working directory for the command. Defaults to current directory."),
     timeout: z
       .number()
       .optional()
-      .describe(
-        "Timeout in milliseconds. Default: 30000 (30s). Max: 120000 (2min).",
-      ),
+      .describe("Timeout in milliseconds. Default: 30000 (30s). Max: 120000 (2min)."),
   }),
   execute: async ({ command, cwd, timeout }) => {
     const maxBuffer = 1024 * 1024 * 10; // 10MB
@@ -44,9 +37,7 @@ export const tool: Tool = {
     }
 
     const riskTag =
-      classification.risk === "safe"
-        ? ""
-        : picocolors.gray(` [risk: ${classification.risk}]`);
+      classification.risk === "safe" ? "" : picocolors.gray(` [risk: ${classification.risk}]`);
     console.log(picocolors.gray(`   Running command: ${command}`) + riskTag);
 
     const seatbeltRiskBands = new Set([
@@ -121,13 +112,7 @@ export const tool: Tool = {
       });
       child.once("error", (error) => {
         clearTimeout(timer);
-        finish(
-          stdout,
-          `${stderr}\n${error.message}`.trim(),
-          1,
-          timedOut,
-          result.method,
-        );
+        finish(stdout, `${stderr}\n${error.message}`.trim(), 1, timedOut, result.method);
       });
       child.once("close", (code) => {
         clearTimeout(timer);

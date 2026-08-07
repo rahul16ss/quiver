@@ -7,13 +7,50 @@ import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 // Extensions that are natively text — read as UTF-8.
 const TEXT_EXTENSIONS = new Set([
-  ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml",
-  ".xml", ".html", ".htm", ".css", ".js", ".mjs", ".ts", ".tsx", ".jsx",
-  ".py", ".rb", ".go", ".rs", ".java", ".c", ".cpp", ".h", ".hpp",
-  ".sh", ".bash", ".zsh", ".fish", ".ps1",
-  ".sql", ".graphql", ".proto",
-  ".env", ".gitignore", ".dockerignore", ".editorconfig",
-  ".toml", ".ini", ".cfg", ".conf", ".log",
+  ".txt",
+  ".md",
+  ".markdown",
+  ".csv",
+  ".tsv",
+  ".json",
+  ".jsonl",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".mjs",
+  ".ts",
+  ".tsx",
+  ".jsx",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".c",
+  ".cpp",
+  ".h",
+  ".hpp",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".fish",
+  ".ps1",
+  ".sql",
+  ".graphql",
+  ".proto",
+  ".env",
+  ".gitignore",
+  ".dockerignore",
+  ".editorconfig",
+  ".toml",
+  ".ini",
+  ".cfg",
+  ".conf",
+  ".log",
 ]);
 
 export const tool: Tool = {
@@ -26,13 +63,8 @@ export const tool: Tool = {
     "No text extraction, no rendering, no lossy parsing. " +
     "Supports optional line range selection for text files.",
   parameters: z.object({
-    filePath: z
-      .string()
-      .describe("The absolute or relative path to the file to read."),
-    startLine: z
-      .number()
-      .optional()
-      .describe("Starting line number (1-based, text files only)."),
+    filePath: z.string().describe("The absolute or relative path to the file to read."),
+    startLine: z.number().optional().describe("Starting line number (1-based, text files only)."),
     endLine: z
       .number()
       .optional()

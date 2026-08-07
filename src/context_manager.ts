@@ -30,7 +30,7 @@ import type { Message } from "./agent.js";
 
 const OFFLOAD_THRESHOLD_CHARS = 80000; // ~20K tokens
 const COMPACTION_TRIGGER_FRACTION = 0.85;
-const COMPACTION_KEEP_FRACTION = 0.10;
+const COMPACTION_KEEP_FRACTION = 0.1;
 const COMPACTION_MIN_MESSAGES = 6;
 
 /**
@@ -227,7 +227,8 @@ export async function compactWithSummarization(
         (typeof systemMessages[0].content === "string"
           ? systemMessages[0].content
           : getMessageText(systemMessages[0])) +
-        "\n\n" + summaryContent,
+        "\n\n" +
+        summaryContent,
     });
   } else {
     messages.push({ role: "system", content: summaryContent });
@@ -269,8 +270,14 @@ export async function proposeCompaction(
   sessionId: string,
 ): Promise<CompactionProposal> {
   const empty: CompactionProposal = {
-    needed: false, summary: "", removedCount: 0, savedTo: "",
-    tokensBefore: 0, tokensAfter: 0, newMessages: [], keptRecent: 0,
+    needed: false,
+    summary: "",
+    removedCount: 0,
+    savedTo: "",
+    tokensBefore: 0,
+    tokensAfter: 0,
+    newMessages: [],
+    keptRecent: 0,
   };
   if (messages.length <= keepRecent + 1) return empty;
   const tokensBefore = estimateConversationTokens(messages);
@@ -289,7 +296,8 @@ export async function proposeCompaction(
     recentMessages.length > 0 &&
     recentMessages[0].role === "tool" &&
     !recentMessages.some(
-      (m) => m.role === "assistant" &&
+      (m) =>
+        m.role === "assistant" &&
         m.tool_calls?.some((tc) => tc.id === recentMessages[0].tool_call_id),
     )
   ) {
@@ -303,10 +311,15 @@ export async function proposeCompaction(
   const savedTo = await saveConversationBeforeCompaction(messages, sessionId);
   const summary = generateFallbackSummary(oldMessages);
   const summaryContent =
-    "[Context Compacted \u2014 " + oldMessages.length + " messages summarized]\n\n" +
-    "The full conversation was saved to: " + savedTo + "\n\n" +
+    "[Context Compacted \u2014 " +
+    oldMessages.length +
+    " messages summarized]\n\n" +
+    "The full conversation was saved to: " +
+    savedTo +
+    "\n\n" +
     "You can read it with view_file if you need specific details from earlier in the conversation.\n\n" +
-    "SUMMARY OF PREVIOUS CONVERSATION:\n" + summary;
+    "SUMMARY OF PREVIOUS CONVERSATION:\n" +
+    summary;
   // Merge the summary into the FIRST system message rather than pushing a
   // second one. Many OpenAI-compatible endpoints reject
   // requests with multiple system messages or a system message after user
@@ -319,7 +332,8 @@ export async function proposeCompaction(
         (typeof systemMessages[0].content === "string"
           ? systemMessages[0].content
           : getMessageText(systemMessages[0])) +
-        "\n\n" + summaryContent,
+        "\n\n" +
+        summaryContent,
     };
     newMessages.push(mergedSystem);
     // Drop any additional original system messages (rare; they were likely
@@ -329,9 +343,14 @@ export async function proposeCompaction(
   }
   newMessages.push(...recentMessages);
   return {
-    needed: true, summary, removedCount: oldMessages.length, savedTo,
-    tokensBefore, tokensAfter: estimateConversationTokens(newMessages),
-    newMessages, keptRecent: recentMessages.length,
+    needed: true,
+    summary,
+    removedCount: oldMessages.length,
+    savedTo,
+    tokensBefore,
+    tokensAfter: estimateConversationTokens(newMessages),
+    newMessages,
+    keptRecent: recentMessages.length,
   };
 }
 

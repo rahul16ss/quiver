@@ -27,9 +27,7 @@ export class CorruptStateError extends Error {
     reason: string,
     public readonly recoveryHint = "Restore the latest .quiver-backups copy or discard the corrupt state and start a new session.",
   ) {
-    super(
-      `Corrupt Quiver state at ${statePath}: ${reason}. ${recoveryHint}`,
-    );
+    super(`Corrupt Quiver state at ${statePath}: ${reason}. ${recoveryHint}`);
     this.name = "CorruptStateError";
   }
 }
@@ -183,10 +181,7 @@ export async function atomicWrite(
  * It follows the same temp-file, backup, fsync, rename, and directory-fsync
  * sequence as atomicWrite().
  */
-export function atomicWriteSync(
-  filePath: string,
-  content: string | Buffer,
-): string | null {
+export function atomicWriteSync(filePath: string, content: string | Buffer): string | null {
   const resolvedPath = path.resolve(filePath);
   const dir = path.dirname(resolvedPath);
   fsSync.mkdirSync(dir, { recursive: true });
@@ -242,10 +237,7 @@ export function atomicWriteSync(
  * @param backupPath - The backup file path
  * @param originalPath - The original file path to restore
  */
-export async function rollbackWrite(
-  backupPath: string,
-  originalPath: string,
-): Promise<void> {
+export async function rollbackWrite(backupPath: string, originalPath: string): Promise<void> {
   if (!backupPath) {
     // File was newly created — delete it
     try {

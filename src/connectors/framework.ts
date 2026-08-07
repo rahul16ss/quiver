@@ -42,12 +42,7 @@ import { createHash } from "crypto";
 // ─── Common schemas ────────────────────────────────────────────────────
 
 export type ConnectorDataType =
-  | "FinancialStatement"
-  | "MarketQuote"
-  | "Transaction"
-  | "MacroIndicator"
-  | "Filing"
-  | "Generic";
+  "FinancialStatement" | "MarketQuote" | "Transaction" | "MacroIndicator" | "Filing" | "Generic";
 
 export interface Provenance {
   vendor: string;
@@ -230,11 +225,7 @@ export class ConnectorRegistry {
     } catch {}
   }
 
-  private cacheKey(
-    connector: string,
-    identifier: string,
-    fields?: string[],
-  ): string {
+  private cacheKey(connector: string, identifier: string, fields?: string[]): string {
     const fieldStr = fields ? [...fields].sort().join(",") : "all";
     const logicalKey = `${connector}\u0000${identifier}\u0000${fieldStr}`;
     return `${connector}__${createHash("sha256").update(logicalKey).digest("hex")}`;
@@ -275,14 +266,11 @@ export const globalConnectorRegistry = new ConnectorRegistry();
  * Each connector file exports a `connector` object implementing DataConnector.
  */
 export async function loadConnectors(connectorsDir?: string): Promise<number> {
-  const dir =
-    connectorsDir || path.join(process.cwd(), ".quiver", "connectors");
+  const dir = connectorsDir || path.join(process.cwd(), ".quiver", "connectors");
   let count = 0;
 
   try {
-    const files = fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
 
     for (const file of files) {
       try {
@@ -293,7 +281,7 @@ export async function loadConnectors(connectorsDir?: string): Promise<number> {
           globalConnectorRegistry.register(module.connector);
           count++;
         }
-      } catch (err) {
+      } catch {
         // Silently skip failed connector loads
       }
     }

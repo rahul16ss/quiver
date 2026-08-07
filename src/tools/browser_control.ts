@@ -39,24 +39,16 @@ export const tool: Tool = {
     action: z
       .enum(["navigate", "click", "type", "screenshot", "get_content", "close"])
       .describe("The action to perform in the browser."),
-    url: z
-      .string()
-      .optional()
-      .describe("The target URL (required for 'navigate')."),
+    url: z.string().optional().describe("The target URL (required for 'navigate')."),
     selector: z
       .string()
       .optional()
       .describe("CSS selector for elements (required for 'click' or 'type')."),
-    text: z
-      .string()
-      .optional()
-      .describe("The text content to input (required for 'type')."),
+    text: z.string().optional().describe("The text content to input (required for 'type')."),
     waitForSelector: z
       .string()
       .optional()
-      .describe(
-        "Optional CSS selector to wait for after performing the action.",
-      ),
+      .describe("Optional CSS selector to wait for after performing the action."),
     headless: z
       .boolean()
       .optional()
@@ -64,14 +56,7 @@ export const tool: Tool = {
         "Override headless mode for this session. Set to false to show the browser window (e.g. for manual sign-in). If omitted, uses the autonomy config (browser:visible grant).",
       ),
   }),
-  execute: async ({
-    action,
-    url,
-    selector,
-    text,
-    waitForSelector,
-    headless,
-  }) => {
+  execute: async ({ action, url, selector, text, waitForSelector, headless }) => {
     const wsPath = path.join(getProjectSessionsDir(), "browser_ws.txt");
     let browser: Browser | null = null;
     let wsUrl = "";
@@ -139,8 +124,7 @@ export const tool: Tool = {
           break;
         }
         case "click": {
-          if (!selector)
-            throw new Error("Selector is required for 'click' action.");
+          if (!selector) throw new Error("Selector is required for 'click' action.");
           await page.waitForSelector(selector, { timeout: 5000 });
           await page.click(selector);
           resultText = `Successfully clicked element matching selector '${selector}'.`;
@@ -148,9 +132,7 @@ export const tool: Tool = {
         }
         case "type": {
           if (!selector || text === undefined) {
-            throw new Error(
-              "Selector and text are required for 'type' action.",
-            );
+            throw new Error("Selector and text are required for 'type' action.");
           }
           await page.waitForSelector(selector, { timeout: 5000 });
           await page.type(selector, text);
@@ -158,10 +140,7 @@ export const tool: Tool = {
           break;
         }
         case "screenshot": {
-          const screenshotPath = path.join(
-            getProjectSessionsDir(),
-            "browser_screenshot.png",
-          );
+          const screenshotPath = path.join(getProjectSessionsDir(), "browser_screenshot.png");
           await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
           await page.screenshot({ path: screenshotPath });
           resultText = `Screenshot successfully saved to local file: file://${screenshotPath}`;

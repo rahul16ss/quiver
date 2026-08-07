@@ -1,11 +1,7 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync, chmodSync } from "fs";
 import * as path from "path";
 import { theme, statusLine, EXIT } from "./cli_ui.js";
-import {
-  isKeychainAvailable,
-  migrateEnvToKeychain,
-  setCredential,
-} from "./secrets/keychain.js";
+import { isKeychainAvailable, migrateEnvToKeychain, setCredential } from "./secrets/keychain.js";
 import { findBinary } from "./utils/find_binary.js";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname ?? ".", "..");
@@ -51,9 +47,9 @@ export async function runInitWizard(): Promise<void> {
 
   const configuredOfficeCli = process.env.QUIVER_OFFICECLI_PATH?.trim();
   const officeCli = configuredOfficeCli
-    ? (existsSync(configuredOfficeCli)
-        ? configuredOfficeCli
-        : findBinary(configuredOfficeCli))
+    ? existsSync(configuredOfficeCli)
+      ? configuredOfficeCli
+      : findBinary(configuredOfficeCli)
     : findBinary("officecli");
   if (officeCli) {
     statusLine("OK", `OfficeCLI detected: ${officeCli}`);
@@ -76,13 +72,10 @@ export async function runInitWizard(): Promise<void> {
     );
   }
 
-  const apiKey = await promptLine(
-    t.cyan("Enter your LLM_API_KEY (press Enter to skip): "),
-  );
+  const apiKey = await promptLine(t.cyan("Enter your LLM_API_KEY (press Enter to skip): "));
 
   if (apiKey) {
-    const storedInKeychain =
-      isKeychainAvailable() && (await setCredential("LLM_API_KEY", apiKey));
+    const storedInKeychain = isKeychainAvailable() && (await setCredential("LLM_API_KEY", apiKey));
     if (storedInKeychain) {
       // Keep the template entry but never leave the secret in plaintext.
       const envContent = readFileSync(ENV_FILE, "utf8").replace(
@@ -94,10 +87,7 @@ export async function runInitWizard(): Promise<void> {
     } else {
       let envContent = readFileSync(ENV_FILE, "utf8");
       if (/^LLM_API_KEY=.*$/m.test(envContent)) {
-        envContent = envContent.replace(
-          /^LLM_API_KEY=.*$/m,
-          `LLM_API_KEY=${apiKey}`,
-        );
+        envContent = envContent.replace(/^LLM_API_KEY=.*$/m, `LLM_API_KEY=${apiKey}`);
       } else {
         envContent += `\nLLM_API_KEY=${apiKey}\n`;
       }
@@ -120,16 +110,17 @@ export async function runInitWizard(): Promise<void> {
     await ensureDirectories();
     statusLine("OK", "Seeded local skills and project directories.");
   } catch (err: any) {
-    statusLine(
-      "WARN",
-      `Could not seed skills/directories: ${err?.message || String(err)}`,
-    );
+    statusLine("WARN", `Could not seed skills/directories: ${err?.message || String(err)}`);
   }
   console.log(
-    t.gray("  Configure LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point Quiver at any OpenAI-compatible endpoint.\n"),
+    t.gray(
+      "  Configure LLM_API_BASE_URL and LLM_MODEL_NAME in .env to point Quiver at any OpenAI-compatible endpoint.\n",
+    ),
   );
   console.log(
-    t.yellow("  Remote endpoints receive the prompts and files you submit; use an approved provider or local endpoint for sensitive work.\n"),
+    t.yellow(
+      "  Remote endpoints receive the prompts and files you submit; use an approved provider or local endpoint for sensitive work.\n",
+    ),
   );
   console.log(t.gray("  Docs: README.md\n"));
 }

@@ -134,9 +134,7 @@ export async function buildCheckerVisionContent(input: {
       if (await pathExists(input.deliverablePath)) {
         if (plannedAttachments < CHECKER_MAX_ATTACHMENTS) {
           plannedAttachments++;
-          markerBlocks.push(
-            `Deliverable (native attachment):\n[File: ${input.deliverablePath}]`,
-          );
+          markerBlocks.push(`Deliverable (native attachment):\n[File: ${input.deliverablePath}]`);
           notes.push(`deliverable attached: ${path.basename(input.deliverablePath)}`);
         }
       }
@@ -182,9 +180,7 @@ export async function buildCheckerVisionContent(input: {
           }
           requiredAttachments++;
           plannedAttachments++;
-          markerBlocks.push(
-            `Source ${source.source_id} — ${source.title}:\n[File: ${resolved}]`,
-          );
+          markerBlocks.push(`Source ${source.source_id} — ${source.title}:\n[File: ${resolved}]`);
           continue;
         }
 

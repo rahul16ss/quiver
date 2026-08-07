@@ -11,9 +11,15 @@ function addActivity(text, kind = "") {
   line.className = "act " + kind;
   const mark = STATUS_ICONS[kind] || STATUS_ICONS.pending;
   line.innerHTML =
-    '<span class="act-mark">' + mark + "</span>" +
-    '<span class="act-text">' + escapeHtml(text) + "</span>" +
-    '<span class="act-time">' + nowTime() + "</span>";
+    '<span class="act-mark">' +
+    mark +
+    "</span>" +
+    '<span class="act-text">' +
+    escapeHtml(text) +
+    "</span>" +
+    '<span class="act-time">' +
+    nowTime() +
+    "</span>";
   state.activityStream.appendChild(line);
   state.activityStream.scrollTop = state.activityStream.scrollHeight;
 }

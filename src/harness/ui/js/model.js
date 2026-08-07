@@ -37,13 +37,16 @@ function friendlyModelName(id) {
   const key = base.toLowerCase();
   let label = null;
   for (const [needle, name] of MODEL_LABELS) {
-    if (key.includes(needle)) { label = name; break; }
+    if (key.includes(needle)) {
+      label = name;
+      break;
+    }
   }
   if (!label) {
     // graceful fallback: turn "some-model_name" into "Some Model Name"
     label = base.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
-  if (tag) label += ` \u00b7 ${tag.toUpperCase()}`;  // middot, Apple-style
+  if (tag) label += ` \u00b7 ${tag.toUpperCase()}`; // middot, Apple-style
   return label;
 }
 function modelLocality(config) {
@@ -67,10 +70,4 @@ function setModel(name, config) {
   $("ctxModel").title = name ? name : "";
 }
 
-export {
-  MODEL_LABELS,
-  SIZE_TAG,
-  friendlyModelName,
-  modelLocality,
-  setModel,
-};
+export { MODEL_LABELS, SIZE_TAG, friendlyModelName, modelLocality, setModel };

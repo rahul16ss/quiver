@@ -117,8 +117,7 @@ export class LiveInput {
 
   private awaitingCPR = false;
   private cprBuf = "";
-  private cprResolve:
-    | ((p: { row: number; col: number }) => void) | null = null;
+  private cprResolve: ((p: { row: number; col: number }) => void) | null = null;
   private cprTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Color helpers (respect NO_COLOR).
@@ -497,12 +496,14 @@ export class LiveInput {
         }
         this.deleteForward();
         break;
-      case "\x0c": // Ctrl+L — clear screen, re-establish region + echo.
+      case "\x0c": {
+        // Ctrl+L — clear screen, re-establish region + echo.
         this.stdout.write("\x1b[2J\x1b[3J\x1b[H");
         const Hc = this.rows;
         this.stdout.write(`\x1b[1;${Hc - 1}r`);
         this.renderEcho();
         return; // already rendered
+      }
       default:
         return; // ignore other Ctrl combos
     }
@@ -678,11 +679,7 @@ export class LiveInput {
         const c1 = s[i + 1];
         if (c1 === "[") {
           let j = i + 2;
-          while (
-            j < s.length &&
-            !(s.charCodeAt(j) >= 0x40 && s.charCodeAt(j) <= 0x7e)
-          )
-            j++;
+          while (j < s.length && !(s.charCodeAt(j) >= 0x40 && s.charCodeAt(j) <= 0x7e)) j++;
           if (j >= s.length) break; // incomplete CSI — wait
           const final = s[j];
           const params = s.slice(i + 2, j);

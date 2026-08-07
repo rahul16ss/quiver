@@ -1,4 +1,4 @@
-import { exec, execFile, execSync } from "child_process";
+import { execFile } from "child_process";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
@@ -21,19 +21,12 @@ export const tool: Tool = {
     directory: z
       .string()
       .optional()
-      .describe(
-        "The directory to search in. Defaults to current directory ('.').",
-      ),
+      .describe("The directory to search in. Defaults to current directory ('.')."),
     glob: z
       .string()
       .optional()
-      .describe(
-        "File glob filter to narrow search. Example: '*.ts' or '*.{js,ts}'.",
-      ),
-    ignoreCase: z
-      .boolean()
-      .optional()
-      .describe("Case-insensitive search. Default: false."),
+      .describe("File glob filter to narrow search. Example: '*.ts' or '*.{js,ts}'."),
+    ignoreCase: z.boolean().optional().describe("Case-insensitive search. Default: false."),
     maxResults: z
       .number()
       .optional()
@@ -65,33 +58,22 @@ export const tool: Tool = {
 
     // Build command args as array (no shell interpolation) for security
     if (rgAvailable) {
-      const rgArgs: string[] = [
-        "--line-number",
-        "--no-heading",
-        "--color=never",
-      ];
+      const rgArgs: string[] = ["--line-number", "--no-heading", "--color=never"];
       if (ignoreCase) rgArgs.push("-i");
       if (glob) rgArgs.push("-g", glob);
       rgArgs.push("--", pattern, dir);
 
       return new Promise((resolve) => {
-        execFile(
-          "rg",
-          rgArgs,
-          { maxBuffer: 1024 * 1024 * 10 },
-          (error, stdout, stderr) => {
-            const output = stdout.trim();
-            if (!output) {
-              resolve(`No matches found for pattern '${pattern}' in ${dir}.`);
-              return;
-            }
-            // Apply total limit across all files (rg -m limits per-file)
-            const lines = output.split("\n").slice(0, limit);
-            resolve(
-              formatSearchOutput(lines.join("\n"), pattern, glob, limit, dir),
-            );
-          },
-        );
+        execFile("rg", rgArgs, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout) => {
+          const output = stdout.trim();
+          if (!output) {
+            resolve(`No matches found for pattern '${pattern}' in ${dir}.`);
+            return;
+          }
+          // Apply total limit across all files (rg -m limits per-file)
+          const lines = output.split("\n").slice(0, limit);
+          resolve(formatSearchOutput(lines.join("\n"), pattern, glob, limit, dir));
+        });
       });
     }
 
@@ -106,23 +88,16 @@ export const tool: Tool = {
       grepArgs.push("--", pattern, dir);
 
       return new Promise((resolve) => {
-        execFile(
-          "grep",
-          grepArgs,
-          { maxBuffer: 1024 * 1024 * 10 },
-          (error, stdout, stderr) => {
-            const output = stdout.trim();
-            if (!output) {
-              resolve(`No matches found for pattern '${pattern}' in ${dir}.`);
-              return;
-            }
-            // Apply limit
-            const lines = output.split("\n").slice(0, limit);
-            resolve(
-              formatSearchOutput(lines.join("\n"), pattern, glob, limit, dir),
-            );
-          },
-        );
+        execFile("grep", grepArgs, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout) => {
+          const output = stdout.trim();
+          if (!output) {
+            resolve(`No matches found for pattern '${pattern}' in ${dir}.`);
+            return;
+          }
+          // Apply limit
+          const lines = output.split("\n").slice(0, limit);
+          resolve(formatSearchOutput(lines.join("\n"), pattern, glob, limit, dir));
+        });
       });
     }
 
@@ -294,11 +269,7 @@ async function pureTSSearch(
 
       if (entry.isDirectory()) {
         // Skip common non-useful directories
-        if (
-          entryName === "node_modules" ||
-          entryName === ".git" ||
-          entryName === "dist"
-        ) {
+        if (entryName === "node_modules" || entryName === ".git" || entryName === "dist") {
           continue;
         }
         await walk(fullPath, depth + 1);
@@ -358,7 +329,7 @@ function formatSearchOutput(
   pattern: string,
   glob: string | undefined,
   limit: number,
-  dir: string,
+  _dir: string,
 ): string {
   const lines = output.split("\n");
   const truncated = lines.length >= limit;

@@ -158,8 +158,6 @@ function computeLineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
   const result: DiffLine[] = [];
   let i = 0;
   let j = 0;
-  let oldStart = 0;
-  let newStart = 0;
   let inHunk = false;
   let hunkOldStart = 0;
   let hunkNewStart = 0;

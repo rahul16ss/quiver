@@ -78,7 +78,7 @@ export async function loadReviewedMemoryContext(): Promise<string> {
 export function assemblePrompt(
   input: PromptAssemblyInput,
   adapter: HarnessAdapter,
-  model: ModelInfo,
+  _model: ModelInfo,
 ): AssembledPrompt {
   const sections: PromptSection[] = [];
 

@@ -31,13 +31,7 @@ export type SensitivityTier = "low" | "mid" | "high";
 export type ModelRoute = "cloud" | "cloud-redacted" | "local";
 
 export type EngagementSensitivity =
-  | "synthetic"
-  | "public"
-  | "internal"
-  | "confidential"
-  | "client-confidential"
-  | "mnpi"
-  | "unknown";
+  "synthetic" | "public" | "internal" | "confidential" | "client-confidential" | "mnpi" | "unknown";
 
 export interface RedactionRecord {
   type: string;
@@ -122,11 +116,7 @@ function isEngagementSensitivity(value: unknown): value is EngagementSensitivity
   );
 }
 
-function validateRegex(
-  pattern: string,
-  configPath: string,
-  label: string,
-): void {
+function validateRegex(pattern: string, configPath: string, label: string): void {
   try {
     new RegExp(pattern, "gi");
   } catch (error) {
@@ -137,18 +127,12 @@ function validateRegex(
   }
 }
 
-function parseSensitivityConfig(
-  value: unknown,
-  configPath: string,
-): SensitivityConfig {
+function parseSensitivityConfig(value: unknown, configPath: string): SensitivityConfig {
   if (!isRecord(value) || value.version !== 1) {
     throw new SensitivityConfigError(configPath, "version must be 1");
   }
   if (!isTier(value.defaultTier)) {
-    throw new SensitivityConfigError(
-      configPath,
-      "defaultTier must be low, mid, or high",
-    );
+    throw new SensitivityConfigError(configPath, "defaultTier must be low, mid, or high");
   }
 
   const endpoints = value.modelEndpoints;
@@ -187,10 +171,7 @@ function parseSensitivityConfig(
   });
 
   if (!Array.isArray(value.classificationRules)) {
-    throw new SensitivityConfigError(
-      configPath,
-      "classificationRules must be an array",
-    );
+    throw new SensitivityConfigError(configPath, "classificationRules must be an array");
   }
   const classificationRules = value.classificationRules.map((entry, index) => {
     if (
@@ -205,11 +186,7 @@ function parseSensitivityConfig(
         `classificationRules[${index}] must contain type, pattern, and tier`,
       );
     }
-    validateRegex(
-      entry.pattern,
-      configPath,
-      `classificationRules[${index}].pattern`,
-    );
+    validateRegex(entry.pattern, configPath, `classificationRules[${index}].pattern`);
     return {
       type: entry.type,
       pattern: entry.pattern,
@@ -218,10 +195,7 @@ function parseSensitivityConfig(
     };
   });
 
-  if (
-    value.defaultTier === "mid" &&
-    mnpiPatterns.length === 0
-  ) {
+  if (value.defaultTier === "mid" && mnpiPatterns.length === 0) {
     throw new SensitivityConfigError(
       configPath,
       "a mid default requires at least one redaction pattern",
@@ -240,9 +214,7 @@ function parseSensitivityConfig(
   };
 }
 
-export function resolveSensitivityConfigPath(
-  engagementRoot = process.cwd(),
-): string {
+export function resolveSensitivityConfigPath(engagementRoot = process.cwd()): string {
   return path.join(engagementRoot, ".quiver", "sensitivity.json");
 }
 
@@ -270,10 +242,7 @@ export function loadSensitivityConfig(
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new SensitivityConfigError(
-      filePath,
-      `JSON could not be parsed: ${String(error)}`,
-    );
+    throw new SensitivityConfigError(filePath, `JSON could not be parsed: ${String(error)}`);
   }
   return parseSensitivityConfig(parsed, filePath);
 }
@@ -281,9 +250,7 @@ export function loadSensitivityConfig(
 /**
  * Get the current sensitivity config (lazy-loaded per engagement path).
  */
-export function getSensitivityConfig(
-  engagementRoot = process.cwd(),
-): SensitivityConfig {
+export function getSensitivityConfig(engagementRoot = process.cwd()): SensitivityConfig {
   const configPath = resolveSensitivityConfigPath(engagementRoot);
   if (!loadedConfig || loadedConfigPath !== configPath) {
     loadedConfig = loadSensitivityConfig(configPath);
@@ -298,9 +265,10 @@ export function resetSensitivityConfigCache(): void {
   loadedConfigPath = null;
 }
 
-function tierForEngagement(
-  engagement: EngagementSensitivity,
-): { tier: SensitivityTier; reason: string } {
+function tierForEngagement(engagement: EngagementSensitivity): {
+  tier: SensitivityTier;
+  reason: string;
+} {
   switch (engagement) {
     case "synthetic":
     case "public":
@@ -401,10 +369,7 @@ export function redactMnpi(
  * other structured payloads. This is used for system, user, tool, and
  * assistant context before a cloud-redacted call.
  */
-export function redactMessageContent(
-  content: unknown,
-  config?: SensitivityConfig,
-): unknown {
+export function redactMessageContent(content: unknown, config?: SensitivityConfig): unknown {
   if (typeof content === "string") {
     return redactMnpi(content, config).redactedText;
   }
@@ -504,12 +469,7 @@ export function formatRedactionReceipt(redactions: RedactionRecord[]): string {
 /**
  * Get the model endpoint for a given route.
  */
-export function getModelEndpoint(
-  route: ModelRoute,
-  config?: SensitivityConfig,
-): string {
+export function getModelEndpoint(route: ModelRoute, config?: SensitivityConfig): string {
   const cfg = config || getSensitivityConfig();
-  return route === "local"
-    ? cfg.modelEndpoints.local
-    : cfg.modelEndpoints.cloud;
+  return route === "local" ? cfg.modelEndpoints.local : cfg.modelEndpoints.cloud;
 }

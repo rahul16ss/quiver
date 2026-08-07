@@ -46,13 +46,13 @@ async function loadSessionStateIntoUi(sessionPath) {
   // Clear chat UI (keep the empty-state node alive)
   clearChat();
   hideEmpty();
-  
+
   // Track tool calls to check their success and show draft cards
   const toolCalls = {};
-  
+
   for (const msg of session.messages || []) {
     const textContent = getMessageTextContent(msg.content);
-    
+
     if (msg.role === "user") {
       if (textContent) addUserMessage(textContent);
     } else if (msg.role === "assistant") {
@@ -66,11 +66,12 @@ async function loadSessionStateIntoUi(sessionPath) {
         for (const tc of msg.tool_calls) {
           if (tc.type === "function" && tc.function) {
             try {
-              const args = typeof tc.function.arguments === "string" 
-                ? JSON.parse(tc.function.arguments) 
-                : tc.function.arguments;
+              const args =
+                typeof tc.function.arguments === "string"
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments;
               toolCalls[tc.id] = { name: tc.function.name, args: args };
-            } catch (e) {
+            } catch {
               // ignore malformed args
             }
           }
@@ -106,7 +107,9 @@ function formatSessionDate(iso) {
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
   const sameDay = (a, b) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
   if (sameDay(d, today)) return `Today ${time}`;
   if (sameDay(d, yesterday)) return `Yesterday ${time}`;
   const opts = { month: "short", day: "numeric" };
@@ -126,7 +129,8 @@ function renderSessionsList(sessions, filterText) {
   const q = (filterText || "").trim().toLowerCase();
   const visible = q
     ? sessions.filter((s) =>
-        (sessionTitleFor(s) + " " + (s.sessionId || "")).toLowerCase().includes(q))
+        (sessionTitleFor(s) + " " + (s.sessionId || "")).toLowerCase().includes(q),
+      )
     : sessions;
   if (!visible.length) {
     list.innerHTML = `<div class="ctx-value muted">${q ? "No sessions match." : "No past sessions."}</div>`;

@@ -116,9 +116,7 @@ export function resolveRealPath(
 /**
  * Ensure the scratch directory exists for the given workspace.
  */
-export function ensureScratchDir(
-  workspaceRoot: string = process.cwd(),
-): string {
+export function ensureScratchDir(workspaceRoot: string = process.cwd()): string {
   const scratchDir = getScratchDir(workspaceRoot);
   fs.mkdirSync(scratchDir, { recursive: true });
   return scratchDir;
@@ -132,10 +130,7 @@ export function ensureScratchDir(
  * - Removes the scratch copy after successful copy.
  * - Returns the real path on success.
  */
-export function promoteFile(
-  scratchPath: string,
-  workspaceRoot: string = process.cwd(),
-): string {
+export function promoteFile(scratchPath: string, workspaceRoot: string = process.cwd()): string {
   const realPath = resolveRealPath(scratchPath, workspaceRoot);
   if (!realPath) {
     throw new Error(
@@ -210,8 +205,7 @@ export function listScratchFiles(
   workspaceRoot: string = process.cwd(),
 ): Array<{ scratch: string; real: string; relative: string }> {
   const scratchDir = getScratchDir(workspaceRoot);
-  const results: Array<{ scratch: string; real: string; relative: string }> =
-    [];
+  const results: Array<{ scratch: string; real: string; relative: string }> = [];
 
   if (!fs.existsSync(scratchDir)) {
     return results;

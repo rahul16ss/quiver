@@ -59,20 +59,12 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
       LEGACY_CODING_IDENTITY_RE.test(globalMemory.identity)
     ) {
       globalMemory.identity = DEFAULT_CORE_IDENTITY;
-      await fs.writeFile(
-        corePath,
-        JSON.stringify(globalMemory, null, 2),
-        "utf8",
-      );
+      await fs.writeFile(corePath, JSON.stringify(globalMemory, null, 2), "utf8");
     }
   } catch {
     // First run — create with defaults
     await fs.mkdir(path.dirname(corePath), { recursive: true });
-    await fs.writeFile(
-      corePath,
-      JSON.stringify(globalMemory, null, 2),
-      "utf8",
-    );
+    await fs.writeFile(corePath, JSON.stringify(globalMemory, null, 2), "utf8");
   }
 
   // Load per-project context
@@ -88,11 +80,7 @@ export async function loadCoreMemory(): Promise<CoreMemory> {
       project_context: `This workspace is ${path.basename(process.cwd())}.`,
     };
     await fs.mkdir(path.dirname(projectContextPath), { recursive: true });
-    await fs.writeFile(
-      projectContextPath,
-      JSON.stringify(defaults, null, 2),
-      "utf8",
-    );
+    await fs.writeFile(projectContextPath, JSON.stringify(defaults, null, 2), "utf8");
     projectContext = defaults.project_context;
   }
 
@@ -113,11 +101,7 @@ export async function saveCoreMemory(memory: CoreMemory): Promise<void> {
   await fs.mkdir(path.dirname(corePath), { recursive: true });
   await fs.writeFile(
     corePath,
-    JSON.stringify(
-      { identity: memory.identity, human_context: memory.human_context },
-      null,
-      2,
-    ),
+    JSON.stringify({ identity: memory.identity, human_context: memory.human_context }, null, 2),
     "utf8",
   );
 
@@ -135,15 +119,10 @@ export async function saveCoreMemory(memory: CoreMemory): Promise<void> {
  * Serializes the agent's system prompt, current messages, core memory blocks,
  * and active model configuration into a portable '.af' (Agent File) JSON file.
  */
-export async function exportToAgentFile(
-  agent: Agent,
-  targetPath: string,
-): Promise<void> {
+export async function exportToAgentFile(agent: Agent, targetPath: string): Promise<void> {
   const coreMemory = await loadCoreMemory();
-  const systemPromptRaw =
-    agent.getMessages().find((m) => m.role === "system")?.content || "";
-  const systemPrompt =
-    typeof systemPromptRaw === "string" ? systemPromptRaw : "";
+  const systemPromptRaw = agent.getMessages().find((m) => m.role === "system")?.content || "";
+  const systemPrompt = typeof systemPromptRaw === "string" ? systemPromptRaw : "";
 
   const af: AgentFile = {
     format: "quiver-qf",
@@ -179,10 +158,7 @@ export async function exportToAgentFile(
 /**
  * Restores the agent's messages list and core memory from a '.af' agent file.
  */
-export async function importFromAgentFile(
-  agent: Agent,
-  sourcePath: string,
-): Promise<void> {
+export async function importFromAgentFile(agent: Agent, sourcePath: string): Promise<void> {
   const content = await fs.readFile(sourcePath, "utf8");
   const af: AgentFile = JSON.parse(content);
 

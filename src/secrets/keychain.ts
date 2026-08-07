@@ -18,7 +18,8 @@ export interface CredentialEntry {
   password: string;
 }
 
-export type KeychainBackend = "macos-keychain" | "windows-credential-manager" | "linux-secret-service" | "none";
+export type KeychainBackend =
+  "macos-keychain" | "windows-credential-manager" | "linux-secret-service" | "none";
 
 // ─── Backend Detection ──────────────────────────────────────────────
 
@@ -73,28 +74,19 @@ export function isKeychainAvailable(): boolean {
 async function macosSet(service: string, account: string, password: string): Promise<void> {
   // Delete existing entry first (security add-generic-password fails if it exists)
   try {
-    execFileSync("security", [
-      "delete-generic-password",
-      "-s",
-      service,
-      "-a",
-      account,
-    ], { stdio: "pipe" });
+    execFileSync("security", ["delete-generic-password", "-s", service, "-a", account], {
+      stdio: "pipe",
+    });
   } catch {
     // Entry doesn't exist yet — fine
   }
 
   // Add the new entry
-  execFileSync("security", [
-    "add-generic-password",
-    "-s",
-    service,
-    "-a",
-    account,
-    "-w",
-    password,
-    "-U",
-  ], { stdio: "pipe" });
+  execFileSync(
+    "security",
+    ["add-generic-password", "-s", service, "-a", account, "-w", password, "-U"],
+    { stdio: "pipe" },
+  );
 }
 
 /**
@@ -102,14 +94,11 @@ async function macosSet(service: string, account: string, password: string): Pro
  */
 async function macosGet(service: string, account: string): Promise<string | null> {
   try {
-    const result = execFileSync("security", [
-      "find-generic-password",
-      "-s",
-      service,
-      "-a",
-      account,
-      "-w",
-    ], { stdio: "pipe", encoding: "utf8" });
+    const result = execFileSync(
+      "security",
+      ["find-generic-password", "-s", service, "-a", account, "-w"],
+      { stdio: "pipe", encoding: "utf8" },
+    );
     return removeCommandTrailingNewline(result);
   } catch {
     return null;
@@ -121,13 +110,9 @@ async function macosGet(service: string, account: string): Promise<string | null
  */
 async function macosDelete(service: string, account: string): Promise<void> {
   try {
-    execFileSync("security", [
-      "delete-generic-password",
-      "-s",
-      service,
-      "-a",
-      account,
-    ], { stdio: "pipe" });
+    execFileSync("security", ["delete-generic-password", "-s", service, "-a", account], {
+      stdio: "pipe",
+    });
   } catch {
     // Entry doesn't exist — fine
   }
@@ -160,11 +145,9 @@ function removeCommandTrailingNewline(value: string): string {
 async function windowsSet(service: string, account: string, password: string): Promise<void> {
   const target = windowsTarget(service, account);
   try {
-    execFileSync("cmdkey", [
-      `/add:${target}`,
-      `/user:${account}`,
-      `/pass:${password}`,
-    ], { stdio: "pipe" });
+    execFileSync("cmdkey", [`/add:${target}`, `/user:${account}`, `/pass:${password}`], {
+      stdio: "pipe",
+    });
   } catch (e) {
     throw new Error(`Failed to store credential in Windows Credential Manager: ${e}`);
   }
@@ -228,12 +211,11 @@ if ([QuiverCredential]::CredRead('${psTarget}', 1, 0, [ref]$ptr)) {
 }
 `;
   try {
-    const result = execFileSync("powershell", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-      encodePowerShell(script),
-    ], { stdio: "pipe", encoding: "utf8" });
+    const result = execFileSync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodePowerShell(script)],
+      { stdio: "pipe", encoding: "utf8" },
+    );
     const value = removeCommandTrailingNewline(result);
     return value || null;
   } catch {
@@ -262,15 +244,11 @@ async function windowsDelete(service: string, account: string): Promise<void> {
  * Store a credential in Linux Secret Service using secret-tool.
  */
 async function linuxSet(service: string, account: string, password: string): Promise<void> {
-  execFileSync("secret-tool", [
-    "store",
-    "--label",
-    service,
-    "service",
-    service,
-    "account",
-    account,
-  ], { input: password, stdio: ["pipe", "pipe", "pipe"] });
+  execFileSync(
+    "secret-tool",
+    ["store", "--label", service, "service", service, "account", account],
+    { input: password, stdio: ["pipe", "pipe", "pipe"] },
+  );
 }
 
 /**
@@ -278,13 +256,10 @@ async function linuxSet(service: string, account: string, password: string): Pro
  */
 async function linuxGet(service: string, account: string): Promise<string | null> {
   try {
-    const result = execFileSync("secret-tool", [
-      "lookup",
-      "service",
-      service,
-      "account",
-      account,
-    ], { stdio: "pipe", encoding: "utf8" });
+    const result = execFileSync("secret-tool", ["lookup", "service", service, "account", account], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
     return removeCommandTrailingNewline(result);
   } catch {
     return null;
@@ -296,13 +271,9 @@ async function linuxGet(service: string, account: string): Promise<string | null
  */
 async function linuxDelete(service: string, account: string): Promise<void> {
   try {
-    execFileSync("secret-tool", [
-      "clear",
-      "service",
-      service,
-      "account",
-      account,
-    ], { stdio: "pipe" });
+    execFileSync("secret-tool", ["clear", "service", service, "account", account], {
+      stdio: "pipe",
+    });
   } catch {
     // Entry doesn't exist — fine
   }
@@ -361,7 +332,7 @@ export async function getCredential(key: string): Promise<string | null> {
         return await windowsGet(SERVICE_NAME, key);
 
       case "linux-secret-service":
-      return await linuxGet(SERVICE_NAME, key);
+        return await linuxGet(SERVICE_NAME, key);
 
       default:
         return null;
@@ -382,27 +353,22 @@ export function getCredentialSync(key: string): string | null {
   try {
     switch (backend) {
       case "macos-keychain": {
-        const result = execFileSync("security", [
-          "find-generic-password",
-          "-s",
-          SERVICE_NAME,
-          "-a",
-          key,
-          "-w",
-        ], { stdio: "pipe", encoding: "utf8" });
+        const result = execFileSync(
+          "security",
+          ["find-generic-password", "-s", SERVICE_NAME, "-a", key, "-w"],
+          { stdio: "pipe", encoding: "utf8" },
+        );
         return removeCommandTrailingNewline(result);
       }
       case "windows-credential-manager": {
         return windowsRead(SERVICE_NAME, key);
       }
       case "linux-secret-service": {
-        const result = execFileSync("secret-tool", [
-          "lookup",
-          "service",
-          SERVICE_NAME,
-          "account",
-          key,
-        ], { stdio: "pipe", encoding: "utf8" });
+        const result = execFileSync(
+          "secret-tool",
+          ["lookup", "service", SERVICE_NAME, "account", key],
+          { stdio: "pipe", encoding: "utf8" },
+        );
         return removeCommandTrailingNewline(result);
       }
       default:
@@ -463,7 +429,9 @@ export async function deleteCredential(key: string): Promise<void> {
  * Reads .env file, extracts known secret keys, stores them in keychain,
  * and removes them from .env.
  */
-export async function migrateEnvToKeychain(envPath: string): Promise<{ migrated: string[]; failed: string[] }> {
+export async function migrateEnvToKeychain(
+  envPath: string,
+): Promise<{ migrated: string[]; failed: string[] }> {
   const migrated: string[] = [];
   const failed: string[] = [];
 
@@ -474,10 +442,7 @@ export async function migrateEnvToKeychain(envPath: string): Promise<{ migrated:
   const content = await fs.readFile(envPath, "utf8");
   const lines = content.split("\n");
 
-  const secretKeys = [
-    "LLM_API_KEY",
-    "PARALLEL_API_KEY",
-  ];
+  const secretKeys = ["LLM_API_KEY", "PARALLEL_API_KEY"];
 
   const newLines: string[] = [];
 
@@ -485,8 +450,7 @@ export async function migrateEnvToKeychain(envPath: string): Promise<{ migrated:
     const match = line.match(/^([A-Z0-9_]+)\s*=\s*(.+)$/);
     if (
       match &&
-      (secretKeys.includes(match[1]) ||
-        /^QUIVER_CONNECTOR_[A-Z0-9_]+_API_KEY$/.test(match[1]))
+      (secretKeys.includes(match[1]) || /^QUIVER_CONNECTOR_[A-Z0-9_]+_API_KEY$/.test(match[1]))
     ) {
       const key = match[1];
       const value = match[2].replace(/^["']|["']$/g, "");

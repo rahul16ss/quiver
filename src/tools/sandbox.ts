@@ -15,7 +15,6 @@ import { Worker } from "worker_threads";
 import * as path from "path";
 import * as os from "os";
 import { promises as fs } from "fs";
-import { fileURLToPath } from "url";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -89,7 +88,10 @@ export async function executeInSandbox(
   // Create a temporary worker script
   const tmpDir = path.join(os.tmpdir(), "quiver-sandbox");
   await fs.mkdir(tmpDir, { recursive: true });
-  const workerScript = path.join(tmpDir, `sandbox_${Date.now()}_${Math.random().toString(36).slice(2)}.mjs`);
+  const workerScript = path.join(
+    tmpDir,
+    `sandbox_${Date.now()}_${Math.random().toString(36).slice(2)}.mjs`,
+  );
 
   // Permission globs serialized into the worker so the fs shim can enforce
   // the manifest's declared read/write scope (US-5.2 / US-6.4). Previously the

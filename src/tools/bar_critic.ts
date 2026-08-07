@@ -17,8 +17,6 @@
  */
 
 import { z } from "zod";
-import { promises as fs } from "fs";
-import * as path from "path";
 import { Tool } from "../registry.js";
 import { compare, listBenchmarks } from "../document/bar_critic.js";
 

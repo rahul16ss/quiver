@@ -21,7 +21,6 @@ import * as crypto from "crypto";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs";
-import { execSync } from "child_process";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -73,11 +72,7 @@ export interface UpdateCheckResult {
 export function parseSemver(version: string): [number, number, number] {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) return [0, 0, 0];
-  return [
-    parseInt(match[1], 10),
-    parseInt(match[2], 10),
-    parseInt(match[3], 10),
-  ];
+  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
 }
 
 /**
@@ -118,8 +113,7 @@ export function verifyEd25519Signature(
   publicKey: string,
 ): boolean {
   try {
-    const msgBuf =
-      typeof message === "string" ? Buffer.from(message, "utf8") : message;
+    const msgBuf = typeof message === "string" ? Buffer.from(message, "utf8") : message;
     const sigBuf = Buffer.from(signature, "base64");
     const keyBuf = Buffer.from(publicKey, "base64");
 
@@ -180,10 +174,7 @@ export function generateEd25519KeyPair(): { privateKeyPem: string; publicKeyBase
 /**
  * Verify a SHA-256 checksum.
  */
-export function verifySha256(
-  filePath: string,
-  expectedSha256: string,
-): boolean {
+export function verifySha256(filePath: string, expectedSha256: string): boolean {
   try {
     const fileBuf = fs.readFileSync(filePath);
     const hash = crypto.createHash("sha256").update(fileBuf).digest("hex");
@@ -228,7 +219,9 @@ export async function fetchUpdateManifest(
     // When no public key is configured, reject the manifest entirely —
     // an unsigned manifest from a MITM could contain an attacker downloadUrl.
     if (!publicKey) {
-      console.error("Update manifest rejected — no public key configured for signature verification");
+      console.error(
+        "Update manifest rejected — no public key configured for signature verification",
+      );
       return null;
     }
 
@@ -258,7 +251,7 @@ export async function fetchUpdateManifest(
 
     const manifest = JSON.parse(manifestText) as UpdateManifest;
     return manifest;
-  } catch (err: any) {
+  } catch {
     return null;
   }
 }
@@ -270,11 +263,7 @@ export async function fetchUpdateManifest(
  */
 export function getCurrentVersion(): string {
   try {
-    const pkgPath = path.resolve(
-      import.meta.dirname ?? ".",
-      "..",
-      "package.json",
-    );
+    const pkgPath = path.resolve(import.meta.dirname ?? ".", "..", "package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
     return pkg.version || "0.0.0";
   } catch {
@@ -340,9 +329,7 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
  * Format an update notification for display to the user.
  * Returns null if no update is available.
  */
-export function formatUpdateNotification(
-  result: UpdateCheckResult,
-): string | null {
+export function formatUpdateNotification(result: UpdateCheckResult): string | null {
   if (!result.updateAvailable) return null;
 
   const lines = [
@@ -399,7 +386,9 @@ export async function silentUpdateCheck(): Promise<void> {
     if (result.updateAvailable) {
       try {
         const { card } = await import("./cli_ui.js");
-        const body = [`Update available: v${result.latestVersion} (current: v${result.currentVersion})`];
+        const body = [
+          `Update available: v${result.latestVersion} (current: v${result.currentVersion})`,
+        ];
         if (result.releaseNotes) {
           const notes = result.releaseNotes.split("\n").slice(0, 3);
           body.push(...notes);

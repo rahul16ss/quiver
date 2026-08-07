@@ -64,7 +64,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
   },
   {
     type: "parallel_key",
-    pattern: /[A-Za-z0-9]{8}-(?!([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?=[A-Za-z0-9_\-]{24,})[A-Za-z0-9_\-]{24,}/gi,
+    pattern:
+      /[A-Za-z0-9]{8}-(?!([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?=[A-Za-z0-9_\-]{24,})[A-Za-z0-9_\-]{24,}/gi,
   },
   {
     type: "connection_string",
@@ -80,7 +81,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
   },
   {
     type: "private_key_block",
-    pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/gi,
+    pattern:
+      /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/gi,
   },
   {
     type: "generic_long_key",

@@ -76,9 +76,14 @@ export class SessionManager {
   /**
    * Save a session to disk.
    */
-  async save(session: Omit<SessionFile, "schema_version" | "session_id" | "project_id" | "created_at" | "updated_at"> & {
-    created_at?: string;
-  }): Promise<string> {
+  async save(
+    session: Omit<
+      SessionFile,
+      "schema_version" | "session_id" | "project_id" | "created_at" | "updated_at"
+    > & {
+      created_at?: string;
+    },
+  ): Promise<string> {
     const filePath = this.getFilePath();
     const sessionFile: SessionFile = {
       schema_version: SESSION_SCHEMA_VERSION,
@@ -124,7 +129,7 @@ export class SessionManager {
     if (parsed.schema_version > SESSION_SCHEMA_VERSION) {
       throw new Error(
         `Session schema version ${parsed.schema_version} is newer than supported ` +
-        `version ${SESSION_SCHEMA_VERSION}. Please upgrade Quiver.`,
+          `version ${SESSION_SCHEMA_VERSION}. Please upgrade Quiver.`,
       );
     }
 
@@ -231,7 +236,9 @@ export async function getLatestSession(): Promise<SessionMetadata | null> {
  * Validate a session file's integrity.
  * Returns { valid: boolean; error?: string }
  */
-export async function validateSession(filePath: string): Promise<{ valid: boolean; error?: string }> {
+export async function validateSession(
+  filePath: string,
+): Promise<{ valid: boolean; error?: string }> {
   try {
     const content = await fs.readFile(filePath, "utf8");
     const parsed = JSON.parse(content);

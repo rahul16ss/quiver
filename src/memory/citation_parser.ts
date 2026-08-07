@@ -39,7 +39,8 @@ export function parseMemoryCitations(output: string): MemoryCitation[] {
   const results: MemoryCitation[] = [];
 
   // XML style citations
-  const xmlPattern = /<memory-citation\s+doc="([^"]*)"(?:\s+section="([^"]*)")?>([\s\S]*?)<\/memory-citation>/gi;
+  const xmlPattern =
+    /<memory-citation\s+doc="([^"]*)"(?:\s+section="([^"]*)")?>([\s\S]*?)<\/memory-citation>/gi;
   let match: RegExpExecArray | null;
 
   while ((match = xmlPattern.exec(output)) !== null) {

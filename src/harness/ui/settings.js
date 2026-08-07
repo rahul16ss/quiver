@@ -82,11 +82,15 @@ async function saveSettings() {
     try {
       const stored = await api.settingsSetCredential("LLM_API_KEY", key);
       if (!stored) {
-        showSettingsError("Quiver could not access the system credential store. The key was not saved.");
+        showSettingsError(
+          "Quiver could not access the system credential store. The key was not saved.",
+        );
         return;
       }
     } catch {
-      showSettingsError("Quiver could not access the system credential store. The key was not saved.");
+      showSettingsError(
+        "Quiver could not access the system credential store. The key was not saved.",
+      );
       return;
     }
   }
@@ -95,11 +99,15 @@ async function saveSettings() {
     try {
       const stored = await api.settingsSetCredential("PARALLEL_API_KEY", parallelKey);
       if (!stored) {
-        showSettingsError("Quiver could not store the second provider key securely. It was not saved.");
+        showSettingsError(
+          "Quiver could not store the second provider key securely. It was not saved.",
+        );
         return;
       }
     } catch {
-      showSettingsError("Quiver could not store the second provider key securely. It was not saved.");
+      showSettingsError(
+        "Quiver could not store the second provider key securely. It was not saved.",
+      );
       return;
     }
   }

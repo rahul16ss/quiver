@@ -19,9 +19,7 @@ export const tool: Tool = {
     "For verified, enriched, cited list building with match conditions, use find_all instead. " +
     "Use for latency-sensitive workflows: getting a starting set of people/companies to evaluate or enrich.",
   parameters: z.object({
-    entity_type: z
-      .enum(["people", "companies"])
-      .describe("Type of entity to search for."),
+    entity_type: z.enum(["people", "companies"]).describe("Type of entity to search for."),
     objective: z
       .string()
       .describe(
@@ -33,9 +31,7 @@ export const tool: Tool = {
       .min(5)
       .max(1000)
       .optional()
-      .describe(
-        "Maximum number of entities to return (5-1000). Defaults to 100.",
-      ),
+      .describe("Maximum number of entities to return (5-1000). Defaults to 100."),
   }),
   execute: async ({ entity_type, objective, match_limit }) => {
     const apiKey = config.parallelApiKey;
@@ -44,22 +40,19 @@ export const tool: Tool = {
     }
 
     try {
-      const response = await fetch(
-        `${PARALLEL_BASE}/v1beta/findall/entity-search`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            entity_type,
-            objective,
-            match_limit: match_limit || 100,
-          }),
-          signal: AbortSignal.timeout(30000),
+      const response = await fetch(`${PARALLEL_BASE}/v1beta/findall/entity-search`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
         },
-      );
+        body: JSON.stringify({
+          entity_type,
+          objective,
+          match_limit: match_limit || 100,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();

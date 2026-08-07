@@ -17,10 +17,7 @@ import { execFileSync } from "child_process";
  * @param timeout - Timeout in milliseconds (default 2000)
  * @returns The path to the binary, or null if not found
  */
-export function findBinary(
-  binaryName: string,
-  timeout: number = 2000,
-): string | null {
+export function findBinary(binaryName: string, timeout: number = 2000): string | null {
   const cmd = process.platform === "win32" ? "where" : "which";
   try {
     const result = execFileSync(cmd, [binaryName], {

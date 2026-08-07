@@ -135,15 +135,10 @@ export function summarizeQueue(findings: WatchdogFinding[]): string {
   }
   const lines: string[] = [];
   const sevColor = (s: string) =>
-    s === "error"
-      ? picocolors.red(s)
-      : s === "warn"
-        ? picocolors.yellow(s)
-        : picocolors.green(s);
+    s === "error" ? picocolors.red(s) : s === "warn" ? picocolors.yellow(s) : picocolors.green(s);
   for (const [kind, list] of byKind) {
     const errs = list.filter((f) => f.severity === "error").length;
     const warns = list.filter((f) => f.severity === "warn").length;
-    const infos = list.filter((f) => f.severity === "info").length;
     const tag =
       errs > 0
         ? picocolors.red(`(${errs} error${errs > 1 ? "s" : ""})`)
@@ -152,9 +147,7 @@ export function summarizeQueue(findings: WatchdogFinding[]): string {
           : picocolors.green("(ok)");
     lines.push(`  ${picocolors.cyan(kind)} ${tag}`);
     for (const f of list) {
-      lines.push(
-        `     ${sevColor(f.severity)} ${picocolors.gray(f.key)} — ${f.detail}`,
-      );
+      lines.push(`     ${sevColor(f.severity)} ${picocolors.gray(f.key)} — ${f.detail}`);
     }
   }
   return lines.join("\n");
@@ -185,19 +178,13 @@ export function watchdogStatus(opts: { clearAfter?: boolean } = {}): string {
     );
   } else {
     out.push(
-      picocolors.yellow(
-        "   ○ no heartbeat found — watchdog not started. Run `npm run watchdog`.",
-      ),
+      picocolors.yellow("   ○ no heartbeat found — watchdog not started. Run `npm run watchdog`."),
     );
   }
   if (findings.length === 0) {
     out.push(picocolors.gray("   Queue empty — no findings to triage."));
   } else {
-    out.push(
-      picocolors.gray(
-        `   Queue: ${findings.length} finding(s) since last drain:`,
-      ),
-    );
+    out.push(picocolors.gray(`   Queue: ${findings.length} finding(s) since last drain:`));
     out.push(summarizeQueue(findings));
   }
   if (opts.clearAfter) {
@@ -208,10 +195,6 @@ export function watchdogStatus(opts: { clearAfter?: boolean } = {}): string {
         : picocolors.red("\n   ✗ Could not clear queue."),
     );
   }
-  out.push(
-    picocolors.gray(
-      "\n   Commands: /watchdog (show) · /watchdog clear · /watchdog status",
-    ),
-  );
+  out.push(picocolors.gray("\n   Commands: /watchdog (show) · /watchdog clear · /watchdog status"));
   return out.join("\n");
 }

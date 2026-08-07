@@ -1,54 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" />
-  <title>Welcome to Quiver</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body class="onboarding">
-  <div class="onboarding-card">
-    <img src="assets/logo.png" alt="Quiver" class="onb-logo" />
-    <h1>Welcome to Quiver</h1>
-    <p class="onb-sub">
-      Quiver turns your files, research, and review rules into native Office
-      documents with sources you can inspect. Your memory and documents are stored
-      as files on your computer; you choose where prompts are sent.
-    </p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <title>Welcome to Quiver</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="onboarding">
+    <div class="onboarding-card">
+      <img src="assets/logo.png" alt="Quiver" class="onb-logo" />
+      <h1>Welcome to Quiver</h1>
+      <p class="onb-sub">
+        Quiver turns your files, research, and review rules into native Office documents with
+        sources you can inspect. Your memory and documents are stored as files on your computer; you
+        choose where prompts are sent.
+      </p>
 
-    <div class="onb-principles">
-      <div class="onb-principle">
-        <span class="onb-principle-mark">01</span>
-        <span><strong>Your memory</strong><small>Human-readable and reviewable</small></span>
+      <div class="onb-principles">
+        <div class="onb-principle">
+          <span class="onb-principle-mark">01</span>
+          <span><strong>Your memory</strong><small>Human-readable and reviewable</small></span>
+        </div>
+        <div class="onb-principle">
+          <span class="onb-principle-mark">02</span>
+          <span><strong>Your context</strong><small>Visible before Quiver runs</small></span>
+        </div>
+        <div class="onb-principle">
+          <span class="onb-principle-mark">03</span>
+          <span><strong>Your sign-off</strong><small>Drafts stay reviewable</small></span>
+        </div>
       </div>
-      <div class="onb-principle">
-        <span class="onb-principle-mark">02</span>
-        <span><strong>Your context</strong><small>Visible before Quiver runs</small></span>
+
+      <div class="onb-step">
+        <label for="onbKey" class="onb-label">Your model key</label>
+        <input
+          id="onbKey"
+          class="field"
+          type="password"
+          placeholder="Paste your model key (API key)"
+          autocomplete="off"
+        />
+        <p class="onb-hint">
+          Stored in your computer's keychain or credential manager when available. Quiver uses a
+          local fallback only when that store cannot be reached.
+        </p>
+        <p class="onb-hint">
+          In Settings, set the model name and provider address (project folder stays on your
+          machine) to point Quiver at any OpenAI-compatible service.
+        </p>
       </div>
-      <div class="onb-principle">
-        <span class="onb-principle-mark">03</span>
-        <span><strong>Your sign-off</strong><small>Drafts stay reviewable</small></span>
+
+      <div class="onb-disclosure">
+        <span class="onb-disclosure-mark">i</span>
+        <span
+          >The app runs on this computer (loopback only, never on the network). If your provider is
+          remote, approved prompts and tool results may leave the machine; Quiver will block calls
+          that violate the engagement's sensitivity rules.</span
+        >
       </div>
-    </div>
 
-    <div class="onb-step">
-      <label for="onbKey" class="onb-label">Your model key</label>
-      <input id="onbKey" class="field" type="password" placeholder="Paste your model key (API key)" autocomplete="off" />
-      <p class="onb-hint">Stored in your computer's keychain or credential manager when available. Quiver uses a local fallback only when that store cannot be reached.</p>
-      <p class="onb-hint">In Settings, set the model name and provider address (project folder stays on your machine) to point Quiver at any OpenAI-compatible service.</p>
+      <div class="onb-actions">
+        <button id="onbStartBtn" class="primary-btn">Get started</button>
+      </div>
+      <p class="onb-foot">
+        Prefer to add your model key later? Just close this window and set it in Settings. Approval
+        settings control what Quiver can do without asking (full auto is opt-in).
+      </p>
     </div>
-
-    <div class="onb-disclosure">
-      <span class="onb-disclosure-mark">i</span>
-      <span>The app runs on this computer (loopback only, never on the network). If your provider is remote, approved prompts and tool results may leave the machine; Quiver will block calls that violate the engagement's sensitivity rules.</span>
-    </div>
-
-    <div class="onb-actions">
-      <button id="onbStartBtn" class="primary-btn">Get started</button>
-    </div>
-    <p class="onb-foot">Prefer to add your model key later? Just close this window and set it in Settings. Approval settings control what Quiver can do without asking (full auto is opt-in).</p>
-  </div>
-  <script src="onboarding.js"></script>
-</body>
+    <script src="onboarding.js"></script>
+  </body>
 </html>

@@ -134,10 +134,7 @@ const MAX_REDIRECTS = 5;
  * every redirect hop (Location). Default fetch follow would otherwise let a
  * public host 302 into loopback and bypass isPrivateUrl.
  */
-export async function fetchPublicUrl(
-  urlStr: string,
-  init: RequestInit = {},
-): Promise<Response> {
+export async function fetchPublicUrl(urlStr: string, init: RequestInit = {}): Promise<Response> {
   let current = urlStr;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (await isPrivateUrl(current)) {

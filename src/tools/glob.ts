@@ -1,8 +1,8 @@
 import { promises as fs } from "fs";
 import * as path from "path";
 import { z } from "zod";
-import { Tool } from "../registry.js"
-import { assertToolPathAllowed } from "../security/tool_paths.js";;
+import { Tool } from "../registry.js";
+import { assertToolPathAllowed } from "../security/tool_paths.js";
 
 /**
  * Glob — find files by name pattern.
@@ -116,20 +116,13 @@ async function walkDir(
       const relPath = path.relative(rootDir, fullPath);
 
       // Check gitignore
-      if (
-        respectGitignore &&
-        shouldIgnore(relPath, entry.isDirectory(), ignorePatterns)
-      ) {
+      if (respectGitignore && shouldIgnore(relPath, entry.isDirectory(), ignorePatterns)) {
         continue;
       }
 
       if (entry.isDirectory()) {
         // Skip common non-useful directories
-        if (
-          entryName === "node_modules" ||
-          entryName === ".git" ||
-          entryName === "dist"
-        ) {
+        if (entryName === "node_modules" || entryName === ".git" || entryName === "dist") {
           // Still allow if the user explicitly searches in them (handled by pattern matching later)
           if (!respectGitignore) {
             await walk(fullPath, depth + 1);
@@ -182,11 +175,7 @@ async function loadGitignorePatterns(rootDir: string): Promise<RegExp[]> {
   return patterns;
 }
 
-function shouldIgnore(
-  relPath: string,
-  isDir: boolean,
-  patterns: RegExp[],
-): boolean {
+function shouldIgnore(relPath: string, isDir: boolean, patterns: RegExp[]): boolean {
   for (const pattern of patterns) {
     if (pattern.test(relPath) || pattern.test(relPath + "/")) {
       return true;
@@ -210,9 +199,7 @@ export const tool: Tool = {
     directory: z
       .string()
       .optional()
-      .describe(
-        "The directory to search in. Defaults to current directory ('.').",
-      ),
+      .describe("The directory to search in. Defaults to current directory ('.')."),
     maxResults: z
       .number()
       .optional()
@@ -222,7 +209,11 @@ export const tool: Tool = {
     const dir = path.resolve(directory || ".");
 
     // Path-policy guard (US-9.2): reject sensitive paths
-    try { assertToolPathAllowed(dir, "read"); } catch (e: any) { return `Error: ${e.message}`; }
+    try {
+      assertToolPathAllowed(dir, "read");
+    } catch (e: any) {
+      return `Error: ${e.message}`;
+    }
     const limit = maxResults || 100;
 
     // Validate directory exists

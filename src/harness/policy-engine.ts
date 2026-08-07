@@ -36,7 +36,6 @@ export class QuiverPolicyEngine implements PolicyEngine {
 
   decide(request: PolicyRequest): PolicyDecision {
     const profile = this.pack.sensitivityProfiles.find((p) => p.name === request.sensitivity);
-    const reasons: string[] = [];
     const conditions: string[] = [];
 
     if (!profile) {
@@ -106,24 +105,44 @@ export class QuiverPolicyEngine implements PolicyEngine {
         }
         if (request.sensitivity === "confidential-internal") {
           if (!profile.parallelAllowed) {
-            return { permitted: false, reasons: ["confidential-internal disallows Parallel in this pack."] };
+            return {
+              permitted: false,
+              reasons: ["confidential-internal disallows Parallel in this pack."],
+            };
           }
           if (profile.parallelSanitizedOnly) {
             return {
               permitted: true,
               enforcedRoute: "parallel",
-              reasons: ["confidential-internal permitted on Parallel with sanitized public queries only."],
-              conditions: ["Sanitize the query: strip internal thesis, client identifiers and MNPI before sending to Parallel."],
+              reasons: [
+                "confidential-internal permitted on Parallel with sanitized public queries only.",
+              ],
+              conditions: [
+                "Sanitize the query: strip internal thesis, client identifiers and MNPI before sending to Parallel.",
+              ],
             };
           }
-          return { permitted: true, enforcedRoute: "parallel", reasons: ["confidential-internal permitted on Parallel."] };
+          return {
+            permitted: true,
+            enforcedRoute: "parallel",
+            reasons: ["confidential-internal permitted on Parallel."],
+          };
         }
-        return { permitted: true, enforcedRoute: "parallel", reasons: ["public content permitted on Parallel."] };
+        return {
+          permitted: true,
+          enforcedRoute: "parallel",
+          reasons: ["public content permitted on Parallel."],
+        };
       }
 
       case "storage":
       case "office":
-        return { permitted: true, reasons: [`${request.kind} action permitted; storage/office policy enforced by the provider.`] };
+        return {
+          permitted: true,
+          reasons: [
+            `${request.kind} action permitted; storage/office policy enforced by the provider.`,
+          ],
+        };
 
       case "integration": {
         // Licensed-data connectors: respect entitlements + data classification.
@@ -132,18 +151,28 @@ export class QuiverPolicyEngine implements PolicyEngine {
           for (const cat of request.dataCategories) {
             const allowed = ent.some((e) => e.datasets.includes(cat));
             if (!allowed) {
-              conditions.push(`Source category '${cat}' has no entitled connector; substitution requires explicit approval.`);
+              conditions.push(
+                `Source category '${cat}' has no entitled connector; substitution requires explicit approval.`,
+              );
             }
           }
         }
-        return { permitted: true, reasons: ["integration action permitted; entitlement checks applied."], conditions };
+        return {
+          permitted: true,
+          reasons: ["integration action permitted; entitlement checks applied."],
+          conditions,
+        };
       }
 
       case "memory":
         return {
           permitted: true,
-          reasons: ["memory harvesting produces proposals only; never auto-promoted without review."],
-          conditions: ["Harvested memory must be scoped and reviewed before entering model context."],
+          reasons: [
+            "memory harvesting produces proposals only; never auto-promoted without review.",
+          ],
+          conditions: [
+            "Harvested memory must be scoped and reviewed before entering model context.",
+          ],
         };
 
       default:
@@ -190,6 +219,8 @@ export class QuiverPolicyEngine implements PolicyEngine {
 export function failClosedNoLocalRoute(): PolicyDecision {
   return {
     permitted: false,
-    reasons: ["restricted-mnpi with no approved local/private route: failing closed (no OpenRouter fallback)."],
+    reasons: [
+      "restricted-mnpi with no approved local/private route: failing closed (no OpenRouter fallback).",
+    ],
   };
 }

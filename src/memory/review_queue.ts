@@ -7,9 +7,6 @@
  * CLI exposes /memory review. GUI exposes memory review panel.
  */
 
-import { promises as fs } from "fs";
-import * as path from "path";
-import { getProjectMemoryDir } from "../paths.js";
 import {
   type MemoryFact,
   readAllMemoryFacts,
@@ -63,7 +60,12 @@ export async function processReview(
 
       case "edit":
         if (!newContent) {
-          return { action, factId, success: false, message: "New content required for edit action." };
+          return {
+            action,
+            factId,
+            success: false,
+            message: "New content required for edit action.",
+          };
         }
         await editMemoryFact(factId, newContent);
         return { action, factId, success: true, message: "Fact edited and accepted." };
@@ -101,7 +103,9 @@ export function formatReviewQueueForCLI(facts: MemoryFact[]): string {
   lines.push("");
 
   facts.forEach((fact, i) => {
-    lines.push(`  ${i + 1}. [${fact.type}] ${fact.content.substring(0, 80)}${fact.content.length > 80 ? "..." : ""}`);
+    lines.push(
+      `  ${i + 1}. [${fact.type}] ${fact.content.substring(0, 80)}${fact.content.length > 80 ? "..." : ""}`,
+    );
     lines.push(`     ID: ${fact.id}`);
     lines.push(`     Confidence: ${fact.confidence} | Privacy: ${fact.privacy}`);
     lines.push(`     Source: ${fact.source_session} (${fact.source_timestamp})`);
@@ -129,7 +133,11 @@ export async function getActiveMemoryFacts(includePrivate: boolean = false): Pro
 /**
  * Get the count of pending and reviewed facts.
  */
-export async function getMemoryStats(): Promise<{ pending: number; reviewed: number; total: number }> {
+export async function getMemoryStats(): Promise<{
+  pending: number;
+  reviewed: number;
+  total: number;
+}> {
   const facts = await readAllMemoryFacts();
   const pending = facts.filter((f) => !f.reviewed).length;
   const reviewed = facts.filter((f) => f.reviewed).length;

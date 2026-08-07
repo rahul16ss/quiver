@@ -41,10 +41,7 @@ function parseOutputMode(): OutputMode {
 }
 
 function parseDryRun(): boolean {
-  return (
-    process.argv.slice(2).includes("--dry-run") ||
-    process.argv.slice(2).includes("-n")
-  );
+  return process.argv.slice(2).includes("--dry-run") || process.argv.slice(2).includes("-n");
 }
 
 function parseFiniteEnvNumber(name: string, fallback: number): number {
@@ -237,7 +234,6 @@ export function applyTrustTier(tier: TrustTier | null): void {
   config.browserHeadless = !config.autonomyGrants.has("browser:visible");
 }
 
-
 // If QUIVER_AUTONOMY contains a `tier:<name>` token, the chosen tier is
 // stashed here and applied to config after the config object is constructed
 // (applyTrustTier references `config`, which is not yet defined at parse time).
@@ -286,10 +282,7 @@ const READ_ONLY_TOOLS = new Set([
 ]);
 
 /** Check if the agent should prompt for approval before a tool call. */
-export function needsApprovalFor(
-  toolName: string,
-  commandRisk?: string,
-): boolean {
+export function needsApprovalFor(toolName: string, commandRisk?: string): boolean {
   if (hasGrant("yolo")) return false;
 
   // Observe+ promise: workspace reads without a prompt. Writes/commands/web
@@ -303,11 +296,7 @@ export function needsApprovalFor(
 
   // ── Benign state tools (no external side effects) ──
   if (toolName === "todo_write") return !hasGrant("todo");
-  if (
-    toolName === "memory_append" ||
-    toolName === "memory_replace" ||
-    toolName === "log_tokens"
-  )
+  if (toolName === "memory_append" || toolName === "memory_replace" || toolName === "log_tokens")
     return !hasGrant("memory");
 
   // ── Web/network egress tools (search, scrape, research) ──
@@ -320,16 +309,12 @@ export function needsApprovalFor(
     return !hasGrant("web");
 
   // ── Browser control ──
-  if (
-    toolName === "browser_control" &&
-    (hasGrant("browser") || hasGrant("browser:visible"))
-  )
+  if (toolName === "browser_control" && (hasGrant("browser") || hasGrant("browser:visible")))
     return false;
 
   // ── Shell commands: risk-band gated (US-6.2) ──
   if (toolName === "run_command") {
-    if (commandRisk === "safe" || commandRisk === "moderate")
-      return !hasGrant("run_command");
+    if (commandRisk === "safe" || commandRisk === "moderate") return !hasGrant("run_command");
     if (commandRisk === "destructive") return !hasGrant("destructive");
     if (commandRisk === "privileged") return !hasGrant("privileged");
     if (commandRisk === "network") return !hasGrant("network");
@@ -383,10 +368,7 @@ export const config: Config = {
   maxContextTokens: parseFiniteEnvInteger("QUIVER_MAX_CONTEXT_TOKENS", 120000),
   outputMode: parseOutputMode(),
   sessionLogEnabled: process.env.QUIVER_SESSION_LOG !== "0",
-  sessionLogMaxChars: parseFiniteEnvInteger(
-    "QUIVER_SESSION_LOG_MAX_CHARS",
-    512,
-  ),
+  sessionLogMaxChars: parseFiniteEnvInteger("QUIVER_SESSION_LOG_MAX_CHARS", 512),
   dryRun: parseDryRun(),
   // Path sandbox (US-9.2). When false (default), file tools enforce
   // workspace-boundary checks and blocked-glob protection. When true,
@@ -406,17 +388,11 @@ export const config: Config = {
   // verifies (tsc + tests) and auto-heals+continues until healthy. Set
   // QUIVER_AMBIENT=0 to disable for latency-sensitive one-shot runs.
   ambientEnabled: process.env.QUIVER_AMBIENT !== "0",
-  ambientMaxHealRounds: parseFiniteEnvInteger(
-    "QUIVER_AMBIENT_MAX_ROUNDS",
-    5,
-  ),
+  ambientMaxHealRounds: parseFiniteEnvInteger("QUIVER_AMBIENT_MAX_ROUNDS", 5),
   // Ambient log retention (US-AMBIENT): old session logs are auto-purged once
   // per session startup so non-technical users never manage log disk usage.
   // Default 30 days; 0 = keep forever. Set via QUIVER_LOG_RETENTION_DAYS.
-  logRetentionDays: parseFiniteEnvInteger(
-    "QUIVER_LOG_RETENTION_DAYS",
-    30,
-  ),
+  logRetentionDays: parseFiniteEnvInteger("QUIVER_LOG_RETENTION_DAYS", 30),
   // Finance-client profiles require a structurally valid evidence companion
   // before an Office deliverable can be marked final. Other deployments may
   // explicitly opt out while they are still prototyping.
@@ -427,8 +403,7 @@ export const config: Config = {
   // opt-out for controlled development/testing environments.
   consentGateEnabled:
     process.env.QUIVER_CONSENT_GATE === "1" ||
-    (process.env.QUIVER_PROFILE === "finance-client" &&
-      process.env.QUIVER_CONSENT_GATE !== "0"),
+    (process.env.QUIVER_PROFILE === "finance-client" && process.env.QUIVER_CONSENT_GATE !== "0"),
 };
 
 // Apply the env-specified trust tier AFTER config is fully initialized
@@ -516,19 +491,13 @@ export async function runOnboardingHandshake(): Promise<void> {
   const { askQuestion } = await import("./utils/prompt.js");
   const ask = (q: string) => askQuestion(q);
 
-  console.log(
-    picocolors.cyan("\n  Welcome to Quiver! Let's get you set up.\n"),
-  );
+  console.log(picocolors.cyan("\n  Welcome to Quiver! Let's get you set up.\n"));
   console.log(
     picocolors.gray(
       "  Quiver uses OpenRouter as the sole cloud model gateway (set OPENROUTER_API_KEY + OPENROUTER_MODEL_PROFILE), or a local/private endpoint via LLM_API_BASE_URL for the high-sensitivity escape hatch.\n",
     ),
   );
-  console.log(
-    picocolors.gray(
-      "  A single LLM_API_KEY powers the LLM and vision adapters.\n",
-    ),
-  );
+  console.log(picocolors.gray("  A single LLM_API_KEY powers the LLM and vision adapters.\n"));
   console.log(
     picocolors.yellow(
       "  If your endpoint is remote, prompts and files you submit may leave this machine and be processed by that provider. Use a local endpoint or your firm's approved provider for sensitive work.\n",
@@ -536,25 +505,17 @@ export async function runOnboardingHandshake(): Promise<void> {
   );
 
   const key = await ask(
-    picocolors.cyan(
-      "  Enter your LLM API key (or press Enter to skip and configure .env later): ",
-    ),
+    picocolors.cyan("  Enter your LLM API key (or press Enter to skip and configure .env later): "),
   );
   if (key) {
     try {
       // US-1.3: try the OS keychain first; fall back to .env with a warning
       // that it is a plaintext fallback (not as secure as the keychain).
-      const { setCredential, isKeychainAvailable } =
-        await import("./secrets/keychain.js");
-      const keychainOk =
-        isKeychainAvailable() && (await setCredential("LLM_API_KEY", key));
+      const { setCredential, isKeychainAvailable } = await import("./secrets/keychain.js");
+      const keychainOk = isKeychainAvailable() && (await setCredential("LLM_API_KEY", key));
       if (keychainOk) {
         config.llmApiKey = key;
-        console.log(
-          picocolors.green(
-            "\n  Saved to OS keychain. You're ready to go!\n",
-          ),
-        );
+        console.log(picocolors.green("\n  Saved to OS keychain. You're ready to go!\n"));
       } else {
         // Plaintext .env fallback — warn the user (US-1.3)
         const fs = await import("fs/promises");
@@ -569,9 +530,7 @@ export async function runOnboardingHandshake(): Promise<void> {
       }
     } catch {
       console.log(
-        picocolors.yellow(
-          "\n    Could not save API key — add LLM_API_KEY manually later.\n",
-        ),
+        picocolors.yellow("\n    Could not save API key — add LLM_API_KEY manually later.\n"),
       );
     }
   } else {
@@ -627,9 +586,7 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
   const errors: string[] = [];
   const warnings: string[] = [];
   const endpoint = config.llmBaseUrl.trim();
-  const hasOpenRouter = Boolean(
-    config.openRouterApiKey && config.openRouterModelProfile,
-  );
+  const hasOpenRouter = Boolean(config.openRouterApiKey && config.openRouterModelProfile);
   let remoteEndpoint = true;
 
   if (!endpoint) {
@@ -647,9 +604,7 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
         errors.push("LLM_API_BASE_URL must use http:// or https://.");
       }
-      remoteEndpoint = !["localhost", "127.0.0.1", "::1"].includes(
-        parsed.hostname.toLowerCase(),
-      );
+      remoteEndpoint = !["localhost", "127.0.0.1", "::1"].includes(parsed.hostname.toLowerCase());
     } catch {
       errors.push("LLM_API_BASE_URL is not a valid URL.");
     }
@@ -666,9 +621,7 @@ export function validateRuntimeConfig(): RuntimeConfigPreflight {
   }
   if (
     !hasOpenRouter &&
-    ((config.checkerModelName &&
-      !config.checkerBaseUrl &&
-      !config.llmBaseUrl) ||
+    ((config.checkerModelName && !config.checkerBaseUrl && !config.llmBaseUrl) ||
       (!config.checkerModelName && config.checkerBaseUrl))
   ) {
     warnings.push(

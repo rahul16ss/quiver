@@ -21,7 +21,6 @@ import * as path from "path";
 import picocolors from "picocolors";
 import { config } from "./config.js";
 import { inflateSync, deflateSync } from "zlib";
-import type { Message } from "./types.js";
 
 // ─── Image Magic Bytes ───────────────────────────────────────────────
 
@@ -40,15 +39,7 @@ export const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 // Maximum image dimension (width or height) before downscale (US-5.4).
 export const MAX_IMAGE_DIMENSION = 1568;
 
-export const VIDEO_EXTENSIONS = [
-  "mp4",
-  "mov",
-  "avi",
-  "mkv",
-  "webm",
-  "m4v",
-  "3gp",
-];
+export const VIDEO_EXTENSIONS = ["mp4", "mov", "avi", "mkv", "webm", "m4v", "3gp"];
 
 // ─── Image Validation ────────────────────────────────────────────────
 
@@ -140,7 +131,11 @@ function stripPngMetadata(buf: Buffer): Buffer {
 // applies the standard PNG reconstruction filters, area-averages to the
 // target longest edge, and re-encodes as 8-bit RGBA with filter-type None.
 
-interface PngImage { width: number; height: number; data: Buffer; /* RGBA */ }
+interface PngImage {
+  width: number;
+  height: number;
+  data: Buffer; /* RGBA */
+}
 
 function paeth(a: number, b: number, c: number): number {
   const p = a + b - c;
@@ -155,7 +150,10 @@ function decodePng(buf: Buffer): PngImage | null {
   const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   if (buf.length < 8) return null;
   for (let i = 0; i < 8; i++) if (buf[i] !== sig[i]) return null;
-  let width = 0, height = 0, bitDepth = 8, colorType = 6;
+  let width = 0,
+    height = 0,
+    bitDepth = 8,
+    colorType = 6;
   let idat = Buffer.alloc(0);
   let palette: number[][] | null = null;
   let pos = 8;
@@ -170,7 +168,8 @@ function decodePng(buf: Buffer): PngImage | null {
       colorType = buf[pos + 17];
     } else if (type === "PLTE") {
       palette = [];
-      for (let i = 0; i + 2 < data.length; i += 3) palette.push([data[i], data[i + 1], data[i + 2]]);
+      for (let i = 0; i + 2 < data.length; i += 3)
+        palette.push([data[i], data[i + 1], data[i + 2]]);
     } else if (type === "IDAT") {
       idat = Buffer.concat([idat, data]);
     } else if (type === "IEND") {
@@ -179,10 +178,25 @@ function decodePng(buf: Buffer): PngImage | null {
     pos += 12 + len;
   }
   if (width === 0 || height === 0 || bitDepth !== 8) return null;
-  const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 0 ? 1 : colorType === 3 ? 1 : 0;
+  const channels =
+    colorType === 6
+      ? 4
+      : colorType === 2
+        ? 3
+        : colorType === 4
+          ? 2
+          : colorType === 0
+            ? 1
+            : colorType === 3
+              ? 1
+              : 0;
   if (channels === 0) return null;
   let raw: Buffer;
-  try { raw = inflateSync(idat); } catch { return null; }
+  try {
+    raw = inflateSync(idat);
+  } catch {
+    return null;
+  }
   const stride = width * channels;
   const rgba = Buffer.alloc(width * height * 4);
   const prevRow = Buffer.alloc(stride);
@@ -199,26 +213,58 @@ function decodePng(buf: Buffer): PngImage | null {
       const upLeft = x >= channels ? prevRow[x - channels] : 0;
       let v: number;
       switch (f) {
-        case 0: v = cur; break;
-        case 1: v = (cur + left) & 0xff; break;
-        case 2: v = (cur + up) & 0xff; break;
-        case 3: v = (cur + ((left + up) >> 1)) & 0xff; break;
-        case 4: v = (cur + paeth(left, up, upLeft)) & 0xff; break;
-        default: v = cur;
+        case 0:
+          v = cur;
+          break;
+        case 1:
+          v = (cur + left) & 0xff;
+          break;
+        case 2:
+          v = (cur + up) & 0xff;
+          break;
+        case 3:
+          v = (cur + ((left + up) >> 1)) & 0xff;
+          break;
+        case 4:
+          v = (cur + paeth(left, up, upLeft)) & 0xff;
+          break;
+        default:
+          v = cur;
       }
       out[x] = v;
     }
     for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, b = 0, a = 255;
-      if (channels === 4) { r = out[x*4]; g = out[x*4+1]; b = out[x*4+2]; a = out[x*4+3]; }
-      else if (channels === 3) { r = out[x*3]; g = out[x*3+1]; b = out[x*3+2]; }
-      else if (channels === 2) { r = g = b = out[x*2]; a = out[x*2+1]; }
-      else if (channels === 1) {
-        if (palette) { const p = palette[out[x]] || [0,0,0]; r = p[0]; g = p[1]; b = p[2]; }
-        else { r = g = b = out[x]; }
+      let r = 0,
+        g = 0,
+        b = 0,
+        a = 255;
+      if (channels === 4) {
+        r = out[x * 4];
+        g = out[x * 4 + 1];
+        b = out[x * 4 + 2];
+        a = out[x * 4 + 3];
+      } else if (channels === 3) {
+        r = out[x * 3];
+        g = out[x * 3 + 1];
+        b = out[x * 3 + 2];
+      } else if (channels === 2) {
+        r = g = b = out[x * 2];
+        a = out[x * 2 + 1];
+      } else if (channels === 1) {
+        if (palette) {
+          const p = palette[out[x]] || [0, 0, 0];
+          r = p[0];
+          g = p[1];
+          b = p[2];
+        } else {
+          r = g = b = out[x];
+        }
       }
       const o = (y * width + x) * 4;
-      rgba[o] = r; rgba[o+1] = g; rgba[o+2] = b; rgba[o+3] = a;
+      rgba[o] = r;
+      rgba[o + 1] = g;
+      rgba[o + 2] = b;
+      rgba[o + 3] = a;
     }
     out.copy(prevRow);
     rpos += stride;
@@ -227,10 +273,15 @@ function decodePng(buf: Buffer): PngImage | null {
 }
 
 function encodePngRgba(width: number, height: number, rgba: Buffer): Buffer {
-  const sig = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
   const stride = width * 4;
   const raw = Buffer.alloc(height * (1 + stride));
   for (let y = 0; y < height; y++) {
@@ -240,23 +291,36 @@ function encodePngRgba(width: number, height: number, rgba: Buffer): Buffer {
   }
   const idat = deflateSync(raw);
   const crc = (b: Buffer) => {
-    const t = (crc as any).table || ((crc as any).table = (() => {
-      const tab = new Uint32Array(256);
-      for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; tab[n] = c >>> 0; }
-      return tab;
-    })());
+    const t =
+      (crc as any).table ||
+      ((crc as any).table = (() => {
+        const tab = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+          let c = n;
+          for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+          tab[n] = c >>> 0;
+        }
+        return tab;
+      })());
     let c = 0xffffffff;
     for (let i = 0; i < b.length; i++) c = t[(c ^ b[i]) & 0xff] ^ (c >>> 8);
     return (c ^ 0xffffffff) >>> 0;
   };
   const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
     const td = Buffer.from(type, "ascii");
     const body = Buffer.concat([td, data]);
-    const c = Buffer.alloc(4); c.writeUInt32BE(crc(body), 0);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(body), 0);
     return Buffer.concat([len, body, c]);
   };
-  return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", idat), chunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([
+    sig,
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idat),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 /** Area-averaging downscale of an RGBA buffer to the given dimensions. */
@@ -267,14 +331,29 @@ function downscaleRgba(img: PngImage, dstW: number, dstH: number): PngImage {
   const sy = img.height / dstH;
   for (let dy = 0; dy < dstH; dy++) {
     for (let dx = 0; dx < dstW; dx++) {
-      const x0 = Math.floor(dx * sx), x1 = Math.min(img.width, Math.ceil((dx + 1) * sx));
-      const y0 = Math.floor(dy * sy), y1 = Math.min(img.height, Math.ceil((dy + 1) * sy));
-      let r = 0, g = 0, b = 0, a = 0, n = 0;
-      for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
-        const o = (yy * img.width + xx) * 4; r += img.data[o]; g += img.data[o+1]; b += img.data[o+2]; a += img.data[o+3]; n++;
-      }
+      const x0 = Math.floor(dx * sx),
+        x1 = Math.min(img.width, Math.ceil((dx + 1) * sx));
+      const y0 = Math.floor(dy * sy),
+        y1 = Math.min(img.height, Math.ceil((dy + 1) * sy));
+      let r = 0,
+        g = 0,
+        b = 0,
+        a = 0,
+        n = 0;
+      for (let yy = y0; yy < y1; yy++)
+        for (let xx = x0; xx < x1; xx++) {
+          const o = (yy * img.width + xx) * 4;
+          r += img.data[o];
+          g += img.data[o + 1];
+          b += img.data[o + 2];
+          a += img.data[o + 3];
+          n++;
+        }
       const o = (dy * dstW + dx) * 4;
-      out[o] = r / n; out[o+1] = g / n; out[o+2] = b / n; out[o+3] = a / n;
+      out[o] = r / n;
+      out[o + 1] = g / n;
+      out[o + 2] = b / n;
+      out[o + 3] = a / n;
     }
   }
   return { width: dstW, height: dstH, data: out };
@@ -310,7 +389,12 @@ async function downscaleImage(buf: Buffer, ext: string): Promise<Buffer> {
     const sharp: any = sharpMod?.default ?? sharpMod;
     if (sharp && typeof sharp === "function") {
       return await sharp(buf)
-        .resize({ width: MAX_IMAGE_DIMENSION, height: MAX_IMAGE_DIMENSION, fit: "inside", withoutEnlargement: true })
+        .resize({
+          width: MAX_IMAGE_DIMENSION,
+          height: MAX_IMAGE_DIMENSION,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
         .toBuffer();
     }
   } catch {
@@ -332,9 +416,7 @@ async function downscaleImage(buf: Buffer, ext: string): Promise<Buffer> {
  * for transmission (US-5.4). Returns null if the file is not a valid
  * image or is too large.
  */
-export async function encodeImageAsDataURL(
-  filePath: string,
-): Promise<string | null> {
+export async function encodeImageAsDataURL(filePath: string): Promise<string | null> {
   const encoded = await encodeFileAsDataURL(filePath);
   return encoded?.kind === "image" ? encoded.dataUrl : null;
 }
@@ -393,9 +475,7 @@ export function validateZipMagic(filePath: string): boolean {
  * raw base64 — the model handles them natively. Returns null if the file
  * is missing, not a file, or over the size limit.
  */
-export async function encodeFileAsDataURL(
-  filePath: string,
-): Promise<EncodedAttachment | null> {
+export async function encodeFileAsDataURL(filePath: string): Promise<EncodedAttachment | null> {
   try {
     const resolved = path.resolve(filePath);
     const stat = await fs.stat(resolved);
@@ -463,9 +543,7 @@ export type FileContent = string | MultimodalContentPart[];
  * (cells, comments, validation). Native attachment here is for the model to
  * *see* the file; it does not replace OfficeCLI for edits.
  */
-export async function processFileMarkers(
-  input: string,
-): Promise<FileContent> {
+export async function processFileMarkers(input: string): Promise<FileContent> {
   const fileMarker = /\[File:\s*([^\]]+)\]/g;
   const matches = [...input.matchAll(fileMarker)];
 

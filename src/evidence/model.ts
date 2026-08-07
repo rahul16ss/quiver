@@ -1,30 +1,30 @@
 /**
-* Evidence Model — the type system for source-backed document lineage.
-*
-* This is the live-drafting counterpart to the flagship example's
-* fixtures/sources.json and fixtures/memo-content.json. When the agent
-* drafts an Office document, it registers sources and records claims
-* through the evidence tool; the tracker writes Evidence.json alongside
-* the document so the GUI can render lineage chips and the checker can
-* reject unsourced figures.
-*
-* Schema is intentionally compatible with the flagship example so the
-* same GUI rendering and acceptance-check logic works for both.
-*/
+ * Evidence Model — the type system for source-backed document lineage.
+ *
+ * This is the live-drafting counterpart to the flagship example's
+ * fixtures/sources.json and fixtures/memo-content.json. When the agent
+ * drafts an Office document, it registers sources and records claims
+ * through the evidence tool; the tracker writes Evidence.json alongside
+ * the document so the GUI can render lineage chips and the checker can
+ * reject unsourced figures.
+ *
+ * Schema is intentionally compatible with the flagship example so the
+ * same GUI rendering and acceptance-check logic works for both.
+ */
 
 // ─── Source Types ─────────────────────────────────────────────────────
 
 export type SourceType =
-| "excel_model"
-| "filing"
-| "transcript"
-| "internal_note"
-| "vendor_export"
-| "web"
-| "template"
-| "research_report"
-| "news"
-| "other";
+  | "excel_model"
+  | "filing"
+  | "transcript"
+  | "internal_note"
+  | "vendor_export"
+  | "web"
+  | "template"
+  | "research_report"
+  | "news"
+  | "other";
 
 export interface SourceLocation {
   sheet?: string;

@@ -14,11 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import type {
-  ReviewRole,
-  ReviewDecision,
-  DocumentReview,
-} from "./types.js";
+import type { ReviewRole, ReviewDecision, DocumentReview } from "./types.js";
 
 // ─── Persistence ───────────────────────────────────────────────────────
 
@@ -97,9 +93,7 @@ export class ReviewManager {
 
     // Verify this role is the current stage
     if (role !== review.stage) {
-      throw new Error(
-        `Cannot submit decision: current stage is "${review.stage}", not "${role}"`,
-      );
+      throw new Error(`Cannot submit decision: current stage is "${review.stage}", not "${role}"`);
     }
 
     const decisionRecord: ReviewDecision = {
@@ -142,9 +136,7 @@ export class ReviewManager {
   /**
    * List all reviews, optionally filtered by status.
    */
-  listReviews(
-    status?: DocumentReview["status"],
-  ): DocumentReview[] {
+  listReviews(status?: DocumentReview["status"]): DocumentReview[] {
     const dir = reviewsDir();
     if (!fs.existsSync(dir)) return [];
 
@@ -153,9 +145,7 @@ export class ReviewManager {
 
     for (const file of files) {
       try {
-        const review = JSON.parse(
-          fs.readFileSync(path.join(dir, file), "utf8"),
-        ) as DocumentReview;
+        const review = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as DocumentReview;
         if (!status || review.status === status) {
           reviews.push(review);
         }
@@ -165,8 +155,7 @@ export class ReviewManager {
     }
 
     return reviews.sort(
-      (a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
   }
 
@@ -185,15 +174,9 @@ export class ReviewManager {
       const decision = review.decisions.find((d) => d.role === role);
       if (decision) {
         const mark =
-          decision.decision === "approved"
-            ? "✓"
-            : decision.decision === "rejected"
-              ? "✗"
-              : "…";
+          decision.decision === "approved" ? "✓" : decision.decision === "rejected" ? "✗" : "…";
         const detail = decision.comment ? ` — "${decision.comment}"` : "";
-        lines.push(
-          `  ${mark} ${role}: ${decision.decision} by ${decision.reviewer}${detail}`,
-        );
+        lines.push(`  ${mark} ${role}: ${decision.decision} by ${decision.reviewer}${detail}`);
       } else if (role === review.stage) {
         lines.push(`  → ${role}: AWAITING REVIEW`);
       } else {

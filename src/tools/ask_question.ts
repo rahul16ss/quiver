@@ -47,10 +47,7 @@ export const tool: Tool = {
       : undefined;
 
     // In non-interactive mode, we can't ask — return a message
-    if (
-      process.env.QUIVER_OUTPUT_MODE === "json" ||
-      process.env.QUIVER_OUTPUT_MODE === "quiet"
-    ) {
+    if (process.env.QUIVER_OUTPUT_MODE === "json" || process.env.QUIVER_OUTPUT_MODE === "quiet") {
       return `Question asked but cannot wait for answer in non-interactive mode. Question: ${question}. Choices: ${choices?.join(", ") || "N/A"}. Please re-run in interactive mode or provide the answer in your prompt.`;
     }
 
@@ -88,9 +85,7 @@ export const tool: Tool = {
       const { askQuestionRaw } = await import("../utils/prompt.js");
       const answer = await askQuestionRaw(`  > `);
       const trimmed = answer.trim();
-      return trimmed
-        ? `User answered: ${trimmed}`
-        : "User did not provide an answer.";
+      return trimmed ? `User answered: ${trimmed}` : "User did not provide an answer.";
     }
   },
 };
