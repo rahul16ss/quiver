@@ -101,9 +101,18 @@ export class ModelProfileRegistry {
   }
 }
 
-/** Whether a profile is certified for native ingestion of a given MIME type. */
+/**
+ * Whether a profile is certified for native ingestion of a given MIME type.
+ * Membership in testedNativeMimeTypes is the per-MIME truth (certify() adds on
+ * pass, removes on fail). The profile-level lastContractTest only proves a
+ * test ran — it must NOT gate per-MIME: a later DOCX fail would otherwise
+ * poison an earlier PDF pass (the "one mutable value" trap the capability
+ * registry exists to avoid).
+ */
 export function isCertifiedFor(profile: ModelProfile, mime: NativeMime): boolean {
-  return profile.testedNativeMimeTypes.includes(mime) && profile.lastContractTest.result === "pass";
+  return (
+    profile.testedNativeMimeTypes.includes(mime) && profile.lastContractTest.result !== "not-run"
+  );
 }
 
 /**
@@ -223,7 +232,10 @@ export function starterCatalog(): ModelProfile[] {
       maxFileBytes: 32 * 1024 * 1024,
       zdrEligible: true,
       checkerEligible: true,
-      nativeFileInput: true,
+      // Live contract test 2026-08-08: every OpenRouter kimi-k3 provider
+      // rejects `file` content parts ("invalid part type: file"). Kimi audits
+      // via extracted text/receipts, not raw documents.
+      nativeFileInput: false,
       routerRole: "checker",
       approvedFor: approvedCloud,
       lastContractTest: { date: "", result: "not-run" },

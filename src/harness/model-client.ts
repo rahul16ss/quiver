@@ -431,30 +431,36 @@ export class LocalModelClient implements ModelClient {
  * LangChain directly; all policy lives in `QuiverOpenRouterClient`.
  */
 export class ChatOpenRouterTransport implements ModelTransport {
-  private clientPromise: Promise<any> | null = null;
+  // One client per model slug: ChatOpenRouter requires the model at
+  // construction (invocation options do not carry it), and the router picks a
+  // different model per role/modality, so a single shared client cannot work.
+  private clients = new Map<string, Promise<any>>();
 
   constructor(
     private apiKey: string,
     private opts: { siteUrl?: string; siteName?: string } = {},
   ) {}
 
-  private async client(): Promise<any> {
-    if (!this.clientPromise) {
-      this.clientPromise = import("@langchain/openrouter").then((mod: any) => {
+  private clientFor(model: string): Promise<any> {
+    let existing = this.clients.get(model);
+    if (!existing) {
+      existing = import("@langchain/openrouter").then((mod: any) => {
         const ChatOpenRouter = mod.ChatOpenRouter;
         return new ChatOpenRouter({
           apiKey: this.apiKey,
+          model,
           // Provider prefs are set per-request via invocation options below.
           siteUrl: this.opts.siteUrl,
           siteName: this.opts.siteName,
         });
       });
+      this.clients.set(model, existing);
     }
-    return this.clientPromise;
+    return existing;
   }
 
   async invoke(request: TransportRequest): Promise<TransportResponse> {
-    const client = await this.client();
+    const client = await this.clientFor(request.model);
     // Convert our TransportRequest into ChatOpenRouter invocation args.
     const lcMessages = request.messages;
     const invocation: Record<string, unknown> = {

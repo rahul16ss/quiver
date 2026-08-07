@@ -112,3 +112,21 @@ Durable-job consolidation of the legacy cron scheduler (A-4) · intra-phase chec
 **New finding from the live run (B-7):** with `zdr: true` pinned, OpenRouter returns _no endpoints_ for `anthropic/*` and `openai/*` models (404), while Google/Moonshot pass endpoint resolution. As shipped, the ZDR promise silently excludes Anthropic/OpenAI from the harness plane entirely; kimi-k3's real providers (Fireworks/BaseTen/DigitalOcean/…) also don't match a "Moonshot" providerOrder. Decide: keep the hard ZDR pin and prune those profiles honestly, or introduce an explicit per-engagement `zdr: "required" | "preferred"` posture. Do not soften silently.
 
 **Still open (deferred deliberately):** B-1/C-5 chat→engine unification; B-4 per-format ingestion policy + OpenRouter annotation caching; A-4 scheduler consolidation; A-5 intra-phase checkpoints.
+
+---
+
+## Live certification + eval results — 2026-08-08 (key limit raised)
+
+**Two harness-plane defects the live runs exposed and fixed:**
+- `ChatOpenRouterTransport` never passed the model slug to the LangChain client ("ChatOpenRouter requires a `model` parameter") — every engine model call would have failed at runtime; nothing live had ever exercised the path. Fixed with a per-model client cache.
+- `isCertifiedFor()` ANDed per-MIME membership with the profile-level `lastContractTest.result`, so a later DOCX fail revoked an earlier PDF pass — the exact "one mutable value" trap the capability registry's docblock warns about. Fixed: membership is the per-MIME truth.
+
+**Certification results (code-word round-trip, ZDR pins, persisted):**
+- `google/gemini-3.6-flash` × PDF: **PASS** ($0.0015) — first certified native route.
+- Gemini × DOCX/XLSX: Google rejects the mimeType → Office files go through OfficeCLI extraction (as the B-4 policy recommended).
+- `moonshotai/kimi-k3`: all providers reject `file` parts → catalog corrected to `nativeFileInput: false`; Kimi audits via extracted text/receipts.
+- Anthropic + OpenAI models: **no OpenRouter endpoints exist under `zdr: true`** (affects text calls too, measured through the real client). B-7 sharpened: under the current hard pin, the usable cloud stable is **Google + Moonshot only**.
+
+**Routing eval (live, `~/.quiver/routing-evidence.json` seeded):** `native-doc-budget` (gemini-3.6-flash) quality 1.00 incl. the native-PDF task; kimi-k3 and gemini-3.5-flash 0.86 as checkers; every Anthropic/OpenAI/DeepSeek profile dead under ZDR. `measuredPreference(maker, text-only)` now resolves to `native-doc-budget` — measured Pareto routing is live end to end.
+
+**Operational defect (owner action):** the OS-keychain `OPENROUTER_API_KEY` under service "Quiver" is a stale 57-char non-`sk-or` value; `resolveSecretSync` is keychain-first, so the daemon/harness authenticates with the dead key while the real 73-char key sits in the shell env. Fix: `security add-generic-password -U -s Quiver -a OPENROUTER_API_KEY -w "$OPENROUTER_API_KEY"`. Until then, dev scripts prefer the parent env (config.ts's own dotenv semantics).

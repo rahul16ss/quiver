@@ -34,12 +34,16 @@ async function main(): Promise<void> {
     // The runtime's model client is internal to the engine; construct the
     // client directly for explicit-profile evaluation.
     const { config } = await import("../src/config.js");
-    if (!config.openRouterApiKey) throw new Error("QUIVER_LIVE_EVAL=1 requires OPENROUTER_API_KEY");
+    // Parent-env key wins for this dev script (same semantics as config.ts's
+    // dotenv handling): a stale keychain entry must not shadow an explicitly
+    // exported key when running evals.
+    const apiKey = process.env.OPENROUTER_API_KEY || config.openRouterApiKey;
+    if (!apiKey) throw new Error("QUIVER_LIVE_EVAL=1 requires OPENROUTER_API_KEY");
     const { ChatOpenRouterTransport, QuiverOpenRouterClient } =
       await import("../src/harness/model-client.js");
     const { QuiverPolicyEngine } = await import("../src/harness/policy-engine.js");
     const { emptyPack } = await import("../src/harness/customer-pack.js");
-    const transport = new ChatOpenRouterTransport(config.openRouterApiKey, {
+    const transport = new ChatOpenRouterTransport(apiKey, {
       siteUrl: "https://convictionstudio.com",
       siteName: "Quiver routing eval",
     });
