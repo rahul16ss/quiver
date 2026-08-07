@@ -8,6 +8,23 @@
   "bin": {
     "quiver": "./bin/quiver.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "docs",
+    "examples",
+    "packs",
+    "profiles",
+    "scripts",
+    "skills",
+    "templates",
+    "workflow-packs",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/rahul16ss/quiver.git"
@@ -28,8 +45,17 @@
     "loopback-daemon"
   ],
   "scripts": {
-    "start": "npx tsx src/cli.ts",
-    "test": "npx tsx tests/run_tests.ts",
+    "prepack": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "start": "node bin/quiver.js",
+    "start:dev": "tsx src/cli.ts",
+    "test": "tsx tests/run_tests.ts",
     "test:e2e": "npx tsx tests/e2e/run_e2e.ts --tier=a,b",
     "test:e2e:all": "npx tsx tests/e2e/run_e2e.ts --tier=all",
     "test:e2e:a": "npx tsx tests/e2e/run_e2e.ts --tier=a",
@@ -40,8 +66,10 @@
     "demo:post-earnings": "npx tsx workflow-packs/research/post-earnings-evidence-pack/scripts/run-demo.ts",
     "demo:portfolio-review": "npx tsx workflow-packs/wealth/portfolio-review-pack/scripts/run-demo.ts",
     "export:website-demo": "npx tsx examples/investment-committee-memo/scripts/export-website-demo.ts",
+    "eval:routing": "tsx scripts/run_routing_eval.ts",
     "update-formula": "node scripts/update_formula.js",
-    "harness": "npx tsx src/harness/launcher.ts harness"
+    "harness": "node bin/quiver.js harness",
+    "harness:dev": "tsx src/harness/launcher.ts harness"
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
@@ -60,7 +88,25 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "eslint": "9.39.5",
+    "globals": "16.5.0",
+    "prettier": "3.9.6",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "typescript-eslint": "8.66.0"
+  },
+  "overrides": {
+    "minimatch@10": {
+      "brace-expansion": "5.0.9"
+    }
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   }
 }

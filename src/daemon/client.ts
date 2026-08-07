@@ -9,7 +9,7 @@
 import * as fs from "fs";
 import * as http from "http";
 import { spawn } from "child_process";
-import { daemonInfoPath } from "./daemon.ts";
+import { daemonInfoPath } from "./daemon.js";
 
 export interface DaemonConnection {
   port: number;
@@ -228,16 +228,7 @@ export function installDaemonAutostart(repoRoot: string): { installed: boolean; 
     try {
       execFileSync(
         "schtasks.exe",
-        [
-          "/Create",
-          "/SC",
-          "ONLOGON",
-          "/TN",
-          WINDOWS_TASK_NAME,
-          "/TR",
-          taskCommand,
-          "/F",
-        ],
+        ["/Create", "/SC", "ONLOGON", "/TN", WINDOWS_TASK_NAME, "/TR", taskCommand, "/F"],
         { stdio: "pipe" },
       );
       return {
@@ -256,35 +247,42 @@ export function installDaemonAutostart(repoRoot: string): { installed: boolean; 
     }
   }
   if (process.platform !== "darwin") {
-    return { installed: false, detail: `login autostart is unsupported on ${process.platform}; Linux is out of scope` };
+    return {
+      installed: false,
+      detail: `login autostart is unsupported on ${process.platform}; Linux is out of scope`,
+    };
   }
   const template = path.join(repoRoot, "scripts", "com.quiver.daemon.plist");
   if (!fsSync.existsSync(template)) {
     return { installed: false, detail: `plist template not found: ${template}` };
   }
   // Fill in REPO_ROOT with the real repo root (the daemon source path).
-  let plist = fsSync.readFileSync(template, "utf8").replace(/REPO_ROOT/g, repoRoot);
+  const plist = fsSync.readFileSync(template, "utf8").replace(/REPO_ROOT/g, repoRoot);
   const dest = daemonPlistPath();
   fsSync.mkdirSync(path.dirname(dest), { recursive: true });
   // Unload if already loaded, then write + load.
-  try { execFileSync("launchctl", ["unload", dest], { stdio: "ignore" }); } catch {}
+  try {
+    execFileSync("launchctl", ["unload", dest], { stdio: "ignore" });
+  } catch {}
   fsSync.writeFileSync(dest, plist, { mode: 0o644 });
   try {
     execFileSync("launchctl", ["load", dest], { stdio: "ignore" });
   } catch (e: any) {
-    return { installed: false, detail: `wrote ${dest} but launchctl load failed: ${e?.message || e}` };
+    return {
+      installed: false,
+      detail: `wrote ${dest} but launchctl load failed: ${e?.message || e}`,
+    };
   }
-  return { installed: true, detail: `daemon LaunchAgent installed at ${dest} (starts at login, KeepAlive)` };
+  return {
+    installed: true,
+    detail: `daemon LaunchAgent installed at ${dest} (starts at login, KeepAlive)`,
+  };
 }
 
 export function uninstallDaemonAutostart(): { removed: boolean; detail: string } {
   if (process.platform === "win32") {
     try {
-      execFileSync(
-        "schtasks.exe",
-        ["/Delete", "/TN", WINDOWS_TASK_NAME, "/F"],
-        { stdio: "pipe" },
-      );
+      execFileSync("schtasks.exe", ["/Delete", "/TN", WINDOWS_TASK_NAME, "/F"], { stdio: "pipe" });
       return {
         removed: true,
         detail: `removed Windows Task Scheduler task '${WINDOWS_TASK_NAME}'`,
@@ -298,7 +296,9 @@ export function uninstallDaemonAutostart(): { removed: boolean; detail: string }
   }
   const dest = daemonPlistPath();
   if (!fsSync.existsSync(dest)) return { removed: true, detail: "no LaunchAgent installed" };
-  try { execFileSync("launchctl", ["unload", dest], { stdio: "ignore" }); } catch {}
+  try {
+    execFileSync("launchctl", ["unload", dest], { stdio: "ignore" });
+  } catch {}
   fsSync.unlinkSync(dest);
   return { removed: true, detail: `removed ${dest}` };
 }

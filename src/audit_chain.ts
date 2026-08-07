@@ -21,7 +21,7 @@
  */
 
 import * as crypto from "crypto";
-import { redactSecrets } from "./security/secrets.ts";
+import { redactSecrets } from "./security/secrets.js";
 
 export interface AuditEntry {
   seq: number;
@@ -44,11 +44,11 @@ export interface AuditEntry {
   // A cached copy of values embedded in `action_payload`. `verifyChain`
   // confirms these match the payload, so they are tamper-evident without
   // being separately hashed.
-  source_ids?: string[];      // evidence source IDs referenced in this entry
-  source_refs?: string[];     // file paths / URLs / cell references for sources
-  context_used?: string;      // summary of context that informed this action
-  provenance?: string;        // human-readable provenance description
-  evidence_ref?: string;      // path to Evidence.json if this entry has lineage
+  source_ids?: string[]; // evidence source IDs referenced in this entry
+  source_refs?: string[]; // file paths / URLs / cell references for sources
+  context_used?: string; // summary of context that informed this action
+  provenance?: string; // human-readable provenance description
+  evidence_ref?: string; // path to Evidence.json if this entry has lineage
 }
 
 export class AuditChain {
@@ -139,15 +139,9 @@ export class AuditChain {
           JSON.stringify(entry.source_refs) !== JSON.stringify(parsed.source_refs)
         )
           return false;
-        if (
-          entry.context_used !== undefined &&
-          entry.context_used !== parsed.context_used
-        )
+        if (entry.context_used !== undefined && entry.context_used !== parsed.context_used)
           return false;
-        if (
-          entry.evidence_ref !== undefined &&
-          entry.evidence_ref !== parsed.evidence_ref
-        )
+        if (entry.evidence_ref !== undefined && entry.evidence_ref !== parsed.evidence_ref)
           return false;
       }
     }

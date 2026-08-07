@@ -74,13 +74,21 @@ export function getProjectId(): string {
   const project_id = crypto.randomUUID();
   try {
     mkdirSync(root, { recursive: true });
-    writeFileSync(idFile, JSON.stringify({
-      project_id,
-      display_name: getProjectName(),
-      workspace_path: process.cwd(),
-      description: "",
-      created_at: new Date().toISOString(),
-    }, null, 2), "utf8");
+    writeFileSync(
+      idFile,
+      JSON.stringify(
+        {
+          project_id,
+          display_name: getProjectName(),
+          workspace_path: process.cwd(),
+          description: "",
+          created_at: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
   } catch {
     // best-effort persistence
   }
@@ -155,12 +163,10 @@ export async function ensureDirectories(): Promise<void> {
  */
 export async function seedPackagedSkills(): Promise<void> {
   const { promises: fs } = await import("fs");
-  const packageSkillsRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "skills",
-  );
-  if (!existsSync(packageSkillsRoot)) return;
+  const sourceRoot = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [path.resolve(sourceRoot, "..", "skills"), path.resolve(sourceRoot, "skills")];
+  const packageSkillsRoot = candidates.find((candidate) => existsSync(candidate));
+  if (!packageSkillsRoot) return;
 
   let entries: string[] = [];
   try {

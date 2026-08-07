@@ -26,12 +26,12 @@ jobs:
         run: npm ci
 
       - name: Run release gates
-        run: |
-          npm test
-          npx tsc --noEmit
+        run: npm run check
 
-      - name: Build desktop packages
-        run: npm run build
+      - name: Package the compiled runtime
+        run: |
+          npm pack
+          mv quiver-agent-*.tgz quiver-runtime.tgz
 
       - name: Read version from package.json
         id: version
@@ -60,7 +60,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Quiver ${{ github.ref_name }}
-          files: dist-electron/*
+          files: quiver-runtime.tgz
           fail_on_unmatched_files: true
           body: |
             ## Quiver ${{ github.ref_name }}

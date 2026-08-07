@@ -114,3 +114,6 @@ keys/
 
 # OpenCode project-local agents/commands
 .opencode/
+
+# npm pack artifacts
+*.tgz

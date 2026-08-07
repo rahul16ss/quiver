@@ -9,23 +9,26 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Type check
-        run: npx tsc --noEmit
-      - name: Spec acceptance gate (checker-owned)
-        run: npm test
+      - name: Quality gate (format, lint, typecheck, build, tests, daemon smoke)
+        run: npm run check
       - name: Offline + OfficeCLI e2e
-        run: npm run test:e2e -- --tier=a,b
+        run: npm run test:e2e
+      - name: Production dependency audit
+        run: npm run audit:prod
+      - name: Verify package artifact
+        run: npm pack --dry-run
+
   # Opt-in live contract tests (OpenRouter, Parallel, Graph, Drive, OfficeCLI)
   # are NOT run in CI — they require credentials and are skipped by default
   # (QUIVER_LIVE_CONTRACT=1). Run them manually in a credentialed environment.

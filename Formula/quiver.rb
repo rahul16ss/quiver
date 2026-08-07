@@ -13,8 +13,8 @@ class Quiver < Formula
   desc "Open foundation for controlled, source-backed document workflows in finance"
   homepage "https://github.com/rahul16ss/quiver"
   # Release archive pinned to the v1.0.0 source commit.
-  url "https://github.com/rahul16ss/quiver/archive/0f7a4e47382fbdb8ccd863f4e49348507c381329.tar.gz"
-  sha256 "612bda74786026d4a6ea23f5df258bec7cbd26b59300edcf0eeef3817defdf75"
+  url "https://github.com/rahul16ss/quiver/archive/v1.0.0.tar.gz"
+  sha256 "6fa3ff1380f0735562c35a984bb417e1cbe46edcd5e20625313ac0ba24717add"
   license "Apache-2.0"
   head "https://github.com/rahul16ss/quiver.git", branch: "main"
 

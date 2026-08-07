@@ -13,7 +13,6 @@
  *   4. Rewrites Formula/quiver.rb with the new url + sha256 + version
  */
 
-import { createHash } from "crypto";
 import { readFileSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import * as path from "path";
@@ -21,14 +20,14 @@ import * as path from "path";
 const REPO = "rahul16ss/quiver";
 const FORMULA_PATH = path.resolve(process.cwd(), "Formula", "quiver.rb");
 
-function getTag(): string {
+function getTag() {
   const arg = process.argv[2];
   if (arg) return arg.startsWith("v") ? arg : `v${arg}`;
   // Fall back to the latest git tag
   return execSync("git describe --tags --abbrev=0", { encoding: "utf8" }).trim();
 }
 
-function fetchTarballSha256(url: string): string {
+function fetchTarballSha256(url) {
   // Use curl to download and pipe to sha256sum
   const result = execSync(`curl -sL "${url}" | sha256sum`, {
     encoding: "utf8",
@@ -37,23 +36,17 @@ function fetchTarballSha256(url: string): string {
   return result.split(/\s+/)[0];
 }
 
-function updateFormula(tag: string, sha256: string): void {
+function updateFormula(tag, sha256) {
   const version = tag.replace(/^v/, "");
   const url = `https://github.com/${REPO}/archive/${tag}.tar.gz`;
 
   let formula = readFileSync(FORMULA_PATH, "utf8");
 
   // Replace the url line
-  formula = formula.replace(
-    /url\s+"https:\/\/github\.com\/[^"]+"/,
-    `url "${url}"`,
-  );
+  formula = formula.replace(/url\s+"https:\/\/github\.com\/[^"]+"/, `url "${url}"`);
 
   // Replace the sha256 line
-  formula = formula.replace(
-    /sha256\s+"[a-f0-9]+"/,
-    `sha256 "${sha256}"`,
-  );
+  formula = formula.replace(/sha256\s+"[a-f0-9]+"/, `sha256 "${sha256}"`);
 
   // Replace the version in the test block
   formula = formula.replace(
@@ -65,7 +58,7 @@ function updateFormula(tag: string, sha256: string): void {
   console.log(`Updated Formula/quiver.rb → ${tag} (sha256: ${sha256.substring(0, 16)}…)`);
 }
 
-function main(): void {
+function main() {
   const tag = getTag();
   console.log(`Updating formula for tag: ${tag}`);
   const url = `https://github.com/${REPO}/archive/${tag}.tar.gz`;

@@ -2,10 +2,11 @@ import type { ChildProcess } from "child_process";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
+import { existsSync as fsSyncExistsSync } from "fs";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { Tool } from "../registry.js";
-import { config } from "../config.js";
+
 import { createIsolatedEnv, spawnIsolatedProcess } from "../subagents/isolation.js";
 
 /**
@@ -35,13 +36,22 @@ const MAX_RECURSION_DEPTH = 2;
 
 function getCliPath(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(currentDir, "..", "cli.ts");
+  const compiled = path.resolve(currentDir, "..", "cli.js");
+  return fsSyncExistsSync(compiled) ? compiled : path.resolve(currentDir, "..", "cli.ts");
 }
 
-function getTsxPath(): string {
+function getCliCommand(): { command: string; prefixArgs: string[] } {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const compiledCli = path.resolve(currentDir, "..", "cli.js");
+  if (fsSyncExistsSync(compiledCli)) {
+    return { command: process.execPath, prefixArgs: [] };
+  }
   const projectRoot = path.resolve(currentDir, "..", "..");
-  return path.join(projectRoot, "node_modules", ".bin", "tsx");
+  const tsxPath = path.join(projectRoot, "node_modules", ".bin", "tsx");
+  return {
+    command: fsSyncExistsSync(tsxPath) ? tsxPath : process.execPath,
+    prefixArgs: fsSyncExistsSync(tsxPath) ? [] : ["--import", "tsx"],
+  };
 }
 
 interface SubagentResult {
@@ -78,8 +88,7 @@ async function buildSubagentScratchpad(workspaceRoot: string): Promise<string> {
           part === "node_modules" ||
           part === ".git" ||
           part === ".quiver-backups" ||
-          (parts[0] === ".quiver" &&
-            (part === ".sessions" || part === "workflow-runs")) ||
+          (parts[0] === ".quiver" && (part === ".sessions" || part === "workflow-runs")) ||
           (index === 0 && part === ".DS_Store"),
       );
     },
@@ -90,10 +99,7 @@ async function buildSubagentScratchpad(workspaceRoot: string): Promise<string> {
   return workspaceSnapshot;
 }
 
-async function runSubagent(
-  task: string,
-  tools: string[],
-): Promise<SubagentResult> {
+async function runSubagent(task: string, tools: string[]): Promise<SubagentResult> {
   // Recursion depth check — prevent fork-bombs (US-5.3)
   const currentDepth = parseInt(process.env.SUBAGENT_DEPTH || "0", 10);
   if (currentDepth >= MAX_RECURSION_DEPTH) {
@@ -107,7 +113,7 @@ async function runSubagent(
   }
 
   const cliPath = getCliPath();
-  const tsxPath = getTsxPath();
+  const cliCommand = getCliCommand();
 
   // Build the delegated prompt. The child receives the canonical Quiver system
   // prompt as well; this wrapper keeps the task role and result boundary clear.
@@ -120,7 +126,7 @@ async function runSubagent(
       ? `\n[Harness constraint: this child may use only these tools: ${tools.join(", ")}]`
       : "");
 
-  const args = [cliPath, "--json", "--single-turn", prompt];
+  const args = [...cliCommand.prefixArgs, cliPath, "--json", "--single-turn", prompt];
 
   // Pass recursion depth to child so it can enforce the limit
   // Build a minimal env for the subagent — only what it needs to run the
@@ -128,17 +134,35 @@ async function runSubagent(
   // every secret the parent has). This mirrors the checker's minimal-env
   // pattern (src/subagents/checker.ts:496-505).
   const ALLOWED_ENV_KEYS = [
-    "PATH", "HOME", "USER", "LANG", "TERM", "TZ",
-    "LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL_NAME",
-    "LLM_TEMPERATURE", "LLM_TOP_P", "LLM_TOP_K", "LLM_REASONING_EFFORT",
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "TERM",
+    "TZ",
+    "LLM_API_KEY",
+    "LLM_API_BASE_URL",
+    "LLM_MODEL_NAME",
+    "LLM_TEMPERATURE",
+    "LLM_TOP_P",
+    "LLM_TOP_K",
+    "LLM_REASONING_EFFORT",
     // Checker route (maker-checker children / nested verify).
-    "CHECKER_LLM_MODEL_NAME", "CHECKER_LLM_API_BASE_URL", "CHECKER_LLM_API_KEY",
+    "CHECKER_LLM_MODEL_NAME",
+    "CHECKER_LLM_API_BASE_URL",
+    "CHECKER_LLM_API_KEY",
     "QUIVER_CHECKER_REMOTE_APPROVED",
-    "QUIVER_PROJECT_NAME", "QUIVER_MAX_CONTEXT_TOKENS",
-    "QUIVER_SESSION_LOG", "QUIVER_SESSION_LOG_MAX_CHARS",
-    "QUIVER_AMBIENT", "QUIVER_OUTPUT_MODE", "QUIVER_PROFILE",
-    "QUIVER_CONSENT_GATE", "QUIVER_EVIDENCE_REQUIRED",
-    "QUIVER_OFFICECLI_PATH", "QUIVER_AUTONOMY",
+    "QUIVER_PROJECT_NAME",
+    "QUIVER_MAX_CONTEXT_TOKENS",
+    "QUIVER_SESSION_LOG",
+    "QUIVER_SESSION_LOG_MAX_CHARS",
+    "QUIVER_AMBIENT",
+    "QUIVER_OUTPUT_MODE",
+    "QUIVER_PROFILE",
+    "QUIVER_CONSENT_GATE",
+    "QUIVER_EVIDENCE_REQUIRED",
+    "QUIVER_OFFICECLI_PATH",
+    "QUIVER_AUTONOMY",
     "QUIVER_SUBAGENT_TOOLS",
     "SUBAGENT_DEPTH",
   ];
@@ -156,29 +180,22 @@ async function runSubagent(
     };
   }
 
-  const protectedDir = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-  );
+  const protectedDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
   const childEnv = createIsolatedEnv(ALLOWED_ENV_KEYS, {
     scratchDir,
     protectedDir,
     overrides: {
       SUBAGENT_DEPTH: String(currentDepth + 1),
-      ...(tools.length > 0
-        ? { QUIVER_SUBAGENT_TOOLS: tools.join(",") }
-        : {}),
+      ...(tools.length > 0 ? { QUIVER_SUBAGENT_TOOLS: tools.join(",") } : {}),
     },
   });
 
   return new Promise((resolve) => {
-    const child: ChildProcess = spawnIsolatedProcess(tsxPath, args, {
+    const child: ChildProcess = spawnIsolatedProcess(cliCommand.command, args, {
       cwd: scratchDir,
       env: childEnv,
     });
 
-    let stdout = "";
     let stderr = "";
     let lastResponse = "";
     let turns = 0;
@@ -218,8 +235,7 @@ async function runSubagent(
               child.kill();
               finish({
                 response:
-                  lastResponse ||
-                  "Subagent stopped after reaching its bounded tool-call budget.",
+                  lastResponse || "Subagent stopped after reaching its bounded tool-call budget.",
                 turns,
                 toolCalls,
                 tokens: totalTokens,
@@ -232,8 +248,7 @@ async function runSubagent(
             turns = msg.data?.tokenStats?.turns || 0;
             toolCalls = msg.data?.tokenStats?.toolCalls || toolCalls;
             totalTokens =
-              (msg.data?.tokenStats?.inputTokens || 0) +
-              (msg.data?.tokenStats?.outputTokens || 0);
+              (msg.data?.tokenStats?.inputTokens || 0) + (msg.data?.tokenStats?.outputTokens || 0);
             if (msg.data?.response) {
               lastResponse = msg.data.response;
             }
